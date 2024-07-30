@@ -1,0 +1,10 @@
+[Unit]
+Description=A simple CalDAV (calendar) and CardDAV (contact) server
+
+[Service]
+ExecStart=/usr/bin/env python3 -m radicale
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+

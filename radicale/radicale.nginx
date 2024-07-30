@@ -1,0 +1,36 @@
+server {
+	server_name radicale.sripwoud.xyz;
+
+	location / {
+		proxy_pass           http://localhost:5232/;
+		proxy_set_header     X-Script-Name /;
+		proxy_set_header     X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header     Host $http_host;
+
+		auth_basic           "Radicale - Password required";
+		auth_basic_user_file /etc/radicale/users;
+	}
+
+    client_max_body_size 10M;
+
+    listen [::]:443 ssl ipv6only=on; # managed by Certbot
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/radicale.sripwoud.xyz/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/radicale.sripwoud.xyz/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+server {
+    if ($host = radicale.sripwoud.xyz) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+	listen 80;
+	listen [::]:80;
+	server_name radicale.sripwoud.xyz;
+    return 404; # managed by Certbot
+
+
+}
