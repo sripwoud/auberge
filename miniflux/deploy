@@ -1,0 +1,3 @@
+#!/bin/zsh
+
+flyctl deploy --image docker.io/miniflux/miniflux:latest-distroless

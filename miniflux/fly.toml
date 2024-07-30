@@ -1,0 +1,22 @@
+app = 'mnflux'
+primary_region = 'mad'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+[build]
+  image = "docker.io/miniflux/miniflux:latest"
+
+[env]
+  RUN_MIGRATIONS = "true"
+  HTTPS = "true"
+  PORT = "8080"
