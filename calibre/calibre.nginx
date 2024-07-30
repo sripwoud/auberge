@@ -1,0 +1,34 @@
+server {
+    server_name lire.riou.one;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    client_max_body_size 20M;  # Adjust this value based on needs
+
+
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/lire.riou.one/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/lire.riou.one/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+server {
+    if ($host = lire.riou.one) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    server_name lire.riou.one;
+    listen 80;
+    return 404; # managed by Certbot
+
+
+}

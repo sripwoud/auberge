@@ -1,0 +1,23 @@
+[Unit]
+Description=Calibre library server
+After=network.target
+
+[Service]
+Type=simple
+User=calibre
+Group=calibre
+# we are using a reverse proxy, need to tell content server to only listen for localhost
+# disable calibre auth and use apache2 instead
+ExecStart=/usr/bin/calibre-server \
+	    --listen-on 127.0.0.1 \
+	    --disable-use-bonjour \
+            --enable-local-write \
+	    --enable-auth \
+	    --auth-mode basic \
+	    --userdb /srv/calibre/users.sqlite \
+	    /srv/calibre/Gauthier \
+	    /srv/calibre/test
+	    # add more library folders above
+
+[Install]
+WantedBy=multi-user.target
