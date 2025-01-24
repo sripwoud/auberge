@@ -1,0 +1,8 @@
+[env]
+_ = { file = ".env.yaml" }
+
+[tools]
+flyctl = "latest"
+
+[tasks.deploy]
+run = "flyctl deploy --image docker.io/miniflux/miniflux:latest-distroless --env ADMIN_USERNAME=$ADMIN_USERNAME --env ADMIN_PASSWORD=$ADMIN_PASSWORD"
