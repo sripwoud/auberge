@@ -1,11 +1,10 @@
 webdav.sripwoud.xyz {
-	tls {}
 	root * /var/www/webdav-files
 
 	@get method GET
 	route {
 		basic_auth / {
-			sripwoud $2a$14$LxIsTsE5XbujxlTtb9SF9.bELenDeaPvVIasvVcOnKsaN4OtN9Sqa # Your username and hashed password
+			sripwoud $2a$14$g2zyTIvfnV1bPZyslkSaduzVGUQDJiZEdfOGGO5sNRH6Oa/Up8toG
 		}
 		file_server @get browse
 		webdav
