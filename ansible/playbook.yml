@@ -1,0 +1,38 @@
+- name: Initial server setup
+  hosts: vps
+  gather_facts: true
+  become: true
+
+  vars:
+    new_user: "sripwoud"
+    public_ssh_key: "{{ lookup('file', '~/.config/ssh/identities/ionos.pub') }}"
+    ssh_port: "2209"
+    default_ssh_port: "22"
+    new_user_home: "/home/{{ new_user }}"
+
+  tasks:
+    - name: Run System Update tasks
+      ansible.builtin.import_tasks: tasks/00_system_update.yml
+      tags: [system_update]
+
+    - name: Run User Creation and Sudo Configuration tasks
+      ansible.builtin.import_tasks: tasks/01_user.yml
+      tags: [user]
+
+    - name: Run SSH Daemon Configuration tasks
+      ansible.builtin.import_tasks: tasks/02_sshd.yml
+      tags: [ssh]
+
+    - name: Run Bash Configuration tasks
+      ansible.builtin.import_tasks: tasks/03_bash.yml
+      tags: [bash]
+
+    - name: Run UFW Firewall Configuration tasks
+      ansible.builtin.import_tasks: tasks/04_ufw.yml
+      tags: [ufw]
+
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted

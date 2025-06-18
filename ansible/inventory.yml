@@ -1,0 +1,9 @@
+vps:
+  hosts:
+    lechuck-cloud:
+      ansible_host: 194.164.53.11
+      ansible_port: 2209
+      ansible_user: sripwoud
+    lechuck-cloud-init:
+      ansible_host: 194.164.53.11
+      ansible_user: root

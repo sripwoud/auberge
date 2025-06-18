@@ -1,0 +1,36 @@
+- name: System Update and Upgrade
+  block:
+    - name: Add Debian Testing repository (for specific packages like dasel)
+      when: ansible_distribution == "Debian"
+      ansible.builtin.apt_repository:
+        repo: "deb http://deb.debian.org/debian/ testing main contrib non-free"
+        state: present
+        filename: "debian-testing"
+    - name: Configure APT pinning for dasel (prefer testing over stable)
+      when: ansible_distribution == "Debian"
+      ansible.builtin.copy:
+        content: |
+          Package: *
+          Pin: release a=stable
+          Pin-Priority: 900
+
+          Package: dasel
+          Pin: release a=testing
+          Pin-Priority: 990
+
+          Package: *
+          Pin: release a=testing
+          Pin-Priority: 50
+        dest: /etc/apt/preferences.d/dasel_pinning.pref
+        owner: root
+        group: root
+        mode: "0644"
+    - name: Update apt package cache
+      ansible.builtin.apt:
+        update_cache: true
+    - name: Upgrade dist
+      ansible.builtin.apt:
+        upgrade: dist
+    - name: Install packages
+      ansible.builtin.apt:
+        pkg: [curl, dasel, git, neovim, rsync, wget]

@@ -1,0 +1,15 @@
+[tasks.lechuck-init]
+description = "Run initial playbook"
+dir = "ansible"
+run = "ansible-playbook playbook.yml --ask-pass --limit lechuck-cloud-init"
+
+[tasks.lechuck]
+description = "Run playbook"
+dir = "ansible"
+run = "ansible-playbook playbook.yml --limit lechuck-cloud"
+
+[tasks.ssh]
+run = ["rm -fr ~/.ssh", "command ssh root@194.164.53.11"]
+
+[tools]
+dprint = "latest"

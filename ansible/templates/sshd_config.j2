@@ -1,0 +1,41 @@
+Include /etc/ssh/sshd_config.d/*.conf
+
+Port {{ ssh_port }}
+
+Protocol 2
+
+UsePrivilegeSeparation sandbox # Modern setting for privilege separation
+PermitRootLogin no             # Disable direct root login via SSH (use sripwoud then sudo)
+StrictModes yes                # Enable strict permissions checking for user home directories and key files
+MaxAuthTries 6                 # Maximum authentication attempts per connection
+MaxSessions 10                 # Maximum open sessions per network connection
+
+PubkeyAuthentication yes       # Enable public key authentication
+AuthorizedKeysFile      .ssh/authorized_keys # Default location for authorized keys
+
+# Disable password and keyboard-interactive authentication (rely solely on keys)
+PasswordAuthentication no
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+KbdInteractiveAuthentication no
+
+# Host-based authentication (less common for client-server)
+HostbasedAuthentication no
+IgnoreRhosts yes
+
+# PAM (Pluggable Authentication Modules)
+UsePAM yes
+
+# Forwarding and other features
+X11Forwarding yes              # Enable X11 forwarding
+PrintMotd no                   # Disable printing the Message of the Day
+PrintLastLog yes               # Print last login time and date
+TCPKeepAlive yes               # Send TCP keepalives
+ClientAliveInterval 120        # Disconnect idle clients after 120 seconds
+ClientAliveCountMax 3          # Max client alive messages before disconnecting
+
+AcceptEnv LANG LC_*
+
+Subsystem       sftp    /usr/lib/openssh/sftp-server
+
+AllowUsers {{ new_user }}

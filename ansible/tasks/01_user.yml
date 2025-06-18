@@ -1,0 +1,21 @@
+- name: User Creation and Sudo Configuration
+  block:
+    - name: Create new user and set shell for '{{ new_user }}'
+      ansible.builtin.user:
+        name: "{{ new_user }}"
+        state: present
+        shell: /usr/bin/bash
+
+    - name: Add to sudo group new user '{{ new_user }}'
+      ansible.builtin.user:
+        name: "{{ new_user }}"
+        groups: sudo
+        append: true
+
+    - name: Configure sudoers (NOPASSWD) for '{{ new_user }}'
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/010_sudo_user
+        line: "{{ new_user }} ALL=(ALL) NOPASSWD: ALL"
+        create: true
+        mode: "0440"
+        validate: "/usr/sbin/visudo -cf %s"

@@ -1,0 +1,15 @@
+{
+  "exec": {
+    "commands": [
+      {
+        "command": "shfmt -i 2",
+        "exts": ["bash", "sh"],
+      },
+    ],
+  },
+  "plugins": [
+    "https://plugins.dprint.dev/g-plane/pretty_yaml-v0.5.1.wasm",
+    "https://plugins.dprint.dev/json-0.20.0.wasm",
+    "https://plugins.dprint.dev/exec-0.5.1.json@492414e39dea4dccc07b4af796d2f4efdb89e84bae2bd4e1e924c0cc050855bf",
+  ],
+}
