@@ -1,3 +1,9 @@
+[tasks.fmt]
+alias = "f"
+description = "Format"
+run = "dprint fmt -c .dprint.jsonc"
+silent = true
+
 [tasks.lechuck-init]
 description = "Run initial playbook"
 dir = "ansible"

@@ -1,6 +1,6 @@
 - name: System Update and Upgrade
   block:
-    - name: Add Debian Testing repository (for specific packages like dasel)
+    - name: Add Debian Testing repository (for specific packages like dasel and golang-1.24)
       when: ansible_distribution == "Debian"
       ansible.builtin.apt_repository:
         repo: "deb http://deb.debian.org/debian/ testing main contrib non-free"
@@ -25,6 +25,20 @@
         owner: root
         group: root
         mode: "0644"
+    - name: Set up APT pinning for golang-1.24
+      ansible.builtin.copy:
+        content: |
+          Package: golang-1.24
+          Pin: release n=trixie
+          Pin-Priority: 900
+
+          Package: *
+          Pin: release n=trixie
+          Pin-Priority: -1
+        dest: /etc/apt/preferences.d/golang-1.24.pref
+        owner: root
+        group: root
+        mode: "0644"
     - name: Update apt package cache
       ansible.builtin.apt:
         update_cache: true
@@ -33,4 +47,12 @@
         upgrade: dist
     - name: Install packages
       ansible.builtin.apt:
-        pkg: [curl, dasel, git, neovim, rsync, wget]
+        pkg: [curl, dasel, git, golang-1.24, gnupg, neovim, rsync, wget]
+    - name: Create symlink for 'go' binary in /usr/local/bin
+      ansible.builtin.file:
+        src: /usr/lib/go-1.24/bin/go
+        dest: /usr/local/bin/go
+        state: link
+        force: true
+        owner: root
+        group: root

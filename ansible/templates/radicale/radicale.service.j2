@@ -1,0 +1,22 @@
+[Unit]
+Description=A simple CalDAV (calendar) and CardDAV (contact) server
+After=network.target
+Requires=network.target
+
+[Service]
+ExecStart=/usr/bin/env python3 -m radicale
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ReadWritePaths={{ radicale_data_dir }}
+Restart=on-failure
+UMask=0027
+User={{ radicale_user }}
+
+[Install]
+WantedBy=multi-user.target

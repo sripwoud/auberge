@@ -1,0 +1,88 @@
+- name: Install and Configure Caddy
+  block:
+    - name: Add xcaddy GPG key
+      ansible.builtin.apt_key:
+        url: https://dl.cloudsmith.io/public/caddy/xcaddy/gpg.key
+        keyring: /usr/share/keyrings/caddy-xcaddy-archive-keyring.gpg
+        state: present
+
+    - name: Fetch xcaddy APT repository definition
+      ansible.builtin.get_url:
+        url: https://dl.cloudsmith.io/public/caddy/xcaddy/debian.deb.txt
+        dest: /tmp/caddy-xcaddy.list.tmp
+        mode: "0644"
+      register: xcaddy_repo_url_content
+
+    - name: Add xcaddy APT repository file
+      ansible.builtin.copy:
+        src: /tmp/caddy-xcaddy.list.tmp
+        dest: /etc/apt/sources.list.d/caddy-xcaddy.list
+        owner: root
+        group: root
+        mode: "0644"
+        remote_src: true
+      notify: Update apt cache after adding xcaddy repo
+
+    - name: Install xcaddy
+      ansible.builtin.apt:
+        name: xcaddy
+        state: present
+
+    - name: Build Caddy with custom modules
+      ansible.builtin.command: |
+        xcaddy build \
+          --with github.com/mholt/caddy-l4 \
+          --with github.com/mholt/caddy-webdav \
+          --output /usr/local/bin/caddy
+      args:
+        creates: /usr/bin/local/caddy
+      register: caddy_build_result
+
+    - name: Create Caddy group
+      ansible.builtin.group:
+        name: caddy
+        system: true
+        state: present
+
+    - name: Create Caddy user
+      ansible.builtin.user:
+        name: caddy
+        group: caddy
+        system: true
+        create_home: true
+        home: /var/lib/caddy
+        shell: /usr/sbin/nologin
+        comment: "Caddy web server"
+        state: present
+
+    - name: Create Caddy config directory
+      ansible.builtin.file:
+        path: /etc/caddy
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy Caddy systemd service file
+      ansible.builtin.template:
+        src: templates/caddy/caddy.service
+        dest: "/etc/systemd/system/caddy.service"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copy Caddyfile from local path to /etc/caddy/Caddyfile
+      ansible.builtin.copy:
+        src: "templates/caddy/Caddyfile"
+        dest: "/etc/caddy/Caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
+    - name: Enable and start Caddy service
+      ansible.builtin.systemd_service:
+        name: caddy
+        enabled: true
+        state: started
+        daemon_reload: true

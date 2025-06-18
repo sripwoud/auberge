@@ -17,7 +17,6 @@ config_ufw() {
   wg_port="$2"
   command -v ufw >/dev/null 2>&1 || apt install ufw
 
-
   ufw default deny incoming comment 'deny all incoming traffic'
   ufw default allow outgoing comment 'allow all outgoing traffic'
   ufw allow OpenSSH comment 'allow ssh connections'
@@ -33,7 +32,6 @@ config_ufw() {
 config_editor() {
   update-alternatives --config editor
 }
-
 
 config_ssh() {
   ssh_port="$1"

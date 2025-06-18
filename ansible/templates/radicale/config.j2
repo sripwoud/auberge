@@ -1,0 +1,14 @@
+[server]
+hosts = {{ radicale_ip }}:{{ radicale_port }}, [::]:{{ radicale_port }}
+max_connections = 20
+max_content_length = 100000000
+timeout = 30
+
+[auth]
+type = htpasswd
+htpasswd_filename = {{ radicale_users_file }}
+htpasswd_encryption = bcrypt
+delay = 1
+
+[storage]
+filesystem_folder = {{ radicale_data_dir }}

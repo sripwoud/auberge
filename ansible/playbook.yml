@@ -5,34 +5,66 @@
 
   vars:
     new_user: "sripwoud"
+    new_user_home: "/home/{{ new_user }}"
+
     public_ssh_key: "{{ lookup('file', '~/.config/ssh/identities/ionos.pub') }}"
     ssh_port: "2209"
     default_ssh_port: "22"
-    new_user_home: "/home/{{ new_user }}"
+
+    radicale_sys_user: radicale
+    radicale_password: "{{ lookup('ansible.builtin.pipe', 'pa s radicale' | quote ) }}"
+    radicale_ip: 127.0.0.1
+    radicale_port: 5432
+    radicale_config_dir: /etc/radicale
+    radicale_data_dir: /var/lib/radicale/collections
+    radicale_users_file: "{{ radicale_config_dir }}/users"
 
   tasks:
-    - name: Run System Update tasks
-      ansible.builtin.import_tasks: tasks/00_system_update.yml
-      tags: [system_update]
+    - name: Update system
+      ansible.builtin.import_tasks: tasks/00_apt.yml
+      tags: [apt]
 
-    - name: Run User Creation and Sudo Configuration tasks
+    - name: Create new user
       ansible.builtin.import_tasks: tasks/01_user.yml
       tags: [user]
 
-    - name: Run SSH Daemon Configuration tasks
+    - name: Configure ssh
       ansible.builtin.import_tasks: tasks/02_sshd.yml
       tags: [ssh]
 
-    - name: Run Bash Configuration tasks
+    - name: Configure bash
       ansible.builtin.import_tasks: tasks/03_bash.yml
       tags: [bash]
 
-    - name: Run UFW Firewall Configuration tasks
+    - name: Configure firewall
       ansible.builtin.import_tasks: tasks/04_ufw.yml
       tags: [ufw]
+
+    - name: Setup caddy
+      ansible.builtin.import_tasks: tasks/05_caddy.yml
+      tags: [caddy]
+
+    - name: Setup radicale
+      when: false
+      ansible.builtin.import_tasks: tasks/06_radicale.yml
+      tags: [radicale]
 
   handlers:
     - name: Restart sshd
       ansible.builtin.service:
         name: sshd
         state: restarted
+    - name: Restart radicale
+      ansible.builtin.systemd_service:
+        name: radicale
+        state: restarted
+    - name: Restart caddy
+      ansible.builtin.systemd_service:
+        name: caddy
+        state: restarted
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+    - name: Update apt cache after adding xcaddy repo
+      ansible.builtin.apt:
+        update_cache: true
