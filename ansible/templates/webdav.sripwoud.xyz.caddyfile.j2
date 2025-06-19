@@ -1,0 +1,13 @@
+webdav.sripwoud.xyz {
+	root * /var/www/webdav-files
+
+	@get method GET
+	route {
+		basic_auth / {
+			sripwoud {{ webdav_hashed_password }}
+		}
+		file_server @get browse
+		webdav
+	}
+}
+

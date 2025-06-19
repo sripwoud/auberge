@@ -1,0 +1,28 @@
+- name: Install and configure webdav server
+  block:
+    - name: Create WebDAV root directory
+      ansible.builtin.file:
+        path: /var/www/webdav-files
+        state: directory
+        owner: caddy
+        group: caddy
+        mode: "0755"
+
+    - name: Hash WebDAV password using caddy hash-password
+      ansible.builtin.command: "caddy hash-password --plaintext '{{ webdav_password }}'"
+      register: webdav_hashed_password
+      changed_when: false
+      no_log: true
+
+    - name: Set fact for WebDAV hashed password
+      ansible.builtin.set_fact:
+        webdav_hashed_password: "{{ webdav_hashed_password.stdout | trim }}"
+
+    - name: Deploy WebDAV Caddyfile
+      ansible.builtin.template:
+        src: webdav.sripwoud.xyz.caddyfile.j2
+        dest: /etc/caddy/sites/webdav.sripwoud.xyz.caddyfile
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy

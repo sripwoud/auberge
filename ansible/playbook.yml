@@ -19,9 +19,12 @@
     radicale_users_file: "{{ radicale_config_dir }}/users"
 
   vars_prompt:
-    - name: "radicale_password"
-      prompt: "Please enter the password for Radicale user"
+    - name: radicale_password
       private: true
+      prompt: Enter password main/admin Radicale user
+    - name: webdav_password
+      private: true
+      prompt: Enter password for webdav server
   tasks:
     - name: Update system
       ansible.builtin.import_tasks: tasks/00_apt.yml
@@ -50,6 +53,10 @@
     - name: Setup radicale
       ansible.builtin.import_tasks: tasks/06_radicale.yml
       tags: [radicale]
+
+    - name: Configure webdav
+      ansible.builtin.import_tasks: tasks/07_webdav.yml
+      tags: [webdav]
 
   handlers:
     - name: Restart sshd
