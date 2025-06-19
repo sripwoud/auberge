@@ -1,12 +1,10 @@
 radicale.sripwoud.xyz {
-	reverse_proxy localhost:5232 {
+	reverse_proxy localhost:{{ radicale_port }} {
 		header_up X-Script-Name /
 		header_up Host {host}
 	}
 
-	basic_auth / {
-		sripwoud $2a$14$gpA7GaUCAK3x60fllks2rOD1q8pUYv7nEL5hqKaKoXmAq9Qnme59a
-	}
+    # no auth, handled by radicale
 
 	request_body {
 		max_size 10M

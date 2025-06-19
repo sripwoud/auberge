@@ -2,7 +2,7 @@
   block:
     - name: Install Radicale and dependencies via apt
       ansible.builtin.apt:
-        name: [radicale, apache3-utils]
+        name: [radicale, apache2-utils]
         state: present
         update_cache: true
 
@@ -32,32 +32,41 @@
         mode: "0700"
 
     - name: Add Radicale admin user to htpasswd file
+      no_log: true
       community.general.htpasswd:
-        path: "{{ radicale_users_file }}"
+        hash_scheme: "bcrypt"
         name: "{{ new_user }}"
         password: "{{ radicale_password }}"
-        state: present
+        path: "{{ radicale_users_file }}"
         owner: root
         group: "{{ radicale_sys_user }}"
         mode: "0640"
+        state: present
 
     - name: Deploy Radicale configuration file
       ansible.builtin.template:
-        src: templates/radicale_config.j2
+        src: templates/radicale/config.j2
         dest: "{{ radicale_config_dir }}/config"
         owner: root
         group: root
         mode: "0644"
-      notify: Restart radicale
 
     - name: Deploy Radicale systemd service file
       ansible.builtin.template:
-        src: templates/radicale_service.j2
-        dest: "/etc/systemd/system/radicale.service"
+        src: templates/radicale/radicale.service.j2
+        dest: /etc/systemd/system/radicale.service
         owner: root
         group: root
         mode: "0644"
-      notify: Restart radicale
+
+    - name: Copy Radicale Caddyfile to sites directory
+      ansible.builtin.template:
+        src: templates/radicale/radicale.sripwoud.xyz.caddyfile.j2
+        dest: /etc/caddy/sites/radicale.sripwoud.xyz.caddyfile
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
 
     - name: Enable and start Radicale service
       ansible.builtin.systemd_service:

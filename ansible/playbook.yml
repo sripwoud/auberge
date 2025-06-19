@@ -12,13 +12,16 @@
     default_ssh_port: "22"
 
     radicale_sys_user: radicale
-    radicale_password: "{{ lookup('ansible.builtin.pipe', 'pa s radicale' | quote ) }}"
     radicale_ip: 127.0.0.1
-    radicale_port: 5432
+    radicale_port: 5232
     radicale_config_dir: /etc/radicale
     radicale_data_dir: /var/lib/radicale/collections
     radicale_users_file: "{{ radicale_config_dir }}/users"
 
+  vars_prompt:
+    - name: "radicale_password"
+      prompt: "Please enter the password for Radicale user"
+      private: true
   tasks:
     - name: Update system
       ansible.builtin.import_tasks: tasks/00_apt.yml
@@ -45,7 +48,6 @@
       tags: [caddy]
 
     - name: Setup radicale
-      when: false
       ansible.builtin.import_tasks: tasks/06_radicale.yml
       tags: [radicale]
 
@@ -53,10 +55,6 @@
     - name: Restart sshd
       ansible.builtin.service:
         name: sshd
-        state: restarted
-    - name: Restart radicale
-      ansible.builtin.systemd_service:
-        name: radicale
         state: restarted
     - name: Restart caddy
       ansible.builtin.systemd_service:

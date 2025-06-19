@@ -35,7 +35,7 @@
           --with github.com/mholt/caddy-webdav \
           --output /usr/local/bin/caddy
       args:
-        creates: /usr/bin/local/caddy
+        creates: /usr/local/bin/caddy
       register: caddy_build_result
 
     - name: Create Caddy group
@@ -55,13 +55,14 @@
         comment: "Caddy web server"
         state: present
 
-    - name: Create Caddy config directory
+    - name: Create Caddy config and sites directories
       ansible.builtin.file:
-        path: /etc/caddy
+        path: "{{ item }}"
         state: directory
         owner: root
         group: root
         mode: "0755"
+      loop: [/etc/caddy, /etc/caddy/sites]
 
     - name: Deploy Caddy systemd service file
       ansible.builtin.template:
