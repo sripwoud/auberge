@@ -3,13 +3,11 @@
     - name: Install Radicale and dependencies via apt
       ansible.builtin.apt:
         name: [radicale, apache2-utils]
-        state: present
         update_cache: true
 
     - name: Create radicale system user
       ansible.builtin.user:
         name: "{{ radicale_sys_user }}"
-        state: present
         system: true
         home: /
         shell: /usr/sbin/nologin
@@ -35,17 +33,16 @@
       no_log: true
       community.general.htpasswd:
         hash_scheme: "bcrypt"
-        name: "{{ new_user }}"
+        name: "{{ user_name }}"
         password: "{{ radicale_password }}"
         path: "{{ radicale_users_file }}"
         owner: root
         group: "{{ radicale_sys_user }}"
         mode: "0640"
-        state: present
 
     - name: Deploy Radicale configuration file
       ansible.builtin.template:
-        src: templates/radicale/config.j2
+        src: templates/config.j2
         dest: "{{ radicale_config_dir }}/config"
         owner: root
         group: root
@@ -53,7 +50,7 @@
 
     - name: Deploy Radicale systemd service file
       ansible.builtin.template:
-        src: templates/radicale/radicale.service.j2
+        src: templates/radicale.service.j2
         dest: /etc/systemd/system/radicale.service
         owner: root
         group: root
@@ -61,8 +58,8 @@
 
     - name: Copy Radicale Caddyfile to sites directory
       ansible.builtin.template:
-        src: templates/radicale/radicale.sripwoud.xyz.caddyfile.j2
-        dest: /etc/caddy/sites/radicale.sripwoud.xyz.caddyfile
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ radicale_domain }}.caddyfile"
         owner: root
         group: root
         mode: "0644"

@@ -3,84 +3,29 @@
   gather_facts: true
   become: true
 
-  vars:
-    new_user: "sripwoud"
-    new_user_home: "/home/{{ new_user }}"
-
-    public_ssh_key: "{{ lookup('file', '~/.config/ssh/identities/ionos.pub') }}"
-    ssh_port: "2209"
-    default_ssh_port: "22"
-
-    radicale_sys_user: radicale
-    radicale_ip: 127.0.0.1
-    radicale_port: 5232
-    radicale_config_dir: /etc/radicale
-    radicale_data_dir: /var/lib/radicale/collections
-    radicale_users_file: "{{ radicale_config_dir }}/users"
-
-    # calibre web
-    calibre_install_path: /opt/calibre
-    calibre_sys_user: calibre
-    calibre_sys_group: calibre
-    calibre_port: 8083
-    calibre_domain: "lire.riou.one"
-
   vars_prompt:
     - name: radicale_password
       private: true
-      prompt: Enter password main/admin Radicale user
+      prompt: Enter password main/admin radicale user
     - name: webdav_password
       private: true
       prompt: Enter password for webdav server
-  tasks:
-    - name: Update system
-      ansible.builtin.import_tasks: tasks/00_apt.yml
+  roles:
+    - role: apt
       tags: [apt]
-
-    - name: Create new user
-      ansible.builtin.import_tasks: tasks/01_user.yml
+    - role: user
       tags: [user]
-
-    - name: Configure ssh
-      ansible.builtin.import_tasks: tasks/02_sshd.yml
+    - role: ssh
       tags: [ssh]
-
-    - name: Configure bash
-      ansible.builtin.import_tasks: tasks/03_bash.yml
+    - role: bash
       tags: [bash]
-
-    - name: Configure firewall
-      ansible.builtin.import_tasks: tasks/04_ufw.yml
+    - role: ufw
       tags: [ufw]
-
-    - name: Setup caddy
-      ansible.builtin.import_tasks: tasks/05_caddy.yml
+    - role: caddy
       tags: [caddy]
-
-    - name: Setup radicale
-      ansible.builtin.import_tasks: tasks/06_radicale.yml
+    - role: radicale
       tags: [radicale]
-
-    - name: Configure webdav
-      ansible.builtin.import_tasks: tasks/07_webdav.yml
+    - role: webdav
       tags: [webdav]
-
-    - name: Configure calibre web
-      ansible.builtin.import_tasks: tasks/08_calibre.yml
+    - role: calibre
       tags: [calibre]
-
-  handlers:
-    - name: Restart sshd
-      ansible.builtin.service:
-        name: sshd
-        state: restarted
-    - name: Restart caddy
-      ansible.builtin.systemd_service:
-        name: caddy
-        state: restarted
-    - name: Reload systemd
-      ansible.builtin.systemd_service:
-        daemon_reload: true
-    - name: Update apt cache after adding xcaddy repo
-      ansible.builtin.apt:
-        update_cache: true

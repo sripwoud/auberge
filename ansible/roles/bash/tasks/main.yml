@@ -1,0 +1,22 @@
+- name: Bash Configuration for {{ user_name }}
+  block:
+    - name: Deploy .bash_aliases for {{ user_name }}
+      ansible.builtin.copy:
+        src: files/.bash_aliases
+        dest: "{{ user_home }}/.bash_aliases"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0644"
+
+    - name: Add XDG environment variables to .profile for {{ user_name }}
+      ansible.builtin.blockinfile:
+        path: "{{ user_home }}/.profile"
+        block: |
+          export XDG_CONFIG_HOME="$HOME/.config"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export EDITOR="nvim"
+        create: true
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0644"

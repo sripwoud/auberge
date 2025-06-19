@@ -7,9 +7,9 @@
 
     - name: Add new user's SSH public key
       ansible.posix.authorized_key:
-        user: "{{ new_user }}"
+        user: "{{ user_name }}"
         state: present
-        key: "{{ public_ssh_key }}"
+        key: "{{ lookup('file', ssh_public_key_path) }}"
 
     - name: Use custom sshd_config
       ansible.builtin.template:

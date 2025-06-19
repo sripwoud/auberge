@@ -43,6 +43,7 @@
 
     - name: Create Python virtual environment for Calibre-Web
       when: not calibre_venv_check.stat.exists
+      changed_when: not calibre_venv_check.stat.exists
       become: true
       become_user: "{{ calibre_sys_user }}"
       ansible.builtin.command: >
@@ -59,7 +60,7 @@
 
     - name: Deploy Calibre-Web systemd service file
       ansible.builtin.template:
-        src: templates/calibre/calibre.service.j2
+        src: templates/calibre.service.j2
         dest: "/etc/systemd/system/calibre.service"
         owner: root
         group: root
@@ -74,7 +75,7 @@
 
     - name: Deploy Calibre Caddyfile
       ansible.builtin.template:
-        src: templates/calibre/Caddyfile.j2
+        src: templates/Caddyfile.j2
         dest: "/etc/caddy/sites/{{ calibre_domain }}.caddyfile"
         owner: root
         group: root

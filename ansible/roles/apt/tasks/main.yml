@@ -47,7 +47,19 @@
         upgrade: dist
     - name: Install packages
       ansible.builtin.apt:
-        pkg: [acl, curl, dasel, git, golang-1.24, gnupg, neovim, rsync, wget]
+        pkg: [
+          acl,
+          curl,
+          dasel,
+          dnsutils,
+          git,
+          golang-1.24,
+          gnupg,
+          lsof,
+          neovim,
+          rsync,
+          wget,
+        ]
     - name: Create symlink for 'go' binary in /usr/local/bin
       ansible.builtin.file:
         src: /usr/lib/go-1.24/bin/go

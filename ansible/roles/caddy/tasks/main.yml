@@ -21,7 +21,7 @@
         group: root
         mode: "0644"
         remote_src: true
-      notify: Update apt cache after adding xcaddy repo
+      notify: Update apt cache
 
     - name: Install xcaddy
       ansible.builtin.apt:
@@ -52,7 +52,7 @@
         create_home: true
         home: /var/lib/caddy
         shell: /usr/sbin/nologin
-        comment: "Caddy web server"
+        comment: Caddy web server
         state: present
 
     - name: Create Caddy config and sites directories
@@ -65,17 +65,17 @@
       loop: [/etc/caddy, /etc/caddy/sites]
 
     - name: Deploy Caddy systemd service file
-      ansible.builtin.template:
-        src: templates/caddy/caddy.service
-        dest: "/etc/systemd/system/caddy.service"
+      ansible.builtin.copy:
+        src: files/caddy.service
+        dest: /etc/systemd/system/caddy.service
         owner: root
         group: root
         mode: "0644"
 
     - name: Copy Caddyfile from local path to /etc/caddy/Caddyfile
       ansible.builtin.copy:
-        src: "templates/caddy/Caddyfile"
-        dest: "/etc/caddy/Caddyfile"
+        src: files/Caddyfile
+        dest: /etc/caddy/Caddyfile
         owner: root
         group: root
         mode: "0644"

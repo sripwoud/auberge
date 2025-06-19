@@ -20,8 +20,8 @@
 
     - name: Deploy WebDAV Caddyfile
       ansible.builtin.template:
-        src: webdav.sripwoud.xyz.caddyfile.j2
-        dest: /etc/caddy/sites/webdav.sripwoud.xyz.caddyfile
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ webdav_domain }}.caddyfile"
         owner: root
         group: root
         mode: "0644"

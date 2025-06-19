@@ -1,0 +1,13 @@
+{{ radicale_domain }} {
+	reverse_proxy localhost:{{ radicale_port }} {
+		header_up X-Script-Name /
+		header_up Host {host}
+	}
+
+    # no auth, handled by radicale
+
+	request_body {
+		max_size 10M
+	}
+}
+
