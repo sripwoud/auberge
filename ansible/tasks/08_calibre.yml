@@ -1,0 +1,82 @@
+- name: Setup Calibre-Web server
+  block:
+    - name: Create system group for Calibre-Web
+      ansible.builtin.group:
+        name: "{{ calibre_sys_group }}"
+        state: present
+
+    - name: Create system user for Calibre-Web
+      ansible.builtin.user:
+        name: "{{ calibre_sys_user }}"
+        group: "{{ calibre_sys_group }}"
+        shell: /usr/sbin/nologin
+        state: present
+
+    - name: Create Calibre-Web installation directory
+      ansible.builtin.file:
+        path: "{{ calibre_install_path }}"
+        state: directory
+        owner: "{{ calibre_sys_user }}"
+        group: "{{ calibre_sys_group }}"
+        mode: "0755"
+
+    - name: Create Calibre library directory
+      ansible.builtin.file:
+        path: /srv/calibre
+        state: directory
+        owner: "{{ calibre_sys_user }}"
+        group: "{{ calibre_sys_group }}"
+        mode: "0775"
+
+    - name: Install Python3 venv and pip
+      ansible.builtin.apt:
+        name: [python3-venv, python3-pip]
+        state: present
+        update_cache: true
+
+    - name: Check if Calibre-Web virtual environment exists
+      become: true
+      become_user: "{{ calibre_sys_user }}"
+      register: calibre_venv_check
+      ansible.builtin.stat:
+        path: "{{ calibre_install_path }}/venv/bin/python3"
+
+    - name: Create Python virtual environment for Calibre-Web
+      when: not calibre_venv_check.stat.exists
+      become: true
+      become_user: "{{ calibre_sys_user }}"
+      ansible.builtin.command: >
+        python3 -m venv {{ calibre_install_path }}/venv
+
+    - name: Install Calibre-Web directly into the virtual environment using pip
+      become: true
+      become_user: "{{ calibre_sys_user }}"
+      ansible.builtin.pip:
+        name: calibreweb
+        virtualenv: "{{ calibre_install_path }}/venv"
+        virtualenv_python: python3
+        state: present
+
+    - name: Deploy Calibre-Web systemd service file
+      ansible.builtin.template:
+        src: templates/calibre/calibre.service.j2
+        dest: "/etc/systemd/system/calibre.service"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable and start Calibre-Web service
+      ansible.builtin.systemd:
+        name: calibre
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Deploy Calibre Caddyfile
+      ansible.builtin.template:
+        src: templates/calibre/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ calibre_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy

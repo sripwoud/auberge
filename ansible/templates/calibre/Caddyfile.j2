@@ -1,0 +1,11 @@
+{{ calibre_domain }} {
+	reverse_proxy 127.0.0.1:{{ calibre_port }} {
+		header_up Host {host}
+		header_up X-Real-IP {remote_ip}
+		header_up X-Forwarded-For {remote_ip}
+	}
+
+	request_body {
+		max_size 20M
+	}
+}

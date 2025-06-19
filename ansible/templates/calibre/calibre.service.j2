@@ -1,0 +1,15 @@
+[Unit]
+Description=Calibre Web
+After=network.target
+
+[Service]
+Type=simple
+User={{ calibre_sys_user }}
+Group={{ calibre_sys_group }}
+Environment="CALIBRE_PORT={{ calibre_port }}"
+ExecStart={{ calibre_install_path }}/venv/bin/cps
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

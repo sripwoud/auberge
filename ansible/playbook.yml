@@ -18,6 +18,13 @@
     radicale_data_dir: /var/lib/radicale/collections
     radicale_users_file: "{{ radicale_config_dir }}/users"
 
+    # calibre web
+    calibre_install_path: /opt/calibre
+    calibre_sys_user: calibre
+    calibre_sys_group: calibre
+    calibre_port: 8083
+    calibre_domain: "lire.riou.one"
+
   vars_prompt:
     - name: radicale_password
       private: true
@@ -57,6 +64,10 @@
     - name: Configure webdav
       ansible.builtin.import_tasks: tasks/07_webdav.yml
       tags: [webdav]
+
+    - name: Configure calibre web
+      ansible.builtin.import_tasks: tasks/08_calibre.yml
+      tags: [calibre]
 
   handlers:
     - name: Restart sshd
