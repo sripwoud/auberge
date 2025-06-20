@@ -1,5 +1,0 @@
-bind_host: "0.0.0.0"
-bind_port: 3000
-users:
-  - name: sripwoud
-    password: $2y$10$d8Hbq9s.edDJ1d/zjPlRsesRl6DnJN7uc0t.qRVp27V76kxFrkayS

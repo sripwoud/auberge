@@ -1,8 +1,0 @@
-url.sripwoud.xyz {
-	root * /var/www/yourls
-
-	route {
-		try_files {path} {path}/ /yourls-loader.php?{query}
-		php_fastcgi unix//var/run/php/php8.2-fpm.sock
-	}
-}

@@ -1,6 +1,0 @@
-{
-	debug
-	email me@sripwoud.xyz
-}
-
-import /etc/caddy/sites/*.caddyfile
