@@ -1,0 +1,176 @@
+- name: Create group
+  ansible.builtin.group:
+    name: blocky
+
+- name: Create user
+  ansible.builtin.user:
+    name: blocky
+    group: blocky
+    create_home: false
+    system: true
+
+- name: Ensure install, conf and certs dirs exist
+  with_items: [
+    "{{ blocky_install_path }}",
+    "{{ blocky_config_path }}",
+  ]
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "0755"
+    group: blocky
+    owner: blocky
+    state: directory
+    recurse: true
+
+- name: Download Lego binary
+  ansible.builtin.get_url:
+    url: "https://github.com/go-acme/lego/releases/download/v4.23.1/lego_v4.23.1_linux_amd64.tar.gz"
+    dest: "/tmp/lego.tar.gz"
+    mode: "0644"
+  args:
+    checksum: "sha256:1fd60b1fd59c239bed22719a5de402cb745d1f933540cb1ec196e2c03e6e8882"
+
+- name: Unarchive Lego binary
+  ansible.builtin.unarchive:
+    src: "/tmp/lego.tar.gz"
+    dest: "/usr/local/bin"
+    remote_src: true
+    creates: "/usr/local/bin/lego"
+
+- name: Obtain Let's Encrypt certificate with Lego (Namecheap DNS challenge)
+  environment:
+    NAMECHEAP_API_USER: sripwoud
+    NAMECHEAP_API_KEY: "{{ namecheap_api_key }}"
+  ansible.builtin.command:
+    cmd: "lego --domains '{{ blocky_domain }}' --email me@sripwoud.xyz --dns namecheap --accept-tos --path {{ blocky_config_path }} run"
+    creates: "{{ blocky_cert_file }}"
+  args:
+    chdir: "/tmp"
+  when: not ansible_check_mode
+  register: lego_run_result
+  changed_when: lego_run_result.rc == 0
+
+- name: Set permissions and ownership for Blocky certificate and key
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: blocky
+    mode: "0640"
+  loop: ["{{ blocky_cert_file }}", "{{ blocky_key_file }}"]
+  notify: Restart blocky
+
+- name: Check if blocky has been installed already
+  register: install_status
+  ansible.builtin.stat:
+    path: "{{ blocky_install_path }}/blocky"
+
+- name: Fetch latest Blocky release information from GitHub API
+  become: false
+  delegate_to: localhost
+  register: blocky_release_info
+  ansible.builtin.uri:
+    url: "{{ blocky_github_api_latest_release_url }}"
+    method: GET
+    return_content: true
+
+- name: Set facts for Blocky version, download URL, and checksum URL
+  when: blocky_release_info.json is defined
+  delegate_to: localhost
+  ansible.builtin.set_fact:
+    blocky_version: "{{ blocky_release_info.json.tag_name }}"
+    blocky_download_url: >-
+      {{ (blocky_release_info.json.assets |
+          selectattr('name', 'search', blocky_target_arch) |
+          selectattr('name', 'search', blocky_binary_file_extension | regex_escape + '$') |
+          map(attribute='browser_download_url') | first | default(omit))
+          if blocky_release_info.json.assets | length > 0 else omit }}
+    blocky_checksums_file_url: >-
+      {{ (blocky_release_info.json.assets |
+          selectattr('name', 'eq', 'blocky_checksums.txt') |
+          map(attribute='browser_download_url') | first | default(omit))
+          if blocky_release_info.json.assets | length > 0 else omit }}
+
+- name: Fetch checksums.txt content (if available)
+  when: blocky_checksums_file_url is defined and blocky_checksums_file_url != ''
+  become: false
+  register: blocky_checksum_file_content
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "{{ blocky_checksums_file_url }}"
+    method: GET
+    return_content: true
+
+- name: Extract SHA256 checksum for the Blocky binary from checksums.txt
+  ansible.builtin.set_fact:
+    blocky_checksum_sha256: >-
+      {{ (blocky_checksum_file_content.content.splitlines()
+          | select('contains', 'blocky_' + blocky_version + '_' + blocky_target_arch + '.' + blocky_binary_file_extension)
+          | first | default('')) | split() | first }}
+  delegate_to: localhost
+  when:
+    - blocky_checksum_file_content is defined
+    - blocky_checksum_file_content.content is defined
+    - blocky_checksum_file_content.content | length > 0
+
+- name: Download blocky archive
+  when:
+    - install_status is defined
+    - not install_status.stat.exists
+    - blocky_download_url is defined and blocky_download_url != ''
+    - blocky_checksum_sha256 is defined and blocky_checksum_sha256 != ''
+  register: download_status
+  ansible.builtin.get_url:
+    url: "{{ blocky_download_url }}"
+    dest: "/tmp/blocky_{{ blocky_version }}_{{ blocky_target_arch }}.{{ blocky_binary_file_extension }}"
+    mode: "0644"
+    checksum: "sha256:{{ blocky_checksum_sha256 }}"
+
+- name: Expand blocky archive
+  ansible.builtin.unarchive:
+    src: "/tmp/blocky_{{ blocky_version }}_{{ blocky_target_arch }}.{{ blocky_binary_file_extension }}"
+    dest: "{{ blocky_install_path }}"
+    group: blocky
+    owner: blocky
+    mode: "0755"
+    copy: false
+  when: download_status.changed or not install_status.stat.exists
+
+- name: Ensure owner and mode of blocky binary
+  ansible.builtin.file:
+    path: "{{ blocky_install_path }}/blocky"
+    group: blocky
+    owner: blocky
+    mode: "0755"
+  notify: Restart blocky
+
+- name: Configure blocky
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ blocky_config_path }}/config.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart blocky
+
+- name: Configure blocky service
+  ansible.builtin.template:
+    src: blocky.service.j2
+    dest: /etc/systemd/system/blocky.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart blocky
+
+- name: Ensure blocky service is enabled and running
+  ansible.builtin.systemd:
+    name: blocky
+    state: started
+    daemon_reload: true
+    enabled: true
+
+- name: Allow incoming connections to Blocky DoT port
+  community.general.ufw:
+    rule: allow
+    port: "{{ blocky_dot_port }}"
+    proto: tcp
+    state: enabled

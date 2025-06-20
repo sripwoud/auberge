@@ -18,7 +18,7 @@ run = "ansible-playbook playbook.yml --ask-pass --limit lechuck-cloud-init"
 [tasks.lechuck]
 description = "Run playbook"
 dir = "ansible"
-run = "ansible-playbook playbook.yml --limit lechuck-cloud"
+run = "ansible-playbook playbook.yml --limit lechuck-cloud --ask-vault-pass"
 
 [tasks.lint]
 alias = "l"
@@ -30,4 +30,5 @@ silent = true
 run = ["rm -fr ~/.ssh", "command ssh root@194.164.53.11"]
 
 [tools]
+caddy = "latest"
 dprint = "latest"

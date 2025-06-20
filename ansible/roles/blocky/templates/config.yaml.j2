@@ -1,0 +1,30 @@
+certFile: {{ blocky_cert_file }}
+keyFile: {{blocky_key_file }}
+upstreams:
+  groups:
+    default: [1.1.1.1, 8.8.8.8]
+blocking:
+  denylists:
+    ads: [https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts]
+    fakenews: [
+      https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews-only/hosts,
+    ]
+    gambling: [
+      https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling-only/hosts,
+    ]
+    porn: [
+      https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts,
+    ]
+
+  # allowlists:
+  #   ads:
+  #     - https://raw.githubusercontent.com/m0zgen/dns-hole/master/whitelist.txt
+  #     - https://raw.githubusercontent.com/m0zgen/dns-hole/master/vendors-wl/microsoft.txt
+  #     - https://raw.githubusercontent.com/m0zgen/dns-hole/master/vendors-wl/google.txt
+  #     - https://raw.githubusercontent.com/m0zgen/dns-hole/master/regex/common-wl.txt
+  clientGroupsBlock:
+    default: [ads, fakenews, gambling, porn]
+ports:
+  dns: 5353 # systemd-resolved uses port 53 already
+  tls: {{ blocky_dot_port }}
+bootstrapDns: 1.1.1.1

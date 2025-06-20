@@ -1,0 +1,14 @@
+blocky_domain: dns.sripwoud.xyz
+blocky_install_path: /usr/local/bin/blocky
+blocky_config_path: /etc/blocky
+
+blocky_github_repo: "0xERR0R/blocky"
+blocky_github_api_latest_release_url: "https://api.github.com/repos/{{ blocky_github_repo }}/releases/latest"
+blocky_target_arch: "Linux_x86_64"
+blocky_binary_file_extension: "tar.gz"
+
+blocky_dot_port: 853
+
+blocky_cert_dir: "{{ blocky_config_path }}/certificates"
+blocky_cert_file: "{{ blocky_cert_dir }}/{{ blocky_domain }}.crt"
+blocky_key_file: "{{ blocky_cert_dir }}/{{ blocky_domain }}.key"

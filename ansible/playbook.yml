@@ -3,13 +3,6 @@
   gather_facts: true
   become: true
 
-  vars_prompt:
-    - name: radicale_password
-      private: true
-      prompt: Enter password main/admin radicale user
-    - name: webdav_password
-      private: true
-      prompt: Enter password for webdav server
   roles:
     - role: apt
       tags: [apt]
@@ -29,3 +22,5 @@
       tags: [webdav]
     - role: calibre
       tags: [calibre]
+    - role: blocky
+      tags: [blocky]
