@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Lego Let's Encrypt Certificate Renewal monthly
+
+[Timer]
+OnCalendar=monthly
+Persistent=true
+RandomizedDelaySec=6h
+
+[Install]
+WantedBy=timers.target

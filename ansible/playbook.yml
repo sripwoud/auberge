@@ -24,3 +24,11 @@
       tags: [calibre]
     - role: blocky
       tags: [blocky]
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true

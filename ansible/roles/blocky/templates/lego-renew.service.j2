@@ -1,0 +1,9 @@
+[Unit]
+Description=Lego Let's Encrypt Certificate Renewal
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash {{ blocky_config_path }}/lego-renew.sh
+Environment="NAMECHEAP_API_USER=sripwoud"
+Environment="NAMECHEAP_API_KEY={{ namecheap_api_key }}"

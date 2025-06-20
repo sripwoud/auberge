@@ -1,0 +1,52 @@
+#!/bin/bash
+set -eo pipefail
+[[ "${TRACE}" ]] && set -x
+
+readonly LEGO_EXECUTABLE_PATH="/usr/local/bin/lego"
+blocky_domain="{{ blocky_domain }}"
+blocky_letsencrypt_email="{{ blocky_letsencrypt_email }}"
+lego_data_path="{{ blocky_config_path }}"
+blocky_cert_file="{{ blocky_cert_file }}"
+blocky_key_file="{{ blocky_key_file }}"
+
+error_exit() {
+  local message="$1"
+  echo "ERROR: ${message}" >&2
+  exit 1
+}
+
+validate() {
+  [[ -z "${blocky_domain}" ]] && error_exit "'blocky_domain' variable was not templated correctly or is empty. Exiting."
+  [[ -z "${blocky_letsencrypt_email}" ]] && error_exit "'blocky_letsencrypt_email' variable was not templated correctly or is empty. Exiting."
+  [[ -z "${lego_data_path}" ]] && error_exit "'lego_data_path' variable was not templated correctly or is empty. Exiting."
+  [[ -z "${blocky_cert_file}" ]] && error_exit "'blocky_cert_file' variable was not templated correctly or is empty. Exiting."
+  [[ -z "${blocky_key_file}" ]] && error_exit "'blocky_key_file' variable was not templated correctly or is empty. Exiting."
+  [[ ! -x "${LEGO_EXECUTABLE_PATH}" ]] && error_exit "Lego executable not found or not executable at '${LEGO_EXECUTABLE_PATH}'. Exiting."
+}
+
+renew() {
+  ! "${LEGO_EXECUTABLE_PATH}" \
+    --domains "${blocky_domain}" \
+    --email "${blocky_letsencrypt_email}" \
+    --dns namecheap \
+    --accept-tos \
+    --reuse-key \
+    --path "${lego_data_path}" \
+    renew && error_exit "Lego renew command failed for '${blocky_domain}'!"
+}
+
+set_permissions() {
+  ! chmod 0640 "${blocky_cert_file}" && error_exit "Failed to set chmod 0640 on certificate file: '${blocky_cert_file}'"
+  ! chmod 0640 "${blocky_key_file}" && error_exit "Failed to set chmod 0640 on key file: '${blocky_key_file}'"
+  ! chown root:blocky "${blocky_cert_file}" && error_exit "Failed to set chown root:blocky on certificate file: '${blocky_cert_file}'"
+  ! chown root:blocky "${blocky_key_file}" && error_exit "Failed to set chown root:blocky on key file: '${blocky_key_file}'"
+}
+
+main() {
+  validate
+  renew
+  set_permissions
+  ! systemctl restart blocky && error_exit "Failed to restart Blocky service! Manual intervention may be required."
+}
+
+main

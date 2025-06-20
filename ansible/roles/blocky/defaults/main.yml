@@ -12,3 +12,5 @@ blocky_dot_port: 853
 blocky_cert_dir: "{{ blocky_config_path }}/certificates"
 blocky_cert_file: "{{ blocky_cert_dir }}/{{ blocky_domain }}.crt"
 blocky_key_file: "{{ blocky_cert_dir }}/{{ blocky_domain }}.key"
+
+blocky_letsencrypt_email: me@sripwoud.xyz

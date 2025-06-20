@@ -42,7 +42,7 @@
     NAMECHEAP_API_USER: sripwoud
     NAMECHEAP_API_KEY: "{{ namecheap_api_key }}"
   ansible.builtin.command:
-    cmd: "lego --domains '{{ blocky_domain }}' --email me@sripwoud.xyz --dns namecheap --accept-tos --path {{ blocky_config_path }} run"
+    cmd: "lego --domains '{{ blocky_domain }}' --email {{ blocky_letsencrypt_email }} --dns namecheap --accept-tos --path {{ blocky_config_path }} run"
     creates: "{{ blocky_cert_file }}"
   args:
     chdir: "/tmp"
@@ -174,3 +174,36 @@
     port: "{{ blocky_dot_port }}"
     proto: tcp
     state: enabled
+
+- name: Deploy Lego renewal script
+  ansible.builtin.template:
+    src: lego-renew.sh.j2
+    dest: "{{ blocky_config_path }}/lego-renew.sh"
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Deploy Lego renewal systemd service
+  ansible.builtin.template:
+    src: lego-renew.service.j2
+    dest: /etc/systemd/system/lego-renew.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy Lego renewal systemd timer
+  ansible.builtin.copy:
+    src: lego-renew.timer
+    dest: /etc/systemd/system/lego-renew.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start Lego renewal timer
+  ansible.builtin.systemd:
+    name: lego-renew.timer
+    enabled: true
+    state: started
+  when: not ansible_check_mode
