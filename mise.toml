@@ -32,3 +32,5 @@ run = ["rm -fr ~/.ssh", "command ssh root@194.164.53.11"]
 [tools]
 caddy = "latest"
 dprint = "latest"
+hk = "latest"
+pkl = "latest"

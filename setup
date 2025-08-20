@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+log() {
+  printf "%b\n" "$1"
+}
+
+main() {
+  curl -s https://raw.githubusercontent.com/sripwoud/agnostic-template/refs/heads/main/setup | sh
+}
+
+main
