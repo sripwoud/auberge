@@ -5,6 +5,29 @@
         name: openssh-server
         state: present
 
+    - name: Create sshusers group for SSH access control
+      ansible.builtin.group:
+        name: sshusers
+        state: present
+
+    - name: Add user to sshusers group
+      ansible.builtin.user:
+        name: "{{ user_name }}"
+        groups: sshusers
+        append: true
+
+    - name: Add root to sshusers group
+      ansible.builtin.user:
+        name: root
+        groups: sshusers
+        append: true
+
+    - name: Create SSH login banner
+      ansible.builtin.copy:
+        content: "{{ ssh_banner_content }}"
+        dest: /etc/issue.net
+        mode: "0644"
+
     - name: Add new user's SSH public key
       ansible.posix.authorized_key:
         user: "{{ user_name }}"

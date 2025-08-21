@@ -1,0 +1,34 @@
+---
+- name: Kernel Hardening Configuration
+  block:
+    - name: Deploy sysctl hardening configuration
+      ansible.builtin.copy:
+        src: 99-sysctl-hardening.conf
+        dest: /etc/sysctl.d/99-sysctl-hardening.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      notify: Reload sysctl
+
+    - name: Deploy kernel restrictions configuration
+      ansible.builtin.copy:
+        src: 50-kernel-restrictions.conf
+        dest: /etc/sysctl.d/50-kernel-restrictions.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      notify: Reload sysctl
+
+    - name: Disable unused network protocols
+      ansible.builtin.copy:
+        src: blacklist-rare-network.conf
+        dest: /etc/modprobe.d/blacklist-rare-network.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Apply all sysctl settings immediately
+      ansible.builtin.command: sysctl --system
+      changed_when: true

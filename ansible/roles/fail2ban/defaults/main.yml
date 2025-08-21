@@ -1,0 +1,17 @@
+---
+# Fail2ban default settings
+fail2ban_bantime: 3600
+fail2ban_findtime: 600
+fail2ban_maxretry: 5
+
+# SSH jail settings
+fail2ban_ssh_maxretry: 3
+fail2ban_ssh_bantime: 7200
+
+# SSH DDoS settings
+fail2ban_sshddos_maxretry: 10
+fail2ban_sshddos_bantime: 3600
+
+# Recidive settings (repeat offenders)
+fail2ban_recidive_bantime: 86400
+fail2ban_recidive_maxretry: 3

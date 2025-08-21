@@ -5,6 +5,10 @@ local linters  = new Mapping<String, Step> {
     fix = "dprint fmt"
     stage = "*"
   }
+  ["ansible"] {
+    check = "ansible-lint"
+    dir = "ansible"
+  }
 }
 
 hooks {

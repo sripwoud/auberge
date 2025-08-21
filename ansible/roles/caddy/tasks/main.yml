@@ -11,7 +11,7 @@
         url: https://dl.cloudsmith.io/public/caddy/xcaddy/debian.deb.txt
         dest: /tmp/caddy-xcaddy.list.tmp
         mode: "0644"
-      register: xcaddy_repo_url_content
+      register: caddy_xcaddy_repo_url_content
 
     - name: Add xcaddy APT repository file
       ansible.builtin.copy:
