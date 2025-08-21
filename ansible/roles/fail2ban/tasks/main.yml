@@ -5,7 +5,7 @@
       ansible.builtin.apt:
         name: fail2ban
         state: present
-        update_cache: yes
+        update_cache: true
 
     - name: Deploy fail2ban jail configuration
       ansible.builtin.template:
@@ -14,7 +14,7 @@
         owner: root
         group: root
         mode: "0644"
-        backup: yes
+        backup: true
       notify: Restart fail2ban
 
     - name: Deploy SSH DDoS filter
@@ -29,6 +29,6 @@
     - name: Enable and start fail2ban service
       ansible.builtin.systemd:
         name: fail2ban
-        enabled: yes
+        enabled: true
         state: started
-        daemon_reload: yes
+        daemon_reload: true

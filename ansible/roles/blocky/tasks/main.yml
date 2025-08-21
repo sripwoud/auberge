@@ -47,8 +47,8 @@
   args:
     chdir: "/tmp"
   when: not ansible_check_mode
-  register: lego_run_result
-  changed_when: lego_run_result.rc == 0
+  register: blocky_lego_run_result
+  changed_when: blocky_lego_run_result.rc == 0
 
 - name: Set permissions and ownership for Blocky certificate and key
   ansible.builtin.file:
@@ -60,7 +60,7 @@
   notify: Restart blocky
 
 - name: Check if blocky has been installed already
-  register: install_status
+  register: blocky_install_status
   ansible.builtin.stat:
     path: "{{ blocky_install_path }}/blocky"
 
@@ -114,11 +114,11 @@
 
 - name: Download blocky archive
   when:
-    - install_status is defined
-    - not install_status.stat.exists
+    - blocky_install_status is defined
+    - not blocky_install_status.stat.exists
     - blocky_download_url is defined and blocky_download_url != ''
     - blocky_checksum_sha256 is defined and blocky_checksum_sha256 != ''
-  register: download_status
+  register: blocky_download_status
   ansible.builtin.get_url:
     url: "{{ blocky_download_url }}"
     dest: "/tmp/blocky_{{ blocky_version }}_{{ blocky_target_arch }}.{{ blocky_binary_file_extension }}"
@@ -133,7 +133,7 @@
     owner: blocky
     mode: "0755"
     copy: false
-  when: download_status.changed or not install_status.stat.exists
+  when: blocky_download_status.changed or not blocky_install_status.stat.exists
 
 - name: Ensure owner and mode of blocky binary
   ansible.builtin.file:
