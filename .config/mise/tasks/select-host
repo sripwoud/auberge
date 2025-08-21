@@ -1,0 +1,44 @@
+#!/bin/bash
+# mise description="Select a host from inventory"
+# mise hide=true
+set -eu
+
+main() {
+  inventory_file="inventory.yml"
+  
+  # Check if inventory file exists
+  if [ ! -f "$inventory_file" ]; then
+    echo "Error: Inventory file not found at $inventory_file" >&2
+    exit 1
+  fi
+  
+  # Get all host names
+  host_names=$(dasel -f "$inventory_file" -r yaml 'vps.hosts' | dasel -r yaml 'keys()' | sed 's/^- //' | sort -u)
+  
+  if [ -z "$host_names" ]; then
+    echo "Error: No hosts found in inventory" >&2
+    exit 1
+  fi
+  
+  # Build array with host:ip format for display
+  display_array=()
+  host_array=()
+  
+  while IFS= read -r host_name; do
+    ip=$(dasel -f "$inventory_file" -r yaml "vps.hosts.$host_name.ansible_host")
+    display_array+=("$host_name:$ip")
+    host_array+=("$host_name")
+  done <<< "$host_names"
+  
+  # Use select builtin with display format
+  select choice in "${display_array[@]}"; do
+    if [ -n "$choice" ]; then
+      # Extract just the hostname (before the colon)
+      selected_host="${choice%%:*}"
+      echo "$selected_host"
+      break
+    fi
+  done
+}
+
+main "$@"

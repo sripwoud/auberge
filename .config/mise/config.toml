@@ -1,0 +1,45 @@
+[tasks.ansible-run]
+description = "Run selected playbook on selected host"
+run = """
+host=$(mise run select-host)
+playbook=$(mise run select-playbook)
+ansible-playbook -i inventory.yml "$playbook" --ask-vault-pass --limit "$host"
+"""
+
+[tasks.ansible-bootstrap]
+description = "Bootstrap new VPS (first run only, uses root)"
+run = """
+host=$(mise run select-host)
+ansible-playbook -i inventory.yml playbooks/bootstrap.yml --ask-pass --limit "$host"
+"""
+
+[tasks.ansible-check]
+alias = "c"
+description = "Dry run selected playbook on selected host"
+run = """
+host=$(mise run select-host)
+playbook=$(mise run select-playbook)
+ansible-playbook -i inventory.yml "$playbook" --check --ask-vault-pass --limit "$host"
+"""
+
+[tasks.fmt]
+alias = "f"
+description = "Format"
+run = "dprint fmt -c .dprint.jsonc"
+silent = true
+
+[tasks.lint]
+alias = "l"
+run = "ansible-lint"
+silent = true
+
+[tasks.ssh]
+run = ["rm -fr ~/.ssh", "command ssh root@194.164.53.11"]
+
+[tools]
+caddy = "latest"
+dasel = "latest"
+dprint = "latest"
+hk = "latest"
+pkl = "latest"
+shfmt = "latest"

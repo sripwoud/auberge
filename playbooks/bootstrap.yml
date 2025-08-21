@@ -1,0 +1,11 @@
+---
+- name: Bootstrap new VPS - Initial secure setup
+  hosts: vps
+  remote_user: root
+  gather_facts: yes
+  roles:
+    - role: user
+      tags: [user]
+
+    - role: ssh
+      tags: [ssh]
