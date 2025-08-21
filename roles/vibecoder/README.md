@@ -5,6 +5,7 @@ A comprehensive Ansible role for setting up a secure, hardened VPS with Claude C
 ## Features
 
 ### Security Hardening
+
 - **SSH**: Hardened configuration with sshusers group, strict timeouts, rate limiting
 - **Firewall**: UFW with fail2ban integration, rate limiting on SSH
 - **Kernel**: Network stack hardening, memory protection, filesystem security
@@ -12,6 +13,7 @@ A comprehensive Ansible role for setting up a secure, hardened VPS with Claude C
 - **Tailscale**: Private mesh networking for secure remote access
 
 ### Development Tools
+
 - **Claude Code**: Full permissions setup with IS_SANDBOX=1
 - **Claude Code Remote**: Control Claude remotely via messaging platforms
 - **tmux**: Required for Claude Code Remote command injection
@@ -40,6 +42,7 @@ tailscale_authkey: "tskey-auth-..."
 ## Dependencies
 
 This meta-role includes:
+
 - apt (package management + auto updates)
 - user (user creation)
 - ssh (hardened SSH)

@@ -2,6 +2,6 @@
 
 untested
 
-``` shell
+```shell
 wget -O https://raw.githubusercontent.com/sripwoud/wireguard-install/main/main.sh | bash
 ```
