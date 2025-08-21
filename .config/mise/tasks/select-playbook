@@ -1,0 +1,61 @@
+#!/bin/bash
+# mise description="Select a playbook from playbooks directory"
+# mise hide=true
+set -eu
+
+get_playbook_name() {
+  playbook_file="$1"
+  # Extract the name value from the playbook YAML
+  name=$(dasel -f "$playbook_file" -r yaml '.[0].name' 2>/dev/null || echo "")
+  if [ -z "$name" ]; then
+    # Fallback to filename without extension
+    basename "$playbook_file" .yml
+  else
+    echo "$name"
+  fi
+}
+
+main() {
+  playbooks_dir="playbooks"
+  
+  # Check if playbooks directory exists
+  if [ ! -d "$playbooks_dir" ]; then
+    echo "Error: Playbooks directory not found at $playbooks_dir" >&2
+    exit 1
+  fi
+  
+  # Get all playbook files
+  playbook_files=$(find "$playbooks_dir" -name "*.yml" -type f | sort)
+  
+  if [ -z "$playbook_files" ]; then
+    echo "Error: No playbooks found in $playbooks_dir" >&2
+    exit 1
+  fi
+  
+  # Build display and file arrays
+  display_array=()
+  file_array=()
+  
+  while IFS= read -r playbook_file; do
+    name=$(get_playbook_name "$playbook_file")
+    short_name=$(basename "$playbook_file" .yml)
+    display_array+=("$short_name: $name")
+    file_array+=("$playbook_file")
+  done <<< "$playbook_files"
+  
+  # Use select builtin with display format
+  select choice in "${display_array[@]}"; do
+    if [ -n "$choice" ]; then
+      # Find the index and return the corresponding file
+      for i in "${!display_array[@]}"; do
+        if [[ "${display_array[$i]}" == "$choice" ]]; then
+          echo "${file_array[$i]}"
+          break
+        fi
+      done
+      break
+    fi
+  done
+}
+
+main "$@"
