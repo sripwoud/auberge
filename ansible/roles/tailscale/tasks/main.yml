@@ -1,0 +1,75 @@
+---
+- name: Tailscale Installation and Configuration
+  block:
+    - name: Download and add Tailscale GPG key
+      ansible.builtin.get_url:
+        url: https://pkgs.tailscale.com/stable/debian/{{ ansible_distribution_release }}.noarmor.gpg
+        dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+        mode: "0644"
+
+    - name: Add Tailscale repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
+          https://pkgs.tailscale.com/stable/debian {{ ansible_distribution_release }} main
+        state: present
+        filename: tailscale
+
+    - name: Install Tailscale
+      ansible.builtin.apt:
+        name: tailscale
+        state: present
+        update_cache: true
+
+    - name: Enable and start tailscaled service
+      ansible.builtin.systemd:
+        name: tailscaled
+        enabled: true
+        state: started
+
+    - name: Check if Tailscale is already authenticated
+      ansible.builtin.command: tailscale status --json
+      register: tailscale_status_check
+      changed_when: false
+      failed_when: false
+
+    - name: Set Tailscale connection status fact
+      ansible.builtin.set_fact:
+        tailscale_is_authenticated: >-
+          {{
+            (tailscale_status_check.rc == 0) and
+            ((tailscale_status_check.stdout | from_json).BackendState in ["Running", "Starting"])
+          }}
+
+    - name: Connect to Tailscale network
+      ansible.builtin.command: >-
+        tailscale up
+        --hostname={{ tailscale_hostname }}
+        {% if tailscale_accept_routes %}--accept-routes{% endif %}
+        {% if tailscale_advertise_exit_node %}--advertise-exit-node{% endif %}
+        {% if not tailscale_accept_dns %}--accept-dns=false{% endif %}
+        {% if tailscale_advertise_tags | length > 0 %}--advertise-tags={{ tailscale_advertise_tags | join(',') }}{% endif %}
+        {% if tailscale_authkey %}--authkey={{ tailscale_authkey }}{% endif %}
+        {{ tailscale_extra_args }}
+      when:
+        - not tailscale_is_authenticated
+        - tailscale_authkey | length > 0
+      register: tailscale_connect_result
+      changed_when: tailscale_connect_result.rc == 0
+
+    - name: Configure UFW firewall for Tailscale
+      when: ansible_facts.services['ufw'] is defined and ansible_facts.services['ufw'].state == 'running'
+      block:
+        - name: Allow Tailscale UDP traffic
+          community.general.ufw:
+            rule: allow
+            port: "41641"
+            proto: udp
+            comment: "Tailscale"
+
+        - name: Allow incoming traffic on Tailscale interface
+          community.general.ufw:
+            rule: allow
+            interface_in: tailscale0
+            direction: in
+            comment: "Tailscale mesh"

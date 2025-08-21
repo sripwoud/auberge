@@ -1,0 +1,9 @@
+---
+# Tailscale configuration
+tailscale_authkey: "" # Set this in your vault or inventory (required for initial setup)
+tailscale_hostname: "{{ ansible_hostname }}" # Hostname to use in tailnet
+tailscale_accept_routes: false # Accept subnet routes advertised by other nodes
+tailscale_advertise_exit_node: false # Advertise as exit node
+tailscale_accept_dns: true # Accept DNS configuration from admin console
+tailscale_advertise_tags: [] # List of ACL tags (e.g., ["tag:server", "tag:prod"])
+tailscale_extra_args: "" # Additional arguments for tailscale up command
