@@ -1,60 +1,7 @@
-#!/bin/sh
+#!/bin/bash
 # mise description="Select a host from inventory"
 # mise hide=true
 set -eu
-
-
-
-extract_hosts() {
-  inventory_file="$1"
-  
-  # Use dasel to extract all host names from YAML inventory
-  dasel -f "$inventory_file" -r yaml 'all.children.*.hosts' -m | \
-  dasel -r yaml 'keys()' -m | \
-  sort -u
-}
-
-select_host() {
-  hosts="$1"
-  selected_host=""
-  i=1
-  
-  # Count hosts
-  host_count=$(echo "$hosts" | wc -l)
-  
-  if [ "$host_count" -eq 1 ]; then
-    # Only one host, auto-select
-    selected_host="$hosts"
-    echo "Only one host found: $selected_host" >&2
-  else
-    # Multiple hosts, show menu
-    echo "Available hosts:" >&2
-    echo "$hosts" | while IFS= read -r host; do
-      printf "  %d) %s\n" "$i" "$host" >&2
-      i=$((i + 1))
-    done
-    
-    echo "" >&2
-    printf "Select host (1-%d): " "$host_count" >&2
-    read -r selection
-    
-    # Validate selection
-    if echo "$selection" | grep -qE '^[0-9]+$'; then
-      if [ "$selection" -ge 1 ] && [ "$selection" -le "$host_count" ]; then
-        selected_host=$(echo "$hosts" | sed -n "${selection}p")
-      else
-        echo "Error: Invalid selection (must be between 1 and $host_count)" >&2
-        exit 1
-      fi
-    else
-      echo "Error: Invalid input (must be a number)" >&2
-      exit 1
-    fi
-  fi
-  
-  # Output selected host to stdout
-  echo "$selected_host"
-}
 
 main() {
   inventory_file="inventory.yml"
@@ -65,16 +12,33 @@ main() {
     exit 1
   fi
   
-  # Extract host names from inventory
-  hosts=$(extract_hosts "$inventory_file")
+  # Get all host names
+  host_names=$(dasel -f "$inventory_file" -r yaml 'vps.hosts' | dasel -r yaml 'keys()' | sed 's/^- //' | sort -u)
   
-  if [ -z "$hosts" ]; then
+  if [ -z "$host_names" ]; then
     echo "Error: No hosts found in inventory" >&2
     exit 1
   fi
   
-  # Present selection menu and output selected host
-  select_host "$hosts"
+  # Build array with host:ip format for display
+  display_array=()
+  host_array=()
+  
+  while IFS= read -r host_name; do
+    ip=$(dasel -f "$inventory_file" -r yaml "vps.hosts.$host_name.ansible_host")
+    display_array+=("$host_name:$ip")
+    host_array+=("$host_name")
+  done <<< "$host_names"
+  
+  # Use select builtin with display format
+  select choice in "${display_array[@]}"; do
+    if [ -n "$choice" ]; then
+      # Extract just the hostname (before the colon)
+      selected_host="${choice%%:*}"
+      echo "$selected_host"
+      break
+    fi
+  done
 }
 
-main
+main "$@"
