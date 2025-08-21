@@ -1,0 +1,45 @@
+[tasks.ansible-bootstrap]
+description = "Bootstrap new VPS (first run only, uses root)"
+run = """
+host=$(mise run select-host)
+ansible-playbook -i inventory.yml playbooks/bootstrap.yml --ask-pass --limit $host
+"""
+
+[tasks.ansible-site]
+description = "Deploy base server infrastructure"
+run = "ansible-playbook -i inventory.yml playbooks/site.yml --ask-vault-pass"
+
+[tasks.ansible-apps]
+description = "Deploy self-hosted applications"
+run = "ansible-playbook -i inventory.yml playbooks/selfhosted.yml --ask-vault-pass"
+
+[tasks.ansible-vibecoder]
+description = "Setup Vibecoder development environment"
+run = "ansible-playbook -i inventory.yml playbooks/vibecoder.yml --ask-vault-pass"
+
+[tasks.ansible-check]
+alias = "c"
+description = "Dry run all playbooks"
+run = "ansible-playbook -i inventory.yml playbooks/site.yml playbooks/selfhosted.yml --check --ask-vault-pass"
+
+[tasks.fmt]
+alias = "f"
+description = "Format"
+run = "dprint fmt -c .dprint.jsonc"
+silent = true
+
+[tasks.lint]
+alias = "l"
+run = "ansible-lint"
+silent = true
+
+[tasks.ssh]
+run = ["rm -fr ~/.ssh", "command ssh root@194.164.53.11"]
+
+[tools]
+caddy = "latest"
+dasel = "latest"
+dprint = "latest"
+hk = "latest"
+pkl = "latest"
+shfmt = "latest"

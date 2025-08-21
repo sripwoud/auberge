@@ -1,0 +1,19 @@
+---
+- name: Deploy self-hosted applications
+  hosts: vps
+  become: true
+  roles:
+    - role: calibre
+      tags: [calibre]
+
+    - role: blocky
+      tags: [blocky]
+
+    - role: radicale
+      tags: [radicale]
+
+    - role: webdav
+      tags: [webdav]
+
+    - role: yourls
+      tags: [yourls]
