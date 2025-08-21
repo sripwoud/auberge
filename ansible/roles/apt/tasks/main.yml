@@ -68,3 +68,59 @@
         force: true
         owner: root
         group: root
+
+- name: Configure Automatic Security Updates
+  block:
+    - name: Install unattended-upgrades and apt-listchanges
+      ansible.builtin.apt:
+        pkg:
+          - unattended-upgrades
+          - apt-listchanges
+        state: present
+
+    - name: Configure unattended-upgrades settings
+      ansible.builtin.copy:
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}";
+              "${distro_id}:${distro_codename}-security";
+              "${distro_id}ESMApps:${distro_codename}-apps-security";
+              "${distro_id}ESM:${distro_codename}-infra-security";
+              "${distro_id}:${distro_codename}-updates";
+          };
+          Unattended-Upgrade::DevRelease "false";
+          Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+          Unattended-Upgrade::MinimalSteps "true";
+          Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+          Unattended-Upgrade::Remove-Unused-Dependencies "true";
+          Unattended-Upgrade::Automatic-Reboot "false";
+          Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+          Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable automatic updates
+      ansible.builtin.copy:
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Download-Upgradeable-Packages "1";
+          APT::Periodic::AutocleanInterval "7";
+          APT::Periodic::Unattended-Upgrade "1";
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure dpkg to use new config files by default
+      ansible.builtin.copy:
+        content: |
+          Dpkg::Options {
+              "--force-confdef";
+              "--force-confold";
+          };
+        dest: /etc/apt/apt.conf.d/10dpkg-options
+        owner: root
+        group: root
+        mode: "0644"
