@@ -1,0 +1,33 @@
+[DEFAULT]
+bantime = {{ fail2ban_bantime }}
+findtime = {{ fail2ban_findtime }}
+maxretry = {{ fail2ban_maxretry }}
+destemail = root@localhost
+action = %(action_mwl)s
+
+# SSH Protection - Critical
+[sshd]
+enabled = true
+port = {{ ssh_port }}
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = {{ fail2ban_ssh_maxretry }}
+bantime = {{ fail2ban_ssh_bantime }}
+
+# SSH DDoS Protection
+[sshd-ddos]
+enabled = true
+port = {{ ssh_port }}
+filter = sshd-ddos
+logpath = /var/log/auth.log
+maxretry = {{ fail2ban_sshddos_maxretry }}
+bantime = {{ fail2ban_sshddos_bantime }}
+
+# Recidive (repeat offenders)
+[recidive]
+enabled = true
+filter = recidive
+logpath = /var/log/fail2ban.log
+action = %(action_mwl)s
+bantime = {{ fail2ban_recidive_bantime }}
+maxretry = {{ fail2ban_recidive_maxretry }}
