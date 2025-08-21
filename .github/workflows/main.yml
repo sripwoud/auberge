@@ -1,0 +1,22 @@
+name: main
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          mise_toml: |
+            [tasks]
+            "check-format" = { run = "dprint check --excludes mise.toml" }
+            "check" = { depends = "check-*" }
+            [tools]
+            dprint = "latest"
+            shfmt = "latest"
+      - run: mise r check
