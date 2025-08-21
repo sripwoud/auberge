@@ -1,0 +1,79 @@
+---
+- name: Claude Code Remote Installation and Configuration
+  block:
+    - name: Install tmux (required for Claude Code Remote)
+      ansible.builtin.apt:
+        name: tmux
+        state: present
+
+    - name: Ensure code directory exists
+      ansible.builtin.file:
+        path: "/home/{{ user_name }}/code"
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0755"
+
+    - name: Clone Claude Code Remote repository
+      ansible.builtin.git:
+        repo: "{{ claude_code_remote_repo_url }}"
+        dest: "{{ claude_code_remote_install_dir }}"
+        version: main
+        force: true
+      become: true
+      become_user: "{{ user_name }}"
+
+    - name: Install Claude Code Remote dependencies
+      community.general.npm:
+        path: "{{ claude_code_remote_install_dir }}"
+        state: present
+      become: true
+      become_user: "{{ user_name }}"
+
+    - name: Create .env configuration file
+      ansible.builtin.template:
+        src: .env.j2
+        dest: "{{ claude_code_remote_install_dir }}/.env"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0600"
+
+    - name: Create data directory for session mapping
+      ansible.builtin.file:
+        path: "{{ claude_code_remote_install_dir }}/src/data"
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0755"
+
+    - name: Update Claude Code settings with hooks
+      ansible.builtin.copy:
+        content: |
+          {
+            "permissions": "allow-all-tools",
+            "disableBypassPermissionsMode": false,
+            "allowedTools": ["*"],
+            "hooks": {
+              "Stop": [{
+                "matcher": "*",
+                "hooks": [{
+                  "type": "command",
+                  "command": "node {{ claude_code_remote_install_dir }}/claude-hook-notify.js completed",
+                  "timeout": 5
+                }]
+              }],
+              "SubagentStop": [{
+                "matcher": "*",
+                "hooks": [{
+                  "type": "command",
+                  "command": "node {{ claude_code_remote_install_dir }}/claude-hook-notify.js waiting",
+                  "timeout": 5
+                }]
+              }]
+            }
+          }
+        dest: "/home/{{ user_name }}/.claude/settings.json"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0644"
+        backup: true

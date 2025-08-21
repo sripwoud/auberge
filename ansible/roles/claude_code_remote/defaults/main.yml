@@ -1,0 +1,26 @@
+---
+# Claude Code Remote installation settings
+claude_code_remote_repo_url: "https://github.com/JessyTsui/Claude-Code-Remote.git"
+claude_code_remote_install_dir: "/home/{{ user_name }}/code/Claude-Code-Remote"
+claude_code_remote_enable_email: false
+claude_code_remote_enable_telegram: false
+claude_code_remote_enable_line: false
+claude_code_remote_enable_desktop: true
+
+# Email settings (optional)
+claude_code_remote_smtp_user: ""
+claude_code_remote_smtp_pass: ""
+claude_code_remote_imap_user: ""
+claude_code_remote_imap_pass: ""
+claude_code_remote_email_to: ""
+claude_code_remote_allowed_senders: ""
+
+# Telegram settings (optional)
+claude_code_remote_telegram_bot_token: ""
+claude_code_remote_telegram_chat_id: ""
+claude_code_remote_telegram_webhook_url: ""
+
+# LINE settings (optional)
+claude_code_remote_line_channel_access_token: ""
+claude_code_remote_line_channel_secret: ""
+claude_code_remote_line_user_id: ""
