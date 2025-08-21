@@ -1,0 +1,12 @@
+---
+dependencies:
+  - role: apt
+  - role: user
+  - role: ssh
+  - role: bash
+  - role: ufw
+  - role: fail2ban
+  - role: kernel_hardening
+  - role: tailscale
+  - role: claude_code
+  - role: claude_code_remote
