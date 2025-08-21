@@ -1,0 +1,51 @@
+---
+- name: Claude Code Installation and Configuration
+  block:
+    - name: Install Node.js (required for Claude Code)
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+
+    - name: Install npm (required for Claude Code)
+      ansible.builtin.apt:
+        name: npm
+        state: present
+
+    - name: Install Claude Code globally
+      community.general.npm:
+        name: "@anthropic-ai/claude-code"
+        global: true
+        state: present
+      when: claude_code_install_globally
+
+    - name: Set Claude Code environment variables globally
+      ansible.builtin.lineinfile:
+        path: /etc/environment
+        line: "{{ item }}"
+        create: true
+        mode: "0644"
+      loop:
+        - "IS_SANDBOX=1"
+        - "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"
+
+    - name: Create Claude settings directory
+      ansible.builtin.file:
+        path: /home/{{ user_name }}/.claude
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0755"
+
+    - name: Deploy Claude Code settings file
+      ansible.builtin.copy:
+        src: claude-settings.json
+        dest: /home/{{ user_name }}/.claude/settings.json
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0644"
+
+    - name: Verify Claude Code installation
+      ansible.builtin.command: claude --version
+      register: claude_code_version_check
+      changed_when: false
+      failed_when: claude_code_version_check.rc != 0
