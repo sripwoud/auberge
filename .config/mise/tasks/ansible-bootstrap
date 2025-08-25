@@ -1,0 +1,48 @@
+#!/bin/sh
+# mise description="Bootstrap new VPS (first run only, uses root/debian)"
+set -eu
+
+run_bootstrap_playbook() {
+  host="$1"
+  bootstrap_user="$2"
+  echo "Bootstrapping $host on port 22 as user $bootstrap_user..."
+  
+  script -qec "ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
+    -i inventory.yml playbooks/bootstrap.yml \
+    --limit \"$host\" \
+    -e \"ansible_port=22\" \
+    -e \"ansible_user=$bootstrap_user\"" \
+    /tmp/bootstrap.log
+}
+
+extract_configured_port() {
+  ssh_port=$(grep "SSH port configured:" /tmp/bootstrap.log | awk '{print $NF}' || echo "")
+  
+  if [ -z "$ssh_port" ]; then
+    echo "Warning: Could not determine SSH port from output, defaulting to 59865" >&2
+    ssh_port="59865"
+  fi
+  
+  echo "$ssh_port"
+}
+
+update_inventory_port() {
+  host="$1"
+  ssh_port="$2"
+  
+  echo "Updating inventory for $host with port $ssh_port..."
+  dasel put -f inventory.yml -t int -v "$ssh_port" "vps.hosts.$host.ansible_port"
+}
+
+main() {
+  host=$(mise run select-host)
+  bootstrap_user=$(dasel -f inventory.yml -r yaml "vps.hosts.$host.bootstrap_user")
+  
+  run_bootstrap_playbook "$host" "$bootstrap_user"
+  ssh_port=$(extract_configured_port)
+  update_inventory_port "$host" "$ssh_port"
+  
+  echo "Bootstrap complete! Host $host now accessible on port $ssh_port"
+}
+
+main

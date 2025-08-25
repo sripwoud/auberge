@@ -1,8 +1,6 @@
 ---
 dependencies:
-  - role: apt
-  - role: user
-  - role: ssh
+  # apt, user, and ssh are handled by bootstrap playbook
   - role: bash
   - role: ufw
   - role: fail2ban

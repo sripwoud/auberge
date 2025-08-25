@@ -1,4 +1,17 @@
 ---
+- name: Prompt for Tailscale configuration
+  block:
+    - name: Prompt for Tailscale auth key
+      ansible.builtin.pause:
+        prompt: "Enter Tailscale auth key (optional, press enter to skip)"
+      register: tailscale_authkey_prompt
+      no_log: true
+
+    - name: Set Tailscale auth key variable
+      ansible.builtin.set_fact:
+        tailscale_authkey: "{{ tailscale_authkey_prompt.user_input | default('', true) }}"
+      no_log: true
+
 - name: Tailscale Installation and Configuration
   block:
     - name: Download and add Tailscale GPG key

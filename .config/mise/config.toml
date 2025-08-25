@@ -1,17 +1,4 @@
-[tasks.ansible-run]
-description = "Run selected playbook on selected host"
-run = """
-host=$(mise run select-host)
-playbook=$(mise run select-playbook)
-ansible-playbook -i inventory.yml "$playbook" --ask-vault-pass --limit "$host"
-"""
-
-[tasks.ansible-bootstrap]
-description = "Bootstrap new VPS (first run only, uses root)"
-run = """
-host=$(mise run select-host)
-ansible-playbook -i inventory.yml playbooks/bootstrap.yml --ask-pass --limit "$host"
-"""
+# ansible-run is now a file task in .config/mise/tasks/
 
 [tasks.ansible-check]
 alias = "c"

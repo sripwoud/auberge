@@ -1,15 +1,12 @@
-ssh_public_key_path: "{{ user_home }}/.config/ssh/identities/ionos.pub"
-ssh_port: "2209"
-
-# SSH Security Settings
+ssh_keyname: "{{ ssh_keyname_input }}"
+ssh_public_key_path: "{{ user_home }}/.config/ssh/identities/{{ ssh_keyname }}.pub"
+ssh_port: "{{ ssh_port_input | default('59865') }}"
 ssh_max_auth_tries: 3
 ssh_max_sessions: 5
 ssh_login_grace_time: 30
 ssh_client_alive_interval: 300
 ssh_client_alive_count_max: 2
 ssh_log_level: "VERBOSE"
-
-# Login Banner Content
 ssh_banner_content: |
   ********************************************************************
   *                       AUTHORIZED ACCESS ONLY                     *

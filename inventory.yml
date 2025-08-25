@@ -1,14 +1,12 @@
 vps:
   hosts:
-    # ionos
     lechuck-cloud:
       ansible_host: 194.164.53.11
       ansible_port: 2209
       ansible_user: sripwoud
       bootstrap_user: root
-    # ovh
-    claude:
+    vibecoder:
       ansible_host: 135.125.107.230
-      ansible_port: 2209
+      ansible_port: 59865
       ansible_user: sripwoud
       bootstrap_user: debian

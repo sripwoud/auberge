@@ -1,42 +1,10 @@
 ---
 - name: Setup Vibecoder VPS
   hosts: all
+  remote_user: debian
   become: true
-
-  vars_prompt:
-    - name: user_name
-      prompt: "Enter username for the new user"
-      default: "vibecoder"
-      private: false
-
-    - name: ssh_port
-      prompt: "Enter SSH port"
-      default: "22"
-      private: false
-
-    - name: tailscale_authkey
-      prompt: "Enter Tailscale auth key (optional, press enter to skip)"
-      default: ""
-      private: true # Hidden input for security
-
-    - name: enable_claude_remote_telegram
-      prompt: "Enable Telegram notifications for Claude? (yes/no)"
-      default: "no"
-      private: false
-
-    - name: claude_code_remote_telegram_bot_token
-      prompt: "Enter Telegram bot token (if enabled, press enter to skip)"
-      default: ""
-      private: true
-
-    - name: claude_code_remote_telegram_chat_id
-      prompt: "Enter Telegram chat ID (if enabled, press enter to skip)"
-      default: ""
-      private: false
-
   vars:
-    # Pass the prompted values to roles
-    claude_code_remote_enable_telegram: "{{ enable_claude_remote_telegram == 'yes' }}"
+    ansible_user: debian
 
   roles:
     - vibecoder

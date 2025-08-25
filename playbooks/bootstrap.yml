@@ -1,11 +1,11 @@
 ---
 - name: Bootstrap new VPS - Initial secure setup
   hosts: vps
-  remote_user: "{{ bootstrap_user }}"
+  remote_user: root
+  become: true
   gather_facts: true
+  vars:
+    ansible_user: root
   roles:
-    - role: user
-      tags: [user]
-
     - role: ssh
       tags: [ssh]
