@@ -1,4 +1,36 @@
 ---
+- name: Prompt for Telegram configuration
+  block:
+    - name: Ask if Telegram should be enabled
+      ansible.builtin.pause:
+        prompt: "Enable Telegram notifications? (yes/no, default: no)"
+      register: enable_telegram_prompt
+
+    - name: Set Telegram enable flag
+      ansible.builtin.set_fact:
+        enable_claude_remote_telegram: "{{ enable_telegram_prompt.user_input | default('no', true) }}"
+
+    - name: Prompt for Telegram credentials if enabled
+      when: enable_claude_remote_telegram == 'yes'
+      block:
+        - name: Prompt for Telegram bot token
+          ansible.builtin.pause:
+            prompt: "Enter Telegram Bot Token (from @BotFather)"
+          register: telegram_bot_token_prompt
+          no_log: true
+
+        - name: Prompt for Telegram chat ID
+          ansible.builtin.pause:
+            prompt: "Enter Telegram Chat ID (your user/group ID)"
+          register: telegram_chat_id_prompt
+
+        - name: Set Telegram variables
+          ansible.builtin.set_fact:
+            claude_code_remote_enable_telegram: true
+            claude_code_remote_telegram_bot_token: "{{ telegram_bot_token_prompt.user_input }}"
+            claude_code_remote_telegram_chat_id: "{{ telegram_chat_id_prompt.user_input }}"
+          no_log: true
+
 - name: Claude Code Remote Installation and Configuration
   block:
     - name: Install tmux (required for Claude Code Remote)
@@ -18,7 +50,6 @@
       ansible.builtin.git:
         repo: "{{ claude_code_remote_repo_url }}"
         dest: "{{ claude_code_remote_install_dir }}"
-        version: main
         force: true
       become: true
       become_user: "{{ user_name }}"

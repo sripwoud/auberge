@@ -20,8 +20,7 @@ run_standard() {
   echo "Running $playbook on $host..."
   ansible-playbook -i inventory.yml "$playbook" \
     --ask-vault-pass \
-    --limit "$host" \
-    -e "@group_vars/all/secrets.vault"
+    --limit "$host"
 }
 
 main() {

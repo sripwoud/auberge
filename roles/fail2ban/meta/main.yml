@@ -1,3 +1,0 @@
----
-dependencies:
-  - role: ssh # Needs ssh_port variable

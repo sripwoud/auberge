@@ -1,10 +1,11 @@
 ---
 - name: Setup Vibecoder VPS
   hosts: all
-  remote_user: debian
   become: true
   vars:
-    ansible_user: debian
+    user_name: "{{ ansible_user | default(ansible_ssh_user) }}"
+    user_home: "/home/{{ ansible_user | default(ansible_ssh_user) }}"
+    ssh_port: "{{ ansible_port | default(22) }}"
 
   roles:
     - vibecoder
@@ -19,7 +20,7 @@
           - "User: {{ user_name }}"
           - "SSH Port: {{ ssh_port }}"
           - "Tailscale: {{ 'Configured' if tailscale_authkey else 'Manual setup required' }}"
-          - "Telegram: {{ 'Enabled' if enable_claude_remote_telegram == 'yes' else 'Disabled' }}"
+          - "Telegram: {{ 'Enabled' if claude_code_remote_enable_telegram | default(false) else 'Disabled' }}"
           - ""
           - "Next steps:"
           - "1. SSH to your server: ssh {{ user_name }}@YOUR_IP -p {{ ssh_port }}"

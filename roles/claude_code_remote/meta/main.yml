@@ -1,4 +1,0 @@
----
-dependencies:
-  - role: user # Needs user_name variable
-  - role: claude_code # Needs Claude Code to be installed first
