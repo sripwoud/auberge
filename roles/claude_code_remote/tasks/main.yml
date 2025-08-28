@@ -61,7 +61,7 @@
         path: "{{ lookup('env', 'HOME') }}/.bashrc"
         marker: "# {mark} ANSIBLE MANAGED TELEGRAM CONFIG"
         block: |
-          export TELEGRAM_ENABLED="{{ enable_claude_remote_telegram }}"
+          export TELEGRAM_ENABLED="{{ claude_code_remote_enable_telegram }}"
           export TELEGRAM_BOT_TOKEN="{{ claude_code_remote_telegram_bot_token }}"
           export TELEGRAM_CHAT_ID="{{ claude_code_remote_telegram_chat_id }}"
       no_log: true
