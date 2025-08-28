@@ -11,4 +11,8 @@ vps:
       ansible_user: sripwoud
       bootstrap_user: debian
       ansible_ssh_private_key_file: /home/sripwoud/.config/ssh/identities/vibecoder
-      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/home/sripwoud/.config/ssh/known_hosts -o IdentitiesOnly=yes -o PasswordAuthentication=no"
+      ansible_ssh_common_args: >-
+        -o StrictHostKeyChecking=no
+        -o UserKnownHostsFile=/home/sripwoud/.config/ssh/known_hosts
+        -o IdentitiesOnly=yes
+        -o PasswordAuthentication=no

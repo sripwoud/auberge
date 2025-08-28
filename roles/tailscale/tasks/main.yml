@@ -1,15 +1,36 @@
 ---
 - name: Prompt for Tailscale configuration
   block:
-    - name: Prompt for Tailscale auth key
+    - name: Check for TAILSCALE_AUTHKEY environment variable
+      ansible.builtin.set_fact:
+        tailscale_authkey_from_env: "{{ lookup('env', 'TAILSCALE_AUTHKEY') }}"
+      no_log: true
+
+    - name: Prompt for Tailscale auth key if not in environment
+      when: tailscale_authkey_from_env | length == 0
       ansible.builtin.pause:
         prompt: "Enter Tailscale auth key (optional, press enter to skip)"
-      register: tailscale_authkey_prompt
+      register: tailscale_authkey_prompt_result
       no_log: true
 
     - name: Set Tailscale auth key variable
       ansible.builtin.set_fact:
-        tailscale_authkey: "{{ tailscale_authkey_prompt.user_input | default('', true) }}"
+        tailscale_authkey: >-
+          {{ tailscale_authkey_from_env if tailscale_authkey_from_env | length > 0
+          else tailscale_authkey_prompt_result.user_input | default('', true) }}
+      no_log: true
+
+    - name: Save auth key to environment for future runs
+      when:
+        - tailscale_authkey | length > 0
+        - tailscale_authkey_from_env | length == 0
+      delegate_to: localhost
+      become: false
+      ansible.builtin.lineinfile:
+        path: "{{ lookup('env', 'HOME') }}/.bashrc"
+        line: "export TAILSCALE_AUTHKEY='{{ tailscale_authkey }}'"
+        create: true
+        mode: "0644"
       no_log: true
 
 - name: Tailscale Installation and Configuration

@@ -1,0 +1,22 @@
+#!/bin/bash
+# Vibecoder startup script - manages Claude in tmux and Telegram webhook
+
+set -e
+
+# Start Claude in tmux if not already running
+if ! tmux has-session -t claude 2>/dev/null; then
+    echo "Starting Claude in tmux session..."
+    tmux new-session -d -s claude "claude --config /home/{{ user_name }}/.claude/settings.json"
+    sleep 2
+fi
+
+# Start Telegram webhook service
+{% if claude_code_remote_enable_telegram | default(false) %}
+echo "Starting Telegram webhook service..."
+cd {{ claude_code_remote_install_dir }}
+exec node start-telegram-webhook.js
+{% else %}
+echo "Telegram not configured, keeping service alive..."
+# Keep service running even if Telegram isn't configured
+exec sleep infinity
+{% endif %}

@@ -7,7 +7,6 @@ local linters  = new Mapping<String, Step> {
   }
   ["ansible"] {
     check = "ansible-lint"
-    dir = "ansible"
   }
 }
 

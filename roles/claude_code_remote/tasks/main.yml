@@ -1,35 +1,70 @@
 ---
 - name: Prompt for Telegram configuration
   block:
-    - name: Ask if Telegram should be enabled
+    - name: Check for Telegram environment variables
+      ansible.builtin.set_fact:
+        claude_code_remote_telegram_enabled_from_env: "{{ lookup('env', 'TELEGRAM_ENABLED') }}"
+        claude_code_remote_telegram_bot_token_from_env: "{{ lookup('env', 'TELEGRAM_BOT_TOKEN') }}"
+        claude_code_remote_telegram_chat_id_from_env: "{{ lookup('env', 'TELEGRAM_CHAT_ID') }}"
+      no_log: true
+
+    - name: Ask if Telegram should be enabled (if not in env)
+      when: claude_code_remote_telegram_enabled_from_env | length == 0
       ansible.builtin.pause:
         prompt: "Enable Telegram notifications? (yes/no, default: no)"
-      register: enable_telegram_prompt
+      register: claude_code_remote_enable_telegram_prompt
 
     - name: Set Telegram enable flag
       ansible.builtin.set_fact:
-        enable_claude_remote_telegram: "{{ enable_telegram_prompt.user_input | default('no', true) }}"
+        claude_code_remote_enable_telegram_flag: >-
+          {{ claude_code_remote_telegram_enabled_from_env if claude_code_remote_telegram_enabled_from_env | length > 0
+          else claude_code_remote_enable_telegram_prompt.user_input | default('no', true) }}
 
-    - name: Prompt for Telegram credentials if enabled
-      when: enable_claude_remote_telegram == 'yes'
+    - name: Prompt for Telegram credentials if enabled and not in env
+      when:
+        - claude_code_remote_enable_telegram_flag == 'yes' or claude_code_remote_enable_telegram_flag == 'true'
+        - claude_code_remote_telegram_bot_token_from_env | length == 0 or claude_code_remote_telegram_chat_id_from_env | length == 0
       block:
-        - name: Prompt for Telegram bot token
+        - name: Prompt for Telegram bot token (if not in env)
+          when: claude_code_remote_telegram_bot_token_from_env | length == 0
           ansible.builtin.pause:
             prompt: "Enter Telegram Bot Token (from @BotFather)"
-          register: telegram_bot_token_prompt
+          register: claude_code_remote_telegram_bot_token_prompt
           no_log: true
 
-        - name: Prompt for Telegram chat ID
+        - name: Prompt for Telegram chat ID (if not in env)
+          when: claude_code_remote_telegram_chat_id_from_env | length == 0
           ansible.builtin.pause:
             prompt: "Enter Telegram Chat ID (your user/group ID)"
-          register: telegram_chat_id_prompt
+          register: claude_code_remote_telegram_chat_id_prompt
 
-        - name: Set Telegram variables
-          ansible.builtin.set_fact:
-            claude_code_remote_enable_telegram: true
-            claude_code_remote_telegram_bot_token: "{{ telegram_bot_token_prompt.user_input }}"
-            claude_code_remote_telegram_chat_id: "{{ telegram_chat_id_prompt.user_input }}"
-          no_log: true
+    - name: Set Telegram variables
+      ansible.builtin.set_fact:
+        claude_code_remote_enable_telegram: >-
+          {{ true if (claude_code_remote_enable_telegram_flag == 'yes' or
+          claude_code_remote_enable_telegram_flag == 'true') else false }}
+        claude_code_remote_telegram_bot_token: >-
+          {{ claude_code_remote_telegram_bot_token_from_env if claude_code_remote_telegram_bot_token_from_env | length > 0
+          else claude_code_remote_telegram_bot_token_prompt.user_input | default('', true) }}
+        claude_code_remote_telegram_chat_id: >-
+          {{ claude_code_remote_telegram_chat_id_from_env if claude_code_remote_telegram_chat_id_from_env | length > 0
+          else claude_code_remote_telegram_chat_id_prompt.user_input | default('', true) }}
+      no_log: true
+
+    - name: Save Telegram config to environment for future runs
+      when:
+        - claude_code_remote_enable_telegram | bool
+        - claude_code_remote_telegram_enabled_from_env | length == 0
+      delegate_to: localhost
+      become: false
+      ansible.builtin.blockinfile:
+        path: "{{ lookup('env', 'HOME') }}/.bashrc"
+        marker: "# {mark} ANSIBLE MANAGED TELEGRAM CONFIG"
+        block: |
+          export TELEGRAM_ENABLED="{{ enable_claude_remote_telegram }}"
+          export TELEGRAM_BOT_TOKEN="{{ claude_code_remote_telegram_bot_token }}"
+          export TELEGRAM_CHAT_ID="{{ claude_code_remote_telegram_chat_id }}"
+      no_log: true
 
 - name: Claude Code Remote Installation and Configuration
   block:
@@ -46,11 +81,17 @@
         group: "{{ user_name }}"
         mode: "0755"
 
+    - name: Check if Claude Code Remote repository exists
+      ansible.builtin.stat:
+        path: "{{ claude_code_remote_install_dir }}/.git"
+      register: claude_code_remote_git_check
+
     - name: Clone Claude Code Remote repository
+      when: not claude_code_remote_git_check.stat.exists
       ansible.builtin.git:
         repo: "{{ claude_code_remote_repo_url }}"
         dest: "{{ claude_code_remote_install_dir }}"
-        force: true
+        version: master
       become: true
       become_user: "{{ user_name }}"
 
@@ -72,6 +113,14 @@
     - name: Create data directory for session mapping
       ansible.builtin.file:
         path: "{{ claude_code_remote_install_dir }}/src/data"
+        state: directory
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: "0755"
+
+    - name: Ensure .claude directory exists
+      ansible.builtin.file:
+        path: "/home/{{ user_name }}/.claude"
         state: directory
         owner: "{{ user_name }}"
         group: "{{ user_name }}"
@@ -108,3 +157,29 @@
         group: "{{ user_name }}"
         mode: "0644"
         backup: true
+
+    - name: Deploy vibecoder startup script
+      ansible.builtin.template:
+        src: vibecoder-start.sh.j2
+        dest: /usr/local/bin/vibecoder-start.sh
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy vibecoder systemd service
+      ansible.builtin.template:
+        src: vibecoder.service.j2
+        dest: /etc/systemd/system/vibecoder.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and start vibecoder service
+      ansible.builtin.systemd:
+        name: vibecoder
+        enabled: true
+        state: started

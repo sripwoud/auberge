@@ -1,0 +1,22 @@
+[Unit]
+Description=Vibecoder Claude with Telegram Integration
+After=network.target
+
+[Service]
+Type=simple
+User={{ user_name }}
+Group={{ user_name }}
+WorkingDirectory=/home/{{ user_name }}
+Environment="HOME=/home/{{ user_name }}"
+Environment="PATH=/usr/bin:/bin:/usr/local/bin"
+
+ExecStart=/usr/local/bin/vibecoder-start.sh
+ExecStop=/bin/bash -c 'tmux kill-session -t claude 2>/dev/null || true; pkill -f start-telegram-webhook.js || true'
+
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/vibecoder.log
+StandardError=append:/var/log/vibecoder.log
+
+[Install]
+WantedBy=multi-user.target
