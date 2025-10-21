@@ -12,3 +12,4 @@ delay = 1
 
 [storage]
 filesystem_folder = {{ radicale_data_dir }}
+hook = (git status --porcelain | awk '{print $2}' | /usr/local/bin/create_birthday_calendar.py || true) && git add -A && (git diff --cached --quiet || git commit -m "Changes by \"%(user)s\"")
