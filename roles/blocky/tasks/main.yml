@@ -36,6 +36,9 @@
     dest: "/usr/local/bin"
     remote_src: true
     creates: "/usr/local/bin/lego"
+    owner: blocky
+    group: blocky
+    mode: "0755"
 
 - name: Obtain Let's Encrypt certificate with Lego (Namecheap DNS challenge)
   environment:
