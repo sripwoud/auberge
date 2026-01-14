@@ -64,6 +64,14 @@
         mode: "0755"
       loop: [/etc/caddy, /etc/caddy/sites]
 
+    - name: Create Caddy log directory
+      ansible.builtin.file:
+        path: /var/log/caddy
+        state: directory
+        owner: caddy
+        group: caddy
+        mode: "0755"
+
     - name: Deploy Caddy systemd service file
       ansible.builtin.copy:
         src: files/caddy.service
