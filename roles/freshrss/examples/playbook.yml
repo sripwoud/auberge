@@ -1,0 +1,25 @@
+---
+- name: Deploy FreshRSS
+  hosts: vpn_server
+  become: true
+  roles:
+    - role: freshrss
+      vars:
+        freshrss_domain: rss.example.com
+        freshrss_port: 8084
+        freshrss_version: edge
+
+- name: Deploy FreshRSS with automatic feed updates
+  hosts: vpn_server
+  become: true
+  roles:
+    - role: freshrss
+      vars:
+        freshrss_domain: rss.example.com
+        freshrss_enable_cron: true
+  tasks:
+    - name: Include cron setup
+      ansible.builtin.include_role:
+        name: freshrss
+        tasks_from: cron
+      when: freshrss_enable_cron | default(false)

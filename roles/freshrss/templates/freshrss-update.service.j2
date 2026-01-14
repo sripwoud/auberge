@@ -1,0 +1,13 @@
+[Unit]
+Description=FreshRSS feed update service
+After=freshrss.service
+Requires=freshrss.service
+
+[Service]
+Type=oneshot
+User={{ freshrss_sys_user }}
+Group={{ freshrss_sys_group }}
+WorkingDirectory={{ freshrss_install_path }}
+ExecStart=/usr/bin/php {{ freshrss_install_path }}/app/actualize_script.php
+StandardOutput=journal
+StandardError=journal

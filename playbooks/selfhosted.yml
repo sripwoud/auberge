@@ -17,3 +17,6 @@
 
     - role: yourls
       tags: [yourls]
+
+    - role: freshrss
+      tags: [freshrss]

@@ -1,0 +1,18 @@
+{{ freshrss_domain }} {
+	reverse_proxy localhost:{{ freshrss_port }} {
+		header_up Host {host}
+		header_up X-Real-IP {remote_ip}
+		header_up X-Forwarded-For {remote_ip}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	request_body {
+		max_size 20M
+	}
+
+	encode gzip
+
+	log {
+		output file /var/log/caddy/{{ freshrss_domain }}.log
+	}
+}

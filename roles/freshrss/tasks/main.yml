@@ -1,0 +1,118 @@
+- name: Install and configure FreshRSS
+  block:
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - php
+          - php-cli
+          - php-curl
+          - php-gmp
+          - php-intl
+          - php-mbstring
+          - php-sqlite3
+          - php-xml
+          - php-zip
+          - git
+        state: present
+        update_cache: true
+
+    - name: Create system group for FreshRSS
+      ansible.builtin.group:
+        name: "{{ freshrss_sys_group }}"
+        state: present
+
+    - name: Create system user for FreshRSS
+      ansible.builtin.user:
+        name: "{{ freshrss_sys_user }}"
+        group: "{{ freshrss_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ freshrss_install_path }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create FreshRSS installation directory
+      ansible.builtin.file:
+        path: "{{ freshrss_install_path }}"
+        state: directory
+        owner: "{{ freshrss_sys_user }}"
+        group: "{{ freshrss_sys_group }}"
+        mode: "0755"
+
+    - name: Create FreshRSS data directory
+      ansible.builtin.file:
+        path: "{{ freshrss_data_dir }}"
+        state: directory
+        owner: "{{ freshrss_sys_user }}"
+        group: "{{ freshrss_sys_group }}"
+        mode: "0700"
+
+    - name: Check if FreshRSS is already cloned
+      ansible.builtin.stat:
+        path: "{{ freshrss_install_path }}/.git"
+      register: freshrss_git_check
+
+    - name: Clone FreshRSS repository
+      when: not freshrss_git_check.stat.exists
+      become: true
+      become_user: "{{ freshrss_sys_user }}"
+      ansible.builtin.git:
+        repo: https://github.com/FreshRSS/FreshRSS.git
+        dest: "{{ freshrss_install_path }}"
+        version: "{{ freshrss_version }}"
+        depth: 1
+
+    - name: Update FreshRSS repository
+      when: freshrss_git_check.stat.exists
+      become: true
+      become_user: "{{ freshrss_sys_user }}"
+      ansible.builtin.git:
+        repo: https://github.com/FreshRSS/FreshRSS.git
+        dest: "{{ freshrss_install_path }}"
+        version: "{{ freshrss_version }}"
+        update: true
+      register: freshrss_update
+      changed_when: freshrss_update.before != freshrss_update.after
+
+    - name: Set ownership for FreshRSS data directory
+      ansible.builtin.file:
+        path: "{{ freshrss_install_path }}/data"
+        state: directory
+        owner: "{{ freshrss_sys_user }}"
+        group: "{{ freshrss_sys_group }}"
+        mode: "0700"
+        recurse: true
+
+    - name: Link data directory to persistent location
+      ansible.builtin.file:
+        src: "{{ freshrss_data_dir }}"
+        dest: "{{ freshrss_install_path }}/data/user_data"
+        state: link
+        owner: "{{ freshrss_sys_user }}"
+        group: "{{ freshrss_sys_group }}"
+        force: true
+
+    - name: Deploy FreshRSS systemd service file
+      ansible.builtin.template:
+        src: templates/freshrss.service.j2
+        dest: /etc/systemd/system/freshrss.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart freshrss
+
+    - name: Enable and start FreshRSS service
+      ansible.builtin.systemd_service:
+        name: freshrss
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Deploy FreshRSS Caddyfile
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ freshrss_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
