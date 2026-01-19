@@ -20,3 +20,6 @@
 
     - role: freshrss
       tags: [freshrss]
+
+    - role: navidrome
+      tags: [navidrome]

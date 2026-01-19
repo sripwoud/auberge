@@ -1,0 +1,9 @@
+- name: Restart navidrome
+  ansible.builtin.systemd_service:
+    name: navidrome
+    state: restarted
+
+- name: Restart caddy
+  ansible.builtin.systemd_service:
+    name: caddy
+    state: restarted

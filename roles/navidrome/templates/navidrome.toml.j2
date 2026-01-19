@@ -1,0 +1,18 @@
+Address = "127.0.0.1"
+Port = {{ navidrome_port }}
+MusicFolder = "{{ navidrome_music_folder }}"
+DataFolder = "{{ navidrome_data_dir }}"
+LogLevel = "{{ navidrome_log_level }}"
+ScanSchedule = "@every {{ navidrome_scanner_interval }}"
+
+EnableTranscodingConfig = {{ navidrome_enable_transcoding | lower }}
+EnableDownloads = {{ navidrome_enable_downloads | lower }}
+EnableSharing = {{ navidrome_enable_sharing | lower }}
+
+TranscodingCacheSize = "100MB"
+ImageCacheSize = "100MB"
+
+UILoginBackgroundUrl = ""
+UIWelcomeMessage = ""
+
+SessionTimeout = "24h"
