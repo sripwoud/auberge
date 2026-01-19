@@ -13,12 +13,10 @@ Installs and configures Navidrome, a self-hosted music streaming server.
 Available variables are listed below, along with default values (see `defaults/main.yml`):
 
 ```yaml
-navidrome_install_path: /opt/navidrome
 navidrome_sys_user: navidrome
 navidrome_sys_group: navidrome
 navidrome_port: 4533
 navidrome_domain: music.sripwoud.xyz
-navidrome_data_dir: /var/lib/navidrome
 navidrome_music_folder: /srv/music
 navidrome_log_level: info
 navidrome_scanner_interval: 24h
@@ -45,25 +43,20 @@ None.
 
 ## Features
 
-- Binary installation from GitHub releases with checksum verification
-- SQLite database for metadata storage
+- Installation from official .deb package via GitHub releases
+- Automatic dependency management via APT
 - Transcoding support with ffmpeg
-- Hardened systemd service with security restrictions
+- Systemd service included in package
 - Caddy reverse proxy configuration with gzip compression
 - Automatic scanning of music library
 
-## Security Hardening
+## Configuration
 
-The systemd service includes the following security features:
-
-- NoNewPrivileges
-- PrivateDevices
-- PrivateTmp
-- ProtectSystem=strict
-- ProtectHome
-- ProtectKernelTunables
-- ProtectKernelModules
-- Limited read/write access to data and music directories
+The role configures Navidrome via `/etc/navidrome/navidrome.toml` with:
+- Custom music folder path
+- Port configuration
+- Transcoding and sharing settings
+- Automatic library scanning schedule
 
 ## License
 

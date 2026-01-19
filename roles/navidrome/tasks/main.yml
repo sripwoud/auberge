@@ -7,37 +7,6 @@
         state: present
         update_cache: true
 
-    - name: Create system group for Navidrome
-      ansible.builtin.group:
-        name: "{{ navidrome_sys_group }}"
-        state: present
-
-    - name: Create system user for Navidrome
-      ansible.builtin.user:
-        name: "{{ navidrome_sys_user }}"
-        group: "{{ navidrome_sys_group }}"
-        shell: /usr/sbin/nologin
-        home: "{{ navidrome_install_path }}"
-        create_home: false
-        system: true
-        state: present
-
-    - name: Create Navidrome installation directory
-      ansible.builtin.file:
-        path: "{{ navidrome_install_path }}"
-        state: directory
-        owner: "{{ navidrome_sys_user }}"
-        group: "{{ navidrome_sys_group }}"
-        mode: "0755"
-
-    - name: Create Navidrome data directory
-      ansible.builtin.file:
-        path: "{{ navidrome_data_dir }}"
-        state: directory
-        owner: "{{ navidrome_sys_user }}"
-        group: "{{ navidrome_sys_group }}"
-        mode: "0750"
-
     - name: Create music folder directory
       ansible.builtin.file:
         path: "{{ navidrome_music_folder }}"
@@ -45,11 +14,6 @@
         owner: "{{ navidrome_sys_user }}"
         group: "{{ navidrome_sys_group }}"
         mode: "0755"
-
-    - name: Check if Navidrome binary exists
-      ansible.builtin.stat:
-        path: "{{ navidrome_install_path }}/navidrome"
-      register: navidrome_install_status
 
     - name: Fetch latest Navidrome release information from GitHub API
       become: false
@@ -60,90 +24,34 @@
         method: GET
         return_content: true
 
-    - name: Set facts for Navidrome version, download URL, and checksum URL
+    - name: Set Navidrome version and download URL
       when: navidrome_release_info.json is defined
       delegate_to: localhost
       ansible.builtin.set_fact:
-        navidrome_version: "{{ navidrome_release_info.json.tag_name }}"
-        navidrome_download_url: >-
+        navidrome_version: "{{ navidrome_release_info.json.tag_name | replace('v', '') }}"
+        navidrome_deb_url: >-
           {{ (navidrome_release_info.json.assets |
-              selectattr('name', 'search', 'navidrome_' + navidrome_release_info.json.tag_name | replace('v', '') + '_' + navidrome_target_arch) |
-              selectattr('name', 'search', navidrome_binary_file_extension | regex_escape + '$') |
-              map(attribute='browser_download_url') | first | default(omit))
-              if navidrome_release_info.json.assets | length > 0 else omit }}
-        navidrome_checksums_file_url: >-
-          {{ (navidrome_release_info.json.assets |
-              selectattr('name', 'search', 'checksums') |
-              selectattr('name', 'search', 'txt$') |
-              map(attribute='browser_download_url') | first | default(omit))
-              if navidrome_release_info.json.assets | length > 0 else omit }}
+              selectattr('name', 'search', 'navidrome_.*_linux_amd64.deb$') |
+              map(attribute='browser_download_url') | first | default(''))
+              if navidrome_release_info.json.assets | length > 0 else '' }}
 
-    - name: Fetch checksums file content
-      when: navidrome_checksums_file_url is defined and navidrome_checksums_file_url != ''
-      become: false
-      register: navidrome_checksum_file_content
-      delegate_to: localhost
-      ansible.builtin.uri:
-        url: "{{ navidrome_checksums_file_url }}"
-        method: GET
-        return_content: true
-
-    - name: Extract SHA256 checksum for the Navidrome binary
-      ansible.builtin.set_fact:
-        navidrome_checksum_sha256: >-
-          {{ (navidrome_checksum_file_content.content.splitlines()
-              | select('contains', 'navidrome_' + navidrome_version | replace('v', '') + '_' + navidrome_target_arch + '.' + navidrome_binary_file_extension)
-              | first | default('')) | split() | first }}
-      delegate_to: localhost
-      when:
-        - navidrome_checksum_file_content is defined
-        - navidrome_checksum_file_content.content is defined
-        - navidrome_checksum_file_content.content | length > 0
-
-    - name: Download Navidrome archive
-      when:
-        - navidrome_install_status is defined
-        - not navidrome_install_status.stat.exists
-        - navidrome_download_url is defined and navidrome_download_url != ''
-        - navidrome_checksum_sha256 is defined and navidrome_checksum_sha256 != ''
-      register: navidrome_download_status
+    - name: Download Navidrome .deb package
       ansible.builtin.get_url:
-        url: "{{ navidrome_download_url }}"
-        dest: "/tmp/navidrome_{{ navidrome_version }}_{{ navidrome_target_arch }}.{{ navidrome_binary_file_extension }}"
+        url: "{{ navidrome_deb_url }}"
+        dest: "/tmp/navidrome_{{ navidrome_version }}_linux_amd64.deb"
         mode: "0644"
-        checksum: "sha256:{{ navidrome_checksum_sha256 }}"
+      when: navidrome_deb_url != ''
 
-    - name: Extract Navidrome archive
-      ansible.builtin.unarchive:
-        src: "/tmp/navidrome_{{ navidrome_version }}_{{ navidrome_target_arch }}.{{ navidrome_binary_file_extension }}"
-        dest: "{{ navidrome_install_path }}"
-        owner: "{{ navidrome_sys_user }}"
-        group: "{{ navidrome_sys_group }}"
-        mode: "0755"
-        remote_src: true
-      when: navidrome_download_status.changed or not navidrome_install_status.stat.exists
-
-    - name: Ensure ownership and permissions of Navidrome binary
-      ansible.builtin.file:
-        path: "{{ navidrome_install_path }}/navidrome"
-        owner: "{{ navidrome_sys_user }}"
-        group: "{{ navidrome_sys_group }}"
-        mode: "0755"
+    - name: Install Navidrome from .deb package
+      ansible.builtin.apt:
+        deb: "/tmp/navidrome_{{ navidrome_version }}_linux_amd64.deb"
+        state: present
       notify: Restart navidrome
 
     - name: Deploy Navidrome configuration file
       ansible.builtin.template:
         src: templates/navidrome.toml.j2
-        dest: "{{ navidrome_data_dir }}/navidrome.toml"
-        owner: "{{ navidrome_sys_user }}"
-        group: "{{ navidrome_sys_group }}"
-        mode: "0640"
-      notify: Restart navidrome
-
-    - name: Deploy Navidrome systemd service file
-      ansible.builtin.template:
-        src: templates/navidrome.service.j2
-        dest: /etc/systemd/system/navidrome.service
+        dest: "/etc/navidrome/navidrome.toml"
         owner: root
         group: root
         mode: "0644"

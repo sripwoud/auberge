@@ -1,9 +1,7 @@
-navidrome_install_path: /opt/navidrome
 navidrome_sys_user: navidrome
 navidrome_sys_group: navidrome
 navidrome_port: 4533
 navidrome_domain: music.sripwoud.xyz
-navidrome_data_dir: /var/lib/navidrome
 navidrome_music_folder: /srv/music
 navidrome_log_level: info
 navidrome_scanner_interval: 24h
@@ -13,5 +11,3 @@ navidrome_enable_sharing: true
 
 navidrome_github_repo: navidrome/navidrome
 navidrome_github_api_latest_release_url: "https://api.github.com/repos/{{ navidrome_github_repo }}/releases/latest"
-navidrome_target_arch: Linux_x86_64
-navidrome_binary_file_extension: tar.gz
