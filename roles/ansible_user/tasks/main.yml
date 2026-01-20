@@ -17,12 +17,12 @@
     mode: "0700"
 
 - name: Install ansible user SSH public key
-  ansible.builtin.authorized_key:
+  ansible.posix.authorized_key:
     user: ansible
-    key: "{{ lookup('file', ansible_ssh_public_key_file) }}"
+    key: "{{ lookup('file', ansible_user_ssh_public_key_file) }}"
     exclusive: true
     state: present
-  when: ansible_ssh_public_key_file is defined
+  when: ansible_user_ssh_public_key_file is defined
 
 - name: Configure passwordless sudo for ansible user
   ansible.builtin.lineinfile:
@@ -41,29 +41,29 @@
 
 - name: Configure your personal admin user (with password sudo)
   ansible.builtin.user:
-    name: "{{ admin_user_name }}"
+    name: "{{ ansible_user_admin_name }}"
     comment: "System Administrator"
     state: present
     shell: /bin/bash
     groups: [sudo, sshusers]
     append: true
-  when: admin_user_name is defined
+  when: ansible_user_admin_name is defined
 
 - name: Install your personal SSH public key
-  ansible.builtin.authorized_key:
-    user: "{{ admin_user_name }}"
-    key: "{{ lookup('file', admin_ssh_public_key_file) }}"
+  ansible.posix.authorized_key:
+    user: "{{ ansible_user_admin_name }}"
+    key: "{{ lookup('file', ansible_user_admin_ssh_public_key_file) }}"
     exclusive: false
     state: present
   when:
-    - admin_user_name is defined
-    - admin_ssh_public_key_file is defined
+    - ansible_user_admin_name is defined
+    - ansible_user_admin_ssh_public_key_file is defined
 
 - name: Configure password-required sudo for personal admin
   ansible.builtin.lineinfile:
     path: /etc/sudoers.d/010_admin_user
-    line: "{{ admin_user_name }} ALL=(ALL:ALL) ALL"
+    line: "{{ ansible_user_admin_name }} ALL=(ALL:ALL) ALL"
     create: true
     mode: "0440"
     validate: "/usr/sbin/visudo -cf %s"
-  when: admin_user_name is defined
+  when: ansible_user_admin_name is defined

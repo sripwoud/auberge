@@ -1,0 +1,6 @@
+---
+ansible_user_ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }}.pub"
+ansible_user_admin_name: sripwoud
+ansible_user_admin_ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/sripwoud_{{ inventory_hostname }}.pub"
+ansible_user_shell: /bin/bash
+ansible_user_admin_shell: /bin/bash

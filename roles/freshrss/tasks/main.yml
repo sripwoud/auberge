@@ -62,7 +62,7 @@
         version: "{{ freshrss_version }}"
         depth: 1
 
-    - name: Check for local modifications in FreshRSS directory
+    - name: Check for local modifications in FreshRSS directory # noqa: command-instead-of-module
       when: freshrss_git_check.stat.exists
       become: true
       become_user: "{{ freshrss_sys_user }}"

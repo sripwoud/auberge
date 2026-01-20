@@ -7,10 +7,7 @@ silent = true
 [tasks.lint]
 alias = "l"
 run = "ansible-lint"
-silent = true
-
-[tasks.ssh]
-run = ["rm -fr ~/.ssh", "command ssh root@194.164.53.11"]
+quiet = true
 
 [tools]
 caddy = "latest"
@@ -20,7 +17,6 @@ dprint = "latest"
 hk = "latest"
 pipx = "latest"
 pkl = "latest"
-shfmt = "latest"
 ansible = "latest"
 "pipx:ansible-dev-tools" = "latest"
 "pipx:ansible-lint" = "latest"
