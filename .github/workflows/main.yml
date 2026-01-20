@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - use: rm -fr .mise/config.toml
       - uses: jdx/mise-action@v2
         with:
           mise_toml: |
