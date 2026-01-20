@@ -4,7 +4,7 @@
 	@get method GET
 	route {
 		basic_auth / {
-			sripwoud {{ webdav_hashed_password }}
+			{{ vault_admin_user_name }} {{ webdav_hashed_password }}
 		}
 		file_server @get browse
 		webdav

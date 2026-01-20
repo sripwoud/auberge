@@ -42,7 +42,7 @@
 
 - name: Obtain Let's Encrypt certificate with Lego (Namecheap DNS challenge)
   environment:
-    NAMECHEAP_API_USER: sripwoud
+    NAMECHEAP_API_USER: "{{ vault_namecheap_api_user }}"
     NAMECHEAP_API_KEY: "{{ namecheap_api_key }}"
   ansible.builtin.command:
     cmd: "lego --domains '{{ blocky_domain }}' --email {{ blocky_letsencrypt_email }} --dns namecheap --accept-tos --path {{ blocky_config_path }} run"

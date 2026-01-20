@@ -4,3 +4,4 @@ ansible/.ansible
 .claude/
 ansible/group_vars/all/*.vault
 /target
+config.toml
