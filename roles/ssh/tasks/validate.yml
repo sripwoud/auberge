@@ -1,0 +1,58 @@
+---
+# SSH Connection Validation - Prevent lockouts during port changes
+- name: Test SSH connection on new port before closing old port
+  block:
+    - name: Ensure new SSH port is allowed in firewall first
+      ansible.builtin.ufw:
+        rule: allow
+        port: "{{ ssh_port }}"
+        comment: "SSH on custom port"
+      when: ssh_port != "22"
+
+    - name: Validate SSH config before applying
+      ansible.builtin.command:
+        cmd: "sshd -t -f /etc/ssh/sshd_config"
+      changed_when: false
+
+    - name: Reload SSH service
+      ansible.builtin.systemd:
+        name: ssh
+        state: reloaded
+
+    - name: Wait for SSH to be available on new port
+      ansible.builtin.wait_for:
+        port: "{{ ssh_port }}"
+        host: "{{ ansible_default_ipv4.address | default(ansible_all_ipv4_addresses[0]) }}"
+        delay: 2
+        timeout: 30
+        state: started
+      delegate_to: localhost
+      become: false
+
+    - name: Test connection on new port
+      ansible.builtin.command:
+        cmd: "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -p {{ ssh_port }} {{ ansible_user }}@{{ ansible_host }} echo 'Connection successful'"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: ssh_test
+      failed_when: false
+
+    - name: Fail if new port connection failed
+      ansible.builtin.fail:
+        msg: "Cannot connect to SSH on port {{ ssh_port }}. Keeping port 22 open for safety."
+      when: ssh_test.rc != 0
+
+    - name: Close port 22 only after confirming new port works
+      ansible.builtin.ufw:
+        rule: deny
+        port: "22"
+        comment: "Disable default SSH port"
+      when:
+        - ssh_port != "22"
+        - ssh_test.rc == 0
+
+  rescue:
+    - name: Keep port 22 open on failure
+      ansible.builtin.debug:
+        msg: "SSH validation failed. Port 22 remains open for recovery. Fix issues and re-run."

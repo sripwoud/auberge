@@ -61,3 +61,8 @@
     - name: Output configured SSH port
       ansible.builtin.debug:
         msg: "SSH port configured: {{ ssh_port }}"
+
+- name: Validate SSH connection before closing ports
+  ansible.builtin.include_tasks: validate.yml
+  vars:
+    ssh_port: "{{ ssh_port_input | default(ssh_port) }}"
