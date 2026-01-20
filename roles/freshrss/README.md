@@ -13,16 +13,16 @@ Deploys FreshRSS RSS reader as a systemd service with Caddy reverse proxy.
 
 ## Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `freshrss_install_path` | `/opt/freshrss` | Installation directory |
-| `freshrss_sys_user` | `freshrss` | System user |
-| `freshrss_sys_group` | `freshrss` | System group |
-| `freshrss_port` | `8084` | Local port for PHP server |
-| `freshrss_domain` | `rss.sripwoud.xyz` | Domain for Caddy |
-| `freshrss_version` | `edge` | Git branch/tag to deploy |
-| `freshrss_data_dir` | `/var/lib/freshrss` | Persistent data directory |
-| `freshrss_db_type` | `sqlite` | Database type |
+| Variable                | Default             | Description               |
+| ----------------------- | ------------------- | ------------------------- |
+| `freshrss_install_path` | `/opt/freshrss`     | Installation directory    |
+| `freshrss_sys_user`     | `freshrss`          | System user               |
+| `freshrss_sys_group`    | `freshrss`          | System group              |
+| `freshrss_port`         | `8084`              | Local port for PHP server |
+| `freshrss_domain`       | `rss.sripwoud.xyz`  | Domain for Caddy          |
+| `freshrss_version`      | `edge`              | Git branch/tag to deploy  |
+| `freshrss_data_dir`     | `/var/lib/freshrss` | Persistent data directory |
+| `freshrss_db_type`      | `sqlite`            | Database type             |
 
 ## Post-Installation
 
@@ -63,6 +63,7 @@ For automatic feed updates, add to system crontab:
 ## Security
 
 The systemd service includes hardening:
+
 - `NoNewPrivileges=true`
 - `PrivateDevices=true`
 - `PrivateTmp=true`
@@ -73,6 +74,7 @@ The systemd service includes hardening:
 ## Backup
 
 Important directories to backup:
+
 - `/var/lib/freshrss` - User data and SQLite database
 - `/opt/freshrss/data` - Configuration and cache
 

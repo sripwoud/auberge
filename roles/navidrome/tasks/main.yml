@@ -24,7 +24,7 @@
         state: directory
         owner: "{{ navidrome_sys_user }}"
         group: "{{ navidrome_sys_group }}"
-        mode: "2775"  # SGID + group write permissions
+        mode: "2775" # SGID + group write permissions
 
     - name: Fetch latest Navidrome release information from GitHub API
       become: false
@@ -67,7 +67,7 @@
         owner: "{{ navidrome_sys_user }}"
         group: "{{ navidrome_sys_group }}"
         mode: "2775"
-        recurse: false  # Just the directory, not contents
+        recurse: false # Just the directory, not contents
       when: navidrome_install.changed
 
     - name: Deploy Navidrome configuration file

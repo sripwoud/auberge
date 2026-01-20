@@ -3,23 +3,19 @@
   hosts: vps
   become: true
   roles:
-    - role: calibre
-      tags: [calibre]
-
     - role: blocky
       tags: [blocky]
-
-    - role: radicale
-      tags: [radicale]
-
-    - role: webdav
-      tags: [webdav]
-
-    - role: yourls
-      tags: [yourls]
-
+    - role: calibre
+      tags: [calibre]
     - role: freshrss
       tags: [freshrss]
-
     - role: navidrome
       tags: [navidrome]
+    - role: radicale
+      tags: [radicale]
+    - role: webdav
+      tags: [webdav]
+    - role: wireguard
+      tags: [wireguard]
+    - role: yourls
+      tags: [yourls]

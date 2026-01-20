@@ -53,6 +53,7 @@ None.
 ## Configuration
 
 The role configures Navidrome via `/etc/navidrome/navidrome.toml` with:
+
 - Custom music folder path
 - Port configuration
 - Transcoding and sharing settings
