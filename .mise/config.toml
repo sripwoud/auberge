@@ -7,6 +7,7 @@ silent = true
 [tasks.lint]
 alias = "l"
 run = "ansible-lint"
+dir = "ansible"
 quiet = true
 
 [tools]
