@@ -2,9 +2,9 @@ Include /etc/ssh/sshd_config.d/*.conf
 
 Port {{ ssh_port }}
 
-Protocol 2
+# Protocol 2 is now the only protocol and doesn't need to be specified
 
-UsePrivilegeSeparation sandbox            # Modern setting for privilege separation
+# UsePrivilegeSeparation was removed in OpenSSH 7.5 (always enabled now)
 PermitRootLogin no                        # Disable direct root login via SSH (use sripwoud then sudo)
 StrictModes yes                           # Enable strict permissions checking for user home directories and key files
 MaxAuthTries {{ ssh_max_auth_tries }}     # Maximum authentication attempts per connection

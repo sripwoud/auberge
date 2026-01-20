@@ -1,0 +1,14 @@
+---
+# Example vault file for sensitive host data
+# Copy to hosts.vault and encrypt with:
+# ansible-vault encrypt group_vars/all/hosts.vault
+
+# Self-hosting IPs
+vault_selfhost_old_host: "194.164.53.11"
+vault_selfhost_host: "82.223.116.111"
+
+# Vibecoding IP
+vault_vibecoder_host: "135.125.107.230"
+
+# Sudo passwords (for your personal admin user)
+vault_sripwoud_become_password: "your-sudo-password-here"

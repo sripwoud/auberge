@@ -1,5 +1,5 @@
 ---
-- name: Bootstrap new VPS - Initial secure setup
+- name: Bootstrap new VPS - Initial secure setup with dual-user
   hosts: vps
   remote_user: root
   become: true
@@ -7,5 +7,9 @@
   vars:
     ansible_user: root
   roles:
+    # Set up dual-user system first
+    - role: ansible-user
+      tags: [users, bootstrap]
+    # Then harden SSH
     - role: ssh
-      tags: [ssh]
+      tags: [ssh, security]

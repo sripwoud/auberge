@@ -2,3 +2,4 @@
 .vscode
 .env*
 .claude/
+group_vars/all/*.vault

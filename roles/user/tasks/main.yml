@@ -27,7 +27,7 @@
     - name: Add to sudo group new user '{{ user_name }}'
       ansible.builtin.user:
         name: "{{ user_name }}"
-        groups: sudo
+        groups: [sudo]
         append: true
 
     - name: Configure sudoers (NOPASSWD) for '{{ user_name }}'
