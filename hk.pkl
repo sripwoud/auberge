@@ -7,6 +7,7 @@ local linters  = new Mapping<String, Step> {
   }
   ["ansible"] {
     check = "ansible-lint {{files}}"
+    dir = "ansible"
     glob = List("*.yml", "*.yaml")
   }
 }

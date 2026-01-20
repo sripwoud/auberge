@@ -8,7 +8,7 @@ pub fn find_project_root() -> PathBuf {
 
     let mut current = cwd.as_path();
     loop {
-        if current.join("inventory.yml").exists() {
+        if current.join("ansible/inventory.yml").exists() {
             return current.to_path_buf();
         }
         match current.parent() {
@@ -21,7 +21,7 @@ pub fn find_project_root() -> PathBuf {
 pub fn load_inventory(inventory_path: Option<&Path>) -> Result<Inventory> {
     let path = match inventory_path {
         Some(p) => p.to_path_buf(),
-        None => find_project_root().join("inventory.yml"),
+        None => find_project_root().join("ansible/inventory.yml"),
     };
 
     let content = std::fs::read_to_string(&path)
@@ -48,7 +48,7 @@ pub fn get_host(name: &str, inventory_path: Option<&Path>) -> Result<Host> {
 pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<Playbook>> {
     let path = match playbooks_path {
         Some(p) => p.to_path_buf(),
-        None => find_project_root().join("playbooks"),
+        None => find_project_root().join("ansible/playbooks"),
     };
 
     if !path.exists() {

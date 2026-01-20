@@ -112,7 +112,7 @@ pub fn run_ansible_check(host: Option<String>, playbook: Option<PathBuf>) -> Res
 pub fn run_ansible_bootstrap(host_name: String, port: u16) -> Result<()> {
     let host = get_host(&host_name, None)?;
     let bootstrap_playbook =
-        crate::services::inventory::find_project_root().join("playbooks/bootstrap.yml");
+        crate::services::inventory::find_project_root().join("ansible/playbooks/bootstrap.yml");
 
     if !bootstrap_playbook.exists() {
         eyre::bail!(

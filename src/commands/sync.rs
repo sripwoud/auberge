@@ -60,7 +60,7 @@ pub fn run_sync_music(
 
     if !ssh_key.exists() {
         eyre::bail!(
-            "SSH key not found: {}\nRun 'selfhost ssh keygen --host {} --user sripwoud' first",
+            "SSH key not found: {}\nRun 'auberge ssh keygen --host {} --user sripwoud' first",
             ssh_key.display(),
             host.name
         );

@@ -1,6 +1,6 @@
-.ansible
+ansible/.ansible
 .vscode
 .env*
 .claude/
-group_vars/all/*.vault
+ansible/group_vars/all/*.vault
 /target

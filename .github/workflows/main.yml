@@ -16,11 +16,14 @@ jobs:
           mise_toml: |
             [tasks]
             "check-format" = { run = "dprint check --excludes mise.toml" }
-            "check-lint" = { run = "ansible-lint" }
+            "check-lint" = { run = "ansible-lint", dir = "ansible" }
             "check" = { depends = "check-*" }
             [tools]
             dprint = "latest"
             pipx = "latest"
+            "pipx:ansible-core" = "latest"
             "pipx:ansible-lint" = "latest"
       - run: mise settings experimental=true
+      - run: ansible-galaxy collection install -r requirements.yml
+        working-directory: ansible
       - run: mise r check
