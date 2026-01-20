@@ -81,16 +81,22 @@ impl DnsService {
         let mut hosts: Vec<HostRequest> = existing
             .iter()
             .filter(|h| !(h.name == subdomain && h.type_ == "A"))
-            .map(|h| HostRequest::new(
-                h.name.clone(),
-                h.type_.clone(),
-                h.address.clone(),
-                if h.mx_pref.is_empty() { None } else { Some(h.mx_pref.clone()) },
-                None,
-                Some(h.ttl.to_string()),
-                None,
-                None,
-            ))
+            .map(|h| {
+                HostRequest::new(
+                    h.name.clone(),
+                    h.type_.clone(),
+                    h.address.clone(),
+                    if h.mx_pref.is_empty() {
+                        None
+                    } else {
+                        Some(h.mx_pref.clone())
+                    },
+                    None,
+                    Some(h.ttl.to_string()),
+                    None,
+                    None,
+                )
+            })
             .collect();
 
         hosts.push(HostRequest::new(
@@ -116,10 +122,7 @@ impl DnsService {
         let existing = self.list_records().await?;
         let mut results = Vec::new();
 
-        let a_records: Vec<&Host> = existing
-            .iter()
-            .filter(|h| h.type_ == "A")
-            .collect();
+        let a_records: Vec<&Host> = existing.iter().filter(|h| h.type_ == "A").collect();
 
         if dry_run {
             for record in a_records {
@@ -145,7 +148,11 @@ impl DnsService {
                     h.name.clone(),
                     h.type_.clone(),
                     address,
-                    if h.mx_pref.is_empty() { None } else { Some(h.mx_pref.clone()) },
+                    if h.mx_pref.is_empty() {
+                        None
+                    } else {
+                        Some(h.mx_pref.clone())
+                    },
                     None,
                     Some(h.ttl.to_string()),
                     None,
