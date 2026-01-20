@@ -1,7 +1,7 @@
 navidrome_sys_user: navidrome
 navidrome_sys_group: navidrome
 navidrome_port: 4533
-navidrome_domain: music.sripwoud.xyz
+navidrome_domain: "music.{{ vault_primary_domain }}"
 navidrome_music_folder: /srv/music
 navidrome_log_level: info
 navidrome_scanner_interval: 24h

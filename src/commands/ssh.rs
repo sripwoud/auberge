@@ -14,7 +14,7 @@ pub enum SshCommands {
             short,
             long,
             default_value = "ansible",
-            help = "User (ansible or sripwoud)"
+            help = "User (ansible or your configured username)"
         )]
         user: String,
         #[arg(short, long, help = "Force overwrite existing key")]

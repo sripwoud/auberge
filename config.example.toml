@@ -1,0 +1,24 @@
+# Auberge Configuration
+# Copy this file to config.toml and customize with your values
+# config.toml is gitignored and will not be committed
+
+[user]
+# Your username for SSH access and service authentication
+username = "your-username"
+
+# Your email address for Let's Encrypt certificates and notifications
+email = "you@example.com"
+
+[dns]
+# Your domain name (e.g., example.com)
+domain = "example.com"
+
+# Subdomains to configure (e.g., ["dns", "rss", "music", "webdav"])
+subdomains = ["calendar", "dns", "music", "rss", "url", "webdav"]
+
+# Default TTL for DNS records in seconds
+default_ttl = 300
+
+[namecheap]
+# Namecheap API username (usually same as your Namecheap account username)
+api_user = "your-namecheap-username"

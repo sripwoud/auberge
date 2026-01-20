@@ -9,6 +9,7 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1"
+toml = "0.8"
 eyre = "0.6"
 color-eyre = "0.6"
 dialoguer = "0.11"

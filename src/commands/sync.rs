@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::models::inventory::Host;
 use crate::selector::select_item;
 use crate::services::inventory::get_hosts;
@@ -23,6 +24,9 @@ pub fn run_sync_music(
     source: Option<PathBuf>,
     dry_run: bool,
 ) -> Result<()> {
+    let config = Config::load()?;
+    let username = &config.user.username;
+
     let host = match host_arg {
         Some(name) => crate::services::inventory::get_host(&name, None)?,
         None => {
@@ -56,22 +60,23 @@ pub fn run_sync_music(
 
     let ssh_key = dirs::home_dir()
         .ok_or_else(|| eyre::eyre!("Could not determine home directory"))?
-        .join(format!(".ssh/identities/sripwoud_{}", host.name));
+        .join(format!(".ssh/identities/{}_{}", username, host.name));
 
     if !ssh_key.exists() {
         eyre::bail!(
-            "SSH key not found: {}\nRun 'auberge ssh keygen --host {} --user sripwoud' first",
+            "SSH key not found: {}\nRun 'auberge ssh keygen --host {} --user {}' first",
             ssh_key.display(),
-            host.name
+            host.name,
+            username
         );
     }
 
     let remote_path = "/srv/music/";
-    let remote_user = "sripwoud";
+    let remote_user = username;
 
     eprintln!(
         "Syncing music to {}@{}:{}...",
-        remote_user, host.vars.ansible_host, remote_path
+        username, host.vars.ansible_host, remote_path
     );
 
     let mut cmd = Command::new("rsync");

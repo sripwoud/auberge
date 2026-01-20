@@ -1,24 +1,8 @@
-use crate::models::dns::DnsConfig;
-use crate::services::inventory::find_project_root;
-use eyre::{Result, WrapErr};
+use crate::config::{Config, DnsConfig};
+use eyre::Result;
 use namecheap::domains_dns::set_hosts::HostRequest;
 use namecheap::{Host, NameCheapClient};
-use std::path::Path;
-
-pub fn load_dns_config(config_path: Option<&Path>) -> Result<DnsConfig> {
-    let path = match config_path {
-        Some(p) => p.to_path_buf(),
-        None => find_project_root().join("inventory/dns.yml"),
-    };
-
-    let content = std::fs::read_to_string(&path)
-        .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
-
-    let config: DnsConfig = serde_yaml::from_str(&content)
-        .wrap_err_with(|| format!("Failed to parse {}", path.display()))?;
-
-    Ok(config)
-}
+use std::env;
 
 pub struct MigrationResult {
     pub subdomain: String,
@@ -41,10 +25,20 @@ pub struct DnsService {
 
 impl DnsService {
     pub fn new() -> Result<Self> {
-        let client = NameCheapClient::new_from_env()
-            .map_err(|e| eyre::eyre!("Failed to create NameCheap client: {}", e))?;
-        let config = load_dns_config(None)?;
-        Ok(Self { client, config })
+        let app_config = Config::load()?;
+
+        let api_user = app_config.namecheap.api_user.clone();
+        let api_key = env::var("NAMECHEAP_API_KEY")
+            .map_err(|_| eyre::eyre!("NAMECHEAP_API_KEY environment variable not set"))?;
+        let client_ip = env::var("NAMECHEAP_CLIENT_IP").unwrap_or_else(|_| "0.0.0.0".to_string());
+        let username = app_config.user.username.clone();
+
+        let client = NameCheapClient::new(api_user, api_key, client_ip, username, true);
+
+        Ok(Self {
+            client,
+            config: app_config.dns,
+        })
     }
 
     pub fn config(&self) -> &DnsConfig {
