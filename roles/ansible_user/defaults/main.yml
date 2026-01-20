@@ -1,11 +1,6 @@
 ---
-# Ansible automation user configuration
-ansible_ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }}.pub"
-
-# Personal admin user configuration
-admin_user_name: sripwoud
-admin_ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/sripwoud_{{ inventory_hostname }}.pub"
-
-# Security settings
+ansible_user_ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }}.pub"
+ansible_user_admin_name: sripwoud
+ansible_user_admin_ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/sripwoud_{{ inventory_hostname }}.pub"
 ansible_user_shell: /bin/bash
-admin_user_shell: /bin/bash
+ansible_user_admin_shell: /bin/bash

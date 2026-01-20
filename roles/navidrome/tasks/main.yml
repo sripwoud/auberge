@@ -67,8 +67,7 @@
         owner: "{{ navidrome_sys_user }}"
         group: "{{ navidrome_sys_group }}"
         mode: "2775"
-        recurse: false # Just the directory, not contents
-      when: navidrome_install.changed
+        recurse: false
 
     - name: Deploy Navidrome configuration file
       ansible.builtin.template:

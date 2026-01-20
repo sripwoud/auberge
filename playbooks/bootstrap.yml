@@ -8,7 +8,7 @@
     ansible_user: root
   roles:
     # Set up dual-user system first
-    - role: ansible-user
+    - role: ansible_user
       tags: [users, bootstrap]
     # Then harden SSH
     - role: ssh
