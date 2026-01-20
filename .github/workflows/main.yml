@@ -15,8 +15,11 @@ jobs:
           mise_toml: |
             [tasks]
             "check-format" = { run = "dprint check --excludes mise.toml" }
+            "check-lint" = { run = "ansible-lint" }
             "check" = { depends = "check-*" }
             [tools]
             dprint = "latest"
-            shfmt = "latest"
+            pipx = "latest"
+            "pipx:ansible-lint" = "latest"
+      - run: mise settings experimental=true
       - run: mise r check
