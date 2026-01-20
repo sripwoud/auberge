@@ -1,12 +1,29 @@
-# Selfhost Infrastructure
+# Auberge
 
-Ansible playbooks and roles for managing self-hosted services and server infrastructure.
+CLI tool for managing self-hosted infrastructure with Ansible.
 
 ## Prerequisites
 
 - Ansible installed locally
 - SSH access to target servers
 - Ansible Vault password for encrypted variables
+
+## Project Structure
+
+```
+auberge/
+├── src/              # Rust CLI source code
+├── ansible/          # Ansible infrastructure
+│   ├── playbooks/    # Ansible playbooks
+│   ├── roles/        # Ansible roles
+│   ├── inventory/    # Dynamic inventory
+│   ├── inventory.yml # Static inventory
+│   └── ansible.cfg   # Ansible configuration
+├── Cargo.toml        # Rust package manifest
+└── README.md
+```
+
+The CLI wraps Ansible operations, providing an interactive interface for managing infrastructure.
 
 ## Usage
 
@@ -40,9 +57,9 @@ mise run ansible-run
 
 ## Available Playbooks
 
-| Playbook                                   | Description                                                                                                 |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| [bootstrap.yml](playbooks/bootstrap.yml)   | Initial VPS setup - creates users and secures SSH. Run once when provisioning a new server.                 |
-| [site.yml](playbooks/site.yml)             | Core server infrastructure including security hardening, firewall, reverse proxy, and system configuration. |
-| [selfhosted.yml](playbooks/selfhosted.yml) | Self-hosted applications: Calibre, Blocky DNS, Radicale, WebDAV, YOURLS.                                    |
-| [vibecoder.yml](playbooks/vibecoder.yml)   | Development environment setup with Vibecoder and Claude Code integration.                                   |
+| Playbook                                           | Description                                                                                                 |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| [bootstrap.yml](ansible/playbooks/bootstrap.yml)   | Initial VPS setup - creates users and secures SSH. Run once when provisioning a new server.                 |
+| [site.yml](ansible/playbooks/site.yml)             | Core server infrastructure including security hardening, firewall, reverse proxy, and system configuration. |
+| [selfhosted.yml](ansible/playbooks/selfhosted.yml) | Self-hosted applications: Calibre, Blocky DNS, Radicale, WebDAV, YOURLS.                                    |
+| [vibecoder.yml](ansible/playbooks/vibecoder.yml)   | Development environment setup with Vibecoder and Claude Code integration.                                   |

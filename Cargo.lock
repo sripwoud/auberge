@@ -126,6 +126,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "auberge"
+version = "0.1.0"
+dependencies = [
+ "ansible-rs",
+ "clap 4.5.54",
+ "color-eyre",
+ "dialoguer",
+ "dirs",
+ "eyre",
+ "namecheap",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "skim",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1820,25 +1839,6 @@ checksum = "cc1f0cbffaac4852523ce30d8bd3c5cdc873501d96ff467ca09b6767bb8cd5c0"
 dependencies = [
  "core-foundation-sys",
  "libc",
-]
-
-[[package]]
-name = "selfhost"
-version = "0.1.0"
-dependencies = [
- "ansible-rs",
- "clap 4.5.54",
- "color-eyre",
- "dialoguer",
- "dirs",
- "eyre",
- "namecheap",
- "serde",
- "serde_json",
- "serde_yaml",
- "skim",
- "tempfile",
- "tokio",
 ]
 
 [[package]]

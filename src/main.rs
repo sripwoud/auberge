@@ -14,7 +14,7 @@ use commands::sync::{SyncCommands, run_sync_music};
 use eyre::Result;
 
 #[derive(Parser)]
-#[command(name = "selfhost")]
+#[command(name = "auberge")]
 #[command(about = "CLI for selfhost infrastructure management")]
 #[command(version)]
 struct Cli {

@@ -17,7 +17,7 @@ pub fn run_playbook(
     ask_vault_pass: bool,
 ) -> Result<AnsibleResult> {
     let project_root = find_project_root();
-    let inventory_path = project_root.join("inventory.yml");
+    let inventory_path = project_root.join("ansible/inventory.yml");
 
     let mut cmd = Command::new("ansible-playbook");
     cmd.current_dir(&project_root)
@@ -63,7 +63,7 @@ pub fn run_bootstrap(
     port: u16,
 ) -> Result<AnsibleResult> {
     let project_root = find_project_root();
-    let inventory_path = project_root.join("inventory.yml");
+    let inventory_path = project_root.join("ansible/inventory.yml");
 
     let status = Command::new("ansible-playbook")
         .current_dir(&project_root)
