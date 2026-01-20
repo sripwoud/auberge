@@ -1,5 +1,5 @@
 #!/bin/sh
-# mise description="Run selected playbook on selected host"
+#MISE description="Run selected playbook on selected host"
 set -eu
 
 run_bootstrap() {

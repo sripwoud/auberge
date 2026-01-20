@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mise description="Generate SSH keys for dual-user Ansible setup (ansible + sripwoud users)"
+#MISE description="Generate SSH keys for dual-user Ansible setup (ansible + sripwoud users)"
 set -euo pipefail
 
 SSH_DIR="${HOME}/.ssh/identities"

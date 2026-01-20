@@ -1,6 +1,6 @@
 #!/bin/bash
-# mise description="Select a playbook from playbooks directory"
-# mise hide=true
+#MISE description="Select a playbook from playbooks directory"
+#MISE hide=true
 set -eu
 
 get_playbook_name() {

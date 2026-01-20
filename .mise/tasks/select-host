@@ -1,6 +1,6 @@
 #!/bin/bash
-# mise description="Select a host from inventory"
-# mise hide=true
+#MISE description="Select a host from inventory"
+#MISE hide=true
 set -eu
 
 main() {

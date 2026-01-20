@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mise description="Bootstrap new VPS with dual-user setup (first run only)"
+#MISE description="Bootstrap new VPS with dual-user setup (first run only)"
 set -euo pipefail
 
 # Colors for output

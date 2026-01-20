@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mise description="Sync local music library to Navidrome on selfhost servers"
+#MISE description="Sync local music library to Navidrome on selfhost servers"
 set -euo pipefail
 
 # Configuration
