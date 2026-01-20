@@ -1,14 +1,3 @@
-# ansible-run is now a file task in .config/mise/tasks/
-
-[tasks.ansible-check]
-alias = "c"
-description = "Dry run selected playbook on selected host"
-run = """
-host=$(mise run select-host)
-playbook=$(mise run select-playbook)
-ansible-playbook -i inventory.yml "$playbook" --check --ask-vault-pass --limit "$host"
-"""
-
 [tasks.fmt]
 alias = "f"
 description = "Format"
@@ -33,3 +22,6 @@ pipx = "latest"
 pkl = "latest"
 shfmt = "latest"
 ansible = "latest"
+"pipx:ansible-dev-tools" = "latest"
+"pipx:ansible-lint" = "latest"
+rust = "latest"
