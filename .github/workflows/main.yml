@@ -24,5 +24,6 @@ jobs:
             "pipx:ansible-core" = "latest"
             "pipx:ansible-lint" = "latest"
       - run: mise settings experimental=true
-      - run: ansible-galaxy collection install -r ansible/requirements.yml
+      - run: ansible-galaxy collection install -r requirements.yml
+        working-directory: ansible
       - run: mise r check
