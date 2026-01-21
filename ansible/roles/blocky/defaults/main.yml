@@ -1,4 +1,4 @@
-blocky_domain: "dns.{{ primary_domain }}"
+blocky_domain: "{{ blocky_subdomain }}.{{ primary_domain }}"
 blocky_install_path: /usr/local/bin/blocky
 blocky_config_path: /etc/blocky
 

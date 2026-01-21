@@ -1,1 +1,1 @@
-webdav_domain: "webdav.{{ primary_domain }}"
+webdav_domain: "{{ webdav_subdomain }}.{{ primary_domain }}"

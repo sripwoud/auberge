@@ -1,6 +1,6 @@
 radicale_config_dir: /etc/radicale
 radicale_data_dir: /var/lib/radicale/collections
-radicale_domain: "calendrier.{{ primary_domain }}"
+radicale_domain: "{{ radicale_subdomain }}.{{ primary_domain }}"
 radicale_ip: 127.0.0.1
 radicale_port: 5232
 radicale_sys_user: radicale
