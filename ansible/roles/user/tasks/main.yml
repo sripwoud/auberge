@@ -1,20 +1,11 @@
-- name: Prompt for user configuration
+- name: Set user configuration from environment
   block:
-    - name: Get local username
+    - name: Get admin username from environment
       ansible.builtin.set_fact:
-        user_local_user: "{{ lookup('env', 'USER') }}"
+        user_name: "{{ lookup('env', 'ADMIN_USER_NAME') }}"
+        user_home: "/home/{{ lookup('env', 'ADMIN_USER_NAME') }}"
       delegate_to: localhost
       run_once: true
-
-    - name: Prompt for username
-      ansible.builtin.pause:
-        prompt: "Enter username for the new user (default: {{ user_local_user }})"
-      register: user_username_prompt
-
-    - name: Set username variable
-      ansible.builtin.set_fact:
-        user_name: "{{ user_username_prompt.user_input | default(user_local_user, true) }}"
-        user_home: "/home/{{ user_username_prompt.user_input | default(user_local_user, true) }}"
 
 - name: User Creation and Sudo Configuration
   block:
