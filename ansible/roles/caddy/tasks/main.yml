@@ -1,10 +1,10 @@
 - name: Install and Configure Caddy
   block:
-    - name: Add xcaddy GPG key
-      ansible.builtin.apt_key:
+    - name: Download xcaddy GPG key
+      ansible.builtin.get_url:
         url: https://dl.cloudsmith.io/public/caddy/xcaddy/gpg.key
-        keyring: /usr/share/keyrings/caddy-xcaddy-archive-keyring.gpg
-        state: present
+        dest: /usr/share/keyrings/caddy-xcaddy-archive-keyring.gpg
+        mode: "0644"
 
     - name: Fetch xcaddy APT repository definition
       ansible.builtin.get_url:
