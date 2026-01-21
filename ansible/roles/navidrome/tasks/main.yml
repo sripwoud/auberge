@@ -18,14 +18,6 @@
         groups: "{{ navidrome_sys_group }}"
         append: true
 
-    - name: Create music folder directory with SGID
-      ansible.builtin.file:
-        path: "{{ navidrome_music_folder }}"
-        state: directory
-        owner: "{{ navidrome_sys_user }}"
-        group: "{{ navidrome_sys_group }}"
-        mode: "2775" # SGID + group write permissions
-
     - name: Fetch latest Navidrome release information from GitHub API
       become: false
       delegate_to: localhost
