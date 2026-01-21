@@ -315,7 +315,7 @@ pub async fn run_dns_set_all(
     let mut succeeded = 0;
     let mut failed = 0;
 
-    for (_app_name, subdomain_value) in &subdomains_to_process {
+    for (idx, (_app_name, subdomain_value)) in subdomains_to_process.iter().enumerate() {
         match service.set_a_record(subdomain_value, &target_ip).await {
             Ok(_) => {
                 eprintln!(
@@ -337,6 +337,10 @@ pub async fn run_dns_set_all(
                     return Err(e);
                 }
             }
+        }
+
+        if idx < subdomains_to_process.len() - 1 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         }
     }
 
