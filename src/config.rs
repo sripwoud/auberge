@@ -12,7 +12,6 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 pub struct UserConfig {
     pub username: String,
-    pub email: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
