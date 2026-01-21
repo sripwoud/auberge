@@ -1,0 +1,21 @@
+---
+- name: Self-hosted Applications - Layer 3
+  hosts: vps
+  become: true
+  roles:
+    - role: blocky
+      tags: [apps, network, dns, blocky]
+    - role: calibre
+      tags: [apps, storage, media, books, calibre]
+    - role: freshrss
+      tags: [apps, web, rss, freshrss]
+    - role: navidrome
+      tags: [apps, storage, media, music, navidrome]
+    - role: radicale
+      tags: [apps, storage, caldav, radicale]
+    - role: webdav
+      tags: [apps, storage, webdav]
+    - role: wireguard
+      tags: [apps, network, vpn, wireguard]
+    - role: yourls
+      tags: [apps, web, url-shortener, yourls]

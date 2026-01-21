@@ -1,0 +1,19 @@
+---
+- name: Core Infrastructure - Layer 2
+  hosts: vps
+  become: true
+  roles:
+    - role: apt
+      tags: [infrastructure, packages, apt]
+    - role: bash
+      tags: [infrastructure, shell, bash]
+    - role: caddy
+      tags: [infrastructure, web, proxy, caddy]
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
