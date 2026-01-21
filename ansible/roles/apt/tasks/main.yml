@@ -1,11 +1,20 @@
 - name: System Update and Upgrade
   block:
+    - name: Install gnupg first (required for apt repository management)
+      ansible.builtin.apt:
+        name: gnupg
+        state: present
+        update_cache: true
+
     - name: Add Debian Testing repository (for specific packages like dasel and golang-1.24)
       when: ansible_distribution == "Debian"
-      ansible.builtin.apt_repository:
-        repo: "deb http://deb.debian.org/debian/ testing main contrib non-free"
-        state: present
-        filename: "debian-testing"
+      ansible.builtin.copy:
+        content: |
+          deb http://deb.debian.org/debian/ testing main contrib non-free non-free-firmware
+        dest: /etc/apt/sources.list.d/debian-testing.list
+        owner: root
+        group: root
+        mode: "0644"
     - name: Configure APT pinning for dasel (prefer testing over stable)
       when: ansible_distribution == "Debian"
       ansible.builtin.copy:
@@ -54,7 +63,6 @@
           dnsutils,
           git,
           golang-1.24,
-          gnupg,
           lsof,
           neovim,
           rsync,
