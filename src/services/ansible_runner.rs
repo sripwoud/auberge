@@ -42,6 +42,10 @@ pub fn run_playbook(
     // For bootstrap-related playbooks, allow password authentication
     if is_bootstrap_related {
         cmd.arg("--ask-pass");
+        // Disable strict host key checking for initial password-based connection
+        // Host key will still be saved to known_hosts for future connections
+        cmd.arg("-e")
+            .arg("ansible_ssh_common_args='-o StrictHostKeyChecking=no'");
     }
 
     if let Some(tags) = tags {
