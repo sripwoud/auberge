@@ -47,12 +47,6 @@
         groups: "{{ navidrome_sys_group }}"
         append: true
 
-    - name: Add admin user to navidrome group for music uploads via sync
-      ansible.builtin.user:
-        name: "{{ admin_user_name }}"
-        groups: "{{ navidrome_sys_group }}"
-        append: true
-
     - name: Ensure music folder has correct permissions after install
       ansible.builtin.file:
         path: "{{ navidrome_music_folder }}"
