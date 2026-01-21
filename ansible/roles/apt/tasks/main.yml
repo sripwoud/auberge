@@ -132,3 +132,36 @@
         owner: root
         group: root
         mode: "0644"
+
+- name: Remove Apache2 web server (conflicts with Caddy)
+  block:
+    - name: Stop Apache2 service
+      ansible.builtin.systemd_service:
+        name: apache2
+        state: stopped
+      failed_when: false
+      register: apache2_stop
+
+    - name: Disable Apache2 service
+      ansible.builtin.systemd_service:
+        name: apache2
+        enabled: false
+      failed_when: false
+      when: apache2_stop.status is defined
+
+    - name: Remove Apache2 packages (keep apache2-utils)
+      ansible.builtin.apt:
+        name:
+          - apache2
+          - apache2-bin
+          - apache2-data
+          - libapache2-mod-php8.4
+        state: absent
+        autoremove: true
+        purge: true
+      register: apache2_remove
+
+    - name: Ensure apache2-utils is still installed
+      ansible.builtin.apt:
+        name: apache2-utils
+        state: present
