@@ -8,7 +8,9 @@ use clap::{Parser, Subcommand};
 use commands::ansible::{
     AnsibleCommands, run_ansible_bootstrap, run_ansible_check, run_ansible_run,
 };
-use commands::dns::{DnsCommands, run_dns_list, run_dns_migrate, run_dns_set, run_dns_status};
+use commands::dns::{
+    DnsCommands, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all, run_dns_status,
+};
 use commands::select::{SelectCommands, run_select_host, run_select_playbook};
 use commands::ssh::{SshCommands, run_ssh_keygen};
 use commands::sync::{SyncCommands, run_sync_music};
@@ -78,6 +80,30 @@ async fn main() -> Result<()> {
             DnsCommands::Status => run_dns_status().await,
             DnsCommands::Set { subdomain, ip } => run_dns_set(subdomain, ip).await,
             DnsCommands::Migrate { ip, dry_run } => run_dns_migrate(ip, dry_run).await,
+            DnsCommands::SetAll {
+                host,
+                ip,
+                dry_run,
+                yes,
+                strict,
+                subdomains,
+                skip,
+                output,
+                continue_on_error,
+            } => {
+                run_dns_set_all(
+                    host,
+                    ip,
+                    dry_run,
+                    yes,
+                    strict,
+                    subdomains,
+                    skip,
+                    output,
+                    continue_on_error,
+                )
+                .await
+            }
         },
     }
 }

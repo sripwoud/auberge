@@ -72,6 +72,16 @@ pub fn get_host(name: &str, inventory_path: Option<&Path>) -> Result<Host> {
         .ok_or_else(|| eyre::eyre!("Host not found: {}", name))
 }
 
+pub fn discover_hosts_with_ips(inventory_path: Option<&Path>) -> Result<HashMap<String, String>> {
+    let inventory = load_inventory(inventory_path)?;
+    let hosts = inventory.get_hosts(None);
+
+    Ok(hosts
+        .into_iter()
+        .map(|h| (h.name, h.vars.ansible_host))
+        .collect())
+}
+
 pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<Playbook>> {
     let path = match playbooks_path {
         Some(p) => p.to_path_buf(),

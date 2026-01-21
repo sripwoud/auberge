@@ -34,7 +34,7 @@ const KNOWN_APP_SUBDOMAINS: &[&str] = &[
     "YOURLS",
 ];
 
-fn discover_subdomains() -> HashMap<String, String> {
+pub fn discover_subdomains() -> HashMap<String, String> {
     KNOWN_APP_SUBDOMAINS
         .iter()
         .filter_map(|app| {
