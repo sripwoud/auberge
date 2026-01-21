@@ -30,7 +30,7 @@ pub fn run_sync_music(
     let host = match host_arg {
         Some(name) => crate::services::inventory::get_host(&name, None)?,
         None => {
-            let hosts = get_hosts(Some("selfhosted"), None)?;
+            let hosts = get_hosts(Some("auberge"), None)?;
             select_item(
                 &hosts,
                 |h: &Host| {

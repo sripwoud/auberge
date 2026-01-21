@@ -75,7 +75,7 @@ impl DnsConfig {
         self.domain
             .split('.')
             .nth(1)
-            .unwrap_or_else(|| self.domain.split('.').last().unwrap_or(&self.domain))
+            .unwrap_or_else(|| self.domain.split('.').next_back().unwrap_or(&self.domain))
     }
 }
 

@@ -1,0 +1,14 @@
+---
+# Master playbook - Full stack deployment
+# Composes all layers for complete VPS setup
+#
+# Usage:
+#   Full deployment:     ansible-playbook auberge.yml
+#   Skip bootstrap:      ansible-playbook auberge.yml --skip-tags bootstrap
+#   Run specific layer:  ansible-playbook auberge.yml --tags hardening
+#   Update apps only:    ansible-playbook auberge.yml --tags apps
+
+- import_playbook: bootstrap.yml # noqa: name[play]
+- import_playbook: hardening.yml # noqa: name[play]
+- import_playbook: infrastructure.yml # noqa: name[play]
+- import_playbook: apps.yml # noqa: name[play]

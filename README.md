@@ -108,15 +108,37 @@ Use `mise run ansible-run` to interactively select both the host and playbook to
 ```bash
 mise run ansible-run
 # 1) Select host: lechuck-cloud:194.164.53.11
-# 2) Select playbook: bootstrap, site, selfhosted, vibecoder
+# 2) Select playbook: bootstrap, hardening, infrastructure, apps, auberge, vibecoder
 # 3) Runs ansible-playbook with your selections
 ```
 
 ## Available Playbooks
 
-| Playbook                                           | Description                                                                                                 |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| [bootstrap.yml](ansible/playbooks/bootstrap.yml)   | Initial VPS setup - creates users and secures SSH. Run once when provisioning a new server.                 |
-| [site.yml](ansible/playbooks/site.yml)             | Core server infrastructure including security hardening, firewall, reverse proxy, and system configuration. |
-| [selfhosted.yml](ansible/playbooks/selfhosted.yml) | Self-hosted applications: Calibre, Blocky DNS, Radicale, WebDAV, YOURLS.                                    |
-| [vibecoder.yml](ansible/playbooks/vibecoder.yml)   | Development environment setup with Vibecoder and Claude Code integration.                                   |
+Playbooks are organized in layers for modular deployment:
+
+| Layer | Playbook                                                   | Description                                                                          |
+| ----- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 0     | [bootstrap.yml](ansible/playbooks/bootstrap.yml)           | Initial VPS setup - creates users and secures SSH. Run once per new server.          |
+| 1     | [hardening.yml](ansible/playbooks/hardening.yml)           | Security hardening - firewall (UFW), intrusion prevention (fail2ban), kernel.        |
+| 2     | [infrastructure.yml](ansible/playbooks/infrastructure.yml) | Core infrastructure - package management (apt), shell (bash), reverse proxy (Caddy). |
+| 3     | [apps.yml](ansible/playbooks/apps.yml)                     | Self-hosted applications layer.                                                      |
+| -     | [auberge.yml](ansible/playbooks/auberge.yml)               | **Master playbook** - runs all layers (bootstrap → hardening → infra → apps).        |
+| -     | [vibecoder.yml](ansible/playbooks/vibecoder.yml)           | Development environment with Vibecoder and Claude Code integration.                  |
+
+### Layer Tags
+
+Each playbook supports hierarchical tagging for granular control:
+
+```bash
+# Run entire layer
+ansible-playbook auberge.yml --tags hardening
+
+# Run specific function across layers
+ansible-playbook auberge.yml --tags security
+
+# Run specific component
+ansible-playbook auberge.yml --tags caddy
+
+# Skip bootstrap (already done)
+ansible-playbook auberge.yml --skip-tags bootstrap
+```

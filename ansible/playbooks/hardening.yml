@@ -1,0 +1,11 @@
+---
+- name: Security Hardening - Layer 1
+  hosts: vps
+  become: true
+  roles:
+    - role: ufw
+      tags: [hardening, security, network, firewall]
+    - role: fail2ban
+      tags: [hardening, security, intrusion-prevention]
+    - role: kernel_hardening
+      tags: [hardening, security, kernel]
