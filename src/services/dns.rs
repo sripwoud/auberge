@@ -79,33 +79,65 @@ impl DnsService {
     }
 
     pub async fn list_records(&self) -> Result<Vec<Host>> {
+        eprintln!(
+            "DEBUG: Fetching DNS records for {}.{}",
+            self.config.sld(),
+            self.config.tld()
+        );
+
         let result = self
             .client
             .domains_dns_get_hosts(self.config.sld(), self.config.tld())
             .await
             .map_err(|e| eyre::eyre!("Failed to get DNS hosts: {}", e))?;
 
+        eprintln!(
+            "DEBUG: API returned result type: {:?}",
+            if result.is_array() {
+                "Array"
+            } else if result.is_object() {
+                "Object"
+            } else {
+                "Other"
+            }
+        );
+        eprintln!("DEBUG: Result value: {:#?}", result);
+
         let hosts: Vec<Host> = match result.as_array() {
-            Some(arr) => arr
-                .iter()
-                .filter_map(|v| {
-                    serde_json::from_value(v.clone())
-                        .map_err(|e| {
+            Some(arr) => {
+                eprintln!("DEBUG: Parsing {} host records from array", arr.len());
+                arr.iter()
+                    .filter_map(|v| match serde_json::from_value::<Host>(v.clone()) {
+                        Ok(host) => {
+                            eprintln!(
+                                "DEBUG: Successfully parsed host: {} ({}) -> {}",
+                                host.name, host.type_, host.address
+                            );
+                            Some(host)
+                        }
+                        Err(e) => {
                             eprintln!("Warning: Failed to parse host record: {}", e);
                             eprintln!("Record data: {:#?}", v);
-                        })
-                        .ok()
-                })
-                .collect(),
+                            None
+                        }
+                    })
+                    .collect()
+            }
             None => {
+                eprintln!("DEBUG: Result is not an array, checking if single object");
                 if result.is_object() {
-                    vec![serde_json::from_value(result).unwrap_or_else(|_| Host::new())]
+                    vec![serde_json::from_value(result).unwrap_or_else(|e| {
+                        eprintln!("Warning: Failed to parse single object: {}", e);
+                        Host::new()
+                    })]
                 } else {
+                    eprintln!("DEBUG: Result is neither array nor object, returning empty");
                     vec![]
                 }
             }
         };
 
+        eprintln!("DEBUG: Returning {} parsed hosts", hosts.len());
         Ok(hosts)
     }
 

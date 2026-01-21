@@ -1258,7 +1258,6 @@ dependencies = [
 [[package]]
 name = "namecheap"
 version = "0.1.0"
-source = "git+https://github.com/sripwoud/namecheap?branch=fix%2Fapi-error-visibility#4dec9c0b9ab33109fc58c748b7580013da1b100d"
 dependencies = [
  "anyhow",
  "chrono",
