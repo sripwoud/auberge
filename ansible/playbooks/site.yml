@@ -1,34 +1,14 @@
-- name: Initial server setup
-  hosts: vps
-  gather_facts: true
-  become: true
+---
+# Master playbook - Full stack deployment
+# Composes all layers for complete VPS setup
+#
+# Usage:
+#   Full deployment:     ansible-playbook site.yml
+#   Skip bootstrap:      ansible-playbook site.yml --skip-tags bootstrap
+#   Run specific layer:  ansible-playbook site.yml --tags hardening
+#   Update apps only:    ansible-playbook site.yml --tags apps
 
-  roles:
-    - role: apt
-      tags: [apt]
-    - role: user
-      tags: [user]
-    - role: ssh
-      tags: [ssh]
-    - role: bash
-      tags: [bash]
-    - role: ufw
-      tags: [ufw]
-    - role: caddy
-      tags: [caddy]
-    - role: radicale
-      tags: [radicale]
-    - role: webdav
-      tags: [webdav]
-    - role: calibre
-      tags: [calibre]
-    - role: blocky
-      tags: [blocky]
-
-  handlers:
-    - name: Reload systemd
-      ansible.builtin.systemd_service:
-        daemon_reload: true
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: true
+- import_playbook: bootstrap.yml # noqa: name[play]
+- import_playbook: hardening.yml # noqa: name[play]
+- import_playbook: infrastructure.yml # noqa: name[play]
+- import_playbook: auberge.yml # noqa: name[play]
