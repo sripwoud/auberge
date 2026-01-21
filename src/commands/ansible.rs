@@ -117,6 +117,36 @@ pub fn run_ansible_run(
         }
     }
 
+    // Show Namecheap IP whitelisting warning for apps playbook
+    let needs_namecheap_warning = playbook_name == "apps.yml" || playbook_name == "auberge.yml";
+
+    if needs_namecheap_warning {
+        eprintln!("\n⚠️  IMPORTANT: Namecheap IP Whitelisting Required");
+        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        eprintln!("Before running apps, ensure your VPS IP is whitelisted in");
+        eprintln!("Namecheap's API settings (separate from DNS configuration).");
+        eprintln!();
+        eprintln!("Required steps:");
+        eprintln!("  1. Get your VPS IP (shown after bootstrap or check provider)");
+        eprintln!("  2. Log into Namecheap: https://www.namecheap.com");
+        eprintln!("  3. Navigate to: Profile → Tools → API Access");
+        eprintln!("  4. Add your VPS IP to the API whitelist");
+        eprintln!("  5. Save and wait a few minutes for propagation");
+        eprintln!();
+        eprintln!("Without this, SSL certificate generation will fail!");
+        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+        print!("Have you whitelisted your VPS IP in Namecheap? [y/N]: ");
+        io::stdout().flush()?;
+        let mut response = String::new();
+        io::stdin().read_line(&mut response)?;
+
+        if !response.trim().eq_ignore_ascii_case("y") {
+            eprintln!("\nAborted. Whitelist VPS IP in Namecheap first, then re-run.");
+            std::process::exit(1);
+        }
+    }
+
     eprintln!(
         "Running {} on {}...",
         selected_playbook.name, selected_host.name

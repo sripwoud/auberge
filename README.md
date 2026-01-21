@@ -38,6 +38,33 @@ CLI tool for managing self-hosted infrastructure with Ansible.
 > - **AWS**: Security Groups
 > - **Vultr**: Settings → Firewall
 
+## ⚠️ Important: Namecheap IP Whitelisting (Required for SSL Certificates)
+
+> [!IMPORTANT]
+> **Before running the apps playbook**, you MUST whitelist your VPS IP address in Namecheap's API settings.
+>
+> The certificate automation (Lego) runs from your VPS and makes API calls to Namecheap for DNS-01 challenges. Namecheap blocks these requests unless the VPS IP is whitelisted.
+>
+> **Required steps:**
+>
+> 1. Get your VPS IP address (displayed after bootstrap or check your provider dashboard)
+> 2. Log into Namecheap: https://www.namecheap.com
+> 3. Navigate to: **Profile → Tools → API Access** (or **Account → Profile → Tools**)
+> 4. Add your VPS IP to the API whitelist
+> 5. Save changes (may take a few minutes to propagate)
+>
+> **Why this is needed:**
+>
+> - Lego (certificate tool) runs from your VPS, not your local machine
+> - It makes Namecheap API calls for DNS-01 challenge validation
+> - This is separate from DNS record configuration - it's a security setting for API access
+>
+> **Without this, certificate generation will fail with:**
+>
+> ```
+> namecheap: Invalid request IP: [your-vps-ip] [1011150]
+> ```
+
 ## Initial Setup
 
 ### 1. Configuration
