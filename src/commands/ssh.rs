@@ -7,6 +7,7 @@ use std::process::Command;
 
 #[derive(Subcommand)]
 pub enum SshCommands {
+    #[command(alias = "k")]
     Keygen {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,

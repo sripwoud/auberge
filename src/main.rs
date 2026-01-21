@@ -32,15 +32,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    #[command(subcommand, about = "Select hosts or playbooks interactively")]
+    #[command(
+        subcommand,
+        alias = "se",
+        about = "Select hosts or playbooks interactively"
+    )]
     Select(SelectCommands),
-    #[command(subcommand, about = "Run ansible playbooks")]
+    #[command(subcommand, alias = "a", about = "Run ansible playbooks")]
     Ansible(AnsibleCommands),
-    #[command(subcommand, about = "SSH key management")]
+    #[command(subcommand, alias = "ss", about = "SSH key management")]
     Ssh(SshCommands),
-    #[command(subcommand, about = "Sync files to remote hosts")]
+    #[command(subcommand, alias = "sy", about = "Sync files to remote hosts")]
     Sync(SyncCommands),
-    #[command(subcommand, about = "DNS management via Namecheap")]
+    #[command(subcommand, alias = "d", about = "DNS management via Namecheap")]
     Dns(DnsCommands),
 }
 

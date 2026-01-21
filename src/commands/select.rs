@@ -7,10 +7,12 @@ use eyre::Result;
 
 #[derive(Subcommand)]
 pub enum SelectCommands {
+    #[command(alias = "h")]
     Host {
         #[arg(short, long, help = "Filter hosts by group")]
         group: Option<String>,
     },
+    #[command(alias = "p")]
     Playbook,
 }
 

@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 #[derive(Subcommand)]
 pub enum AnsibleCommands {
+    #[command(alias = "r")]
     Run {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
@@ -20,12 +21,14 @@ pub enum AnsibleCommands {
         #[arg(short, long, help = "Only run tasks with these tags")]
         tags: Option<Vec<String>>,
     },
+    #[command(alias = "c")]
     Check {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
         #[arg(short, long, help = "Playbook path")]
         playbook: Option<PathBuf>,
     },
+    #[command(alias = "b")]
     Bootstrap {
         host: String,
         #[arg(long, default_value = "22", help = "SSH port for initial connection")]

@@ -11,21 +11,21 @@ pub enum OutputFormat {
 
 #[derive(Subcommand)]
 pub enum DnsCommands {
-    #[command(about = "List DNS records")]
+    #[command(alias = "l", about = "List DNS records")]
     List {
         #[arg(short, long, help = "Filter by subdomain name")]
         subdomain: Option<String>,
     },
-    #[command(about = "Show DNS status and health")]
+    #[command(alias = "st", about = "Show DNS status and health")]
     Status,
-    #[command(about = "Set an A record for a subdomain")]
+    #[command(alias = "s", about = "Set an A record for a subdomain")]
     Set {
         #[arg(short, long, help = "Subdomain name")]
         subdomain: String,
         #[arg(short, long, help = "IP address")]
         ip: String,
     },
-    #[command(about = "Migrate all A records to a new IP")]
+    #[command(alias = "m", about = "Migrate all A records to a new IP")]
     Migrate {
         #[arg(short, long, help = "New IP address")]
         ip: String,
@@ -33,6 +33,7 @@ pub enum DnsCommands {
         dry_run: bool,
     },
     #[command(
+        alias = "sa",
         about = "Batch create A records for all app subdomains",
         long_about = "Interactively or automatically create DNS A records for all configured \
                       app subdomains (blocky, calibre, freshrss, etc.) pointing to a selected \

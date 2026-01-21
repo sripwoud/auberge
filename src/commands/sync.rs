@@ -8,6 +8,7 @@ use std::process::Command;
 
 #[derive(Subcommand)]
 pub enum SyncCommands {
+    #[command(alias = "m")]
     Music {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
