@@ -76,7 +76,14 @@ impl DnsService {
         let hosts: Vec<Host> = match result.as_array() {
             Some(arr) => arr
                 .iter()
-                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .filter_map(|v| {
+                    serde_json::from_value(v.clone())
+                        .map_err(|e| {
+                            eprintln!("Warning: Failed to parse host record: {}", e);
+                            eprintln!("Record data: {:#?}", v);
+                        })
+                        .ok()
+                })
                 .collect(),
             None => {
                 if result.is_object() {
