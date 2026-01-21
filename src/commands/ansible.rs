@@ -94,7 +94,7 @@ pub fn run_ansible_run(
         check,
         tags.as_deref(),
         None,
-        true,
+        false,
     )?;
 
     if result.success {
