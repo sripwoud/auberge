@@ -45,10 +45,6 @@ pub fn discover_subdomains() -> HashMap<String, String> {
 }
 
 impl DnsService {
-    pub fn new() -> Result<Self> {
-        Self::new_with_production(None)
-    }
-
     pub fn new_with_production(production_override: Option<bool>) -> Result<Self> {
         let app_config = Config::load()?;
 
@@ -76,14 +72,6 @@ impl DnsService {
 
     pub fn is_production(&self) -> bool {
         self.client.production
-    }
-
-    pub fn mode_label(&self) -> &'static str {
-        if self.is_production() {
-            "PRODUCTION"
-        } else {
-            "SANDBOX"
-        }
     }
 
     pub fn config(&self) -> &DnsConfig {
