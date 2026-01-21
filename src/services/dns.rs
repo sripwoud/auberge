@@ -46,6 +46,10 @@ pub fn discover_subdomains() -> HashMap<String, String> {
 
 impl DnsService {
     pub fn new() -> Result<Self> {
+        Self::new_with_production(None)
+    }
+
+    pub fn new_with_production(production_override: Option<bool>) -> Result<Self> {
         let app_config = Config::load()?;
 
         let api_user = app_config.namecheap.api_user.clone();
@@ -54,12 +58,32 @@ impl DnsService {
         let client_ip = env::var("NAMECHEAP_CLIENT_IP").unwrap_or_else(|_| "0.0.0.0".to_string());
         let username = app_config.user.username.clone();
 
-        let client = NameCheapClient::new(api_user, api_key, client_ip, username, true);
+        let production = production_override
+            .or_else(|| {
+                env::var("NAMECHEAP_PRODUCTION")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+            })
+            .unwrap_or(false);
+
+        let client = NameCheapClient::new(api_user, api_key, client_ip, username, production);
 
         Ok(Self {
             client,
             config: app_config.dns,
         })
+    }
+
+    pub fn is_production(&self) -> bool {
+        self.client.production
+    }
+
+    pub fn mode_label(&self) -> &'static str {
+        if self.is_production() {
+            "PRODUCTION"
+        } else {
+            "SANDBOX"
+        }
     }
 
     pub fn config(&self) -> &DnsConfig {

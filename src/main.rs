@@ -80,10 +80,21 @@ async fn main() -> Result<()> {
             } => run_sync_music(host, source, dry_run),
         },
         Commands::Dns(cmd) => match cmd {
-            DnsCommands::List { subdomain } => run_dns_list(subdomain).await,
-            DnsCommands::Status => run_dns_status().await,
-            DnsCommands::Set { subdomain, ip } => run_dns_set(subdomain, ip).await,
-            DnsCommands::Migrate { ip, dry_run } => run_dns_migrate(ip, dry_run).await,
+            DnsCommands::List {
+                subdomain,
+                production,
+            } => run_dns_list(subdomain, production).await,
+            DnsCommands::Status { production } => run_dns_status(production).await,
+            DnsCommands::Set {
+                subdomain,
+                ip,
+                production,
+            } => run_dns_set(subdomain, ip, production).await,
+            DnsCommands::Migrate {
+                ip,
+                dry_run,
+                production,
+            } => run_dns_migrate(ip, dry_run, production).await,
             DnsCommands::SetAll {
                 host,
                 ip,
@@ -94,6 +105,7 @@ async fn main() -> Result<()> {
                 skip,
                 output,
                 continue_on_error,
+                production,
             } => {
                 run_dns_set_all(
                     host,
@@ -105,6 +117,7 @@ async fn main() -> Result<()> {
                     skip,
                     output,
                     continue_on_error,
+                    production,
                 )
                 .await
             }

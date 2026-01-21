@@ -15,15 +15,22 @@ pub enum DnsCommands {
     List {
         #[arg(short, long, help = "Filter by subdomain name")]
         subdomain: Option<String>,
+        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        production: bool,
     },
     #[command(alias = "st", about = "Show DNS status and health")]
-    Status,
+    Status {
+        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        production: bool,
+    },
     #[command(alias = "s", about = "Set an A record for a subdomain")]
     Set {
         #[arg(short, long, help = "Subdomain name")]
         subdomain: String,
         #[arg(short, long, help = "IP address")]
         ip: String,
+        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        production: bool,
     },
     #[command(alias = "m", about = "Migrate all A records to a new IP")]
     Migrate {
@@ -31,6 +38,8 @@ pub enum DnsCommands {
         ip: String,
         #[arg(short = 'n', long, help = "Dry run (don't actually migrate)")]
         dry_run: bool,
+        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        production: bool,
     },
     #[command(
         alias = "sa",
@@ -90,11 +99,15 @@ pub enum DnsCommands {
         output: OutputFormat,
         #[arg(long, help = "Continue on errors instead of failing fast")]
         continue_on_error: bool,
+        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        production: bool,
     },
 }
 
-pub async fn run_dns_list(subdomain: Option<String>) -> Result<()> {
-    let service = DnsService::new()?;
+pub async fn run_dns_list(subdomain: Option<String>, production: bool) -> Result<()> {
+    let service = DnsService::new_with_production(Some(production))?;
+    print_mode_banner(&service);
+
     let records = service.list_records().await?;
 
     let filtered: Vec<_> = match &subdomain {
@@ -127,8 +140,18 @@ pub async fn run_dns_list(subdomain: Option<String>) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_dns_status() -> Result<()> {
-    let service = DnsService::new()?;
+fn print_mode_banner(service: &DnsService) {
+    if service.is_production() {
+        eprintln!("\x1b[1;31m⚠️  PRODUCTION MODE\x1b[0m");
+    } else {
+        eprintln!("\x1b[1;36m🧪 SANDBOX MODE\x1b[0m");
+    }
+}
+
+pub async fn run_dns_status(production: bool) -> Result<()> {
+    let service = DnsService::new_with_production(Some(production))?;
+    print_mode_banner(&service);
+
     let status = service.status().await?;
 
     eprintln!("DNS Status for {}", status.domain);
@@ -162,8 +185,9 @@ pub async fn run_dns_status() -> Result<()> {
     Ok(())
 }
 
-pub async fn run_dns_set(subdomain: String, ip: String) -> Result<()> {
-    let service = DnsService::new()?;
+pub async fn run_dns_set(subdomain: String, ip: String, production: bool) -> Result<()> {
+    let service = DnsService::new_with_production(Some(production))?;
+    print_mode_banner(&service);
 
     eprintln!(
         "Setting A record: {}.{} -> {}",
@@ -178,8 +202,9 @@ pub async fn run_dns_set(subdomain: String, ip: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_dns_migrate(ip: String, dry_run: bool) -> Result<()> {
-    let service = DnsService::new()?;
+pub async fn run_dns_migrate(ip: String, dry_run: bool, production: bool) -> Result<()> {
+    let service = DnsService::new_with_production(Some(production))?;
+    print_mode_banner(&service);
 
     if dry_run {
         eprintln!("[DRY RUN] DNS Migration Preview");
@@ -222,12 +247,14 @@ pub async fn run_dns_set_all(
     skip: Vec<String>,
     _output: OutputFormat,
     continue_on_error: bool,
+    production: bool,
 ) -> Result<()> {
     use crate::services::dns::discover_subdomains;
     use crate::services::inventory::discover_hosts_with_ips;
     use std::collections::HashSet;
 
-    let service = DnsService::new()?;
+    let service = DnsService::new_with_production(Some(production))?;
+    print_mode_banner(&service);
 
     let target_ip = match (&host, &ip) {
         (Some(host_name), None) => {
