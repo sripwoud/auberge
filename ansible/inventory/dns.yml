@@ -1,3 +1,0 @@
-domain: "{{ vault_primary_domain }}"
-subdomains: [calendar, dns, music, rss, url, webdav]
-default_ttl: 300

@@ -1,7 +1,0 @@
----
-admin_user_name: "{{ vault_admin_user_name }}"
-admin_user_email: "{{ vault_admin_user_email }}"
-
-primary_domain: "{{ vault_primary_domain }}"
-
-namecheap_api_user: "{{ vault_namecheap_api_user }}"

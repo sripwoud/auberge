@@ -1,0 +1,17 @@
+---
+# Non-secret global configuration
+# All values sourced from environment variables (mise.toml exports them)
+
+# User configuration
+admin_user_name: "{{ lookup('env', 'ADMIN_USER_NAME') }}"
+admin_user_email: "{{ lookup('env', 'ADMIN_USER_EMAIL') }}"
+
+# DNS configuration
+primary_domain: "{{ lookup('env', 'PRIMARY_DOMAIN') }}"
+dns_domain: "{{ lookup('env', 'PRIMARY_DOMAIN') }}"
+dns_subdomains: "{{ lookup('env', 'DNS_SUBDOMAINS').split(',') }}"
+dns_default_ttl: "{{ lookup('env', 'DNS_DEFAULT_TTL') | int }}"
+
+# Namecheap configuration
+namecheap_api_user: "{{ lookup('env', 'NAMECHEAP_API_USER') }}"
+namecheap_api_key: "{{ lookup('env', 'NAMECHEAP_API_KEY') }}"

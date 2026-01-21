@@ -1,8 +1,0 @@
-# FreshRSS configuration
-# Enable automatic feed updates
-freshrss_enable_cron: true
-# Use systemd timer instead of cron (more modern approach)
-freshrss_use_systemd_timer: true
-# Domain is set in defaults using vault_primary_domain
-# Uncomment below if you need to override:
-# freshrss_domain: rss.example.com
