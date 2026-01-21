@@ -6,11 +6,11 @@ all:
     auberge:
       hosts:
         selfhost-old:
-          ansible_host: "{{ vault_selfhost_old_host }}"
+          ansible_host: "{{ lookup('env', 'SELFHOST_OLD_HOST') }}"
           ansible_port: 2209
           bootstrap_user: root
         selfhost:
-          ansible_host: "{{ vault_selfhost_host }}"
+          ansible_host: "{{ lookup('env', 'SELFHOST_HOST') }}"
           ansible_port: 22 # Will change after bootstrap
           bootstrap_user: root # Adjust if different
 
@@ -18,21 +18,22 @@ all:
     vibecoding:
       hosts:
         vibecoder:
-          ansible_host: "{{ vault_vibecoder_host }}"
+          ansible_host: "{{ lookup('env', 'VIBECODER_HOST') }}"
           ansible_port: 59865
           bootstrap_user: debian
 
     # All VPS servers (parent group)
     vps:
-      children: [auberge, vibecoding]
+      children:
+        auberge:
+        vibecoding:
       vars:
         # Default to ansible automation user
         ansible_user: ansible
         ansible_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }}"
 
-        # Your personal admin user
-        admin_user_name: "{{ vault_admin_user_name }}"
-        admin_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/{{ vault_admin_user_name }}_{{ inventory_hostname }}"
+        # Your personal admin user (sourced from group_vars/all/main.yml)
+        admin_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/{{ admin_user_name }}_{{ inventory_hostname }}"
 
         # Common SSH settings
         ansible_python_interpreter: /usr/bin/python3

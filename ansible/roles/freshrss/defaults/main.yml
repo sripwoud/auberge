@@ -2,7 +2,7 @@ freshrss_install_path: /opt/freshrss
 freshrss_sys_user: freshrss
 freshrss_sys_group: freshrss
 freshrss_port: 8084
-freshrss_domain: "rss.{{ vault_primary_domain }}"
+freshrss_domain: "rss.{{ primary_domain }}"
 freshrss_version: edge
 freshrss_data_dir: /var/lib/freshrss
 freshrss_db_type: sqlite

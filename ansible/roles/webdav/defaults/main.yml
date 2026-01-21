@@ -1,1 +1,1 @@
-webdav_domain: "webdav.{{ vault_primary_domain }}"
+webdav_domain: "webdav.{{ primary_domain }}"
