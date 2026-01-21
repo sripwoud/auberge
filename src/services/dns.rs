@@ -91,30 +91,7 @@ impl DnsService {
     }
 
     pub async fn set_a_record(&self, subdomain: &str, ip: &str) -> Result<()> {
-        let existing = self.list_records().await?;
-
-        let mut hosts: Vec<HostRequest> = existing
-            .iter()
-            .filter(|h| !(h.name == subdomain && h.type_ == "A"))
-            .map(|h| {
-                HostRequest::new(
-                    h.name.clone(),
-                    h.type_.clone(),
-                    h.address.clone(),
-                    if h.mx_pref.is_empty() {
-                        None
-                    } else {
-                        Some(h.mx_pref.clone())
-                    },
-                    None,
-                    Some(h.ttl.to_string()),
-                    None,
-                    None,
-                )
-            })
-            .collect();
-
-        hosts.push(HostRequest::new(
+        let new_record = HostRequest::new(
             subdomain.to_string(),
             "A".to_string(),
             ip.to_string(),
@@ -123,10 +100,10 @@ impl DnsService {
             Some(self.config.default_ttl.to_string()),
             None,
             None,
-        ));
+        );
 
         self.client
-            .domains_dns_set_hosts(self.config.sld(), self.config.tld(), hosts)
+            .domains_dns_set_hosts(self.config.sld(), self.config.tld(), vec![new_record])
             .await
             .map_err(|e| eyre::eyre!("Failed to set DNS hosts: {}", e))?;
 
