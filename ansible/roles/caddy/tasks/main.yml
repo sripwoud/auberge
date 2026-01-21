@@ -21,7 +21,11 @@
         group: root
         mode: "0644"
         remote_src: true
-      notify: Update apt cache
+
+    - name: Update apt cache after adding xcaddy repository
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 0
 
     - name: Install xcaddy
       ansible.builtin.apt:
