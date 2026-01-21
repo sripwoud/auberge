@@ -1,4 +1,22 @@
 ---
+- name: Validate SSH_PORT environment variable
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Check SSH_PORT is set
+      ansible.builtin.fail:
+        msg: "SSH_PORT environment variable is not set"
+      when: lookup('env', 'SSH_PORT') == ''
+      tags: [bootstrap, ssh]
+
+    - name: Validate SSH_PORT is a valid port number
+      ansible.builtin.fail:
+        msg: "SSH_PORT must be between 1 and 65535, got: {{ lookup('env', 'SSH_PORT') }}"
+      when: >
+        lookup('env', 'SSH_PORT') | int < 1 or
+        lookup('env', 'SSH_PORT') | int > 65535
+      tags: [bootstrap, ssh]
+
 - name: Bootstrap new VPS - Initial secure setup with dual-user
   hosts: vps
   remote_user: root
@@ -13,3 +31,13 @@
     # Then harden SSH
     - role: ssh
       tags: [bootstrap, security, network, ssh]
+
+- name: Update ansible_port for subsequent plays
+  hosts: vps
+  gather_facts: false
+  tasks:
+    - name: Set ansible_port to new SSH port for this session
+      ansible.builtin.set_fact:
+        ansible_port: "{{ lookup('env', 'SSH_PORT') }}"
+        cacheable: false
+      tags: [bootstrap, ssh]

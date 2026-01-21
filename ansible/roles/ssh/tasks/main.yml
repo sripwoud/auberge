@@ -5,14 +5,9 @@
         prompt: "Enter SSH keyname (e.g., 'vibecoder', 'personal')"
       register: ssh_keyname_prompt
 
-    - name: Prompt for SSH port
-      ansible.builtin.pause:
-        prompt: "Enter SSH port (default: 59865)"
-      register: ssh_port_prompt
     - name: Set SSH configuration variables
       ansible.builtin.set_fact:
         ssh_keyname_input: "{{ ssh_keyname_prompt.user_input }}"
-        ssh_port_input: "{{ ssh_port_prompt.user_input | default('59865', true) }}"
 
 - name: SSH Daemon Configuration
   block:
@@ -64,5 +59,3 @@
 
 - name: Validate SSH connection before closing ports
   ansible.builtin.include_tasks: validate.yml
-  vars:
-    ssh_port: "{{ ssh_port_input | default(ssh_port) }}"
