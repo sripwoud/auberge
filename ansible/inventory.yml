@@ -32,3 +32,4 @@ all:
           -o ControlPersist=60s
           -o UserKnownHostsFile={{ lookup('env', 'HOME') }}/.ssh/known_hosts
           -o StrictHostKeyChecking=accept-new
+          -o IdentitiesOnly=yes
