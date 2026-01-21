@@ -2,4 +2,4 @@ calibre_install_path: /opt/calibre
 calibre_sys_user: calibre
 calibre_sys_group: calibre
 calibre_port: 8083
-calibre_domain: "lire.riou.one"
+calibre_domain: "lire.{{ primary_domain }}"
