@@ -7,17 +7,6 @@
         state: present
         update_cache: true
 
-    - name: Ensure navidrome group exists first
-      ansible.builtin.group:
-        name: "{{ navidrome_sys_group }}"
-        state: present
-
-    - name: Add ansible user to navidrome group for music uploads
-      ansible.builtin.user:
-        name: "{{ ansible_user }}"
-        groups: "{{ navidrome_sys_group }}"
-        append: true
-
     - name: Fetch latest Navidrome release information from GitHub API
       become: false
       delegate_to: localhost
@@ -51,6 +40,12 @@
         state: present
       notify: Restart navidrome
       register: navidrome_install
+
+    - name: Add ansible user to navidrome group for music uploads
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        groups: "{{ navidrome_sys_group }}"
+        append: true
 
     - name: Ensure music folder has correct permissions after install
       ansible.builtin.file:
