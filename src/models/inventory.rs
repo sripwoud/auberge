@@ -1,10 +1,27 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
+
+fn deserialize_port<'de, D>(deserializer: D) -> Result<u16, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrU16 {
+        String(String),
+        U16(u16),
+    }
+
+    match StringOrU16::deserialize(deserializer)? {
+        StringOrU16::String(s) => s.parse::<u16>().map_err(serde::de::Error::custom),
+        StringOrU16::U16(n) => Ok(n),
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct HostVars {
     pub ansible_host: String,
-    #[serde(default = "default_port")]
+    #[serde(default = "default_port", deserialize_with = "deserialize_port")]
     pub ansible_port: u16,
     #[serde(default = "default_bootstrap_user")]
     pub bootstrap_user: String,
