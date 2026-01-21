@@ -1,5 +1,4 @@
-ssh_keyname: "{{ ssh_keyname_input }}"
-ssh_public_key_path: "{{ user_home }}/.config/ssh/identities/{{ ssh_keyname }}.pub"
+ssh_public_key_path: "{{ lookup('env', 'HOME') }}/.ssh/identities/{{ user_name }}_{{ inventory_hostname }}.pub"
 ssh_port: "{{ lookup('env', 'SSH_PORT') }}"
 ssh_max_auth_tries: 3
 ssh_max_sessions: 5
