@@ -1,15 +1,18 @@
-amends "package://github.com/jdx/hk/releases/download/v1.1.1/hk@1.1.1#/Config.pkl"
+amends "package://github.com/jdx/hk/releases/download/v1.32.0/hk@1.32.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.32.0/hk@1.32.0#/Builtins.pkl"
 
 local linters  = new Mapping<String, Step> {
-  ["dprint"]  {
-    fix = "dprint fmt"
-    stage = "*"
-  }
   ["ansible"] {
     check = "ansible-lint {{files}}"
     dir = "ansible"
     glob = List("*.yml", "*.yaml")
   }
+  ["clippy"] = Builtins.cargo_clippy
+  ["dprint"]  {
+    fix = "dprint fmt"
+    stage = "*"
+  }
+  
 }
 
 hooks {
