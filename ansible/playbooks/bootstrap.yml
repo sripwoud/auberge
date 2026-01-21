@@ -28,7 +28,10 @@
     # Set up dual-user system first
     - role: ansible_user
       tags: [bootstrap, users, ansible-user]
-    # Then harden SSH
+    # Configure firewall rules (not enabled yet - prevents lockout)
+    - role: ufw
+      tags: [bootstrap, security, firewall, ufw]
+    # Change SSH port, validate, then enable firewall
     - role: ssh
       tags: [bootstrap, security, network, ssh]
 

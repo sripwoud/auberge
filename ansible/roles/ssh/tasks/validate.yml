@@ -52,7 +52,12 @@
         - ssh_port != "22"
         - ssh_test.rc == 0
 
+    - name: Enable UFW after SSH port transition confirmed
+      community.general.ufw:
+        state: enabled
+      when: ssh_test.rc == 0
+
   rescue:
-    - name: Keep port 22 open on failure
+    - name: Keep port 22 open and firewall disabled on failure
       ansible.builtin.debug:
-        msg: "SSH validation failed. Port 22 remains open for recovery. Fix issues and re-run."
+        msg: "SSH validation failed. Port 22 remains open and firewall disabled for recovery. Fix issues and re-run."

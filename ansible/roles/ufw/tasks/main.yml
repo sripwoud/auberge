@@ -49,6 +49,5 @@
       community.general.ufw:
         logging: low
 
-    - name: Enable UFW
-      community.general.ufw:
-        state: enabled
+    # NOTE: UFW is NOT enabled here to prevent lockout during SSH port changes
+    # It will be enabled by ssh role after port transition is validated
