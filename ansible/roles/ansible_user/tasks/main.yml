@@ -1,4 +1,10 @@
 ---
+- name: Create sshusers group
+  ansible.builtin.group:
+    name: sshusers
+    state: present
+    system: true
+
 - name: Create ansible automation user
   ansible.builtin.user:
     name: ansible
