@@ -42,10 +42,12 @@ pub fn run_playbook(
     // For bootstrap-related playbooks, allow password authentication
     if is_bootstrap_related {
         cmd.arg("--ask-pass");
-        // Disable strict host key checking for initial password-based connection
-        // Host key will still be saved to known_hosts for future connections
-        cmd.arg("-e")
-            .arg("ansible_ssh_common_args='-o StrictHostKeyChecking=no'");
+        // Disable strict host key checking and ignore known_hosts for initial bootstrap
+        // This allows bootstrapping fresh VPS instances even if old keys exist
+        // After bootstrap completes, normal SSH key auth is used with proper host key verification
+        cmd.arg("-e").arg(
+            "ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'",
+        );
     }
 
     if let Some(tags) = tags {
