@@ -1,6 +1,8 @@
 use crate::models::inventory::{Host, Inventory, RawInventory};
 use crate::models::playbook::Playbook;
 use eyre::{Result, WrapErr};
+use minijinja::Environment;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub fn find_project_root() -> PathBuf {
@@ -27,7 +29,32 @@ pub fn load_inventory(inventory_path: Option<&Path>) -> Result<Inventory> {
     let content = std::fs::read_to_string(&path)
         .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
 
-    let raw: RawInventory = serde_yaml::from_str(&content)
+    // Render Jinja2 templates with environment variables
+    let mut env = Environment::new();
+    env.add_function(
+        "lookup",
+        |kind: String, name: String| -> Result<String, minijinja::Error> {
+            if kind == "env" {
+                std::env::var(&name).map_err(|_| {
+                    minijinja::Error::new(
+                        minijinja::ErrorKind::UndefinedError,
+                        format!("Environment variable {} not found", name),
+                    )
+                })
+            } else {
+                Err(minijinja::Error::new(
+                    minijinja::ErrorKind::UndefinedError,
+                    format!("Unsupported lookup type: {}", kind),
+                ))
+            }
+        },
+    );
+
+    let rendered = env
+        .render_str(&content, HashMap::<String, String>::new())
+        .wrap_err("Failed to render inventory template")?;
+
+    let raw: RawInventory = serde_yaml::from_str(&rendered)
         .wrap_err_with(|| format!("Failed to parse {}", path.display()))?;
 
     Ok(Inventory::from_raw(raw))

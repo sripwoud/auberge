@@ -17,6 +17,7 @@ skim = "0.10"
 dirs = "6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 namecheap = "0.1"
+minijinja = "2.14.0"
 
 [dev-dependencies]
 tempfile = "3"
