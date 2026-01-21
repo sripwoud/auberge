@@ -6,6 +6,9 @@
     - role: apt
       tags: [infrastructure, packages, apt]
     - role: bash
+      vars:
+        user_name: "{{ admin_user_name }}"
+        user_home: "/home/{{ admin_user_name }}"
       tags: [infrastructure, shell, bash]
     - role: caddy
       tags: [infrastructure, web, proxy, caddy]
