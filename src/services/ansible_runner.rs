@@ -17,13 +17,13 @@ pub fn run_playbook(
     ask_vault_pass: bool,
 ) -> Result<AnsibleResult> {
     let project_root = find_project_root();
-    let inventory_path = project_root.join("ansible/inventory.yml");
+    let ansible_dir = project_root.join("ansible");
 
     let mut cmd = Command::new("ansible-playbook");
-    cmd.current_dir(&project_root)
+    cmd.current_dir(&ansible_dir)
         .arg("-i")
-        .arg(&inventory_path)
-        .arg(playbook)
+        .arg("inventory.yml")
+        .arg(playbook.strip_prefix(&ansible_dir).unwrap_or(playbook))
         .arg("--limit")
         .arg(host);
 
@@ -63,13 +63,13 @@ pub fn run_bootstrap(
     port: u16,
 ) -> Result<AnsibleResult> {
     let project_root = find_project_root();
-    let inventory_path = project_root.join("ansible/inventory.yml");
+    let ansible_dir = project_root.join("ansible");
 
     let status = Command::new("ansible-playbook")
-        .current_dir(&project_root)
+        .current_dir(&ansible_dir)
         .arg("-i")
-        .arg(&inventory_path)
-        .arg(playbook)
+        .arg("inventory.yml")
+        .arg(playbook.strip_prefix(&ansible_dir).unwrap_or(playbook))
         .arg("--limit")
         .arg(host)
         .arg("-e")
