@@ -6,6 +6,9 @@
 admin_user_name: "{{ lookup('env', 'ADMIN_USER_NAME') }}"
 admin_user_email: "{{ lookup('env', 'ADMIN_USER_EMAIL') }}"
 
+# SSH configuration
+ssh_port: "{{ lookup('env', 'SSH_PORT') }}"
+
 # DNS configuration
 primary_domain: "{{ lookup('env', 'PRIMARY_DOMAIN') }}"
 dns_domain: "{{ lookup('env', 'PRIMARY_DOMAIN') }}"
