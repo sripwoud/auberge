@@ -2,31 +2,20 @@
 # Dual-user inventory structure
 all:
   children:
-    # Self-hosting servers
-    auberge:
+    vps:
       hosts:
-        selfhost-old:
-          ansible_host: "{{ lookup('env', 'SELFHOST_OLD_HOST') }}"
+        auberge-old:
+          ansible_host: "{{ lookup('env', 'AUBERGE_OLD_HOST') }}"
           ansible_port: 2209
           bootstrap_user: root
-        selfhost:
-          ansible_host: "{{ lookup('env', 'SELFHOST_HOST') }}"
+        auberge:
+          ansible_host: "{{ lookup('env', 'AUBERGE_HOST') }}"
           ansible_port: 22 # Will change after bootstrap
-          bootstrap_user: root # Adjust if different
-
-    # Vibecoding server
-    vibecoding:
-      hosts:
+          bootstrap_user: root
         vibecoder:
           ansible_host: "{{ lookup('env', 'VIBECODER_HOST') }}"
           ansible_port: 59865
           bootstrap_user: debian
-
-    # All VPS servers (parent group)
-    vps:
-      children:
-        auberge:
-        vibecoding:
       vars:
         # Default to ansible automation user
         ansible_user: ansible
