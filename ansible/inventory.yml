@@ -3,7 +3,7 @@
 all:
   children:
     # Self-hosting servers
-    selfhosted:
+    auberge:
       hosts:
         selfhost-old:
           ansible_host: "{{ vault_selfhost_old_host }}"
@@ -24,9 +24,7 @@ all:
 
     # All VPS servers (parent group)
     vps:
-      children:
-        selfhosted:
-        vibecoding:
+      children: [auberge, vibecoding]
       vars:
         # Default to ansible automation user
         ansible_user: ansible
