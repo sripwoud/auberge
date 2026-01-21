@@ -12,7 +12,6 @@ ssh_port: "{{ lookup('env', 'SSH_PORT') }}"
 # DNS configuration
 primary_domain: "{{ lookup('env', 'PRIMARY_DOMAIN') }}"
 dns_domain: "{{ lookup('env', 'PRIMARY_DOMAIN') }}"
-dns_subdomains: "{{ lookup('env', 'DNS_SUBDOMAINS').split(',') }}"
 dns_default_ttl: "{{ lookup('env', 'DNS_DEFAULT_TTL') | int }}"
 
 # App subdomain configuration

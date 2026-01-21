@@ -2,6 +2,7 @@ use crate::config::{Config, DnsConfig};
 use eyre::Result;
 use namecheap::domains_dns::set_hosts::HostRequest;
 use namecheap::{Host, NameCheapClient};
+use std::collections::HashMap;
 use std::env;
 
 pub struct MigrationResult {
@@ -21,6 +22,26 @@ pub struct DnsStatus {
 pub struct DnsService {
     client: NameCheapClient,
     config: DnsConfig,
+}
+
+const KNOWN_APP_SUBDOMAINS: &[&str] = &[
+    "BLOCKY",
+    "CALIBRE",
+    "FRESHRSS",
+    "NAVIDROME",
+    "RADICALE",
+    "WEBDAV",
+    "YOURLS",
+];
+
+fn discover_subdomains() -> HashMap<String, String> {
+    KNOWN_APP_SUBDOMAINS
+        .iter()
+        .filter_map(|app| {
+            let key = format!("{}_SUBDOMAIN", app);
+            env::var(&key).ok().map(|value| (app.to_lowercase(), value))
+        })
+        .collect()
 }
 
 impl DnsService {
@@ -178,15 +199,16 @@ impl DnsService {
     pub async fn status(&self) -> Result<DnsStatus> {
         let active_records = self.list_records().await?;
 
+        let discovered = discover_subdomains();
+        let configured_subdomains: Vec<String> = discovered.values().cloned().collect();
+
         let active_names: std::collections::HashSet<&str> = active_records
             .iter()
             .filter(|h| h.type_ == "A")
             .map(|h| h.name.as_str())
             .collect();
 
-        let missing_subdomains: Vec<String> = self
-            .config
-            .subdomains
+        let missing_subdomains: Vec<String> = configured_subdomains
             .iter()
             .filter(|s| !active_names.contains(s.as_str()))
             .cloned()
@@ -194,7 +216,7 @@ impl DnsService {
 
         Ok(DnsStatus {
             domain: self.config.domain.clone(),
-            configured_subdomains: self.config.subdomains.clone(),
+            configured_subdomains,
             active_records,
             missing_subdomains,
         })

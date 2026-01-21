@@ -17,7 +17,6 @@ pub struct UserConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DnsConfig {
     pub domain: String,
-    pub subdomains: Vec<String>,
     #[serde(default = "default_ttl")]
     pub default_ttl: u32,
 }
@@ -86,7 +85,6 @@ mod tests {
     fn test_dns_config_parsing() {
         let config = DnsConfig {
             domain: "example.com".to_string(),
-            subdomains: vec!["www".to_string(), "api".to_string()],
             default_ttl: 300,
         };
         assert_eq!(config.sld(), "example");
@@ -97,7 +95,6 @@ mod tests {
     fn test_default_ttl() {
         let toml_str = r#"
             domain = "example.com"
-            subdomains = []
         "#;
         let config: DnsConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.default_ttl, 300);
