@@ -27,9 +27,9 @@ pub fn run_playbook(
         .arg("--limit")
         .arg(host);
 
-    // Detect if playbook includes bootstrap by checking filename
+    // Detect if playbook is fresh bootstrap (standalone bootstrap.yml only)
     let playbook_name = playbook.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    let is_bootstrap_related = playbook_name == "bootstrap.yml" || playbook_name == "auberge.yml";
+    let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
 
     if check {
         cmd.arg("--check");
@@ -39,12 +39,13 @@ pub fn run_playbook(
         cmd.arg("--ask-vault-pass");
     }
 
-    // For bootstrap-related playbooks, allow password authentication
-    if is_bootstrap_related {
+    // For fresh bootstrap only: override to port 22 with password auth
+    // auberge.yml (full deployment) uses inventory settings (SSH_PORT + keys)
+    if is_fresh_bootstrap {
         cmd.arg("--ask-pass");
-        // Disable strict host key checking and ignore known_hosts for initial bootstrap
-        // This allows bootstrapping fresh VPS instances even if old keys exist
-        // After bootstrap completes, normal SSH key auth is used with proper host key verification
+        // Override to port 22 and disable strict checking for initial bootstrap connection
+        // After bootstrap, inventory's SSH_PORT will be used with key-based auth
+        cmd.arg("-e").arg("ansible_port=22");
         cmd.arg("-e").arg(
             "ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'",
         );

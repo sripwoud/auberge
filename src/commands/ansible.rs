@@ -83,15 +83,15 @@ pub fn run_ansible_run(
     let selected_host = select_or_use_host(host)?;
     let selected_playbook = select_or_use_playbook(playbook)?;
 
-    // Show warning for bootstrap-related playbooks
+    // Show warning for fresh bootstrap only (not for full auberge.yml deployments)
     let playbook_name = selected_playbook
         .path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("");
-    let is_bootstrap_related = playbook_name == "bootstrap.yml" || playbook_name == "auberge.yml";
+    let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
 
-    if is_bootstrap_related {
+    if is_fresh_bootstrap {
         eprintln!("\n⚠️  IMPORTANT: Provider Firewall Configuration Required");
         eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         eprintln!("Before running bootstrap, ensure your VPS provider's firewall");

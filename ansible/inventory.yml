@@ -6,15 +6,15 @@ all:
       hosts:
         auberge-old:
           ansible_host: "{{ lookup('env', 'AUBERGE_OLD_HOST') }}"
-          ansible_port: 2209
+          ansible_port: "{{ lookup('env', 'SSH_PORT') }}"
           bootstrap_user: root
         auberge:
           ansible_host: "{{ lookup('env', 'AUBERGE_HOST') }}"
-          ansible_port: 22 # Will change after bootstrap
+          ansible_port: "{{ lookup('env', 'SSH_PORT') }}"
           bootstrap_user: root
         vibecoder:
           ansible_host: "{{ lookup('env', 'VIBECODER_HOST') }}"
-          ansible_port: 59865
+          ansible_port: "{{ lookup('env', 'SSH_PORT') }}"
           bootstrap_user: debian
       vars:
         # Default to ansible automation user
