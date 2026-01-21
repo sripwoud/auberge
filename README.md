@@ -8,6 +8,36 @@ CLI tool for managing self-hosted infrastructure with Ansible.
 - SSH access to target servers
 - Rust toolchain (for building the CLI)
 
+## ⚠️ Important: Provider Firewall Configuration
+
+> [!IMPORTANT]
+> **Before running bootstrap**, you MUST configure your VPS provider's firewall to allow your custom SSH port.
+>
+> Most VPS providers (IONOS, DigitalOcean, Hetzner, AWS, etc.) have their own firewall layer **separate from UFW**.
+>
+> **Steps:**
+>
+> 1. Decrypt your `SSH_PORT` value: `mise env | grep SSH_PORT`
+> 2. Log into your VPS provider's control panel (e.g., IONOS Dashboard)
+> 3. Navigate to firewall/security settings for your VPS
+> 4. Add a rule to **allow TCP traffic on your SSH_PORT**
+> 5. Save the firewall rule
+> 6. Then run the auberge deployment
+>
+> **Why this is needed:**
+>
+> - Auberge changes SSH from port 22 → your custom SSH_PORT during bootstrap
+> - UFW (on the VPS) will allow the port, but provider firewalls block it by default
+> - Without this step, you'll be locked out after SSH port change
+>
+> **Common provider firewall locations:**
+>
+> - **IONOS**: Cloud Panel → Server → Firewall
+> - **DigitalOcean**: Networking → Firewalls
+> - **Hetzner**: Cloud Console → Firewalls
+> - **AWS**: Security Groups
+> - **Vultr**: Settings → Firewall
+
 ## Initial Setup
 
 ### 1. Configuration

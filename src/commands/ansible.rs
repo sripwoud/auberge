@@ -83,6 +83,40 @@ pub fn run_ansible_run(
     let selected_host = select_or_use_host(host)?;
     let selected_playbook = select_or_use_playbook(playbook)?;
 
+    // Show warning for bootstrap-related playbooks
+    let playbook_name = selected_playbook
+        .path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    let is_bootstrap_related = playbook_name == "bootstrap.yml" || playbook_name == "auberge.yml";
+
+    if is_bootstrap_related {
+        eprintln!("\n⚠️  IMPORTANT: Provider Firewall Configuration Required");
+        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        eprintln!("Before running bootstrap, ensure your VPS provider's firewall");
+        eprintln!("allows your custom SSH port (separate from UFW on the VPS).");
+        eprintln!();
+        eprintln!("Required steps:");
+        eprintln!("  1. Get your SSH_PORT: mise env | grep SSH_PORT");
+        eprintln!("  2. Log into your VPS provider dashboard (IONOS, etc.)");
+        eprintln!("  3. Add firewall rule: Allow TCP on your SSH_PORT");
+        eprintln!("  4. Save and confirm the rule is active");
+        eprintln!();
+        eprintln!("Without this, you'll be locked out after SSH port change!");
+        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+        print!("Have you configured your provider's firewall? [y/N]: ");
+        io::stdout().flush()?;
+        let mut response = String::new();
+        io::stdin().read_line(&mut response)?;
+
+        if !response.trim().eq_ignore_ascii_case("y") {
+            eprintln!("\nAborted. Configure provider firewall first, then re-run.");
+            std::process::exit(1);
+        }
+    }
+
     eprintln!(
         "Running {} on {}...",
         selected_playbook.name, selected_host.name
