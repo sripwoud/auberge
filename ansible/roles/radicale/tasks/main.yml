@@ -33,7 +33,7 @@
       no_log: true
       community.general.htpasswd:
         hash_scheme: "bcrypt"
-        name: "{{ user_name }}"
+        name: "{{ admin_user_name }}"
         password: "{{ radicale_password }}"
         path: "{{ radicale_users_file }}"
         owner: root
