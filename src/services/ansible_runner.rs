@@ -27,12 +27,21 @@ pub fn run_playbook(
         .arg("--limit")
         .arg(host);
 
+    // Detect if playbook includes bootstrap by checking filename
+    let playbook_name = playbook.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let is_bootstrap_related = playbook_name == "bootstrap.yml" || playbook_name == "auberge.yml";
+
     if check {
         cmd.arg("--check");
     }
 
     if ask_vault_pass {
         cmd.arg("--ask-vault-pass");
+    }
+
+    // For bootstrap-related playbooks, allow password authentication
+    if is_bootstrap_related {
+        cmd.arg("--ask-pass");
     }
 
     if let Some(tags) = tags {

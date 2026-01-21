@@ -31,6 +31,4 @@ all:
           -o ControlMaster=auto
           -o ControlPersist=60s
           -o UserKnownHostsFile={{ lookup('env', 'HOME') }}/.ssh/known_hosts
-          -o IdentitiesOnly=yes
-          -o PasswordAuthentication=no
-          -o StrictHostKeyChecking=yes
+          -o StrictHostKeyChecking=accept-new
