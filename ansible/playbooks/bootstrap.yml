@@ -24,6 +24,20 @@
   gather_facts: true
   vars:
     ansible_user: root
+  tasks:
+    - name: Set hostname to inventory name
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+      tags: [bootstrap, system, hostname]
+
+    - name: Add hostname to /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ inventory_hostname }}"
+        state: present
+      tags: [bootstrap, system, hostname]
+
   roles:
     # Set up dual-user system first
     - role: ansible_user
