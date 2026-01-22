@@ -140,14 +140,14 @@
         name: apache2
         state: stopped
       failed_when: false
-      register: apache2_stop
+      register: apt_apache2_stop
 
     - name: Disable Apache2 service
       ansible.builtin.systemd_service:
         name: apache2
         enabled: false
       failed_when: false
-      when: apache2_stop.status is defined
+      when: apt_apache2_stop.status is defined
 
     - name: Remove Apache2 packages (keep apache2-utils)
       ansible.builtin.apt:
@@ -159,7 +159,7 @@
         state: absent
         autoremove: true
         purge: true
-      register: apache2_remove
+      register: apt_apache2_remove
 
     - name: Ensure apache2-utils is still installed
       ansible.builtin.apt:

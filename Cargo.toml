@@ -16,7 +16,7 @@ dialoguer = "0.11"
 skim = "0.10"
 dirs = "6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-namecheap = { git = "https://github.com/sripwoud/namecheap", branch = "fix/api-error-visibility" }
+cloudflare = "0.14"
 minijinja = "2.14.0"
 
 [dev-dependencies]

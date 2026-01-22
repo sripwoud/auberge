@@ -30,7 +30,7 @@ renew() {
   "${LEGO_EXECUTABLE_PATH}" \
     --domains "${blocky_domain}" \
     --email "${blocky_letsencrypt_email}" \
-    --dns namecheap \
+    --dns cloudflare \
     --accept-tos \
     --path "${lego_data_path}" \
     renew || error_exit "Lego renew command failed for '${blocky_domain}'!"

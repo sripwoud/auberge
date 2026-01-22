@@ -22,5 +22,4 @@ yourls_subdomain: "{{ lookup('env', 'YOURLS_SUBDOMAIN') }}"
 radicale_password: "{{ lookup('env', 'RADICALE_PASSWORD') }}"
 webdav_password: "{{ lookup('env', 'WEBDAV_PASSWORD') }}"
 
-namecheap_api_user: "{{ lookup('env', 'NAMECHEAP_API_USER') }}"
-namecheap_api_key: "{{ lookup('env', 'NAMECHEAP_API_KEY') }}"
+cloudflare_dns_api_token: "{{ lookup('env', 'CLOUDFLARE_DNS_API_TOKEN') }}"

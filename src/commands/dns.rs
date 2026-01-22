@@ -105,8 +105,8 @@ pub enum DnsCommands {
 }
 
 pub async fn run_dns_list(subdomain: Option<String>, production: bool) -> Result<()> {
-    let service = DnsService::new_with_production(Some(production))?;
-    print_mode_banner(&service);
+    let service = DnsService::new_with_production(Some(production)).await?;
+    print_mode_banner();
 
     let records = service.list_records().await?;
 
@@ -121,36 +121,48 @@ pub async fn run_dns_list(subdomain: Option<String>, production: bool) -> Result
     }
 
     eprintln!(
-        "DNS Records for {}\n{:<14} {:<8} {:<24} {:>6}",
+        "DNS Records for {}\n{:<40} {:<8} {:<24} {:>6}",
         service.config().domain,
         "NAME",
         "TYPE",
-        "ADDRESS",
+        "CONTENT",
         "TTL"
     );
-    eprintln!("{}", "-".repeat(56));
+    eprintln!("{}", "-".repeat(80));
 
     for record in filtered {
+        let (record_type, content) = format_dns_content(&record.content);
         eprintln!(
-            "{:<14} {:<8} {:<24} {:>6}",
-            record.name, record.type_, record.address, record.ttl
+            "{:<40} {:<8} {:<24} {:>6}",
+            record.name, record_type, content, record.ttl
         );
     }
 
     Ok(())
 }
 
-fn print_mode_banner(service: &DnsService) {
-    if service.is_production() {
-        eprintln!("\x1b[1;31m⚠️  PRODUCTION MODE\x1b[0m");
-    } else {
-        eprintln!("\x1b[1;36m🧪 SANDBOX MODE\x1b[0m");
+fn format_dns_content(content: &cloudflare::endpoints::dns::dns::DnsContent) -> (String, String) {
+    use cloudflare::endpoints::dns::dns::DnsContent;
+    match content {
+        DnsContent::A { content } => ("A".to_string(), content.to_string()),
+        DnsContent::AAAA { content } => ("AAAA".to_string(), content.to_string()),
+        DnsContent::CNAME { content } => ("CNAME".to_string(), content.clone()),
+        DnsContent::MX { content, priority } => {
+            ("MX".to_string(), format!("{} ({})", content, priority))
+        }
+        DnsContent::TXT { content } => ("TXT".to_string(), content.clone()),
+        DnsContent::NS { content } => ("NS".to_string(), content.clone()),
+        DnsContent::SRV { content } => ("SRV".to_string(), content.clone()),
     }
 }
 
+fn print_mode_banner() {
+    eprintln!("\x1b[1;32m☁️  CLOUDFLARE DNS\x1b[0m");
+}
+
 pub async fn run_dns_status(production: bool) -> Result<()> {
-    let service = DnsService::new_with_production(Some(production))?;
-    print_mode_banner(&service);
+    let service = DnsService::new_with_production(Some(production)).await?;
+    print_mode_banner();
 
     let status = service.status().await?;
 
@@ -162,15 +174,18 @@ pub async fn run_dns_status(production: bool) -> Result<()> {
         status.configured_subdomains.join(", ")
     );
 
+    use cloudflare::endpoints::dns::dns::DnsContent;
     let a_records: Vec<_> = status
         .active_records
         .iter()
-        .filter(|r| r.type_ == "A")
+        .filter(|r| matches!(r.content, DnsContent::A { .. }))
         .collect();
 
     eprintln!("\nActive A records: {}", a_records.len());
     for record in &a_records {
-        eprintln!("  {} -> {}", record.name, record.address);
+        if let DnsContent::A { content } = record.content {
+            eprintln!("  {} -> {}", record.name, content);
+        }
     }
 
     if !status.missing_subdomains.is_empty() {
@@ -186,8 +201,8 @@ pub async fn run_dns_status(production: bool) -> Result<()> {
 }
 
 pub async fn run_dns_set(subdomain: String, ip: String, production: bool) -> Result<()> {
-    let service = DnsService::new_with_production(Some(production))?;
-    print_mode_banner(&service);
+    let service = DnsService::new_with_production(Some(production)).await?;
+    print_mode_banner();
 
     eprintln!(
         "Setting A record: {}.{} -> {}",
@@ -203,8 +218,8 @@ pub async fn run_dns_set(subdomain: String, ip: String, production: bool) -> Res
 }
 
 pub async fn run_dns_migrate(ip: String, dry_run: bool, production: bool) -> Result<()> {
-    let service = DnsService::new_with_production(Some(production))?;
-    print_mode_banner(&service);
+    let service = DnsService::new_with_production(Some(production)).await?;
+    print_mode_banner();
 
     if dry_run {
         eprintln!("[DRY RUN] DNS Migration Preview");
@@ -237,6 +252,7 @@ pub async fn run_dns_migrate(ip: String, dry_run: bool, production: bool) -> Res
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_dns_set_all(
     host: Option<String>,
     ip: Option<String>,
@@ -253,8 +269,8 @@ pub async fn run_dns_set_all(
     use crate::services::inventory::discover_hosts_with_ips;
     use std::collections::HashSet;
 
-    let service = DnsService::new_with_production(Some(production))?;
-    print_mode_banner(&service);
+    let service = DnsService::new_with_production(Some(production)).await?;
+    print_mode_banner();
 
     let target_ip = match (&host, &ip) {
         (Some(host_name), None) => {

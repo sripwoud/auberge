@@ -1,7 +1,14 @@
 use crate::config::{Config, DnsConfig};
+use cloudflare::endpoints::dns::dns::{
+    CreateDnsRecord, CreateDnsRecordParams, DnsContent, DnsRecord, ListDnsRecords, UpdateDnsRecord,
+    UpdateDnsRecordParams,
+};
+use cloudflare::endpoints::zones::zone::{ListZones, ListZonesParams};
+use cloudflare::framework::Environment;
+use cloudflare::framework::auth::Credentials;
+use cloudflare::framework::client::ClientConfig;
+use cloudflare::framework::client::async_api::Client;
 use eyre::Result;
-use namecheap::domains_dns::set_hosts::HostRequest;
-use namecheap::{Host, NameCheapClient};
 use std::collections::HashMap;
 use std::env;
 
@@ -15,13 +22,14 @@ pub struct MigrationResult {
 pub struct DnsStatus {
     pub domain: String,
     pub configured_subdomains: Vec<String>,
-    pub active_records: Vec<Host>,
+    pub active_records: Vec<DnsRecord>,
     pub missing_subdomains: Vec<String>,
 }
 
 pub struct DnsService {
-    client: NameCheapClient,
+    client: Client,
     config: DnsConfig,
+    zone_id: String,
 }
 
 const KNOWN_APP_SUBDOMAINS: &[&str] = &[
@@ -45,86 +53,113 @@ pub fn discover_subdomains() -> HashMap<String, String> {
 }
 
 impl DnsService {
-    pub fn new_with_production(production_override: Option<bool>) -> Result<Self> {
+    pub async fn new_with_production(_production_override: Option<bool>) -> Result<Self> {
         let app_config = Config::load()?;
 
-        let api_user = app_config.namecheap.api_user.clone();
-        let api_key = env::var("NAMECHEAP_API_KEY")
-            .map_err(|_| eyre::eyre!("NAMECHEAP_API_KEY environment variable not set"))?;
-        let client_ip = env::var("NAMECHEAP_CLIENT_IP").unwrap_or_else(|_| "0.0.0.0".to_string());
-        let username = app_config.user.username.clone();
+        let api_token = env::var("CLOUDFLARE_DNS_API_TOKEN")
+            .map_err(|_| eyre::eyre!("CLOUDFLARE_DNS_API_TOKEN not set"))?;
 
-        let production = production_override
-            .or_else(|| {
-                env::var("NAMECHEAP_PRODUCTION")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-            })
-            .unwrap_or(false);
+        let credentials = Credentials::UserAuthToken { token: api_token };
 
-        let client = NameCheapClient::new(api_user, api_key, client_ip, username, production);
+        let client = Client::new(
+            credentials,
+            ClientConfig::default(),
+            Environment::Production,
+        )?;
+
+        let zone_id = match &app_config.cloudflare.zone_id {
+            Some(id) => id.clone(),
+            None => Self::discover_zone_id(&client, app_config.dns.zone_name()).await?,
+        };
 
         Ok(Self {
             client,
             config: app_config.dns,
+            zone_id,
         })
     }
 
-    pub fn is_production(&self) -> bool {
-        self.client.production
+    async fn discover_zone_id(client: &Client, zone_name: &str) -> Result<String> {
+        let zones = client
+            .request(&ListZones {
+                params: ListZonesParams {
+                    name: Some(zone_name.to_string()),
+                    ..Default::default()
+                },
+            })
+            .await
+            .map_err(|e| eyre::eyre!("Failed to list zones: {}", e))?;
+
+        zones
+            .result
+            .into_iter()
+            .next()
+            .map(|z| z.id)
+            .ok_or_else(|| eyre::eyre!("Zone not found: {}", zone_name))
     }
 
     pub fn config(&self) -> &DnsConfig {
         &self.config
     }
 
-    pub async fn list_records(&self) -> Result<Vec<Host>> {
-        let result = self
+    pub async fn list_records(&self) -> Result<Vec<DnsRecord>> {
+        let response = self
             .client
-            .domains_dns_get_hosts(self.config.sld(), self.config.tld())
+            .request(&ListDnsRecords {
+                zone_identifier: &self.zone_id,
+                params: Default::default(),
+            })
             .await
-            .map_err(|e| eyre::eyre!("Failed to get DNS hosts: {}", e))?;
+            .map_err(|e| eyre::eyre!("Failed to list DNS records: {}", e))?;
 
-        let hosts: Vec<Host> = match result.as_array() {
-            Some(arr) => arr
-                .iter()
-                .filter_map(|v| {
-                    serde_json::from_value(v.clone())
-                        .map_err(|e| {
-                            eprintln!("Warning: Failed to parse host record: {}", e);
-                            eprintln!("Record data: {:#?}", v);
-                        })
-                        .ok()
-                })
-                .collect(),
-            None => {
-                if result.is_object() {
-                    vec![serde_json::from_value(result).unwrap_or_else(|_| Host::new())]
-                } else {
-                    vec![]
-                }
-            }
-        };
+        Ok(response.result)
+    }
 
-        Ok(hosts)
+    async fn find_record(&self, subdomain: &str) -> Result<Option<DnsRecord>> {
+        let records = self.list_records().await?;
+        let full_name = format!("{}.{}", subdomain, self.config.domain);
+
+        Ok(records
+            .into_iter()
+            .find(|r| r.name == full_name && matches!(r.content, DnsContent::A { .. })))
     }
 
     pub async fn set_a_record(&self, subdomain: &str, ip: &str) -> Result<()> {
-        let new_record = HostRequest::new(
-            subdomain.to_string(),
-            "A".to_string(),
-            ip.to_string(),
-            None,
-            None,
-            Some(self.config.default_ttl.to_string()),
-            None,
-            None,
-        );
+        let existing = self.find_record(subdomain).await?;
+        let full_name = format!("{}.{}", subdomain, self.config.domain);
+        let ip_addr = ip
+            .parse()
+            .map_err(|e| eyre::eyre!("Invalid IP address: {}", e))?;
 
-        self.client
-            .domains_dns_set_hosts(self.config.sld(), self.config.tld(), vec![new_record])
-            .await
-            .map_err(|e| eyre::eyre!("Failed to set DNS hosts: {}", e))?;
+        if let Some(record) = existing {
+            self.client
+                .request(&UpdateDnsRecord {
+                    zone_identifier: &self.zone_id,
+                    identifier: &record.id,
+                    params: UpdateDnsRecordParams {
+                        name: &full_name,
+                        content: DnsContent::A { content: ip_addr },
+                        ttl: Some(self.config.default_ttl),
+                        proxied: Some(false),
+                    },
+                })
+                .await
+                .map_err(|e| eyre::eyre!("Failed to update DNS record: {}", e))?;
+        } else {
+            self.client
+                .request(&CreateDnsRecord {
+                    zone_identifier: &self.zone_id,
+                    params: CreateDnsRecordParams {
+                        name: &full_name,
+                        content: DnsContent::A { content: ip_addr },
+                        ttl: Some(self.config.default_ttl),
+                        proxied: Some(false),
+                        priority: None,
+                    },
+                })
+                .await
+                .map_err(|e| eyre::eyre!("Failed to create DNS record: {}", e))?;
+        }
 
         Ok(())
     }
@@ -133,62 +168,49 @@ impl DnsService {
         let existing = self.list_records().await?;
         let mut results = Vec::new();
 
-        let a_records: Vec<&Host> = existing.iter().filter(|h| h.type_ == "A").collect();
+        let a_records: Vec<&DnsRecord> = existing
+            .iter()
+            .filter(|r| matches!(r.content, DnsContent::A { .. }))
+            .collect();
 
         if dry_run {
             for record in a_records {
-                results.push(MigrationResult {
-                    subdomain: record.name.clone(),
-                    old_ip: record.address.clone(),
-                    new_ip: new_ip.to_string(),
-                    success: true,
-                });
+                if let DnsContent::A { content: old_ip } = record.content {
+                    let subdomain = record
+                        .name
+                        .strip_suffix(&format!(".{}", self.config.domain))
+                        .unwrap_or(&record.name)
+                        .to_string();
+
+                    results.push(MigrationResult {
+                        subdomain,
+                        old_ip: old_ip.to_string(),
+                        new_ip: new_ip.to_string(),
+                        success: true,
+                    });
+                }
             }
             return Ok(results);
         }
 
-        let hosts: Vec<HostRequest> = existing
-            .iter()
-            .map(|h| {
-                let address = if h.type_ == "A" {
-                    new_ip.to_string()
-                } else {
-                    h.address.clone()
-                };
-                HostRequest::new(
-                    h.name.clone(),
-                    h.type_.clone(),
-                    address,
-                    if h.mx_pref.is_empty() {
-                        None
-                    } else {
-                        Some(h.mx_pref.clone())
-                    },
-                    None,
-                    Some(h.ttl.to_string()),
-                    None,
-                    None,
-                )
-            })
-            .collect();
-
-        let api_result = self
-            .client
-            .domains_dns_set_hosts(self.config.sld(), self.config.tld(), hosts)
-            .await;
-
-        let success = api_result.is_ok();
-
         for record in a_records {
-            results.push(MigrationResult {
-                subdomain: record.name.clone(),
-                old_ip: record.address.clone(),
-                new_ip: new_ip.to_string(),
-                success,
-            });
+            if let DnsContent::A { content: old_ip } = record.content {
+                let subdomain = record
+                    .name
+                    .strip_suffix(&format!(".{}", self.config.domain))
+                    .unwrap_or(&record.name);
+
+                let success = self.set_a_record(subdomain, new_ip).await.is_ok();
+
+                results.push(MigrationResult {
+                    subdomain: subdomain.to_string(),
+                    old_ip: old_ip.to_string(),
+                    new_ip: new_ip.to_string(),
+                    success,
+                });
+            }
         }
 
-        api_result.map_err(|e| eyre::eyre!("Failed to migrate DNS records: {}", e))?;
         Ok(results)
     }
 
@@ -198,15 +220,20 @@ impl DnsService {
         let discovered = discover_subdomains();
         let configured_subdomains: Vec<String> = discovered.values().cloned().collect();
 
-        let active_names: std::collections::HashSet<&str> = active_records
+        let active_names: std::collections::HashSet<String> = active_records
             .iter()
-            .filter(|h| h.type_ == "A")
-            .map(|h| h.name.as_str())
+            .filter(|r| matches!(r.content, DnsContent::A { .. }))
+            .map(|r| {
+                r.name
+                    .strip_suffix(&format!(".{}", self.config.domain))
+                    .unwrap_or(&r.name)
+                    .to_string()
+            })
             .collect();
 
         let missing_subdomains: Vec<String> = configured_subdomains
             .iter()
-            .filter(|s| !active_names.contains(s.as_str()))
+            .filter(|s| !active_names.contains(*s))
             .cloned()
             .collect();
 

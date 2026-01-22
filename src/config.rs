@@ -4,14 +4,8 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub user: UserConfig,
     pub dns: DnsConfig,
-    pub namecheap: NamecheapConfig,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct UserConfig {
-    pub username: String,
+    pub cloudflare: CloudflareConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -22,8 +16,8 @@ pub struct DnsConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct NamecheapConfig {
-    pub api_user: String,
+pub struct CloudflareConfig {
+    pub zone_id: Option<String>,
 }
 
 fn default_ttl() -> u32 {
@@ -65,15 +59,8 @@ impl Config {
 }
 
 impl DnsConfig {
-    pub fn sld(&self) -> &str {
-        self.domain.split('.').next().unwrap_or(&self.domain)
-    }
-
-    pub fn tld(&self) -> &str {
-        self.domain
-            .split('.')
-            .nth(1)
-            .unwrap_or_else(|| self.domain.split('.').next_back().unwrap_or(&self.domain))
+    pub fn zone_name(&self) -> &str {
+        &self.domain
     }
 }
 

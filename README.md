@@ -8,8 +8,6 @@ CLI tool for managing self-hosted infrastructure with Ansible.
 - SSH access to target servers
 - Rust toolchain (for building the CLI)
 
-## ⚠️ Important: Provider Firewall Configuration
-
 > [!IMPORTANT]
 > **Before running bootstrap**, you MUST configure your VPS provider's firewall to allow your custom SSH port.
 >
@@ -38,32 +36,29 @@ CLI tool for managing self-hosted infrastructure with Ansible.
 > - **AWS**: Security Groups
 > - **Vultr**: Settings → Firewall
 
-## ⚠️ Important: Namecheap IP Whitelisting (Required for SSL Certificates)
-
 > [!IMPORTANT]
-> **Before running the apps playbook**, you MUST whitelist your VPS IP address in Namecheap's API settings.
+> **Before running the apps playbook**, you MUST generate a Cloudflare API token for DNS management.
 >
-> The certificate automation (Lego) runs from your VPS and makes API calls to Namecheap for DNS-01 challenges. Namecheap blocks these requests unless the VPS IP is whitelisted.
+> The certificate automation (Lego) runs from your VPS and uses Cloudflare's API for DNS-01 challenges.
 >
 > **Required steps:**
 >
-> 1. Get your VPS IP address (displayed after bootstrap or check your provider dashboard)
-> 2. Log into Namecheap: https://www.namecheap.com
-> 3. Navigate to: **Profile → Tools → API Access** (or **Account → Profile → Tools**)
-> 4. Add your VPS IP to the API whitelist
-> 5. Save changes (may take a few minutes to propagate)
+> 1. Log into Cloudflare: https://dash.cloudflare.com
+> 2. Navigate to: **My Profile → API Tokens → Create Token**
+> 3. Use the **"Edit zone DNS"** template
+> 4. Configure permissions:
+>    - Zone → DNS → Edit
+>    - Zone → Zone → Read
+> 5. Set zone resources to your domain (e.g., sripwoud.xyz)
+> 6. No IP filtering needed (unlike Namecheap)
+> 7. Copy the token (shown only once)
+> 8. Add to `mise.toml` as `CLOUDFLARE_DNS_API_TOKEN`
 >
 > **Why this is needed:**
 >
 > - Lego (certificate tool) runs from your VPS, not your local machine
-> - It makes Namecheap API calls for DNS-01 challenge validation
-> - This is separate from DNS record configuration - it's a security setting for API access
->
-> **Without this, certificate generation will fail with:**
->
-> ```
-> namecheap: Invalid request IP: [your-vps-ip] [1011150]
-> ```
+> - It makes Cloudflare API calls for DNS-01 challenge validation
+> - Token-based auth (simpler than Namecheap's IP whitelisting)
 
 ## Initial Setup
 
@@ -81,16 +76,14 @@ cp ansible/group_vars/all/hosts.vault.example ansible/group_vars/all/hosts.vault
 
 Edit `config.toml` with your details:
 
-- `username`: Your admin username for SSH and services
-- `email`: Your email for Let's Encrypt certificates
 - `domain`: Your primary domain (e.g., example.com)
-- `namecheap.api_user`: Your Namecheap account username
+- `default_ttl`: DNS record TTL in seconds (default: 300)
+- `cloudflare.zone_id`: (Optional) Your Cloudflare zone ID for performance
 
 Edit `ansible/group_vars/all/hosts.vault` with:
 
 - Server IPs
 - User configuration (username, email, domain)
-- Namecheap API username
 - Sudo password
 
 ### 2. Encrypt Sensitive Data
@@ -108,11 +101,11 @@ ansible-vault encrypt ansible/group_vars/all/secrets.vault
 
 ### 3. Environment Variables
 
-Export required environment variables (add to your shell rc file):
+Set your Cloudflare API token using mise:
 
 ```bash
-export NAMECHEAP_API_KEY="your-api-key"
-export NAMECHEAP_CLIENT_IP="your-public-ip"
+# Set encrypted secret (will prompt for value)
+mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
 ```
 
 ### 4. Build the CLI
