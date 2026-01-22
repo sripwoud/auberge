@@ -1,4 +1,5 @@
 {
+  "excludes": ["CHANGELOG.md"],
   "exec": {
     "commands": [
       {
