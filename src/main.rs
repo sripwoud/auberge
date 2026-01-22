@@ -1,6 +1,8 @@
 mod commands;
 mod config;
 mod models;
+mod playbooks;
+mod secrets;
 mod selector;
 mod services;
 
