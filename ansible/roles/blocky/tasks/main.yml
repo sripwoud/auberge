@@ -40,12 +40,11 @@
     group: blocky
     mode: "0755"
 
-- name: Obtain Let's Encrypt certificate with Lego (Namecheap DNS challenge)
+- name: Obtain Let's Encrypt certificate with Lego (Cloudflare DNS challenge)
   environment:
-    NAMECHEAP_API_USER: "{{ namecheap_api_user }}"
-    NAMECHEAP_API_KEY: "{{ namecheap_api_key }}"
+    CLOUDFLARE_DNS_API_TOKEN: "{{ cloudflare_dns_api_token }}"
   ansible.builtin.command:
-    cmd: "lego --domains '{{ blocky_domain }}' --email {{ blocky_letsencrypt_email }} --dns namecheap --accept-tos --path {{ blocky_config_path }} run"
+    cmd: "lego --domains '{{ blocky_domain }}' --email {{ blocky_letsencrypt_email }} --dns cloudflare --accept-tos --path {{ blocky_config_path }} run"
     creates: "{{ blocky_cert_file }}"
   args:
     chdir: "/tmp"
