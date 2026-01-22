@@ -31,7 +31,10 @@
 
     - name: Test connection on new port as ansible user
       ansible.builtin.command:
-        cmd: "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o IdentityFile={{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }} -p {{ ssh_port }} ansible@{{ ansible_host }} echo 'Connection successful'"
+        cmd: >-
+          ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no
+          -o IdentityFile={{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }}
+          -p {{ ssh_port }} ansible@{{ ansible_host }} echo 'Connection successful'
       delegate_to: localhost
       become: false
       changed_when: false
