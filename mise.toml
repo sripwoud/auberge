@@ -18,10 +18,18 @@ description = "Format"
 run = "dprint fmt -c .dprint.jsonc"
 silent = true
 
-[tasks.lint]
-alias = "l"
+[tasks.lint-ansible]
 run = "ansible-lint"
 dir = "ansible"
+quiet = true
+
+[tasks.lint-rust]
+run = "cargo clippy"
+quiet = true
+
+[tasks.lint]
+alias = "l"
+depends = "lint-*"
 quiet = true
 
 [tools]
