@@ -109,7 +109,7 @@ Edit `config.toml` with:
 - `dns.default_ttl`: DNS record TTL in seconds (default: 300)
 - `cloudflare.zone_id`: (Optional) Your Cloudflare zone ID for performance
 
-### 3. Build the CLI
+### 4. Build the CLI
 
 ```bash
 cargo build --release
