@@ -1,6 +1,34 @@
 # Auberge
 
-CLI tool for managing self-hosted infrastructure with Ansible.
+Selfware for managing my self-hosted FOSS stack, built around Ansible automation. No Docker bloat, runs lean on a 1€/month 1GB VPS.
+
+## Stack
+
+### Infrastructure
+
+| Name                                             | Description                        |
+| ------------------------------------------------ | ---------------------------------- |
+| [Caddy](https://caddyserver.com)                 | Reverse proxy with automatic HTTPS |
+| [fail2ban](https://github.com/fail2ban/fail2ban) | Intrusion prevention system        |
+| [UFW](https://launchpad.net/ufw)                 | Uncomplicated firewall             |
+
+### Apps
+
+| Name                                        | Description                          |
+| ------------------------------------------- | ------------------------------------ |
+| [Blocky](https://0xerr0r.github.io/blocky)  | DNS server with ad/tracking blocking |
+| [WireGuard](https://wireguard.com)          | Fast, modern VPN                     |
+| [Tailscale](https://tailscale.com)          | Mesh VPN for secure remote access    |
+| [Radicale](https://radicale.org)            | Lightweight CalDAV/CardDAV server    |
+| [WebDAV](https://github.com/hacdias/webdav) | File sharing and synchronization     |
+| [Calibre](https://calibre-ebook.com)        | Ebook library management             |
+| [Navidrome](https://navidrome.org)          | Music streaming server               |
+| [FreshRSS](https://freshrss.org)            | RSS feed aggregator                  |
+| [YOURLS](https://yourls.org)                | URL shortener                        |
+
+## Develop
+
+See [develop.md](develop.md) for local development setup.
 
 ## Prerequisites
 
