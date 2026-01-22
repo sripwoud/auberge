@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/sripwoud/auberge/compare/v0.1.0...v0.1.1) - 2026-01-22
+
+### Added
+
+- *(ansible)* integrate xdg hosts and playbooks with ansible commands
+- *(hosts)* add host management with xdg config storage
+- xdg base directory and hybrid distribution architecture ([#23](https://github.com/sripwoud/auberge/pull/23))
+
+### Other
+
+- add host management to readme quick start
+- add host management section to develop.md
+- *(release)* configure release-plz to only release on feat and fix commits
+- align config documentation with mise.toml refactor
+- *(readme)* update setup instructions for Cloudflare API token
+
 ## [0.1.0](https://github.com/sripwoud/auberge/releases/tag/v0.1.0) - 2026-01-22
 
 ### Added
