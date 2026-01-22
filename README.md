@@ -8,8 +8,6 @@ CLI tool for managing self-hosted infrastructure with Ansible.
 - SSH access to target servers
 - Rust toolchain (for building the CLI)
 
-## ⚠️ Important: Provider Firewall Configuration
-
 > [!IMPORTANT]
 > **Before running bootstrap**, you MUST configure your VPS provider's firewall to allow your custom SSH port.
 >
@@ -37,8 +35,6 @@ CLI tool for managing self-hosted infrastructure with Ansible.
 > - **Hetzner**: Cloud Console → Firewalls
 > - **AWS**: Security Groups
 > - **Vultr**: Settings → Firewall
-
-## ⚠️ Important: Cloudflare API Token (Required for SSL Certificates)
 
 > [!IMPORTANT]
 > **Before running the apps playbook**, you MUST generate a Cloudflare API token for DNS management.
