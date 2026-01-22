@@ -8,9 +8,16 @@ Selfware for managing my self-hosted FOSS stack, built around Ansible automation
 cargo install auberge
 ```
 
-## Usage
+## Quick Start
 
-Deploy the full stack to a VPS:
+Add your VPS as a host:
+
+```bash
+auberge host add my-vps 194.164.53.11
+# Prompts for SSH user and port (defaults to current user, port 22)
+```
+
+Deploy the full stack:
 
 ```bash
 auberge ansible run
@@ -22,13 +29,19 @@ auberge ansible run
 Available commands:
 
 ```bash
-auberge ansible run       # Interactive playbook execution
-auberge ansible bootstrap # Initial VPS setup (first time only)
-auberge ansible check     # Dry-run to preview changes
-auberge select host       # List available hosts
-auberge select playbook   # List available playbooks
-auberge dns <subcommand>  # DNS management via Cloudflare
-auberge ssh keygen        # Generate SSH keys for hosts
+# Host management
+auberge host add <name> <ip>   # Add a VPS host
+auberge host list              # List all hosts
+auberge host remove <name>     # Remove a host
+
+# Deployment
+auberge ansible run            # Interactive playbook execution
+auberge ansible bootstrap      # Initial VPS setup (first time only)
+auberge ansible check          # Dry-run to preview changes
+
+# Other
+auberge dns <subcommand>       # DNS management via Cloudflare
+auberge ssh keygen             # Generate SSH keys for hosts
 ```
 
 ## Stack
