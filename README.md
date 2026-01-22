@@ -14,17 +14,17 @@ Selfware for managing my self-hosted FOSS stack, built around Ansible automation
 
 ### Apps
 
-| Name                                        | Description                          |
-| ------------------------------------------- | ------------------------------------ |
-| [Blocky](https://0xerr0r.github.io/blocky)  | DNS server with ad/tracking blocking |
-| [WireGuard](https://wireguard.com)          | Fast, modern VPN                     |
-| [Tailscale](https://tailscale.com)          | Mesh VPN for secure remote access    |
-| [Radicale](https://radicale.org)            | Lightweight CalDAV/CardDAV server    |
-| [WebDAV](https://github.com/hacdias/webdav) | File sharing and synchronization     |
-| [Calibre](https://calibre-ebook.com)        | Ebook library management             |
-| [Navidrome](https://navidrome.org)          | Music streaming server               |
-| [FreshRSS](https://freshrss.org)            | RSS feed aggregator                  |
-| [YOURLS](https://yourls.org)                | URL shortener                        |
+| Category      | Name                                        | Description                          |
+| ------------- | ------------------------------------------- | ------------------------------------ |
+| Ad-blocker    | [Blocky](https://0xerr0r.github.io/blocky)  | DNS server with ad/tracking blocking |
+| VPN           | [WireGuard](https://wireguard.com)          | Fast, modern VPN                     |
+| VPN           | [Tailscale](https://tailscale.com)          | Mesh VPN for secure remote access    |
+| Calendar      | [Radicale](https://radicale.org)            | Lightweight CalDAV/CardDAV server    |
+| File sharing  | [WebDAV](https://github.com/hacdias/webdav) | File sharing and synchronization     |
+| Books         | [Calibre](https://calibre-ebook.com)        | Ebook library management             |
+| Music         | [Navidrome](https://navidrome.org)          | Music streaming server               |
+| News          | [FreshRSS](https://freshrss.org)            | RSS feed aggregator                  |
+| URL shortener | [YOURLS](https://yourls.org)                | URL shortener                        |
 
 ## Develop
 
