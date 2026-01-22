@@ -34,26 +34,45 @@ impl Config {
             .wrap_err("Failed to parse config.toml. Check the format against config.example.toml")
     }
 
+    pub fn config_dir() -> Result<PathBuf> {
+        dirs::config_dir()
+            .map(|p| p.join("auberge"))
+            .ok_or_else(|| eyre::eyre!("Could not determine XDG config directory"))
+    }
+
+    pub fn data_dir() -> Result<PathBuf> {
+        dirs::data_dir()
+            .map(|p| p.join("auberge"))
+            .ok_or_else(|| eyre::eyre!("Could not determine XDG data directory"))
+    }
+
     fn find_config_file() -> Result<PathBuf> {
         let current_dir = std::env::current_dir()?;
+        let xdg_config = dirs::config_dir()
+            .ok_or_else(|| eyre::eyre!("Could not determine XDG config directory"))?
+            .join("auberge/config.toml");
 
         let locations = vec![
             current_dir.join("config.toml"),
             current_dir.join("../config.toml"),
-            dirs::home_dir()
-                .map(|h| h.join(".config/auberge/config.toml"))
-                .unwrap_or_else(|| PathBuf::from("~/.config/auberge/config.toml")),
+            xdg_config.clone(),
         ];
 
-        for path in locations {
+        for path in &locations {
             if path.exists() {
-                return Ok(path);
+                return Ok(path.clone());
             }
         }
 
+        let search_paths = locations
+            .iter()
+            .map(|p| format!("  - {}", p.display()))
+            .collect::<Vec<_>>()
+            .join("\n");
+
         eyre::bail!(
-            "Config file not found. Copy config.example.toml to config.toml and customize it.\n\
-             Searched locations:\n  - ./config.toml\n  - ../config.toml\n  - ~/.config/auberge/config.toml"
+            "Config file not found. Copy config.example.toml to one of:\n{}",
+            search_paths
         )
     }
 }
