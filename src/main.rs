@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod hosts;
 mod models;
 mod playbooks;
 mod secrets;
@@ -12,6 +13,10 @@ use commands::ansible::{
 };
 use commands::dns::{
     DnsCommands, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all, run_dns_status,
+};
+use commands::host::{
+    AddHostArgs, HostCommands, run_host_add, run_host_edit, run_host_list, run_host_remove,
+    run_host_show,
 };
 use commands::select::{SelectCommands, run_select_host, run_select_playbook};
 use commands::ssh::{SshCommands, run_ssh_keygen};
@@ -42,6 +47,8 @@ enum Commands {
     Select(SelectCommands),
     #[command(subcommand, alias = "a", about = "Run ansible playbooks")]
     Ansible(AnsibleCommands),
+    #[command(subcommand, alias = "h", about = "Manage VPS hosts")]
+    Host(HostCommands),
     #[command(subcommand, alias = "ss", about = "SSH key management")]
     Ssh(SshCommands),
     #[command(subcommand, alias = "sy", about = "Sync files to remote hosts")]
@@ -60,6 +67,31 @@ async fn main() -> Result<()> {
         Commands::Select(cmd) => match cmd {
             SelectCommands::Host { group } => run_select_host(group),
             SelectCommands::Playbook => run_select_playbook(),
+        },
+        Commands::Host(cmd) => match cmd {
+            HostCommands::Add {
+                name,
+                address,
+                user,
+                port,
+                ssh_key,
+                tags,
+                description,
+                no_input,
+            } => run_host_add(AddHostArgs {
+                name,
+                address,
+                user,
+                port,
+                ssh_key,
+                tags,
+                description,
+                no_input,
+            }),
+            HostCommands::List { tags, output } => run_host_list(tags, output),
+            HostCommands::Remove { name, yes } => run_host_remove(name, yes),
+            HostCommands::Show { name, output } => run_host_show(name, output),
+            HostCommands::Edit { name } => run_host_edit(name),
         },
         Commands::Ansible(cmd) => match cmd {
             AnsibleCommands::Run {

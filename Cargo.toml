@@ -23,6 +23,7 @@ cloudflare = "0.14"
 minijinja = "2.14.0"
 keyring = "3"
 include_dir = "0.7"
+atty = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

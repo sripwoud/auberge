@@ -1,0 +1,262 @@
+use crate::hosts::{Host, HostManager};
+use clap::Subcommand;
+use dialoguer::{Confirm, Input, theme::ColorfulTheme};
+use eyre::Result;
+
+pub struct AddHostArgs {
+    pub name: Option<String>,
+    pub address: Option<String>,
+    pub user: Option<String>,
+    pub port: u16,
+    pub ssh_key: Option<String>,
+    pub tags: Option<String>,
+    pub description: Option<String>,
+    pub no_input: bool,
+}
+
+#[derive(Subcommand)]
+pub enum HostCommands {
+    #[command(about = "Add a new host")]
+    Add {
+        #[arg(help = "Host name")]
+        name: Option<String>,
+        #[arg(help = "Host address (IP or hostname)")]
+        address: Option<String>,
+        #[arg(short, long, help = "SSH user")]
+        user: Option<String>,
+        #[arg(short, long, help = "SSH port", default_value = "22")]
+        port: u16,
+        #[arg(long, help = "Path to SSH key")]
+        ssh_key: Option<String>,
+        #[arg(short, long, help = "Tags (comma-separated)")]
+        tags: Option<String>,
+        #[arg(short, long, help = "Description")]
+        description: Option<String>,
+        #[arg(long, help = "Disable interactive prompts")]
+        no_input: bool,
+    },
+    #[command(about = "List all hosts")]
+    List {
+        #[arg(short, long, help = "Filter by tags (comma-separated)")]
+        tags: Option<String>,
+        #[arg(short, long, help = "Output format: table, json, yaml")]
+        output: Option<String>,
+    },
+    #[command(about = "Remove a host")]
+    Remove {
+        #[arg(help = "Host name")]
+        name: String,
+        #[arg(short, long, help = "Skip confirmation")]
+        yes: bool,
+    },
+    #[command(about = "Show host details")]
+    Show {
+        #[arg(help = "Host name")]
+        name: String,
+        #[arg(short, long, help = "Output format: yaml, json")]
+        output: Option<String>,
+    },
+    #[command(about = "Edit a host")]
+    Edit {
+        #[arg(help = "Host name")]
+        name: String,
+    },
+}
+
+pub fn run_host_add(args: AddHostArgs) -> Result<()> {
+    let is_tty = HostManager::is_tty();
+    let interactive = is_tty && !args.no_input;
+
+    let name = if let Some(n) = args.name {
+        n
+    } else if interactive {
+        Input::<String>::with_theme(&ColorfulTheme::default())
+            .with_prompt("Host name")
+            .interact_text()?
+    } else {
+        eyre::bail!("Host name is required (use --no-input in non-interactive mode)");
+    };
+
+    let address = if let Some(a) = args.address {
+        a
+    } else if interactive {
+        Input::<String>::with_theme(&ColorfulTheme::default())
+            .with_prompt("Host address (IP or hostname)")
+            .interact_text()?
+    } else {
+        eyre::bail!("Host address is required");
+    };
+
+    let default_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+    let user = if let Some(u) = args.user {
+        u
+    } else if interactive {
+        Input::<String>::with_theme(&ColorfulTheme::default())
+            .with_prompt("SSH user")
+            .default(default_user)
+            .interact_text()?
+    } else {
+        default_user
+    };
+
+    let tags_vec = args
+        .tags
+        .map(|t| t.split(',').map(|s| s.trim().to_string()).collect())
+        .unwrap_or_default();
+
+    let host = Host {
+        name: name.clone(),
+        address,
+        user,
+        port: args.port,
+        ssh_key: args.ssh_key,
+        tags: tags_vec,
+        description: args.description,
+        python_interpreter: None,
+        become_method: "sudo".to_string(),
+    };
+
+    HostManager::add_host(host)?;
+
+    let config_path = HostManager::config_path()?;
+    println!("✓ Host '{}' added to {}", name, config_path.display());
+
+    Ok(())
+}
+
+pub fn run_host_list(tags: Option<String>, output: Option<String>) -> Result<()> {
+    let filter_tags = tags.map(|t| t.split(',').map(|s| s.trim().to_string()).collect());
+
+    let hosts = HostManager::list_hosts_filtered(filter_tags)?;
+
+    if hosts.is_empty() {
+        println!("No hosts configured yet.");
+        println!("\nAdd a host with:");
+        println!("  auberge host add <name> <address>");
+        return Ok(());
+    }
+
+    match output.as_deref() {
+        Some("json") => {
+            println!("{}", serde_json::to_string_pretty(&hosts)?);
+        }
+        Some("yaml") => {
+            println!("{}", serde_yaml::to_string(&hosts)?);
+        }
+        _ => {
+            println!(
+                "{:<15} {:<20} {:<15} {:<6} {:<30}",
+                "NAME", "ADDRESS", "USER", "PORT", "TAGS"
+            );
+            println!("{}", "=".repeat(90));
+
+            for host in hosts {
+                let tags_str = host.tags.join(", ");
+                println!(
+                    "{:<15} {:<20} {:<15} {:<6} {:<30}",
+                    host.name, host.address, host.user, host.port, tags_str
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub fn run_host_remove(name: String, yes: bool) -> Result<()> {
+    let is_tty = HostManager::is_tty();
+
+    if !yes && is_tty {
+        let confirm = Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt(format!("Remove host '{}'?", name))
+            .default(false)
+            .interact()?;
+
+        if !confirm {
+            println!("Cancelled.");
+            return Ok(());
+        }
+    }
+
+    HostManager::remove_host(&name)?;
+    println!("✓ Host '{}' removed", name);
+
+    Ok(())
+}
+
+pub fn run_host_show(name: String, output: Option<String>) -> Result<()> {
+    let host = HostManager::get_host(&name)?;
+
+    match output.as_deref() {
+        Some("json") => {
+            println!("{}", serde_json::to_string_pretty(&host)?);
+        }
+        _ => {
+            println!("{}", serde_yaml::to_string(&host)?);
+        }
+    }
+
+    Ok(())
+}
+
+pub fn run_host_edit(name: String) -> Result<()> {
+    let host = HostManager::get_host(&name)?;
+
+    let address = Input::<String>::with_theme(&ColorfulTheme::default())
+        .with_prompt("Host address")
+        .default(host.address.clone())
+        .interact_text()?;
+
+    let user = Input::<String>::with_theme(&ColorfulTheme::default())
+        .with_prompt("SSH user")
+        .default(host.user.clone())
+        .interact_text()?;
+
+    let port = Input::<u16>::with_theme(&ColorfulTheme::default())
+        .with_prompt("SSH port")
+        .default(host.port)
+        .interact_text()?;
+
+    let tags_str = host.tags.join(", ");
+    let new_tags_str = Input::<String>::with_theme(&ColorfulTheme::default())
+        .with_prompt("Tags (comma-separated)")
+        .default(tags_str)
+        .allow_empty(true)
+        .interact_text()?;
+
+    let tags_vec: Vec<String> = if new_tags_str.is_empty() {
+        Vec::new()
+    } else {
+        new_tags_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect()
+    };
+
+    let description = Input::<String>::with_theme(&ColorfulTheme::default())
+        .with_prompt("Description")
+        .default(host.description.clone().unwrap_or_default())
+        .allow_empty(true)
+        .interact_text()?;
+
+    let updated_host = Host {
+        name: name.clone(),
+        address,
+        user,
+        port,
+        ssh_key: host.ssh_key,
+        tags: tags_vec,
+        description: if description.is_empty() {
+            None
+        } else {
+            Some(description)
+        },
+        python_interpreter: host.python_interpreter,
+        become_method: host.become_method,
+    };
+
+    HostManager::update_host(&name, updated_host)?;
+    println!("✓ Host '{}' updated", name);
+
+    Ok(())
+}
