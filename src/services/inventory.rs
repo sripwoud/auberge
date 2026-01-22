@@ -1,5 +1,7 @@
-use crate::models::inventory::{Host, Inventory, RawInventory};
+use crate::hosts::HostManager;
+use crate::models::inventory::{Host, HostVars, Inventory, RawInventory};
 use crate::models::playbook::Playbook;
+use crate::playbooks::PlaybookManager;
 use eyre::{Result, WrapErr};
 use minijinja::Environment;
 use std::collections::HashMap;
@@ -60,12 +62,61 @@ pub fn load_inventory(inventory_path: Option<&Path>) -> Result<Inventory> {
     Ok(Inventory::from_raw(raw))
 }
 
+fn convert_xdg_host_to_inventory_host(xdg_host: crate::hosts::Host) -> Host {
+    let vars = HostVars {
+        ansible_host: xdg_host.address,
+        ansible_port: xdg_host.port,
+        bootstrap_user: xdg_host.user.clone(),
+        extra: HashMap::new(),
+    };
+
+    Host {
+        name: xdg_host.name,
+        vars,
+        groups: xdg_host.tags,
+    }
+}
+
+fn try_load_xdg_hosts() -> Result<Option<Vec<Host>>> {
+    let xdg_hosts = HostManager::load_hosts()?;
+
+    if xdg_hosts.is_empty() {
+        return Ok(None);
+    }
+
+    let inventory_hosts: Vec<Host> = xdg_hosts
+        .into_iter()
+        .map(convert_xdg_host_to_inventory_host)
+        .collect();
+
+    Ok(Some(inventory_hosts))
+}
+
 pub fn get_hosts(group: Option<&str>, inventory_path: Option<&Path>) -> Result<Vec<Host>> {
+    if inventory_path.is_none()
+        && let Some(hosts) = try_load_xdg_hosts()?
+    {
+        if let Some(g) = group {
+            return Ok(hosts
+                .into_iter()
+                .filter(|h| h.groups.contains(&g.to_string()))
+                .collect());
+        }
+        return Ok(hosts);
+    }
+
     let inventory = load_inventory(inventory_path)?;
     Ok(inventory.get_hosts(group))
 }
 
 pub fn get_host(name: &str, inventory_path: Option<&Path>) -> Result<Host> {
+    if inventory_path.is_none()
+        && let Some(hosts) = try_load_xdg_hosts()?
+        && let Some(host) = hosts.into_iter().find(|h| h.name == name)
+    {
+        return Ok(host);
+    }
+
     let inventory = load_inventory(inventory_path)?;
     inventory
         .get_host(name)
@@ -73,8 +124,7 @@ pub fn get_host(name: &str, inventory_path: Option<&Path>) -> Result<Host> {
 }
 
 pub fn discover_hosts_with_ips(inventory_path: Option<&Path>) -> Result<HashMap<String, String>> {
-    let inventory = load_inventory(inventory_path)?;
-    let hosts = inventory.get_hosts(None);
+    let hosts = get_hosts(None, inventory_path)?;
 
     Ok(hosts
         .into_iter()
@@ -85,7 +135,7 @@ pub fn discover_hosts_with_ips(inventory_path: Option<&Path>) -> Result<HashMap<
 pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<Playbook>> {
     let path = match playbooks_path {
         Some(p) => p.to_path_buf(),
-        None => find_project_root().join("ansible/playbooks"),
+        None => PlaybookManager::get_playbooks_dir()?,
     };
 
     if !path.exists() {
