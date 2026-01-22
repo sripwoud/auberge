@@ -62,53 +62,54 @@ CLI tool for managing self-hosted infrastructure with Ansible.
 
 ## Initial Setup
 
-### 1. Configuration
+### 1. Environment Variables (Single Source of Truth)
 
-Copy the example configuration files and customize them:
+All configuration is managed via `mise.toml` environment variables:
 
 ```bash
-# Copy CLI config
-cp config.example.toml config.toml
+# Set encrypted secrets using mise + age (will prompt for value)
+mise set --age-encrypt --prompt ADMIN_USER_NAME
+mise set --age-encrypt --prompt ADMIN_USER_EMAIL
+mise set --age-encrypt --prompt PRIMARY_DOMAIN
+mise set --age-encrypt --prompt NAMECHEAP_API_KEY
+mise set --age-encrypt --prompt NAMECHEAP_API_USER
+mise set --age-encrypt --prompt NAMECHEAP_CLIENT_IP
+mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
+mise set --age-encrypt --prompt RADICALE_PASSWORD
+mise set --age-encrypt --prompt WEBDAV_PASSWORD
+mise set --age-encrypt --prompt TAILSCALE_AUTHKEY
+mise set --age-encrypt --prompt SSH_PORT
 
-# Copy Ansible vault
-cp ansible/group_vars/all/hosts.vault.example ansible/group_vars/all/hosts.vault
+# Set VPS host IPs
+mise set --age-encrypt --prompt AUBERGE_HOST
+mise set --age-encrypt --prompt VIBECODER_HOST
+
+# Public config (already in mise.toml [env] section)
+# DNS_DEFAULT_TTL = "300"
+# BLOCKY_SUBDOMAIN = "dns"
+# CALIBRE_SUBDOMAIN = "lire"
+# FRESHRSS_SUBDOMAIN = "rss"
+# NAVIDROME_SUBDOMAIN = "musique"
+# RADICALE_SUBDOMAIN = "calendrier"
+# WEBDAV_SUBDOMAIN = "webdav"
+# YOURLS_SUBDOMAIN = "url"
 ```
 
-Edit `config.toml` with your details:
+### 2. Optional: CLI-Only DNS Configuration
 
-- `domain`: Your primary domain (e.g., example.com)
-- `default_ttl`: DNS record TTL in seconds (default: 300)
+If using CLI DNS commands (not Ansible), create `config.toml`:
+
+```bash
+cp config.example.toml config.toml
+```
+
+Edit `config.toml` with:
+
+- `dns.domain`: Your primary domain (e.g., example.com)
+- `dns.default_ttl`: DNS record TTL in seconds (default: 300)
 - `cloudflare.zone_id`: (Optional) Your Cloudflare zone ID for performance
 
-Edit `ansible/group_vars/all/hosts.vault` with:
-
-- Server IPs
-- User configuration (username, email, domain)
-- Sudo password
-
-### 2. Encrypt Sensitive Data
-
-```bash
-# Create Ansible vault password file
-echo "your-vault-password" > ~/.ansible-vault-pass
-
-# Encrypt the vault file
-ansible-vault encrypt ansible/group_vars/all/hosts.vault
-
-# Optionally encrypt secrets.vault if you have one
-ansible-vault encrypt ansible/group_vars/all/secrets.vault
-```
-
-### 3. Environment Variables
-
-Set your Cloudflare API token using mise:
-
-```bash
-# Set encrypted secret (will prompt for value)
-mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
-```
-
-### 4. Build the CLI
+### 3. Build the CLI
 
 ```bash
 cargo build --release
