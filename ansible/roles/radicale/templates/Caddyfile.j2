@@ -1,5 +1,5 @@
 {{ radicale_domain }} {
-	reverse_proxy localhost:{{ radicale_port }} {
+	reverse_proxy 127.0.0.1:{{ radicale_port }} {
 		header_up X-Script-Name /
 		header_up Host {host}
 	}

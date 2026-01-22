@@ -1,5 +1,5 @@
 {{ freshrss_domain }} {
-	reverse_proxy localhost:{{ freshrss_port }} {
+	reverse_proxy 127.0.0.1:{{ freshrss_port }} {
 		header_up Host {host}
 		header_up X-Real-IP {remote_ip}
 		header_up X-Forwarded-For {remote_ip}
