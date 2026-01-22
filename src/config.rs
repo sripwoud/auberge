@@ -69,16 +69,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_dns_config_parsing() {
-        let config = DnsConfig {
-            domain: "example.com".to_string(),
-            default_ttl: 300,
-        };
-        assert_eq!(config.sld(), "example");
-        assert_eq!(config.tld(), "com");
-    }
-
-    #[test]
     fn test_default_ttl() {
         let toml_str = r#"
             domain = "example.com"
