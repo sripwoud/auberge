@@ -1,0 +1,3 @@
+[workspace]
+# Only release on feat and fix commits (excludes docs, chore, refactor, test, style)
+release_commits = "^(feat|fix)(\\(|!|:)"
