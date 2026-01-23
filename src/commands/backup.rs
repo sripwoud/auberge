@@ -605,24 +605,102 @@ fn rsync_to_remote(
 
 pub fn run_export_opml(host_arg: Option<String>, output: PathBuf, user: String) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
+    let ssh_key = get_ssh_key_path(&host)?;
 
     eprintln!("Exporting OPML from FreshRSS");
-    eprintln!("Host: {}", host.name);
-    eprintln!("User: {}", user);
-    eprintln!("Output: {}", output.display());
+    eprintln!("  Host: {}", host.name);
+    eprintln!("  User: {}", user);
+    eprintln!("  Output: {}", output.display());
 
-    eyre::bail!("Not yet implemented")
+    let remote_cmd = format!(
+        "cd /opt/freshrss && sudo -u freshrss ./cli/export-opml-for-user.php --user {}",
+        user
+    );
+
+    let opml_output = Command::new("ssh")
+        .arg("-i")
+        .arg(&ssh_key)
+        .arg("-p")
+        .arg(host.vars.ansible_port.to_string())
+        .arg(format!("ansible@{}", host.vars.ansible_host))
+        .arg(remote_cmd)
+        .output()
+        .wrap_err("Failed to execute SSH command")?;
+
+    if !opml_output.status.success() {
+        let stderr = String::from_utf8_lossy(&opml_output.stderr);
+        eyre::bail!("OPML export failed: {}", stderr);
+    }
+
+    fs::write(&output, &opml_output.stdout)
+        .wrap_err_with(|| format!("Failed to write OPML to {}", output.display()))?;
+
+    eprintln!("✓ OPML exported successfully");
+    eprintln!("  Saved to: {}", output.display());
+
+    Ok(())
 }
 
 pub fn run_import_opml(host_arg: Option<String>, input: PathBuf, user: String) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
+    let ssh_key = get_ssh_key_path(&host)?;
+
+    if !input.exists() {
+        eyre::bail!("OPML file not found: {}", input.display());
+    }
 
     eprintln!("Importing OPML to FreshRSS");
-    eprintln!("Host: {}", host.name);
-    eprintln!("User: {}", user);
-    eprintln!("Input: {}", input.display());
+    eprintln!("  Host: {}", host.name);
+    eprintln!("  User: {}", user);
+    eprintln!("  Input: {}", input.display());
 
-    eyre::bail!("Not yet implemented")
+    let remote_opml_path = format!("/tmp/freshrss_import_{}.opml", user);
+
+    eprintln!("  Uploading OPML file...");
+    let scp_status = Command::new("scp")
+        .arg("-i")
+        .arg(&ssh_key)
+        .arg("-P")
+        .arg(host.vars.ansible_port.to_string())
+        .arg(&input)
+        .arg(format!(
+            "ansible@{}:{}",
+            host.vars.ansible_host, remote_opml_path
+        ))
+        .status()
+        .wrap_err("Failed to upload OPML file")?;
+
+    if !scp_status.success() {
+        eyre::bail!("Failed to upload OPML file");
+    }
+
+    eprintln!("  Importing feeds...");
+    let import_cmd = format!(
+        "cd /opt/freshrss && sudo -u freshrss ./cli/import-for-user.php --user {} --filename {} && rm {}",
+        user, remote_opml_path, remote_opml_path
+    );
+
+    let import_output = Command::new("ssh")
+        .arg("-i")
+        .arg(&ssh_key)
+        .arg("-p")
+        .arg(host.vars.ansible_port.to_string())
+        .arg(format!("ansible@{}", host.vars.ansible_host))
+        .arg(import_cmd)
+        .output()
+        .wrap_err("Failed to execute import command")?;
+
+    if !import_output.status.success() {
+        let stderr = String::from_utf8_lossy(&import_output.stderr);
+        eyre::bail!("OPML import failed: {}", stderr);
+    }
+
+    let stdout = String::from_utf8_lossy(&import_output.stdout);
+    eprintln!("{}", stdout);
+
+    eprintln!("✓ OPML imported successfully");
+
+    Ok(())
 }
 
 fn get_host_or_select(host_arg: Option<String>) -> Result<Host> {
