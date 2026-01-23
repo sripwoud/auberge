@@ -54,6 +54,42 @@ Generate default key:
 auberge ssh keygen --host myhost --user ansible
 ```
 
+### Interactive Fallback
+
+If the default key doesn't exist, Auberge will:
+
+1. Scan `~/.ssh/` and `~/.ssh/identities/` for available keys
+2. Present an interactive selector to choose a key
+3. Optionally save your selection to the host configuration
+
+This provides a smooth experience when working with existing keys or migrating infrastructure.
+
+## Importing from SSH Config
+
+When adding a host interactively, you can import from your existing `~/.ssh/config`:
+
+```bash
+auberge host add
+
+# If ~/.ssh/config exists, shows:
+Found 3 host(s) in ~/.ssh/config
+
+? Import from SSH config or enter manually?:
+  > Enter manually
+    ansible-old (194.164.53.11)
+    myserver (10.0.0.1)
+```
+
+Selecting a host from SSH config auto-fills:
+
+- Host name
+- Address (HostName)
+- User
+- Port
+- SSH key (IdentityFile)
+
+This eliminates re-entering connection details you already have configured.
+
 ## Best Practices
 
 1. **Fresh installs**: Use Tier 3 (default derivation)
@@ -62,15 +98,25 @@ auberge ssh keygen --host myhost --user ansible
 
 ## Troubleshooting
 
-### "SSH key not found"
+### "No SSH keys found"
 
-1. Check if key exists: `ls -la ~/.ssh/identities/`
-2. Generate missing key: `auberge ssh keygen --host <host>`
-3. Or configure custom key: `auberge host edit <host>`
+If you see this error, you have no SSH keys available:
+
+1. Generate a new key: `auberge ssh keygen --host <host>`
+2. Or copy existing keys to `~/.ssh/` or `~/.ssh/identities/`
+
+### "Default SSH key not found"
+
+The tool will automatically offer interactive key selection:
+
+1. Shows all available SSH keys in `~/.ssh/` and `~/.ssh/identities/`
+2. Select the key you want to use
+3. Optionally save it to the host configuration for future use
 
 ### "Configured SSH key not found"
 
 - Tool falls back to default derivation with warning
+- If default doesn't exist, falls back to interactive selection
 - Update config: `auberge host edit <host>`
 
 ### Permission warnings
