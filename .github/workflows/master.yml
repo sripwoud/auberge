@@ -6,6 +6,20 @@ on:
     branches: [master]
 
 jobs:
+  changed-files:
+    runs-on: ubuntu-latest
+    outputs:
+      any_rs_changed: ${{ steps.changed-files.outputs.any_changed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: tj-actions/changed-files@v47
+        id: changed-files
+        with:
+          files: |
+            .github/workflows/master.yml
+            src/**/*.rs
+            Cargo.toml
+            Cargo.lock
   check:
     runs-on: ubuntu-latest
     steps:
@@ -24,6 +38,30 @@ jobs:
             "pipx:ansible-core" = "latest"
             "pipx:ansible-lint" = "latest"
       - run: mise settings experimental=true
+
       - run: ansible-galaxy collection install -r requirements.yml
         working-directory: ansible
+
       - run: mise r check
+
+  _test:
+    needs: changed-files
+    if: needs.changed-files.outputs.any_rs_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@nextest
+      - run: cargo nextest run
+
+  test:
+    needs: _test
+    # workaround for https://github.com/orgs/community/discussions/13690
+    # https://stackoverflow.com/a/77066140/9771158
+    if: ${{ !(failure() || cancelled()) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tests OK (passed or skipped)
+        run: exit 0
