@@ -1,9 +1,12 @@
 use crate::models::inventory::Host;
 use crate::selector::select_item;
 use crate::services::inventory::get_hosts;
+use chrono::Utc;
 use clap::Subcommand;
-use eyre::Result;
-use std::path::PathBuf;
+use eyre::{Context, Result};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[derive(Subcommand)]
 pub enum BackupCommands {
@@ -287,21 +290,123 @@ fn default_backup_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
 
-fn backup_app(_host: &Host, config: &AppBackupConfig, _backup_dest: &PathBuf) -> Result<()> {
+fn backup_app(host: &Host, config: &AppBackupConfig, backup_dest: &Path) -> Result<()> {
     eprintln!("\n--- Backing up {} ---", config.name);
 
+    let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+    let app_backup_dir = backup_dest
+        .join(&host.name)
+        .join(config.name)
+        .join(&timestamp);
+
+    fs::create_dir_all(&app_backup_dir).wrap_err_with(|| {
+        format!(
+            "Failed to create backup directory: {}",
+            app_backup_dir.display()
+        )
+    })?;
+
+    let ssh_key = get_ssh_key_path(host)?;
+
     if let Some(service) = config.systemd_service {
-        eprintln!("Stopping service: {}", service);
+        eprintln!("  Stopping service: {}", service);
+        remote_systemctl(host, &ssh_key, "stop", service)?;
     }
 
     for path in &config.paths {
         eprintln!("  Backing up: {}", path);
+        rsync_from_remote(host, &ssh_key, path, &app_backup_dir)?;
     }
 
     if let Some(service) = config.systemd_service {
-        eprintln!("Starting service: {}", service);
+        eprintln!("  Starting service: {}", service);
+        remote_systemctl(host, &ssh_key, "start", service)?;
+    }
+
+    let latest_link = backup_dest
+        .join(&host.name)
+        .join(config.name)
+        .join("latest");
+    if latest_link.exists() || latest_link.is_symlink() {
+        let _ = fs::remove_file(&latest_link);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        symlink(&timestamp, &latest_link).wrap_err("Failed to create 'latest' symlink")?;
     }
 
     eprintln!("✓ {} backup completed", config.name);
+    eprintln!("  Location: {}", app_backup_dir.display());
+    Ok(())
+}
+
+fn get_ssh_key_path(host: &Host) -> Result<PathBuf> {
+    let ansible_user = "ansible";
+    let ssh_key = dirs::home_dir()
+        .ok_or_else(|| eyre::eyre!("Could not determine home directory"))?
+        .join(format!(".ssh/identities/{}_{}", ansible_user, host.name));
+
+    if !ssh_key.exists() {
+        eyre::bail!(
+            "SSH key not found: {}\nRun 'auberge ssh keygen --host {} --user {}' first",
+            ssh_key.display(),
+            host.name,
+            ansible_user
+        );
+    }
+
+    Ok(ssh_key)
+}
+
+fn remote_systemctl(host: &Host, ssh_key: &Path, action: &str, service: &str) -> Result<()> {
+    let status = Command::new("ssh")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.vars.ansible_port.to_string())
+        .arg(format!("ansible@{}", host.vars.ansible_host))
+        .arg("sudo")
+        .arg("systemctl")
+        .arg(action)
+        .arg(service)
+        .status()
+        .wrap_err_with(|| format!("Failed to {} service {}", action, service))?;
+
+    if !status.success() {
+        eyre::bail!("systemctl {} {} failed", action, service);
+    }
+
+    Ok(())
+}
+
+fn rsync_from_remote(
+    host: &Host,
+    ssh_key: &Path,
+    remote_path: &str,
+    local_dest: &Path,
+) -> Result<()> {
+    let status = Command::new("rsync")
+        .arg("-avz")
+        .arg("--relative")
+        .arg("-e")
+        .arg(format!(
+            "ssh -i {} -p {}",
+            ssh_key.display(),
+            host.vars.ansible_port
+        ))
+        .arg(format!(
+            "ansible@{}:{}",
+            host.vars.ansible_host, remote_path
+        ))
+        .arg(local_dest)
+        .status()
+        .wrap_err("Failed to execute rsync")?;
+
+    if !status.success() {
+        eyre::bail!("rsync failed for {}", remote_path);
+    }
+
     Ok(())
 }
