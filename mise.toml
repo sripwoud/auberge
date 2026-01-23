@@ -32,6 +32,11 @@ alias = "l"
 depends = "lint-*"
 quiet = true
 
+[tasks.test]
+alias = "t"
+run = "cargo nextest run"
+quiet = true
+
 [tools]
 caddy = "latest"
 "cargo:convco" = "latest"
@@ -44,6 +49,7 @@ ansible = "latest"
 "pipx:ansible-dev-tools" = "latest"
 "pipx:ansible-lint" = "latest"
 rust = "latest"
+"cargo:cargo-nextest" = "latest"
 
 [env]
 BLOCKY_SUBDOMAIN = "dns"
