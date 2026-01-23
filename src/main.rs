@@ -23,7 +23,7 @@ use commands::host::{
     run_host_show,
 };
 use commands::select::{SelectCommands, run_select_host, run_select_playbook};
-use commands::ssh::{SshCommands, run_ssh_keygen};
+use commands::ssh::{SshCommands, run_ssh_add_key, run_ssh_keygen};
 use commands::sync::{SyncCommands, run_sync_music};
 use eyre::Result;
 
@@ -132,6 +132,13 @@ async fn main() -> Result<()> {
         },
         Commands::Ssh(cmd) => match cmd {
             SshCommands::Keygen { host, user, force } => run_ssh_keygen(host, user, force),
+            SshCommands::AddKey {
+                host,
+                connect_with,
+                authorize,
+                user,
+                yes,
+            } => run_ssh_add_key(host, connect_with, authorize, user, yes),
         },
         Commands::Sync(cmd) => match cmd {
             SyncCommands::Music {
