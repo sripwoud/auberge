@@ -8,6 +8,26 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+const RSYNC_EXCLUDES: &[&str] = &[
+    ".git",
+    ".git/",
+    "venv",
+    "venv/",
+    "node_modules",
+    "node_modules/",
+    "__pycache__",
+    "__pycache__/",
+    "*.pyc",
+    "*.pyo",
+    ".cache",
+    ".cache/",
+    ".Radicale.cache",
+    ".Radicale.cache/",
+    "*.tmp",
+    "*.log",
+    ".DS_Store",
+];
+
 #[derive(Subcommand)]
 pub enum BackupCommands {
     #[command(alias = "c", about = "Create backup of application data")]
@@ -603,28 +623,16 @@ fn rsync_to_remote(
         .arg(parent_dir)
         .status();
 
-    let status = Command::new("rsync")
-        .arg("-avz")
+    let mut cmd = Command::new("rsync");
+    cmd.arg("-avz")
         .arg("--delete")
-        .arg("--rsync-path=sudo rsync")
-        .arg("--exclude=.git")
-        .arg("--exclude=.git/")
-        .arg("--exclude=venv")
-        .arg("--exclude=venv/")
-        .arg("--exclude=node_modules")
-        .arg("--exclude=node_modules/")
-        .arg("--exclude=__pycache__")
-        .arg("--exclude=__pycache__/")
-        .arg("--exclude=*.pyc")
-        .arg("--exclude=*.pyo")
-        .arg("--exclude=.cache")
-        .arg("--exclude=.cache/")
-        .arg("--exclude=.Radicale.cache")
-        .arg("--exclude=.Radicale.cache/")
-        .arg("--exclude=*.tmp")
-        .arg("--exclude=*.log")
-        .arg("--exclude=.DS_Store")
-        .arg("-e")
+        .arg("--rsync-path=sudo rsync");
+
+    for pattern in RSYNC_EXCLUDES {
+        cmd.arg(format!("--exclude={}", pattern));
+    }
+
+    cmd.arg("-e")
         .arg(format!(
             "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
             ssh_key.display(),
@@ -634,9 +642,9 @@ fn rsync_to_remote(
         .arg(format!(
             "ansible@{}:{}",
             host.vars.ansible_host, remote_path
-        ))
-        .status()
-        .wrap_err("Failed to execute rsync")?;
+        ));
+
+    let status = cmd.status().wrap_err("Failed to execute rsync")?;
 
     if !status.success() {
         eyre::bail!("rsync failed for {}", remote_path);
@@ -874,28 +882,16 @@ fn rsync_from_remote(
     remote_path: &str,
     local_dest: &Path,
 ) -> Result<()> {
-    let status = Command::new("rsync")
-        .arg("-avz")
+    let mut cmd = Command::new("rsync");
+    cmd.arg("-avz")
         .arg("--relative")
-        .arg("--rsync-path=sudo rsync")
-        .arg("--exclude=.git")
-        .arg("--exclude=.git/")
-        .arg("--exclude=venv")
-        .arg("--exclude=venv/")
-        .arg("--exclude=node_modules")
-        .arg("--exclude=node_modules/")
-        .arg("--exclude=__pycache__")
-        .arg("--exclude=__pycache__/")
-        .arg("--exclude=*.pyc")
-        .arg("--exclude=*.pyo")
-        .arg("--exclude=.cache")
-        .arg("--exclude=.cache/")
-        .arg("--exclude=.Radicale.cache")
-        .arg("--exclude=.Radicale.cache/")
-        .arg("--exclude=*.tmp")
-        .arg("--exclude=*.log")
-        .arg("--exclude=.DS_Store")
-        .arg("-e")
+        .arg("--rsync-path=sudo rsync");
+
+    for pattern in RSYNC_EXCLUDES {
+        cmd.arg(format!("--exclude={}", pattern));
+    }
+
+    cmd.arg("-e")
         .arg(format!(
             "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
             ssh_key.display(),
@@ -905,9 +901,9 @@ fn rsync_from_remote(
             "ansible@{}:{}",
             host.vars.ansible_host, remote_path
         ))
-        .arg(local_dest)
-        .status()
-        .wrap_err("Failed to execute rsync")?;
+        .arg(local_dest);
+
+    let status = cmd.status().wrap_err("Failed to execute rsync")?;
 
     if !status.success() {
         eyre::bail!("rsync failed for {}", remote_path);
