@@ -11,6 +11,10 @@ use clap::{Parser, Subcommand};
 use commands::ansible::{
     AnsibleCommands, run_ansible_bootstrap, run_ansible_check, run_ansible_run,
 };
+use commands::backup::{
+    BackupCommands, run_backup_create, run_backup_list, run_backup_restore, run_export_opml,
+    run_import_opml,
+};
 use commands::dns::{
     DnsCommands, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all, run_dns_status,
 };
@@ -47,6 +51,8 @@ enum Commands {
     Select(SelectCommands),
     #[command(subcommand, alias = "a", about = "Run ansible playbooks")]
     Ansible(AnsibleCommands),
+    #[command(subcommand, alias = "b", about = "Backup and restore application data")]
+    Backup(BackupCommands),
     #[command(subcommand, alias = "h", about = "Manage VPS hosts")]
     Host(HostCommands),
     #[command(subcommand, alias = "ss", about = "SSH key management")]
@@ -102,6 +108,27 @@ async fn main() -> Result<()> {
             } => run_ansible_run(host, playbook, check, tags),
             AnsibleCommands::Check { host, playbook } => run_ansible_check(host, playbook),
             AnsibleCommands::Bootstrap { host, port } => run_ansible_bootstrap(host, port),
+        },
+        Commands::Backup(cmd) => match cmd {
+            BackupCommands::Create {
+                host,
+                apps,
+                dest,
+                include_music,
+                dry_run,
+            } => run_backup_create(host, apps, dest, include_music, dry_run),
+            BackupCommands::List { host, app, format } => run_backup_list(host, app, format),
+            BackupCommands::Restore {
+                backup_id,
+                host,
+                apps,
+                dry_run,
+                yes,
+            } => run_backup_restore(backup_id, host, apps, dry_run, yes),
+            BackupCommands::ExportOpml { host, output, user } => {
+                run_export_opml(host, output, user)
+            }
+            BackupCommands::ImportOpml { host, input, user } => run_import_opml(host, input, user),
         },
         Commands::Ssh(cmd) => match cmd {
             SshCommands::Keygen { host, user, force } => run_ssh_keygen(host, user, force),

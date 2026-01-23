@@ -125,6 +125,7 @@ version = "0.1.1"
 dependencies = [
  "ansible-rs",
  "atty",
+ "chrono",
  "clap 4.5.54",
  "cloudflare",
  "color-eyre",

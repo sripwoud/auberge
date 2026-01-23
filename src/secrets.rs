@@ -6,6 +6,7 @@ const SERVICE_NAME: &str = "auberge";
 pub struct SecretsManager;
 
 impl SecretsManager {
+    #[allow(dead_code)]
     pub fn get(key: &str) -> Result<String> {
         if let Ok(value) = std::env::var(key) {
             return Ok(value);
@@ -19,6 +20,7 @@ impl SecretsManager {
             .wrap_err_with(|| format!("Secret not found in keyring: {}", key))
     }
 
+    #[allow(dead_code)]
     pub fn set(key: &str, value: &str) -> Result<()> {
         let entry = Entry::new(SERVICE_NAME, key)
             .wrap_err_with(|| format!("Failed to access keyring for key: {}", key))?;
@@ -28,6 +30,7 @@ impl SecretsManager {
             .wrap_err_with(|| format!("Failed to store secret in keyring: {}", key))
     }
 
+    #[allow(dead_code)]
     pub fn delete(key: &str) -> Result<()> {
         let entry = Entry::new(SERVICE_NAME, key)
             .wrap_err_with(|| format!("Failed to access keyring for key: {}", key))?;
@@ -37,6 +40,7 @@ impl SecretsManager {
             .wrap_err_with(|| format!("Failed to delete secret from keyring: {}", key))
     }
 
+    #[allow(dead_code)]
     pub fn required_secrets() -> Vec<&'static str> {
         vec![
             "ADMIN_USER_NAME",

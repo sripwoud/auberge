@@ -56,6 +56,7 @@ impl PlaybookManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn list_available_playbooks() -> Result<Vec<String>> {
         let playbooks_dir = Self::get_playbooks_dir()?;
         let mut playbooks = Vec::new();
