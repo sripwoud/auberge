@@ -435,14 +435,172 @@ pub fn run_backup_restore(
     yes: bool,
 ) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
+    let backup_root = default_backup_dir();
+    let host_backup_dir = backup_root.join(&host.name);
 
-    eprintln!("Restoring backup: {}", backup_id);
+    if !host_backup_dir.exists() {
+        eyre::bail!("No backups found for host: {}", host.name);
+    }
+
+    let app_names = apps.unwrap_or_else(|| {
+        vec![
+            "radicale".to_string(),
+            "freshrss".to_string(),
+            "navidrome".to_string(),
+            "calibre".to_string(),
+            "webdav".to_string(),
+        ]
+    });
+
+    let mut restore_plan = Vec::new();
+
+    for app_name in &app_names {
+        let app_backup_dir = host_backup_dir.join(app_name);
+
+        if !app_backup_dir.exists() {
+            eprintln!("⚠ No backups found for {}, skipping", app_name);
+            continue;
+        }
+
+        let backup_path = if backup_id == "latest" {
+            let latest_link = app_backup_dir.join("latest");
+            if !latest_link.exists() {
+                eprintln!("⚠ No 'latest' backup for {}, skipping", app_name);
+                continue;
+            }
+            fs::canonicalize(latest_link)?
+        } else {
+            let backup_path = app_backup_dir.join(&backup_id);
+            if !backup_path.exists() {
+                eprintln!(
+                    "⚠ Backup {} not found for {}, skipping",
+                    backup_id, app_name
+                );
+                continue;
+            }
+            backup_path
+        };
+
+        restore_plan.push((app_name.clone(), backup_path));
+    }
+
+    if restore_plan.is_empty() {
+        eyre::bail!("No backups to restore");
+    }
+
+    eprintln!("\n=== Restore Plan ===");
     eprintln!("Host: {}", host.name);
-    eprintln!("Apps: {:?}", apps);
-    eprintln!("Dry run: {}", dry_run);
-    eprintln!("Skip confirmation: {}", yes);
+    eprintln!("Backup ID: {}", backup_id);
+    eprintln!("\nApps to restore:");
+    for (app, path) in &restore_plan {
+        eprintln!("  - {:<12} from {}", app, path.display());
+    }
 
-    eyre::bail!("Not yet implemented")
+    if dry_run {
+        eprintln!("\n✓ Dry run completed (no changes made)");
+        return Ok(());
+    }
+
+    if !yes {
+        eprintln!("\n⚠ WARNING: This will overwrite existing data on the remote host!");
+        if !dialoguer::Confirm::new()
+            .with_prompt("Continue with restore?")
+            .default(false)
+            .interact()?
+        {
+            eprintln!("Restore cancelled");
+            return Ok(());
+        }
+    }
+
+    eprintln!("\nStarting restore...");
+
+    for (app_name, backup_path) in restore_plan {
+        restore_app(&host, &app_name, &backup_path)?;
+    }
+
+    eprintln!("\n✓ All restores completed successfully");
+    Ok(())
+}
+
+fn restore_app(host: &Host, app_name: &str, backup_path: &Path) -> Result<()> {
+    eprintln!("\n--- Restoring {} ---", app_name);
+
+    let config = AppBackupConfig::by_name(app_name, false)
+        .ok_or_else(|| eyre::eyre!("Unknown app: {}", app_name))?;
+
+    let ssh_key = get_ssh_key_path(host)?;
+
+    if let Some(service) = config.systemd_service {
+        eprintln!("  Stopping service: {}", service);
+        remote_systemctl(host, &ssh_key, "stop", service)?;
+    }
+
+    for remote_path in &config.paths {
+        eprintln!("  Restoring to: {}", remote_path);
+        rsync_to_remote(host, &ssh_key, backup_path, remote_path)?;
+    }
+
+    if let Some(service) = config.systemd_service {
+        eprintln!("  Starting service: {}", service);
+        remote_systemctl(host, &ssh_key, "start", service)?;
+    }
+
+    eprintln!("✓ {} restore completed", app_name);
+    Ok(())
+}
+
+fn rsync_to_remote(
+    host: &Host,
+    ssh_key: &Path,
+    local_path: &Path,
+    remote_path: &str,
+) -> Result<()> {
+    let local_source = local_path.join(remote_path.trim_start_matches('/'));
+
+    if !local_source.exists() {
+        eprintln!("    (skipping {} - not in backup)", remote_path);
+        return Ok(());
+    }
+
+    let parent_dir = std::path::Path::new(remote_path)
+        .parent()
+        .ok_or_else(|| eyre::eyre!("Invalid remote path: {}", remote_path))?;
+
+    let _ = Command::new("ssh")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.vars.ansible_port.to_string())
+        .arg(format!("ansible@{}", host.vars.ansible_host))
+        .arg("sudo")
+        .arg("mkdir")
+        .arg("-p")
+        .arg(parent_dir)
+        .status();
+
+    let status = Command::new("rsync")
+        .arg("-avz")
+        .arg("--delete")
+        .arg("-e")
+        .arg(format!(
+            "ssh -i {} -p {}",
+            ssh_key.display(),
+            host.vars.ansible_port
+        ))
+        .arg(format!("{}/", local_source.display()))
+        .arg(format!(
+            "ansible@{}:{}",
+            host.vars.ansible_host, remote_path
+        ))
+        .status()
+        .wrap_err("Failed to execute rsync")?;
+
+    if !status.success() {
+        eyre::bail!("rsync failed for {}", remote_path);
+    }
+
+    Ok(())
 }
 
 pub fn run_export_opml(host_arg: Option<String>, output: PathBuf, user: String) -> Result<()> {
