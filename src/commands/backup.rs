@@ -1,6 +1,5 @@
-use crate::models::inventory::Host;
+use crate::hosts::{Host, HostManager};
 use crate::selector::select_item;
-use crate::services::inventory::get_hosts;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
@@ -43,6 +42,12 @@ pub enum BackupCommands {
         apps: Option<Vec<String>>,
         #[arg(short, long, help = "Backup destination directory")]
         dest: Option<PathBuf>,
+        #[arg(
+            short = 'k',
+            long,
+            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+        )]
+        ssh_key: Option<PathBuf>,
         #[arg(long, help = "Include music files in Navidrome backup (large, slow)")]
         include_music: bool,
         #[arg(short = 'n', long, help = "Dry run (show what would be backed up)")]
@@ -76,6 +81,12 @@ pub enum BackupCommands {
             help = "Apps to restore (radicale,freshrss,navidrome,calibre,webdav). Default: all"
         )]
         apps: Option<Vec<String>>,
+        #[arg(
+            short = 'k',
+            long,
+            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+        )]
+        ssh_key: Option<PathBuf>,
         #[arg(short = 'n', long, help = "Dry run (show what would be restored)")]
         dry_run: bool,
         #[arg(short = 'y', long, help = "Skip confirmation prompt")]
@@ -87,6 +98,12 @@ pub enum BackupCommands {
         host: Option<String>,
         #[arg(short, long, help = "Output OPML file path")]
         output: PathBuf,
+        #[arg(
+            short = 'k',
+            long,
+            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+        )]
+        ssh_key: Option<PathBuf>,
         #[arg(long, default_value = "admin", help = "FreshRSS username")]
         user: String,
     },
@@ -96,6 +113,12 @@ pub enum BackupCommands {
         host: Option<String>,
         #[arg(short, long, help = "OPML file to import")]
         input: PathBuf,
+        #[arg(
+            short = 'k',
+            long,
+            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+        )]
+        ssh_key: Option<PathBuf>,
         #[arg(long, default_value = "admin", help = "FreshRSS username")]
         user: String,
     },
@@ -188,11 +211,15 @@ pub fn run_backup_create(
     host_arg: Option<String>,
     apps: Option<Vec<String>>,
     dest: Option<PathBuf>,
+    ssh_key: Option<PathBuf>,
     include_music: bool,
     dry_run: bool,
 ) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
     let backup_dest = dest.unwrap_or_else(default_backup_dir);
+
+    let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
+    eprintln!("Using SSH key: {}", ssh_key_path.display());
 
     eprintln!("Creating backup for host: {}", host.name);
     eprintln!("Backup destination: {}", backup_dest.display());
@@ -226,7 +253,7 @@ pub fn run_backup_create(
 
     let mut results = Vec::new();
     for config in app_configs {
-        match backup_app(&host, &config, &backup_dest) {
+        match backup_app(&host, &config, &backup_dest, &ssh_key_path) {
             Ok(_) => results.push((config.name, true, None)),
             Err(e) => {
                 eprintln!("✗ {} backup failed: {}", config.name, e);
@@ -475,12 +502,16 @@ pub fn run_backup_restore(
     backup_id: String,
     host_arg: Option<String>,
     apps: Option<Vec<String>>,
+    ssh_key: Option<PathBuf>,
     dry_run: bool,
     yes: bool,
 ) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
     let backup_root = default_backup_dir();
     let host_backup_dir = backup_root.join(&host.name);
+
+    let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
+    eprintln!("Using SSH key: {}", ssh_key_path.display());
 
     if !host_backup_dir.exists() {
         eyre::bail!("No backups found for host: {}", host.name);
@@ -560,34 +591,32 @@ pub fn run_backup_restore(
     eprintln!("\nStarting restore...");
 
     for (app_name, backup_path) in restore_plan {
-        restore_app(&host, &app_name, &backup_path)?;
+        restore_app(&host, &app_name, &backup_path, &ssh_key_path)?;
     }
 
     eprintln!("\n✓ All restores completed successfully");
     Ok(())
 }
 
-fn restore_app(host: &Host, app_name: &str, backup_path: &Path) -> Result<()> {
+fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) -> Result<()> {
     eprintln!("\n--- Restoring {} ---", app_name);
 
     let config = AppBackupConfig::by_name(app_name, false)
         .ok_or_else(|| eyre::eyre!("Unknown app: {}", app_name))?;
 
-    let ssh_key = get_ssh_key_path(host)?;
-
     if let Some(service) = config.systemd_service {
         eprintln!("  Stopping service: {}", service);
-        remote_systemctl(host, &ssh_key, "stop", service)?;
+        remote_systemctl(host, ssh_key, "stop", service)?;
     }
 
     for remote_path in &config.paths {
         eprintln!("  Restoring to: {}", remote_path);
-        rsync_to_remote(host, &ssh_key, backup_path, remote_path)?;
+        rsync_to_remote(host, ssh_key, backup_path, remote_path)?;
     }
 
     if let Some(service) = config.systemd_service {
         eprintln!("  Starting service: {}", service);
-        remote_systemctl(host, &ssh_key, "start", service)?;
+        remote_systemctl(host, ssh_key, "start", service)?;
     }
 
     eprintln!("✓ {} restore completed", app_name);
@@ -615,8 +644,8 @@ fn rsync_to_remote(
         .arg("-i")
         .arg(ssh_key)
         .arg("-p")
-        .arg(host.vars.ansible_port.to_string())
-        .arg(format!("ansible@{}", host.vars.ansible_host))
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
         .arg("sudo")
         .arg("mkdir")
         .arg("-p")
@@ -636,12 +665,12 @@ fn rsync_to_remote(
         .arg(format!(
             "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
             ssh_key.display(),
-            host.vars.ansible_port
+            host.port
         ))
         .arg(format!("{}/", local_source.display()))
         .arg(format!(
-            "ansible@{}:{}",
-            host.vars.ansible_host, remote_path
+            "{}@{}:{}",
+            host.user, host.address, remote_path
         ));
 
     let status = cmd.status().wrap_err("Failed to execute rsync")?;
@@ -653,9 +682,15 @@ fn rsync_to_remote(
     Ok(())
 }
 
-pub fn run_export_opml(host_arg: Option<String>, output: PathBuf, user: String) -> Result<()> {
+pub fn run_export_opml(
+    host_arg: Option<String>,
+    output: PathBuf,
+    ssh_key: Option<PathBuf>,
+    user: String,
+) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
-    let ssh_key = get_ssh_key_path(&host)?;
+    let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
+    eprintln!("Using SSH key: {}", ssh_key_path.display());
 
     eprintln!("Exporting OPML from FreshRSS");
     eprintln!("  Host: {}", host.name);
@@ -669,10 +704,10 @@ pub fn run_export_opml(host_arg: Option<String>, output: PathBuf, user: String) 
 
     let opml_output = Command::new("ssh")
         .arg("-i")
-        .arg(&ssh_key)
+        .arg(&ssh_key_path)
         .arg("-p")
-        .arg(host.vars.ansible_port.to_string())
-        .arg(format!("ansible@{}", host.vars.ansible_host))
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
         .arg(remote_cmd)
         .output()
         .wrap_err("Failed to execute SSH command")?;
@@ -691,9 +726,15 @@ pub fn run_export_opml(host_arg: Option<String>, output: PathBuf, user: String) 
     Ok(())
 }
 
-pub fn run_import_opml(host_arg: Option<String>, input: PathBuf, user: String) -> Result<()> {
+pub fn run_import_opml(
+    host_arg: Option<String>,
+    input: PathBuf,
+    ssh_key: Option<PathBuf>,
+    user: String,
+) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
-    let ssh_key = get_ssh_key_path(&host)?;
+    let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
+    eprintln!("Using SSH key: {}", ssh_key_path.display());
 
     if !input.exists() {
         eyre::bail!("OPML file not found: {}", input.display());
@@ -709,13 +750,13 @@ pub fn run_import_opml(host_arg: Option<String>, input: PathBuf, user: String) -
     eprintln!("  Uploading OPML file...");
     let scp_status = Command::new("scp")
         .arg("-i")
-        .arg(&ssh_key)
+        .arg(&ssh_key_path)
         .arg("-P")
-        .arg(host.vars.ansible_port.to_string())
+        .arg(host.port.to_string())
         .arg(&input)
         .arg(format!(
-            "ansible@{}:{}",
-            host.vars.ansible_host, remote_opml_path
+            "{}@{}:{}",
+            host.user, host.address, remote_opml_path
         ))
         .status()
         .wrap_err("Failed to upload OPML file")?;
@@ -732,10 +773,10 @@ pub fn run_import_opml(host_arg: Option<String>, input: PathBuf, user: String) -
 
     let import_output = Command::new("ssh")
         .arg("-i")
-        .arg(&ssh_key)
+        .arg(&ssh_key_path)
         .arg("-p")
-        .arg(host.vars.ansible_port.to_string())
-        .arg(format!("ansible@{}", host.vars.ansible_host))
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
         .arg(import_cmd)
         .output()
         .wrap_err("Failed to execute import command")?;
@@ -755,17 +796,12 @@ pub fn run_import_opml(host_arg: Option<String>, input: PathBuf, user: String) -
 
 fn get_host_or_select(host_arg: Option<String>) -> Result<Host> {
     match host_arg {
-        Some(name) => crate::services::inventory::get_host(&name, None),
+        Some(name) => HostManager::get_host(&name),
         None => {
-            let hosts = get_hosts(None, None)?;
+            let hosts = HostManager::load_hosts()?;
             select_item(
                 &hosts,
-                |h: &Host| {
-                    format!(
-                        "{} ({}:{})",
-                        h.name, h.vars.ansible_host, h.vars.ansible_port
-                    )
-                },
+                |h: &Host| format!("{} ({}:{})", h.name, h.address, h.port),
                 "Select host",
             )?
             .ok_or_else(|| eyre::eyre!("No host selected"))
@@ -779,7 +815,12 @@ fn default_backup_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
 
-fn backup_app(host: &Host, config: &AppBackupConfig, backup_dest: &Path) -> Result<()> {
+fn backup_app(
+    host: &Host,
+    config: &AppBackupConfig,
+    backup_dest: &Path,
+    ssh_key: &Path,
+) -> Result<()> {
     eprintln!("\n--- Backing up {} ---", config.name);
 
     let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
@@ -795,21 +836,19 @@ fn backup_app(host: &Host, config: &AppBackupConfig, backup_dest: &Path) -> Resu
         )
     })?;
 
-    let ssh_key = get_ssh_key_path(host)?;
-
     if let Some(service) = config.systemd_service {
         eprintln!("  Stopping service: {}", service);
-        remote_systemctl(host, &ssh_key, "stop", service)?;
+        remote_systemctl(host, ssh_key, "stop", service)?;
     }
 
     for path in &config.paths {
         eprintln!("  Backing up: {}", path);
-        rsync_from_remote(host, &ssh_key, path, &app_backup_dir)?;
+        rsync_from_remote(host, ssh_key, path, &app_backup_dir)?;
     }
 
     if let Some(service) = config.systemd_service {
         eprintln!("  Starting service: {}", service);
-        remote_systemctl(host, &ssh_key, "start", service)?;
+        remote_systemctl(host, ssh_key, "start", service)?;
     }
 
     let latest_link = backup_dest
@@ -831,22 +870,72 @@ fn backup_app(host: &Host, config: &AppBackupConfig, backup_dest: &Path) -> Resu
     Ok(())
 }
 
-fn get_ssh_key_path(host: &Host) -> Result<PathBuf> {
-    let ansible_user = "ansible";
+fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(key_path) = override_key {
+        if !key_path.exists() {
+            eyre::bail!(
+                "Specified SSH key not found: {}\nCheck the path and try again",
+                key_path.display()
+            );
+        }
+
+        validate_key_file(&key_path)?;
+        return Ok(key_path);
+    }
+
+    if let Some(ref configured_key) = host.ssh_key {
+        let key_path = PathBuf::from(shellexpand::tilde(configured_key).as_ref());
+        if key_path.exists() {
+            validate_key_file(&key_path)?;
+            return Ok(key_path);
+        }
+        eprintln!(
+            "⚠ Warning: Configured SSH key not found: {}",
+            key_path.display()
+        );
+        eprintln!("  Falling back to default key derivation");
+    }
+
     let ssh_key = dirs::home_dir()
         .ok_or_else(|| eyre::eyre!("Could not determine home directory"))?
-        .join(format!(".ssh/identities/{}_{}", ansible_user, host.name));
+        .join(format!(".ssh/identities/{}_{}", host.user, host.name));
 
     if !ssh_key.exists() {
         eyre::bail!(
-            "SSH key not found: {}\nRun 'auberge ssh keygen --host {} --user {}' first",
+            "SSH key not found: {}\nRun 'auberge ssh keygen --host {} --user {}' or configure with 'auberge host edit {}'",
             ssh_key.display(),
             host.name,
-            ansible_user
+            host.user,
+            host.name
         );
     }
 
     Ok(ssh_key)
+}
+
+fn validate_key_file(key_path: &Path) -> Result<()> {
+    let metadata = std::fs::metadata(key_path)
+        .wrap_err_with(|| format!("Cannot read SSH key: {}", key_path.display()))?;
+
+    if !metadata.is_file() {
+        eyre::bail!("SSH key path is not a file: {}", key_path.display());
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = metadata.permissions();
+        let mode = perms.mode() & 0o777;
+        if mode & 0o077 != 0 {
+            eprintln!(
+                "⚠ Warning: SSH key has overly permissive permissions: {:o}",
+                mode
+            );
+            eprintln!("  Consider running: chmod 600 {}", key_path.display());
+        }
+    }
+
+    Ok(())
 }
 
 fn remote_systemctl(host: &Host, ssh_key: &Path, action: &str, service: &str) -> Result<()> {
@@ -860,8 +949,8 @@ fn remote_systemctl(host: &Host, ssh_key: &Path, action: &str, service: &str) ->
         .arg("-i")
         .arg(ssh_key)
         .arg("-p")
-        .arg(host.vars.ansible_port.to_string())
-        .arg(format!("ansible@{}", host.vars.ansible_host))
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
         .arg("sudo")
         .arg("systemctl")
         .arg(action)
@@ -895,11 +984,11 @@ fn rsync_from_remote(
         .arg(format!(
             "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
             ssh_key.display(),
-            host.vars.ansible_port
+            host.port
         ))
         .arg(format!(
-            "ansible@{}:{}",
-            host.vars.ansible_host, remote_path
+            "{}@{}:{}",
+            host.user, host.address, remote_path
         ))
         .arg(local_dest);
 

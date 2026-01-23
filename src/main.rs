@@ -114,21 +114,31 @@ async fn main() -> Result<()> {
                 host,
                 apps,
                 dest,
+                ssh_key,
                 include_music,
                 dry_run,
-            } => run_backup_create(host, apps, dest, include_music, dry_run),
+            } => run_backup_create(host, apps, dest, ssh_key, include_music, dry_run),
             BackupCommands::List { host, app, format } => run_backup_list(host, app, format),
             BackupCommands::Restore {
                 backup_id,
                 host,
                 apps,
+                ssh_key,
                 dry_run,
                 yes,
-            } => run_backup_restore(backup_id, host, apps, dry_run, yes),
-            BackupCommands::ExportOpml { host, output, user } => {
-                run_export_opml(host, output, user)
-            }
-            BackupCommands::ImportOpml { host, input, user } => run_import_opml(host, input, user),
+            } => run_backup_restore(backup_id, host, apps, ssh_key, dry_run, yes),
+            BackupCommands::ExportOpml {
+                host,
+                output,
+                ssh_key,
+                user,
+            } => run_export_opml(host, output, ssh_key, user),
+            BackupCommands::ImportOpml {
+                host,
+                input,
+                ssh_key,
+                user,
+            } => run_import_opml(host, input, ssh_key, user),
         },
         Commands::Ssh(cmd) => match cmd {
             SshCommands::Keygen { host, user, force } => run_ssh_keygen(host, user, force),
