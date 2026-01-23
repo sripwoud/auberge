@@ -582,6 +582,7 @@ fn rsync_to_remote(
     let status = Command::new("rsync")
         .arg("-avz")
         .arg("--delete")
+        .arg("--rsync-path=sudo rsync")
         .arg("-e")
         .arg(format!(
             "ssh -i {} -p {}",
@@ -829,6 +830,7 @@ fn rsync_from_remote(
     let status = Command::new("rsync")
         .arg("-avz")
         .arg("--relative")
+        .arg("--rsync-path=sudo rsync")
         .arg("-e")
         .arg(format!(
             "ssh -i {} -p {}",
