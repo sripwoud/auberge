@@ -217,11 +217,214 @@ pub fn run_backup_list(
     app_filter: Option<String>,
     format: OutputFormat,
 ) -> Result<()> {
-    eprintln!("Listing backups...");
-    eprintln!("Host filter: {:?}", host_filter);
-    eprintln!("App filter: {:?}", app_filter);
-    eprintln!("Format: {:?}", format);
-    eyre::bail!("Not yet implemented")
+    let backup_root = default_backup_dir();
+
+    if !backup_root.exists() {
+        eprintln!("No backups found. Backup directory does not exist:");
+        eprintln!("  {}", backup_root.display());
+        return Ok(());
+    }
+
+    let backups = discover_backups(&backup_root, host_filter.as_deref(), app_filter.as_deref())?;
+
+    if backups.is_empty() {
+        eprintln!("No backups found");
+        return Ok(());
+    }
+
+    match format {
+        OutputFormat::Table => print_backups_table(&backups),
+        OutputFormat::Json => print_backups_json(&backups)?,
+        OutputFormat::Yaml => print_backups_yaml(&backups)?,
+    }
+
+    Ok(())
+}
+
+#[derive(Debug)]
+struct BackupEntry {
+    host: String,
+    app: String,
+    timestamp: String,
+    path: PathBuf,
+    size_bytes: u64,
+}
+
+fn discover_backups(
+    backup_root: &Path,
+    host_filter: Option<&str>,
+    app_filter: Option<&str>,
+) -> Result<Vec<BackupEntry>> {
+    let mut backups = Vec::new();
+
+    if !backup_root.is_dir() {
+        return Ok(backups);
+    }
+
+    for host_entry in fs::read_dir(backup_root)
+        .wrap_err_with(|| format!("Failed to read backup directory: {}", backup_root.display()))?
+    {
+        let host_entry = host_entry?;
+        if !host_entry.file_type()?.is_dir() {
+            continue;
+        }
+
+        let host_name = host_entry.file_name().to_string_lossy().to_string();
+
+        if let Some(filter) = host_filter
+            && host_name != filter
+        {
+            continue;
+        }
+
+        for app_entry in fs::read_dir(host_entry.path())? {
+            let app_entry = app_entry?;
+            if !app_entry.file_type()?.is_dir() {
+                continue;
+            }
+
+            let app_name = app_entry.file_name().to_string_lossy().to_string();
+
+            if let Some(filter) = app_filter
+                && app_name != filter
+            {
+                continue;
+            }
+
+            for backup_entry in fs::read_dir(app_entry.path())? {
+                let backup_entry = backup_entry?;
+                let backup_path = backup_entry.path();
+
+                if backup_path.is_symlink() {
+                    continue;
+                }
+
+                if !backup_path.is_dir() {
+                    continue;
+                }
+
+                let timestamp = backup_entry.file_name().to_string_lossy().to_string();
+                let size_bytes = calculate_dir_size(&backup_path)?;
+
+                backups.push(BackupEntry {
+                    host: host_name.clone(),
+                    app: app_name.clone(),
+                    timestamp,
+                    path: backup_path,
+                    size_bytes,
+                });
+            }
+        }
+    }
+
+    backups.sort_by(|a, b| {
+        a.host
+            .cmp(&b.host)
+            .then_with(|| a.app.cmp(&b.app))
+            .then_with(|| b.timestamp.cmp(&a.timestamp))
+    });
+
+    Ok(backups)
+}
+
+fn calculate_dir_size(path: &Path) -> Result<u64> {
+    let mut total = 0u64;
+
+    if path.is_file() {
+        return Ok(path.metadata()?.len());
+    }
+
+    if path.is_dir() {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+
+            if metadata.is_file() {
+                total += metadata.len();
+            } else if metadata.is_dir() {
+                total += calculate_dir_size(&entry.path())?;
+            }
+        }
+    }
+
+    Ok(total)
+}
+
+fn print_backups_table(backups: &[BackupEntry]) {
+    println!(
+        "{:<15} {:<12} {:<20} {:<12}",
+        "HOST", "APP", "TIMESTAMP", "SIZE"
+    );
+    println!("{}", "-".repeat(65));
+
+    for backup in backups {
+        println!(
+            "{:<15} {:<12} {:<20} {:<12}",
+            backup.host,
+            backup.app,
+            backup.timestamp,
+            format_size(backup.size_bytes)
+        );
+    }
+
+    println!("\nTotal: {} backup(s)", backups.len());
+}
+
+fn print_backups_json(backups: &[BackupEntry]) -> Result<()> {
+    let json = serde_json::to_string_pretty(
+        &backups
+            .iter()
+            .map(|b| {
+                serde_json::json!({
+                    "host": b.host,
+                    "app": b.app,
+                    "timestamp": b.timestamp,
+                    "path": b.path,
+                    "size_bytes": b.size_bytes,
+                })
+            })
+            .collect::<Vec<_>>(),
+    )?;
+
+    println!("{}", json);
+    Ok(())
+}
+
+fn print_backups_yaml(backups: &[BackupEntry]) -> Result<()> {
+    let yaml = serde_yaml::to_string(
+        &backups
+            .iter()
+            .map(|b| {
+                serde_yaml::to_value(serde_json::json!({
+                    "host": b.host,
+                    "app": b.app,
+                    "timestamp": b.timestamp,
+                    "path": b.path,
+                    "size_bytes": b.size_bytes,
+                }))
+                .unwrap()
+            })
+            .collect::<Vec<_>>(),
+    )?;
+
+    println!("{}", yaml);
+    Ok(())
+}
+
+fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.2} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.2} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
 }
 
 pub fn run_backup_restore(
