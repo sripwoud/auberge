@@ -204,11 +204,35 @@ pub fn run_backup_create(
 
     eprintln!("\nStarting backup...");
 
+    let mut results = Vec::new();
     for config in app_configs {
-        backup_app(&host, &config, &backup_dest)?;
+        match backup_app(&host, &config, &backup_dest) {
+            Ok(_) => results.push((config.name, true, None)),
+            Err(e) => {
+                eprintln!("✗ {} backup failed: {}", config.name, e);
+                results.push((config.name, false, Some(e.to_string())));
+            }
+        }
     }
 
-    eprintln!("\n✓ All backups completed successfully");
+    eprintln!("\n=== Backup Summary ===");
+    let successful = results.iter().filter(|(_, ok, _)| *ok).count();
+    let failed = results.iter().filter(|(_, ok, _)| !*ok).count();
+
+    for (app, ok, err) in &results {
+        if *ok {
+            eprintln!("  ✓ {}", app);
+        } else {
+            eprintln!("  ✗ {} - {}", app, err.as_ref().unwrap());
+        }
+    }
+
+    eprintln!("\nTotal: {} successful, {} failed", successful, failed);
+
+    if failed > 0 {
+        eyre::bail!("{} backup(s) failed", failed);
+    }
+
     Ok(())
 }
 
@@ -583,9 +607,13 @@ fn rsync_to_remote(
         .arg("-avz")
         .arg("--delete")
         .arg("--rsync-path=sudo rsync")
+        .arg("--exclude=.git")
+        .arg("--exclude=__pycache__")
+        .arg("--exclude=*.pyc")
+        .arg("--exclude=.cache")
         .arg("-e")
         .arg(format!(
-            "ssh -i {} -p {}",
+            "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
             ssh_key.display(),
             host.vars.ansible_port
         ))
@@ -802,6 +830,12 @@ fn get_ssh_key_path(host: &Host) -> Result<PathBuf> {
 
 fn remote_systemctl(host: &Host, ssh_key: &Path, action: &str, service: &str) -> Result<()> {
     let status = Command::new("ssh")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
         .arg("-i")
         .arg(ssh_key)
         .arg("-p")
@@ -831,9 +865,13 @@ fn rsync_from_remote(
         .arg("-avz")
         .arg("--relative")
         .arg("--rsync-path=sudo rsync")
+        .arg("--exclude=.git")
+        .arg("--exclude=__pycache__")
+        .arg("--exclude=*.pyc")
+        .arg("--exclude=.cache")
         .arg("-e")
         .arg(format!(
-            "ssh -i {} -p {}",
+            "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
             ssh_key.display(),
             host.vars.ansible_port
         ))
