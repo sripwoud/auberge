@@ -124,6 +124,14 @@ auberge backup export-opml --host my-vps --output feeds.opml
 auberge backup import-opml --host my-vps --input feeds.opml
 ```
 
+### SSH Key Configuration
+
+Backup operations support flexible SSH key configuration. See [docs/ssh.md](docs/ssh.md) for details on:
+
+- Using custom SSH keys per host
+- Ad-hoc key overrides with `--ssh-key` flag
+- Default SSH key derivation
+
 **What's backed up:**
 
 - **Radicale**: Calendar and contact data, configuration
