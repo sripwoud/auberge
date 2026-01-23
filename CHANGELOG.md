@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/sripwoud/auberge/compare/v0.1.1...v0.1.2) - 2026-01-23
+
+### Added
+
+- *(ssh)* add key authorization command ([#27](https://github.com/sripwoud/auberge/pull/27))
+- add backup and restore commands for application data ([#25](https://github.com/sripwoud/auberge/pull/25))
+
+### Other
+
+- *(ssh)* document interactive fallback and SSH config import
+
 ## [0.1.1](https://github.com/sripwoud/auberge/compare/v0.1.0...v0.1.1) - 2026-01-22
 
 ### Added
