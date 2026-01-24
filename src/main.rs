@@ -6,6 +6,7 @@ mod playbooks;
 mod secrets;
 mod selector;
 mod services;
+mod ssh_config;
 
 use clap::{Parser, Subcommand};
 use commands::ansible::{
