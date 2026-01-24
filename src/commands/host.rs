@@ -71,7 +71,22 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
 
     let ssh_config_hosts = if interactive {
         match crate::ssh_config::SshConfigParser::new().and_then(|p| p.parse()) {
-            Ok(hosts) if !hosts.is_empty() => Some(hosts),
+            Ok(hosts) if !hosts.is_empty() => {
+                let existing_hosts = HostManager::list_hosts_filtered(None).unwrap_or_default();
+                let existing_names: Vec<String> =
+                    existing_hosts.iter().map(|h| h.name.clone()).collect();
+
+                let available_hosts: Vec<_> = hosts
+                    .into_iter()
+                    .filter(|h| !existing_names.contains(&h.name))
+                    .collect();
+
+                if available_hosts.is_empty() {
+                    None
+                } else {
+                    Some(available_hosts)
+                }
+            }
             Ok(_) => None,
             Err(e) => {
                 eprintln!("Warning: Could not parse SSH config: {}", e);
@@ -83,7 +98,7 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
     };
 
     let imported_host = if let Some(ref ssh_hosts) = ssh_config_hosts {
-        eprintln!("Found {} host(s) in ~/.ssh/config\n", ssh_hosts.len());
+        eprintln!("Found {} new host(s) in ~/.ssh/config\n", ssh_hosts.len());
 
         let mut options: Vec<crate::ssh_config::SshConfigHost> =
             vec![crate::ssh_config::SshConfigHost {
