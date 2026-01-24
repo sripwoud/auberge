@@ -122,11 +122,12 @@ async fn main() -> Result<()> {
             BackupCommands::Restore {
                 backup_id,
                 host,
+                from_host,
                 apps,
                 ssh_key,
                 dry_run,
                 yes,
-            } => run_backup_restore(backup_id, host, apps, ssh_key, dry_run, yes),
+            } => run_backup_restore(backup_id, host, from_host, apps, ssh_key, dry_run, yes),
             BackupCommands::ExportOpml {
                 host,
                 output,
