@@ -97,6 +97,11 @@ pub enum BackupCommands {
         dry_run: bool,
         #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
+        #[arg(
+            long,
+            help = "UNSAFE: Skip Ansible playbook run (services will fail without correct permissions)"
+        )]
+        skip_playbook_unsafe: bool,
     },
     #[command(about = "Export FreshRSS feeds to OPML file")]
     ExportOpml {
@@ -512,6 +517,7 @@ pub fn run_backup_restore(
     ssh_key: Option<PathBuf>,
     dry_run: bool,
     yes: bool,
+    skip_playbook_unsafe: bool,
 ) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
     let backup_root = default_backup_dir();
@@ -682,13 +688,73 @@ pub fn run_backup_restore(
         }
     }
 
-    eprintln!("\nStarting restore...");
+    let phase_label = if skip_playbook_unsafe || dry_run {
+        ""
+    } else {
+        "[1/2] "
+    };
+    eprintln!("\n{}Starting restore...", phase_label);
 
     for (app_name, backup_path) in restore_plan {
         restore_app(&host, &app_name, &backup_path, &ssh_key_path)?;
     }
 
     eprintln!("\n✓ All restores completed successfully");
+
+    if !skip_playbook_unsafe && !dry_run {
+        eprintln!("\n[2/2] Running Ansible playbooks to fix permissions...");
+
+        let project_root = crate::services::inventory::find_project_root();
+        let apps_playbook = project_root.join("ansible/playbooks/apps.yml");
+
+        if !apps_playbook.exists() {
+            eprintln!("⚠ Ansible playbook not found: {}", apps_playbook.display());
+            eprintln!("  Services may fail due to incorrect file ownership!");
+            eprintln!("  Run manually: cd ansible && ansible-playbook playbooks/apps.yml");
+        } else {
+            let tags: Vec<String> = app_names.iter().map(|s| s.to_string()).collect();
+
+            match crate::services::ansible_runner::run_playbook(
+                &apps_playbook,
+                &host.name,
+                false,
+                Some(&tags),
+                None,
+                false,
+            ) {
+                Ok(result) if result.success => {
+                    eprintln!("✓ Ansible playbooks completed successfully");
+                    eprintln!("  File permissions have been corrected");
+                }
+                Ok(result) => {
+                    eprintln!(
+                        "⚠ Ansible playbook failed (exit code: {})",
+                        result.exit_code
+                    );
+                    eprintln!("  Services may fail due to incorrect file ownership!");
+                    eprintln!(
+                        "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                        tags.join(",")
+                    );
+                }
+                Err(e) => {
+                    eprintln!("⚠ Failed to run Ansible playbook: {}", e);
+                    eprintln!("  Services may fail due to incorrect file ownership!");
+                    eprintln!(
+                        "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                        tags.join(",")
+                    );
+                }
+            }
+        }
+    } else if skip_playbook_unsafe && !dry_run {
+        eprintln!("\n⚠️  WARNING: Skipped Ansible playbooks (--skip-playbook-unsafe)");
+        eprintln!("⚠️  Services WILL fail until you run:");
+        eprintln!(
+            "     cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+            app_names.join(",")
+        );
+    }
 
     if is_cross_host {
         eprintln!("\n=== Post-Restore Actions Required ===");
@@ -711,14 +777,8 @@ pub fn run_backup_restore(
                 );
             }
         }
-        eprintln!("\n  3. Update configuration if needed:");
-        eprintln!(
-            "     auberge ansible run --host {} --tags {}",
-            host.name,
-            app_names.join(",")
-        );
-        eprintln!("\n  4. Update DNS records if hostnames changed");
-        eprintln!("\n  5. Verify SSL certificates are valid for new domain\n");
+        eprintln!("\n  3. Update DNS records if hostnames changed");
+        eprintln!("\n  4. Verify SSL certificates are valid for new domain\n");
 
         eprintln!("  ⚠  App-specific notes:");
         for app_name in &app_names {

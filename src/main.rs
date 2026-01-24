@@ -128,7 +128,17 @@ async fn main() -> Result<()> {
                 ssh_key,
                 dry_run,
                 yes,
-            } => run_backup_restore(backup_id, host, from_host, apps, ssh_key, dry_run, yes),
+                skip_playbook_unsafe,
+            } => run_backup_restore(
+                backup_id,
+                host,
+                from_host,
+                apps,
+                ssh_key,
+                dry_run,
+                yes,
+                skip_playbook_unsafe,
+            ),
             BackupCommands::ExportOpml {
                 host,
                 output,
