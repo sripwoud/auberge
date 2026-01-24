@@ -56,6 +56,15 @@
         mode: "2775"
         recurse: false
 
+    - name: Set ownership for Navidrome data directory
+      ansible.builtin.file:
+        path: /var/lib/navidrome
+        state: directory
+        owner: "{{ navidrome_sys_user }}"
+        group: "{{ navidrome_sys_group }}"
+        mode: "0755"
+        recurse: true
+
     - name: Deploy Navidrome configuration file
       ansible.builtin.template:
         src: templates/navidrome.toml.j2
