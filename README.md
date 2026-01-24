@@ -53,7 +53,7 @@ auberge ssh keygen             # Generate SSH keys for hosts
 
 ## Backup & Restore
 
-Auberge includes built-in backup and restore for all application data:
+Auberge includes built-in backup and restore for all application data. See [docs/backup.md](docs/backup.md) for comprehensive documentation.
 
 ### Create Backups
 
