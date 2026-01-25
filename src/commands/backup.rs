@@ -147,6 +147,7 @@ pub struct AppBackupConfig {
     pub name: &'static str,
     pub systemd_service: Option<&'static str>,
     pub paths: Vec<&'static str>,
+    pub owner: Option<(&'static str, &'static str)>,
 }
 
 impl AppBackupConfig {
@@ -176,6 +177,7 @@ impl AppBackupConfig {
             name: "radicale",
             systemd_service: Some("radicale"),
             paths: vec!["/var/lib/radicale/collections", "/etc/radicale"],
+            owner: Some(("radicale", "radicale")),
         }
     }
 
@@ -184,6 +186,7 @@ impl AppBackupConfig {
             name: "freshrss",
             systemd_service: Some("freshrss"),
             paths: vec!["/var/lib/freshrss", "/opt/freshrss/data"],
+            owner: Some(("freshrss", "freshrss")),
         }
     }
 
@@ -198,6 +201,7 @@ impl AppBackupConfig {
             name: "navidrome",
             systemd_service: Some("navidrome"),
             paths,
+            owner: Some(("navidrome", "navidrome")),
         }
     }
 
@@ -206,6 +210,7 @@ impl AppBackupConfig {
             name: "calibre",
             systemd_service: Some("calibre"),
             paths: vec!["/srv/calibre", "/opt/calibre", "/home/calibre"],
+            owner: Some(("calibre", "calibre")),
         }
     }
 
@@ -214,6 +219,7 @@ impl AppBackupConfig {
             name: "webdav",
             systemd_service: None,
             paths: vec!["/var/www/webdav-files"],
+            owner: None,
         }
     }
 }
@@ -823,6 +829,13 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
         rsync_to_remote(host, ssh_key, backup_path, remote_path)?;
     }
 
+    if let Some((user, group)) = config.owner {
+        eprintln!("  Setting ownership to {}:{}", user, group);
+        for remote_path in &config.paths {
+            set_remote_ownership(host, ssh_key, remote_path, user, group)?;
+        }
+    }
+
     if let Some(service) = config.systemd_service {
         eprintln!("  Starting service: {}", service);
         remote_systemctl(host, ssh_key, "start", service)?;
@@ -1169,6 +1182,45 @@ fn remote_systemctl(host: &Host, ssh_key: &Path, action: &str, service: &str) ->
 
     if !status.success() {
         eyre::bail!("systemctl {} {} failed", action, service);
+    }
+
+    Ok(())
+}
+
+fn set_remote_ownership(
+    host: &Host,
+    ssh_key: &Path,
+    remote_path: &str,
+    user: &str,
+    group: &str,
+) -> Result<()> {
+    let status = Command::new("ssh")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg("sudo")
+        .arg("chown")
+        .arg("-R")
+        .arg(format!("{}:{}", user, group))
+        .arg(remote_path)
+        .status()
+        .wrap_err_with(|| {
+            format!(
+                "Failed to set ownership of {} to {}:{}",
+                remote_path, user, group
+            )
+        })?;
+
+    if !status.success() {
+        eyre::bail!("chown -R {}:{} {} failed", user, group, remote_path);
     }
 
     Ok(())
