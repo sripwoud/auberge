@@ -176,6 +176,13 @@ Backup operations support flexible SSH key configuration. See [docs/ssh.md](docs
 | [fail2ban](https://github.com/fail2ban/fail2ban) | Intrusion prevention system        |
 | [UFW](https://launchpad.net/ufw)                 | Uncomplicated firewall             |
 
+**Required VPS Provider Firewall Ports:**
+
+- **Custom SSH port**: Set via `SSH_PORT` environment variable (shown in CLI warnings)
+- **80 (HTTP)**: For HTTP traffic and ACME challenges
+- **443 (HTTPS)**: For HTTPS traffic
+- **853 (DNS over TLS)**: For Blocky DNS service
+
 ### Apps
 
 | Category      | Name                                        | Description                          |

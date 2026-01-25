@@ -155,6 +155,30 @@ pub fn run_ansible_run(
             eprintln!("\nAborted. Configure Cloudflare API token first, then re-run.");
             std::process::exit(1);
         }
+
+        eprintln!("\n⚠️  IMPORTANT: VPS Provider Firewall - Port 853 Required");
+        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        eprintln!("For DNS over TLS with Blocky, your VPS provider's firewall");
+        eprintln!("must allow incoming TCP connections on port 853.");
+        eprintln!();
+        eprintln!("Required steps:");
+        eprintln!("  1. Log into your VPS provider dashboard (IONOS, etc.)");
+        eprintln!("  2. Navigate to firewall or security settings");
+        eprintln!("  3. Add firewall rule: Allow TCP on port 853");
+        eprintln!("  4. Save and confirm the rule is active");
+        eprintln!();
+        eprintln!("Without this, DNS over TLS will not be accessible!");
+        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+        print!("Have you opened port 853 in your provider's firewall? [y/N]: ");
+        io::stdout().flush()?;
+        let mut port_response = String::new();
+        io::stdin().read_line(&mut port_response)?;
+
+        if !port_response.trim().eq_ignore_ascii_case("y") {
+            eprintln!("\nAborted. Open port 853 in provider firewall first, then re-run.");
+            std::process::exit(1);
+        }
     }
 
     eprintln!(
