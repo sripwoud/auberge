@@ -205,7 +205,7 @@ impl AppBackupConfig {
         Self {
             name: "calibre",
             systemd_service: Some("calibre"),
-            paths: vec!["/srv/calibre", "/opt/calibre"],
+            paths: vec!["/srv/calibre", "/opt/calibre", "/home/calibre"],
         }
     }
 
