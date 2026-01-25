@@ -120,32 +120,39 @@ pub fn run_ansible_run(
         }
     }
 
-    // Show Namecheap IP whitelisting warning for apps playbook
-    let needs_namecheap_warning = playbook_name == "apps.yml" || playbook_name == "auberge.yml";
+    // Show Cloudflare API configuration warning for apps playbook
+    let needs_cloudflare_warning = playbook_name == "apps.yml" || playbook_name == "auberge.yml";
 
-    if needs_namecheap_warning {
-        eprintln!("\n⚠️  IMPORTANT: Namecheap IP Whitelisting Required");
+    if needs_cloudflare_warning {
+        eprintln!("\n⚠️  IMPORTANT: Cloudflare API Token Configuration Required");
         eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        eprintln!("Before running apps, ensure your VPS IP is whitelisted in");
-        eprintln!("Namecheap's API settings (separate from DNS configuration).");
+        eprintln!("Before running apps, ensure your Cloudflare API token has");
+        eprintln!("the correct permissions for DNS-01 ACME challenges.");
         eprintln!();
         eprintln!("Required steps:");
-        eprintln!("  1. Get your VPS IP (shown after bootstrap or check provider)");
-        eprintln!("  2. Log into Namecheap: https://www.namecheap.com");
-        eprintln!("  3. Navigate to: Profile → Tools → API Access");
-        eprintln!("  4. Add your VPS IP to the API whitelist");
-        eprintln!("  5. Save and wait a few minutes for propagation");
+        eprintln!("  1. Log into Cloudflare: https://dash.cloudflare.com");
+        eprintln!("  2. Navigate to: My Profile → API Tokens → Create Token");
+        eprintln!("  3. Use 'Edit zone DNS' template");
+        eprintln!("  4. Required permissions:");
+        eprintln!("     - Zone → Zone → Read");
+        eprintln!("     - Zone → DNS → Edit");
+        eprintln!("  5. Set zone resources to your domain");
+        eprintln!(
+            "  6. Copy token and add: mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN"
+        );
+        eprintln!();
+        eprintln!("Note: IP whitelisting is optional (all IPs allowed by default)");
         eprintln!();
         eprintln!("Without this, SSL certificate generation will fail!");
         eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-        print!("Have you whitelisted your VPS IP in Namecheap? [y/N]: ");
+        print!("Have you configured your Cloudflare API token? [y/N]: ");
         io::stdout().flush()?;
         let mut response = String::new();
         io::stdin().read_line(&mut response)?;
 
         if !response.trim().eq_ignore_ascii_case("y") {
-            eprintln!("\nAborted. Whitelist VPS IP in Namecheap first, then re-run.");
+            eprintln!("\nAborted. Configure Cloudflare API token first, then re-run.");
             std::process::exit(1);
         }
     }

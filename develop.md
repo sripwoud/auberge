@@ -34,9 +34,6 @@ Set encrypted secrets using mise:
 mise set --age-encrypt --prompt ADMIN_USER_NAME
 mise set --age-encrypt --prompt ADMIN_USER_EMAIL
 mise set --age-encrypt --prompt PRIMARY_DOMAIN
-mise set --age-encrypt --prompt NAMECHEAP_API_KEY
-mise set --age-encrypt --prompt NAMECHEAP_API_USER
-mise set --age-encrypt --prompt NAMECHEAP_CLIENT_IP
 mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
 mise set --age-encrypt --prompt RADICALE_PASSWORD
 mise set --age-encrypt --prompt WEBDAV_PASSWORD
@@ -140,18 +137,7 @@ Required for DNS-01 ACME challenges via Lego certificate automation:
    mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
    ```
 
-### Namecheap API
-
-Required for DNS management via Namecheap (legacy, prefer Cloudflare):
-
-1. Enable API access in Namecheap account settings
-2. Whitelist your IP address
-3. Set credentials:
-   ```bash
-   mise set --age-encrypt --prompt NAMECHEAP_API_KEY
-   mise set --age-encrypt --prompt NAMECHEAP_API_USER
-   mise set --age-encrypt --prompt NAMECHEAP_CLIENT_IP
-   ```
+**Note**: IP whitelisting is optional (all IPs are allowed by default)
 
 ### Tailscale
 
