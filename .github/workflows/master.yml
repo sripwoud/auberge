@@ -39,8 +39,21 @@ jobs:
             "pipx:ansible-lint" = "latest"
       - run: mise settings experimental=true
 
-      - run: ansible-galaxy collection install -r requirements.yml
+      - name: Install Ansible collections with retry
         working-directory: ansible
+        shell: bash
+        run: |
+          max_attempts=3
+          attempt=1
+          until ansible-galaxy collection install -r requirements.yml || [ $attempt -eq $max_attempts ]; do
+            echo "Attempt $attempt failed. Retrying in 10 seconds..."
+            sleep 10
+            attempt=$((attempt + 1))
+          done
+          if [ $attempt -eq $max_attempts ]; then
+            echo "Failed after $max_attempts attempts"
+            exit 1
+          fi
 
       - run: mise r check
 
