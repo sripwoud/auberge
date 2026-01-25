@@ -150,6 +150,17 @@ pub struct AppBackupConfig {
     pub owner: Option<(&'static str, &'static str)>,
 }
 
+pub struct RestoreOptions {
+    pub backup_id: String,
+    pub host_arg: Option<String>,
+    pub from_host_arg: Option<String>,
+    pub apps: Option<Vec<String>>,
+    pub ssh_key: Option<PathBuf>,
+    pub dry_run: bool,
+    pub yes: bool,
+    pub skip_playbook_unsafe: bool,
+}
+
 impl AppBackupConfig {
     pub fn all() -> Vec<Self> {
         vec![
@@ -515,34 +526,25 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-pub fn run_backup_restore(
-    backup_id: String,
-    host_arg: Option<String>,
-    from_host_arg: Option<String>,
-    apps: Option<Vec<String>>,
-    ssh_key: Option<PathBuf>,
-    dry_run: bool,
-    yes: bool,
-    skip_playbook_unsafe: bool,
-) -> Result<()> {
-    let host = get_host_or_select(host_arg)?;
+pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
+    let host = get_host_or_select(opts.host_arg)?;
     let backup_root = default_backup_dir();
 
-    let (source_host_name, is_cross_host) = match from_host_arg {
+    let (source_host_name, is_cross_host) = match opts.from_host_arg {
         Some(ref from_host) => (from_host.clone(), from_host != &host.name),
         None => (host.name.clone(), false),
     };
 
     let host_backup_dir = backup_root.join(&source_host_name);
 
-    let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
+    let ssh_key_path = resolve_ssh_key_path(&host, opts.ssh_key)?;
     eprintln!("Using SSH key: {}", ssh_key_path.display());
 
     if !host_backup_dir.exists() {
         eyre::bail!("No backups found for host: {}", source_host_name);
     }
 
-    let app_names = apps.unwrap_or_else(|| {
+    let app_names = opts.apps.unwrap_or_else(|| {
         vec![
             "radicale".to_string(),
             "freshrss".to_string(),
@@ -562,7 +564,7 @@ pub fn run_backup_restore(
             continue;
         }
 
-        let backup_path = if backup_id == "latest" {
+        let backup_path = if opts.backup_id == "latest" {
             let latest_link = app_backup_dir.join("latest");
             if !latest_link.exists() {
                 eprintln!("⚠ No 'latest' backup for {}, skipping", app_name);
@@ -570,11 +572,11 @@ pub fn run_backup_restore(
             }
             fs::canonicalize(latest_link)?
         } else {
-            let backup_path = app_backup_dir.join(&backup_id);
+            let backup_path = app_backup_dir.join(&opts.backup_id);
             if !backup_path.exists() {
                 eprintln!(
                     "⚠ Backup {} not found for {}, skipping",
-                    backup_id, app_name
+                    opts.backup_id, app_name
                 );
                 continue;
             }
@@ -599,7 +601,7 @@ pub fn run_backup_restore(
 
     eprintln!("\n=== Restore Plan ===");
     if is_cross_host {
-        eprintln!("Source: {} (backup: {})", source_host_name, backup_id);
+        eprintln!("Source: {} (backup: {})", source_host_name, opts.backup_id);
         eprintln!("Target: {} ({}:{})", host.name, host.address, host.port);
         eprintln!("\n⚠  CROSS-HOST RESTORE WARNING");
         eprintln!(
@@ -609,19 +611,19 @@ pub fn run_backup_restore(
         eprintln!("   Existing data on '{}' will be OVERWRITTEN", host.name);
     } else {
         eprintln!("Host: {}", host.name);
-        eprintln!("Backup ID: {}", backup_id);
+        eprintln!("Backup ID: {}", opts.backup_id);
     }
     eprintln!("\nApps to restore:");
     for (app, path) in &restore_plan {
         eprintln!("  - {:<12} from {}", app, path.display());
     }
 
-    if dry_run {
+    if opts.dry_run {
         eprintln!("\n✓ Dry run completed (no changes made)");
         return Ok(());
     }
 
-    if is_cross_host && !yes {
+    if is_cross_host && !opts.yes {
         eprintln!("\n⚠  DANGER: Cross-host restore requires explicit confirmation");
         eprintln!("   Type the target host name '{}' to confirm:", host.name);
 
@@ -633,7 +635,7 @@ pub fn run_backup_restore(
             eprintln!("✗ Confirmation failed. Restore cancelled");
             return Ok(());
         }
-    } else if !yes {
+    } else if !opts.yes {
         eprintln!("\n⚠ WARNING: This will overwrite existing data on the remote host!");
         if !dialoguer::Confirm::new()
             .with_prompt("Continue with restore?")
@@ -645,13 +647,13 @@ pub fn run_backup_restore(
         }
     }
 
-    if is_cross_host && yes {
+    if is_cross_host && opts.yes {
         eprintln!("\n⚠  Cross-host restore with --yes flag");
         eprintln!("   Waiting 3 seconds (press Ctrl+C to cancel)...");
         std::thread::sleep(std::time::Duration::from_secs(3));
     }
 
-    if is_cross_host && !dry_run {
+    if is_cross_host && !opts.dry_run {
         eprintln!("\n--- Creating Emergency Backup ---");
         eprintln!(
             "  Backing up current state of '{}' before cross-host restore",
@@ -694,7 +696,7 @@ pub fn run_backup_restore(
         }
     }
 
-    let phase_label = if skip_playbook_unsafe || dry_run {
+    let phase_label = if opts.skip_playbook_unsafe || opts.dry_run {
         ""
     } else {
         "[1/2] "
@@ -707,7 +709,7 @@ pub fn run_backup_restore(
 
     eprintln!("\n✓ All restores completed successfully");
 
-    if !skip_playbook_unsafe && !dry_run {
+    if !opts.skip_playbook_unsafe && !opts.dry_run {
         eprintln!("\n[2/2] Running Ansible playbooks to fix permissions...");
 
         let project_root = crate::services::inventory::find_project_root();
@@ -753,7 +755,7 @@ pub fn run_backup_restore(
                 }
             }
         }
-    } else if skip_playbook_unsafe && !dry_run {
+    } else if opts.skip_playbook_unsafe && !opts.dry_run {
         eprintln!("\n⚠️  WARNING: Skipped Ansible playbooks (--skip-playbook-unsafe)");
         eprintln!("⚠️  Services WILL fail until you run:");
         eprintln!(
