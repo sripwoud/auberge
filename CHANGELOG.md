@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/sripwoud/auberge/compare/v0.1.2...v0.1.3) - 2026-01-25
+
+### Added
+
+- add port 853 warning for blocky DNS over TLS ([#38](https://github.com/sripwoud/auberge/pull/38))
+- add cross-host restore for VPS migration ([#29](https://github.com/sripwoud/auberge/pull/29))
+
+### Fixed
+
+- replace namecheap warnings with cloudflare instructions ([#35](https://github.com/sripwoud/auberge/pull/35))
+
+### Other
+
+- add retry logic for ansible-galaxy install ([#36](https://github.com/sripwoud/auberge/pull/36))
+- use `cargo-nextest` for tests ([#28](https://github.com/sripwoud/auberge/pull/28))
+
 ### Added
 
 - *(backup)* cross-host restore with `--from-host` flag for VPS migration and disaster recovery
