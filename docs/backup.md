@@ -9,7 +9,7 @@ Auberge provides built-in backup and restore functionality for all self-hosted a
 - **Radicale**: Calendar and contact data, configuration files
 - **FreshRSS**: SQLite database, configuration, user data
 - **Navidrome**: Database and configuration (music files excluded by default)
-- **Calibre**: Book library and metadata
+- **Calibre**: Book library, metadata database, user database (login credentials)
 - **WebDAV**: All shared files
 
 ## Backup Storage
@@ -351,7 +351,7 @@ ssh user@host 'journalctl -u radicale -n 50'
 
 Common issues:
 
-- File permissions (fix: re-run Ansible)
+- File permissions (automatically fixed during restore; if still broken, re-run Ansible)
 - Missing dependencies (fix: reinstall service)
 - Port conflicts (fix: check `netstat -tulpn`)
 
@@ -395,8 +395,9 @@ This uploads the OPML file to the server and imports it into FreshRSS, then clea
 3. User confirmation (hostname typing for cross-host, Y/N for same-host)
 4. Services are stopped on target
 5. Data is synced to remote using `rsync` with SSH
-6. Services are restarted on target
-7. Post-restore guidance displayed (cross-host only)
+6. File ownership is set to service user (e.g., `chown -R calibre:calibre /home/calibre`)
+7. Services are restarted on target
+8. Post-restore guidance displayed (cross-host only)
 
 ### Excluded Files
 
