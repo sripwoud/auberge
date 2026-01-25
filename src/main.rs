@@ -6,14 +6,15 @@ mod playbooks;
 mod secrets;
 mod selector;
 mod services;
+mod ssh_config;
 
 use clap::{Parser, Subcommand};
 use commands::ansible::{
     AnsibleCommands, run_ansible_bootstrap, run_ansible_check, run_ansible_run,
 };
 use commands::backup::{
-    BackupCommands, run_backup_create, run_backup_list, run_backup_restore, run_export_opml,
-    run_import_opml,
+    BackupCommands, RestoreOptions, run_backup_create, run_backup_list, run_backup_restore,
+    run_export_opml, run_import_opml,
 };
 use commands::dns::{
     DnsCommands, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all, run_dns_status,
@@ -122,11 +123,22 @@ async fn main() -> Result<()> {
             BackupCommands::Restore {
                 backup_id,
                 host,
+                from_host,
                 apps,
                 ssh_key,
                 dry_run,
                 yes,
-            } => run_backup_restore(backup_id, host, apps, ssh_key, dry_run, yes),
+                skip_playbook_unsafe,
+            } => run_backup_restore(RestoreOptions {
+                backup_id,
+                host_arg: host,
+                from_host_arg: from_host,
+                apps,
+                ssh_key,
+                dry_run,
+                yes,
+                skip_playbook_unsafe,
+            }),
             BackupCommands::ExportOpml {
                 host,
                 output,

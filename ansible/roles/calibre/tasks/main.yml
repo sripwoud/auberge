@@ -27,6 +27,25 @@
         owner: "{{ calibre_sys_user }}"
         group: "{{ calibre_sys_group }}"
         mode: "0775"
+        recurse: true
+
+    - name: Set ownership for Calibre installation directory
+      ansible.builtin.file:
+        path: "{{ calibre_install_path }}"
+        state: directory
+        owner: "{{ calibre_sys_user }}"
+        group: "{{ calibre_sys_group }}"
+        mode: "0755"
+        recurse: true
+
+    - name: Set ownership for Calibre home directory
+      ansible.builtin.file:
+        path: "/home/{{ calibre_sys_user }}"
+        state: directory
+        owner: "{{ calibre_sys_user }}"
+        group: "{{ calibre_sys_group }}"
+        mode: "0750"
+        recurse: true
 
     - name: Install Python3 venv and pip
       ansible.builtin.apt:

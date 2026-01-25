@@ -53,7 +53,7 @@ auberge ssh keygen             # Generate SSH keys for hosts
 
 ## Backup & Restore
 
-Auberge includes built-in backup and restore for all application data:
+Auberge includes built-in backup and restore for all application data. See [docs/backup.md](docs/backup.md) for comprehensive documentation.
 
 ### Create Backups
 
@@ -113,6 +113,32 @@ auberge backup restore 2026-01-23_14-30-00
 # Dry run to preview
 auberge backup restore latest --dry-run
 ```
+
+### Cross-Host Restore (Migration)
+
+Restore backups from one host to another (useful for VPS provider migration or disaster recovery):
+
+```bash
+# Restore from old-vps to new-vps
+auberge backup restore latest --from-host old-vps --host new-vps
+
+# Dry run to preview cross-host restore
+auberge backup restore latest --from-host old-vps --host new-vps --dry-run
+```
+
+Cross-host restore includes comprehensive safety checks:
+
+- **Pre-flight validation**: Verifies SSH connectivity, service existence, and disk space on target
+- **Hostname confirmation**: Requires typing the target hostname to prevent accidents
+- **Emergency backup**: Automatically backs up target host's current state before overwriting
+- **Post-restore guidance**: Shows required manual steps (DNS updates, config regeneration, health checks)
+
+**Important**: Cross-host restore may require additional steps after completion:
+
+1. Re-run ansible to regenerate host-specific configs: `auberge ansible run --host new-vps`
+2. Update DNS records if domain names changed
+3. Verify SSL certificates are valid for the new host
+4. Check service logs for errors: `journalctl -u <service> --since "5 minutes ago"`
 
 ### OPML Export/Import (FreshRSS)
 

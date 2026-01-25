@@ -151,7 +151,11 @@ pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<Playbook>> {
                 .extension()
                 .is_some_and(|ext| ext == "yml" || ext == "yaml")
         })
-        .map(|entry| Playbook::from_path(entry.path()))
+        .filter_map(|entry| {
+            std::fs::canonicalize(entry.path())
+                .ok()
+                .map(Playbook::from_path)
+        })
         .collect();
 
     playbooks.sort_by(|a, b| a.name.cmp(&b.name));

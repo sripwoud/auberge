@@ -72,6 +72,15 @@
       register: freshrss_git_status
       changed_when: false
 
+    - name: Set ownership for FreshRSS data directory
+      ansible.builtin.file:
+        path: "{{ freshrss_install_path }}/data"
+        state: directory
+        owner: "{{ freshrss_sys_user }}"
+        group: "{{ freshrss_sys_group }}"
+        mode: "0700"
+        recurse: true
+
     - name: Update FreshRSS repository
       when:
         - freshrss_git_check.stat.exists
@@ -85,15 +94,6 @@
         update: true
       register: freshrss_update
       changed_when: freshrss_update.before != freshrss_update.after
-
-    - name: Set ownership for FreshRSS data directory
-      ansible.builtin.file:
-        path: "{{ freshrss_install_path }}/data"
-        state: directory
-        owner: "{{ freshrss_sys_user }}"
-        group: "{{ freshrss_sys_group }}"
-        mode: "0700"
-        recurse: true
 
     - name: Link data directory to persistent location
       ansible.builtin.file:

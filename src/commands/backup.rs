@@ -75,6 +75,12 @@ pub enum BackupCommands {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
         #[arg(
+            short = 'F',
+            long,
+            help = "Source host (for cross-host restore/migration)"
+        )]
+        from_host: Option<String>,
+        #[arg(
             short,
             long,
             value_delimiter = ',',
@@ -91,6 +97,11 @@ pub enum BackupCommands {
         dry_run: bool,
         #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
+        #[arg(
+            long,
+            help = "UNSAFE: Skip Ansible playbook run (services will fail without correct permissions)"
+        )]
+        skip_playbook_unsafe: bool,
     },
     #[command(about = "Export FreshRSS feeds to OPML file")]
     ExportOpml {
@@ -136,6 +147,18 @@ pub struct AppBackupConfig {
     pub name: &'static str,
     pub systemd_service: Option<&'static str>,
     pub paths: Vec<&'static str>,
+    pub owner: Option<(&'static str, &'static str)>,
+}
+
+pub struct RestoreOptions {
+    pub backup_id: String,
+    pub host_arg: Option<String>,
+    pub from_host_arg: Option<String>,
+    pub apps: Option<Vec<String>>,
+    pub ssh_key: Option<PathBuf>,
+    pub dry_run: bool,
+    pub yes: bool,
+    pub skip_playbook_unsafe: bool,
 }
 
 impl AppBackupConfig {
@@ -165,6 +188,7 @@ impl AppBackupConfig {
             name: "radicale",
             systemd_service: Some("radicale"),
             paths: vec!["/var/lib/radicale/collections", "/etc/radicale"],
+            owner: Some(("radicale", "radicale")),
         }
     }
 
@@ -173,6 +197,7 @@ impl AppBackupConfig {
             name: "freshrss",
             systemd_service: Some("freshrss"),
             paths: vec!["/var/lib/freshrss", "/opt/freshrss/data"],
+            owner: Some(("freshrss", "freshrss")),
         }
     }
 
@@ -187,6 +212,7 @@ impl AppBackupConfig {
             name: "navidrome",
             systemd_service: Some("navidrome"),
             paths,
+            owner: Some(("navidrome", "navidrome")),
         }
     }
 
@@ -194,7 +220,8 @@ impl AppBackupConfig {
         Self {
             name: "calibre",
             systemd_service: Some("calibre"),
-            paths: vec!["/srv/calibre", "/opt/calibre"],
+            paths: vec!["/srv/calibre", "/opt/calibre", "/home/calibre"],
+            owner: Some(("calibre", "calibre")),
         }
     }
 
@@ -203,6 +230,7 @@ impl AppBackupConfig {
             name: "webdav",
             systemd_service: None,
             paths: vec!["/var/www/webdav-files"],
+            owner: None,
         }
     }
 }
@@ -498,26 +526,25 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-pub fn run_backup_restore(
-    backup_id: String,
-    host_arg: Option<String>,
-    apps: Option<Vec<String>>,
-    ssh_key: Option<PathBuf>,
-    dry_run: bool,
-    yes: bool,
-) -> Result<()> {
-    let host = get_host_or_select(host_arg)?;
+pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
+    let host = get_host_or_select(opts.host_arg)?;
     let backup_root = default_backup_dir();
-    let host_backup_dir = backup_root.join(&host.name);
 
-    let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
+    let (source_host_name, is_cross_host) = match opts.from_host_arg {
+        Some(ref from_host) => (from_host.clone(), from_host != &host.name),
+        None => (host.name.clone(), false),
+    };
+
+    let host_backup_dir = backup_root.join(&source_host_name);
+
+    let ssh_key_path = resolve_ssh_key_path(&host, opts.ssh_key)?;
     eprintln!("Using SSH key: {}", ssh_key_path.display());
 
     if !host_backup_dir.exists() {
-        eyre::bail!("No backups found for host: {}", host.name);
+        eyre::bail!("No backups found for host: {}", source_host_name);
     }
 
-    let app_names = apps.unwrap_or_else(|| {
+    let app_names = opts.apps.unwrap_or_else(|| {
         vec![
             "radicale".to_string(),
             "freshrss".to_string(),
@@ -537,7 +564,7 @@ pub fn run_backup_restore(
             continue;
         }
 
-        let backup_path = if backup_id == "latest" {
+        let backup_path = if opts.backup_id == "latest" {
             let latest_link = app_backup_dir.join("latest");
             if !latest_link.exists() {
                 eprintln!("⚠ No 'latest' backup for {}, skipping", app_name);
@@ -545,11 +572,11 @@ pub fn run_backup_restore(
             }
             fs::canonicalize(latest_link)?
         } else {
-            let backup_path = app_backup_dir.join(&backup_id);
+            let backup_path = app_backup_dir.join(&opts.backup_id);
             if !backup_path.exists() {
                 eprintln!(
                     "⚠ Backup {} not found for {}, skipping",
-                    backup_id, app_name
+                    opts.backup_id, app_name
                 );
                 continue;
             }
@@ -563,20 +590,52 @@ pub fn run_backup_restore(
         eyre::bail!("No backups to restore");
     }
 
+    let total_backup_size: u64 = restore_plan
+        .iter()
+        .map(|(_, path)| calculate_dir_size(path).unwrap_or(0))
+        .sum();
+
+    if is_cross_host {
+        validate_cross_host_restore(&host, &ssh_key_path, &app_names, total_backup_size)?;
+    }
+
     eprintln!("\n=== Restore Plan ===");
-    eprintln!("Host: {}", host.name);
-    eprintln!("Backup ID: {}", backup_id);
+    if is_cross_host {
+        eprintln!("Source: {} (backup: {})", source_host_name, opts.backup_id);
+        eprintln!("Target: {} ({}:{})", host.name, host.address, host.port);
+        eprintln!("\n⚠  CROSS-HOST RESTORE WARNING");
+        eprintln!(
+            "   This will restore data from '{}' to '{}'",
+            source_host_name, host.name
+        );
+        eprintln!("   Existing data on '{}' will be OVERWRITTEN", host.name);
+    } else {
+        eprintln!("Host: {}", host.name);
+        eprintln!("Backup ID: {}", opts.backup_id);
+    }
     eprintln!("\nApps to restore:");
     for (app, path) in &restore_plan {
         eprintln!("  - {:<12} from {}", app, path.display());
     }
 
-    if dry_run {
+    if opts.dry_run {
         eprintln!("\n✓ Dry run completed (no changes made)");
         return Ok(());
     }
 
-    if !yes {
+    if is_cross_host && !opts.yes {
+        eprintln!("\n⚠  DANGER: Cross-host restore requires explicit confirmation");
+        eprintln!("   Type the target host name '{}' to confirm:", host.name);
+
+        let confirmation: String = dialoguer::Input::new()
+            .with_prompt("Target host name")
+            .interact_text()?;
+
+        if confirmation.trim() != host.name {
+            eprintln!("✗ Confirmation failed. Restore cancelled");
+            return Ok(());
+        }
+    } else if !opts.yes {
         eprintln!("\n⚠ WARNING: This will overwrite existing data on the remote host!");
         if !dialoguer::Confirm::new()
             .with_prompt("Continue with restore?")
@@ -588,13 +647,171 @@ pub fn run_backup_restore(
         }
     }
 
-    eprintln!("\nStarting restore...");
+    if is_cross_host && opts.yes {
+        eprintln!("\n⚠  Cross-host restore with --yes flag");
+        eprintln!("   Waiting 3 seconds (press Ctrl+C to cancel)...");
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+
+    if is_cross_host && !opts.dry_run {
+        eprintln!("\n--- Creating Emergency Backup ---");
+        eprintln!(
+            "  Backing up current state of '{}' before cross-host restore",
+            host.name
+        );
+
+        let emergency_timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+        let emergency_backup_name = format!("pre-migration-{}", emergency_timestamp);
+
+        match run_backup_create(
+            Some(host.name.clone()),
+            Some(app_names.clone()),
+            Some(backup_root.clone()),
+            Some(ssh_key_path.clone()),
+            false,
+            false,
+        ) {
+            Ok(_) => {
+                eprintln!("  ✓ Emergency backup created: {}", emergency_backup_name);
+                eprintln!(
+                    "    Location: {}/{}/{{app}}/{}",
+                    backup_root.display(),
+                    host.name,
+                    emergency_timestamp
+                );
+            }
+            Err(e) => {
+                eprintln!("  ⚠ Failed to create emergency backup: {}", e);
+                eprintln!("    Continue without emergency backup? This is DANGEROUS!");
+
+                if !dialoguer::Confirm::new()
+                    .with_prompt("Continue without emergency backup?")
+                    .default(false)
+                    .interact()?
+                {
+                    eprintln!("Restore cancelled");
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    let phase_label = if opts.skip_playbook_unsafe || opts.dry_run {
+        ""
+    } else {
+        "[1/2] "
+    };
+    eprintln!("\n{}Starting restore...", phase_label);
 
     for (app_name, backup_path) in restore_plan {
         restore_app(&host, &app_name, &backup_path, &ssh_key_path)?;
     }
 
     eprintln!("\n✓ All restores completed successfully");
+
+    if !opts.skip_playbook_unsafe && !opts.dry_run {
+        eprintln!("\n[2/2] Running Ansible playbooks to fix permissions...");
+
+        let project_root = crate::services::inventory::find_project_root();
+        let apps_playbook = project_root.join("ansible/playbooks/apps.yml");
+
+        if !apps_playbook.exists() {
+            eprintln!("⚠ Ansible playbook not found: {}", apps_playbook.display());
+            eprintln!("  Services may fail due to incorrect file ownership!");
+            eprintln!("  Run manually: cd ansible && ansible-playbook playbooks/apps.yml");
+        } else {
+            let tags: Vec<String> = app_names.iter().map(|s| s.to_string()).collect();
+
+            match crate::services::ansible_runner::run_playbook(
+                &apps_playbook,
+                &host.name,
+                false,
+                Some(&tags),
+                None,
+                false,
+            ) {
+                Ok(result) if result.success => {
+                    eprintln!("✓ Ansible playbooks completed successfully");
+                    eprintln!("  File permissions have been corrected");
+                }
+                Ok(result) => {
+                    eprintln!(
+                        "⚠ Ansible playbook failed (exit code: {})",
+                        result.exit_code
+                    );
+                    eprintln!("  Services may fail due to incorrect file ownership!");
+                    eprintln!(
+                        "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                        tags.join(",")
+                    );
+                }
+                Err(e) => {
+                    eprintln!("⚠ Failed to run Ansible playbook: {}", e);
+                    eprintln!("  Services may fail due to incorrect file ownership!");
+                    eprintln!(
+                        "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                        tags.join(",")
+                    );
+                }
+            }
+        }
+    } else if opts.skip_playbook_unsafe && !opts.dry_run {
+        eprintln!("\n⚠️  WARNING: Skipped Ansible playbooks (--skip-playbook-unsafe)");
+        eprintln!("⚠️  Services WILL fail until you run:");
+        eprintln!(
+            "     cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+            app_names.join(",")
+        );
+    }
+
+    if is_cross_host {
+        eprintln!("\n=== Post-Restore Actions Required ===");
+        eprintln!("  Cross-host restore completed. Manual verification needed:\n");
+        eprintln!("  1. Verify services are running:");
+        eprintln!(
+            "     ssh {}@{} 'systemctl status {}'",
+            host.user,
+            host.address,
+            app_names.join(" ")
+        );
+        eprintln!("\n  2. Check service logs for errors:");
+        for app_name in &app_names {
+            if let Some(cfg) = AppBackupConfig::by_name(app_name, false)
+                && let Some(service) = cfg.systemd_service
+            {
+                eprintln!(
+                    "     ssh {}@{} 'journalctl -u {} --since \"5 minutes ago\" | grep -i error'",
+                    host.user, host.address, service
+                );
+            }
+        }
+        eprintln!("\n  3. Update DNS records if hostnames changed");
+        eprintln!("\n  4. Verify SSL certificates are valid for new domain\n");
+
+        eprintln!("  ⚠  App-specific notes:");
+        for app_name in &app_names {
+            match app_name.as_str() {
+                "radicale" => {
+                    eprintln!("     - Radicale: Git config may reference old hostname");
+                    eprintln!(
+                        "       Fix: ssh {}@{} 'cd /var/lib/radicale && sudo -u radicale git config user.email radicale@$(hostname)'",
+                        host.user, host.address
+                    );
+                }
+                "navidrome" => {
+                    eprintln!("     - Navidrome: May need to rescan music library");
+                    eprintln!("       Fix: Trigger rescan from web UI or restart service");
+                }
+                "freshrss" => {
+                    eprintln!(
+                        "     - FreshRSS: Database paths should be fine, but verify feeds update"
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -612,6 +829,13 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
     for remote_path in &config.paths {
         eprintln!("  Restoring to: {}", remote_path);
         rsync_to_remote(host, ssh_key, backup_path, remote_path)?;
+    }
+
+    if let Some((user, group)) = config.owner {
+        eprintln!("  Setting ownership to {}:{}", user, group);
+        for remote_path in &config.paths {
+            set_remote_ownership(host, ssh_key, remote_path, user, group)?;
+        }
     }
 
     if let Some(service) = config.systemd_service {
@@ -965,6 +1189,45 @@ fn remote_systemctl(host: &Host, ssh_key: &Path, action: &str, service: &str) ->
     Ok(())
 }
 
+fn set_remote_ownership(
+    host: &Host,
+    ssh_key: &Path,
+    remote_path: &str,
+    user: &str,
+    group: &str,
+) -> Result<()> {
+    let status = Command::new("ssh")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg("sudo")
+        .arg("chown")
+        .arg("-R")
+        .arg(format!("{}:{}", user, group))
+        .arg(remote_path)
+        .status()
+        .wrap_err_with(|| {
+            format!(
+                "Failed to set ownership of {} to {}:{}",
+                remote_path, user, group
+            )
+        })?;
+
+    if !status.success() {
+        eyre::bail!("chown -R {}:{} {} failed", user, group, remote_path);
+    }
+
+    Ok(())
+}
+
 fn rsync_from_remote(
     host: &Host,
     ssh_key: &Path,
@@ -998,5 +1261,147 @@ fn rsync_from_remote(
         eyre::bail!("rsync failed for {}", remote_path);
     }
 
+    Ok(())
+}
+
+fn check_remote_service_exists(host: &Host, ssh_key: &Path, service: &str) -> Result<bool> {
+    let output = Command::new("ssh")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg("systemctl")
+        .arg("list-unit-files")
+        .arg(format!("{}.service", service))
+        .output()
+        .wrap_err("Failed to check service existence")?;
+
+    Ok(output.status.success()
+        && String::from_utf8_lossy(&output.stdout).contains(&format!("{}.service", service)))
+}
+
+fn check_remote_disk_space(host: &Host, ssh_key: &Path, path: &str) -> Result<u64> {
+    let output = Command::new("ssh")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg(format!("df --output=avail {} | tail -1", path))
+        .output()
+        .wrap_err("Failed to check disk space")?;
+
+    if !output.status.success() {
+        eyre::bail!("Failed to check disk space on remote host");
+    }
+
+    let kb_available = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u64>()
+        .wrap_err("Failed to parse disk space output")?;
+
+    Ok(kb_available * 1024)
+}
+
+fn validate_cross_host_restore(
+    host: &Host,
+    ssh_key: &Path,
+    apps: &[String],
+    backup_size_bytes: u64,
+) -> Result<()> {
+    eprintln!("\n--- Pre-flight Validation ---");
+
+    eprintln!("  Checking SSH connectivity...");
+    let ssh_test = Command::new("ssh")
+        .arg("-o")
+        .arg("ConnectTimeout=10")
+        .arg("-o")
+        .arg("BatchMode=yes")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg("echo")
+        .arg("ok")
+        .output();
+
+    match ssh_test {
+        Ok(output) if output.status.success() => {
+            eprintln!("    ✓ SSH connection successful");
+        }
+        _ => {
+            eyre::bail!(
+                "Cannot connect to target host {}:{}. Check SSH key and network connectivity",
+                host.address,
+                host.port
+            );
+        }
+    }
+
+    eprintln!("  Checking services on target...");
+    for app in apps {
+        let config = AppBackupConfig::by_name(app, false);
+        if let Some(cfg) = config
+            && let Some(service) = cfg.systemd_service
+        {
+            match check_remote_service_exists(host, ssh_key, service) {
+                Ok(true) => {
+                    eprintln!("    ✓ {} service exists", service);
+                }
+                Ok(false) => {
+                    eprintln!("    ⚠ {} service not found on target", service);
+                    eprintln!(
+                        "      Run 'auberge ansible run --host {}' to install services",
+                        host.name
+                    );
+                    eyre::bail!("Required service {} not found on target host", service);
+                }
+                Err(e) => {
+                    eprintln!("    ⚠ Failed to check {}: {}", service, e);
+                }
+            }
+        }
+    }
+
+    eprintln!("  Checking disk space...");
+    match check_remote_disk_space(host, ssh_key, "/") {
+        Ok(available_bytes) => {
+            let required_bytes = (backup_size_bytes as f64 * 1.2) as u64;
+            eprintln!(
+                "    Available: {}, Required: {} (with 20% buffer)",
+                format_size(available_bytes),
+                format_size(required_bytes)
+            );
+
+            if available_bytes < required_bytes {
+                eyre::bail!(
+                    "Insufficient disk space: need {}, have {}",
+                    format_size(required_bytes),
+                    format_size(available_bytes)
+                );
+            }
+            eprintln!("    ✓ Sufficient disk space available");
+        }
+        Err(e) => {
+            eprintln!("    ⚠ Failed to check disk space: {}", e);
+            eprintln!("    Proceeding anyway (use at your own risk)");
+        }
+    }
+
+    eprintln!("✓ Pre-flight validation completed\n");
     Ok(())
 }

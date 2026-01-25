@@ -1,7 +1,9 @@
 use crate::hosts::{Host, HostManager};
+use crate::selector::select_item;
 use clap::Subcommand;
 use dialoguer::{Confirm, Input, theme::ColorfulTheme};
 use eyre::Result;
+use std::path::PathBuf;
 
 pub struct AddHostArgs {
     pub name: Option<String>,
@@ -67,36 +69,120 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
     let is_tty = HostManager::is_tty();
     let interactive = is_tty && !args.no_input;
 
-    let name = if let Some(n) = args.name {
-        n
-    } else if interactive {
-        Input::<String>::with_theme(&ColorfulTheme::default())
-            .with_prompt("Host name")
-            .interact_text()?
+    let ssh_config_hosts = if interactive {
+        match crate::ssh_config::SshConfigParser::new().and_then(|p| p.parse()) {
+            Ok(hosts) if !hosts.is_empty() => {
+                let existing_hosts = HostManager::list_hosts_filtered(None).unwrap_or_default();
+                let existing_names: Vec<String> =
+                    existing_hosts.iter().map(|h| h.name.clone()).collect();
+
+                let available_hosts: Vec<_> = hosts
+                    .into_iter()
+                    .filter(|h| !existing_names.contains(&h.name))
+                    .collect();
+
+                if available_hosts.is_empty() {
+                    None
+                } else {
+                    Some(available_hosts)
+                }
+            }
+            Ok(_) => None,
+            Err(e) => {
+                eprintln!("Warning: Could not parse SSH config: {}", e);
+                None
+            }
+        }
     } else {
-        eyre::bail!("Host name is required (use --no-input in non-interactive mode)");
+        None
     };
 
-    let address = if let Some(a) = args.address {
-        a
-    } else if interactive {
-        Input::<String>::with_theme(&ColorfulTheme::default())
-            .with_prompt("Host address (IP or hostname)")
-            .interact_text()?
+    let imported_host = if let Some(ref ssh_hosts) = ssh_config_hosts {
+        eprintln!("Found {} new host(s) in ~/.ssh/config\n", ssh_hosts.len());
+
+        let mut options: Vec<crate::ssh_config::SshConfigHost> =
+            vec![crate::ssh_config::SshConfigHost {
+                name: "Enter manually".to_string(),
+                hostname: None,
+                user: None,
+                port: None,
+                identity_file: None,
+            }];
+        options.extend(ssh_hosts.clone());
+
+        select_item(
+            &options,
+            |h: &crate::ssh_config::SshConfigHost| {
+                if h.hostname.is_none() {
+                    "Enter manually".to_string()
+                } else {
+                    let addr = h.hostname.as_ref().unwrap();
+                    let port = h.port.unwrap_or(22);
+                    format!("{} ({}:{})", h.name, addr, port)
+                }
+            },
+            "Import from SSH config or enter manually?",
+        )?
+        .and_then(|h| if h.hostname.is_some() { Some(h) } else { None })
     } else {
-        eyre::bail!("Host address is required");
+        None
     };
 
-    let default_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
-    let user = if let Some(u) = args.user {
-        u
-    } else if interactive {
-        Input::<String>::with_theme(&ColorfulTheme::default())
-            .with_prompt("SSH user")
-            .default(default_user)
-            .interact_text()?
+    let (name, address, user, port, ssh_key) = if let Some(imported) = imported_host {
+        let name = imported.name;
+        let address = imported.hostname.unwrap();
+        let default_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+        let user = imported.user.unwrap_or(default_user);
+        let port = imported.port.unwrap_or(22);
+
+        let ssh_key = imported.identity_file.and_then(|path| {
+            let expanded = shellexpand::tilde(&path).into_owned();
+            let key_path = PathBuf::from(&expanded);
+            if !key_path.exists() {
+                eprintln!("Warning: SSH key not found: {}", expanded);
+                eprintln!("         Will use default derivation or interactive fallback");
+                None
+            } else {
+                Some(expanded)
+            }
+        });
+
+        eprintln!("Importing: {} -> {}@{}:{}", name, user, address, port);
+        (name, address, user, port, ssh_key.or(args.ssh_key))
     } else {
-        default_user
+        let name = if let Some(n) = args.name {
+            n
+        } else if interactive {
+            Input::<String>::with_theme(&ColorfulTheme::default())
+                .with_prompt("Host name")
+                .interact_text()?
+        } else {
+            eyre::bail!("Host name is required (use --no-input in non-interactive mode)");
+        };
+
+        let address = if let Some(a) = args.address {
+            a
+        } else if interactive {
+            Input::<String>::with_theme(&ColorfulTheme::default())
+                .with_prompt("Host address (IP or hostname)")
+                .interact_text()?
+        } else {
+            eyre::bail!("Host address is required");
+        };
+
+        let default_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+        let user = if let Some(u) = args.user {
+            u
+        } else if interactive {
+            Input::<String>::with_theme(&ColorfulTheme::default())
+                .with_prompt("SSH user")
+                .default(default_user)
+                .interact_text()?
+        } else {
+            default_user
+        };
+
+        (name, address, user, args.port, args.ssh_key)
     };
 
     let tags_vec = args
@@ -108,8 +194,8 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         name: name.clone(),
         address,
         user,
-        port: args.port,
-        ssh_key: args.ssh_key,
+        port,
+        ssh_key,
         tags: tags_vec,
         description: args.description,
         python_interpreter: None,
