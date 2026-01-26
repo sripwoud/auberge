@@ -200,14 +200,18 @@ pub fn run_ansible_run(
         eprintln!("Without this, DNS over TLS will not be accessible!");
         eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-        print!("Have you opened port 853 in your provider's firewall? [y/N]: ");
-        io::stdout().flush()?;
-        let mut port_response = String::new();
-        io::stdin().read_line(&mut port_response)?;
+        if !force {
+            print!("Have you opened port 853 in your provider's firewall? [y/N]: ");
+            io::stdout().flush()?;
+            let mut port_response = String::new();
+            io::stdin().read_line(&mut port_response)?;
 
-        if !port_response.trim().eq_ignore_ascii_case("y") {
-            eprintln!("\nAborted. Open port 853 in provider firewall first, then re-run.");
-            std::process::exit(1);
+            if !port_response.trim().eq_ignore_ascii_case("y") {
+                eprintln!("\nAborted. Open port 853 in provider firewall first, then re-run.");
+                std::process::exit(1);
+            }
+        } else {
+            eprintln!("🤖 Skipping confirmation (--force enabled)\n");
         }
     }
 
