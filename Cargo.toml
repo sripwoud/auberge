@@ -21,6 +21,7 @@ dirs = "6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 cloudflare = "0.14"
 minijinja = "2.14.0"
+regex = "1"
 keyring = "3"
 include_dir = "0.7"
 atty = "0.2"

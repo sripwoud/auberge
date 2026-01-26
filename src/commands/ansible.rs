@@ -5,6 +5,7 @@ use crate::services::ansible_runner::{run_bootstrap, run_playbook};
 use crate::services::inventory::{get_host, get_hosts, get_playbooks};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
+use regex::Regex;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
@@ -232,6 +233,25 @@ pub fn run_ansible_check(
     run_ansible_run(host, playbook, true, None, force)
 }
 
+fn validate_ip(ip: &str) -> Result<()> {
+    let ipv4_regex = Regex::new(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$").unwrap();
+    let ipv6_regex = Regex::new(r"^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$").unwrap();
+
+    if ipv4_regex.is_match(ip) {
+        for octet_str in ipv4_regex.captures(ip).unwrap().iter().skip(1).flatten() {
+            let octet: u16 = octet_str.as_str().parse().unwrap_or(256);
+            if octet > 255 {
+                eyre::bail!("Invalid IP format: {} (octet {} out of range)", ip, octet);
+            }
+        }
+        Ok(())
+    } else if ipv6_regex.is_match(ip) {
+        Ok(())
+    } else {
+        eyre::bail!("Invalid IP format: {}", ip)
+    }
+}
+
 fn prompt_for_ip(host_name: &str) -> Result<String> {
     print!("Enter IP address for {}: ", host_name);
     io::stdout().flush()?;
@@ -282,5 +302,48 @@ pub fn run_ansible_bootstrap(
         Ok(())
     } else {
         eyre::bail!("Bootstrap failed with exit code {}", result.exit_code)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_ip_valid_ipv4() {
+        assert!(validate_ip("192.168.1.1").is_ok());
+        assert!(validate_ip("10.0.0.1").is_ok());
+        assert!(validate_ip("172.16.0.1").is_ok());
+        assert!(validate_ip("127.0.0.1").is_ok());
+        assert!(validate_ip("0.0.0.0").is_ok());
+        assert!(validate_ip("255.255.255.255").is_ok());
+    }
+
+    #[test]
+    fn test_validate_ip_valid_ipv6() {
+        assert!(validate_ip("::1").is_ok());
+        assert!(validate_ip("2001:db8::1").is_ok());
+        assert!(validate_ip("fe80::1").is_ok());
+        assert!(validate_ip("::").is_ok());
+        assert!(validate_ip("2001:0db8:85a3:0000:0000:8a2e:0370:7334").is_ok());
+    }
+
+    #[test]
+    fn test_validate_ip_invalid_format() {
+        assert!(validate_ip("999.999.999.999").is_err());
+        assert!(validate_ip("192.168.1.256").is_err());
+        assert!(validate_ip("not-an-ip").is_err());
+        assert!(validate_ip("192.168.1").is_err());
+        assert!(validate_ip("192.168.1.1.1").is_err());
+        assert!(validate_ip("192.168.-1.1").is_err());
+    }
+
+    #[test]
+    fn test_validate_ip_edge_cases() {
+        assert!(validate_ip("").is_err());
+        assert!(validate_ip("   ").is_err());
+        assert!(validate_ip("localhost").is_err());
+        assert!(validate_ip("192.168.1.1 ").is_err());
+        assert!(validate_ip(" 192.168.1.1").is_err());
     }
 }
