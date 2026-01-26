@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/sripwoud/auberge/compare/v0.1.4...v0.2.0) - 2026-01-26
+
+### Added
+
+- [**breaking**] reorganize backup structure to timestamp-first ([#45](https://github.com/sripwoud/auberge/pull/45))
+
+### Other
+
+- harden workflow permissions ([#46](https://github.com/sripwoud/auberge/pull/46))
+
 ## [0.1.4](https://github.com/sripwoud/auberge/compare/v0.1.3...v0.1.4) - 2026-01-26
 
 ### Added
