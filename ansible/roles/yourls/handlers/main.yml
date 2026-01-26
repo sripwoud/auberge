@@ -1,1 +1,9 @@
+- name: Restart php-fpm
+  ansible.builtin.systemd_service:
+    name: php8.2-fpm
+    state: restarted
 
+- name: Restart caddy
+  ansible.builtin.systemd_service:
+    name: caddy
+    state: restarted

@@ -40,7 +40,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to backup (radicale,freshrss,navidrome,calibre,webdav). Default: all"
+            help = "Apps to backup (radicale,freshrss,navidrome,calibre,webdav,yourls). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(short, long, help = "Backup destination directory")]
@@ -89,7 +89,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to restore (radicale,freshrss,navidrome,calibre,webdav). Default: all"
+            help = "Apps to restore (radicale,freshrss,navidrome,calibre,webdav,yourls). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(
@@ -174,6 +174,7 @@ impl AppBackupConfig {
             Self::navidrome(false),
             Self::calibre(),
             Self::webdav(),
+            Self::yourls(),
         ]
     }
 
@@ -184,6 +185,7 @@ impl AppBackupConfig {
             "navidrome" => Some(Self::navidrome(include_music)),
             "calibre" => Some(Self::calibre()),
             "webdav" => Some(Self::webdav()),
+            "yourls" => Some(Self::yourls()),
             _ => None,
         }
     }
@@ -236,6 +238,15 @@ impl AppBackupConfig {
             systemd_service: None,
             paths: vec!["/var/www/webdav-files"],
             owner: None,
+        }
+    }
+
+    fn yourls() -> Self {
+        Self {
+            name: "yourls",
+            systemd_service: None,
+            paths: vec!["/var/www/yourls"],
+            owner: Some(("www-data", "www-data")),
         }
     }
 }
@@ -633,6 +644,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             "navidrome".to_string(),
             "calibre".to_string(),
             "webdav".to_string(),
+            "yourls".to_string(),
         ]
     });
 

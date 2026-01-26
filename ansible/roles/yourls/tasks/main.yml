@@ -1,1 +1,115 @@
+- name: Install and configure YOURLS
+  block:
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - php
+          - php-cli
+          - php-fpm
+          - php-mysql
+          - php-curl
+          - php-mbstring
+          - php-xml
+          - php-gd
+          - php-bcmath
+          - php-json
+          - mariadb-server
+          - mariadb-client
+          - python3-pymysql
+          - git
+        state: present
+        update_cache: true
 
+    - name: Start and enable MariaDB service
+      ansible.builtin.systemd_service:
+        name: mariadb
+        enabled: true
+        state: started
+
+    - name: Create YOURLS database
+      community.mysql.mysql_db:
+        name: "{{ yourls_db_name }}"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create YOURLS database user
+      community.mysql.mysql_user:
+        name: "{{ yourls_db_user }}"
+        password: "{{ yourls_db_password }}"
+        priv: "{{ yourls_db_name }}.*:ALL"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create YOURLS installation directory
+      ansible.builtin.file:
+        path: "{{ yourls_install_path }}"
+        state: directory
+        owner: "{{ yourls_sys_user }}"
+        group: "{{ yourls_sys_group }}"
+        mode: "0755"
+
+    - name: Check if YOURLS is already cloned
+      ansible.builtin.stat:
+        path: "{{ yourls_install_path }}/.git"
+      register: yourls_git_check
+
+    - name: Clone YOURLS repository
+      when: not yourls_git_check.stat.exists
+      become: true
+      become_user: "{{ yourls_sys_user }}"
+      ansible.builtin.git:
+        repo: https://github.com/YOURLS/YOURLS.git
+        dest: "{{ yourls_install_path }}"
+        version: "{{ yourls_version }}"
+        depth: 1
+
+    - name: Check for local modifications in YOURLS directory # noqa: command-instead-of-module
+      when: yourls_git_check.stat.exists
+      become: true
+      become_user: "{{ yourls_sys_user }}"
+      ansible.builtin.command: git status --porcelain
+      args:
+        chdir: "{{ yourls_install_path }}"
+      register: yourls_git_status
+      changed_when: false
+
+    - name: Update YOURLS repository
+      when:
+        - yourls_git_check.stat.exists
+        - yourls_git_status.stdout == ""
+      become: true
+      become_user: "{{ yourls_sys_user }}"
+      ansible.builtin.git:
+        repo: https://github.com/YOURLS/YOURLS.git
+        dest: "{{ yourls_install_path }}"
+        version: "{{ yourls_version }}"
+        update: true
+      register: yourls_update
+      changed_when: yourls_update.before != yourls_update.after
+
+    - name: Deploy YOURLS config.php
+      ansible.builtin.template:
+        src: templates/config.php.j2
+        dest: "{{ yourls_install_path }}/user/config.php"
+        owner: "{{ yourls_sys_user }}"
+        group: "{{ yourls_sys_group }}"
+        mode: "0640"
+      notify: Restart php-fpm
+
+    - name: Set ownership for YOURLS directory
+      ansible.builtin.file:
+        path: "{{ yourls_install_path }}"
+        state: directory
+        owner: "{{ yourls_sys_user }}"
+        group: "{{ yourls_sys_group }}"
+        mode: "0755"
+        recurse: true
+
+    - name: Deploy YOURLS Caddyfile
+      ansible.builtin.template:
+        src: templates/yourls.caddyfile.j2
+        dest: "/etc/caddy/sites/{{ yourls_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
