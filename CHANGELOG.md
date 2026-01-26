@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/sripwoud/auberge/compare/v0.1.3...v0.1.4) - 2026-01-26
+
+### Added
+
+- *(yourls)* automated deployment with database initialization ([#44](https://github.com/sripwoud/auberge/pull/44))
+- improve CLI output ([#42](https://github.com/sripwoud/auberge/pull/42))
+
+### Other
+
+- Add --force/-f flag to skip confirmation prompts for CI/CD automation ([#39](https://github.com/sripwoud/auberge/pull/39))
+
 ## [0.1.3](https://github.com/sripwoud/auberge/compare/v0.1.2...v0.1.3) - 2026-01-25
 
 ### Added
