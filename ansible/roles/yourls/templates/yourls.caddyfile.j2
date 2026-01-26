@@ -1,9 +1,12 @@
 {{ yourls_subdomain }}.{{ primary_domain }} {
 	root * /var/www/yourls
 
-	route {
-		try_files {path} {path}/ /yourls-loader.php?{query}
+	php_fastcgi unix//var/run/php/php{{ yourls_php_fpm_version }}-fpm.sock
+
+	@static path *.css *.js *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
+	handle @static {
 		file_server
-		php_fastcgi unix//var/run/php/php{{ yourls_php_fpm_version }}-fpm.sock
 	}
+
+	try_files {path} {path}/ /yourls-loader.php?{query}
 }
