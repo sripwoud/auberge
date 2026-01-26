@@ -20,6 +20,12 @@ pub enum AnsibleCommands {
         check: bool,
         #[arg(short, long, help = "Only run tasks with these tags")]
         tags: Option<Vec<String>>,
+        #[arg(
+            short = 'f',
+            long,
+            help = "Skip confirmation prompts (for CI/CD automation)"
+        )]
+        force: bool,
     },
     #[command(alias = "c")]
     Check {
@@ -27,12 +33,24 @@ pub enum AnsibleCommands {
         host: Option<String>,
         #[arg(short, long, help = "Playbook path")]
         playbook: Option<PathBuf>,
+        #[arg(
+            short = 'f',
+            long,
+            help = "Skip confirmation prompts (for CI/CD automation)"
+        )]
+        force: bool,
     },
     #[command(alias = "b")]
     Bootstrap {
         host: String,
         #[arg(long, default_value = "22", help = "SSH port for initial connection")]
         port: u16,
+        #[arg(
+            short = 'f',
+            long,
+            help = "Skip confirmation prompts (for CI/CD automation)"
+        )]
+        force: bool,
     },
 }
 
@@ -82,6 +100,7 @@ pub fn run_ansible_run(
     playbook: Option<PathBuf>,
     check: bool,
     tags: Option<Vec<String>>,
+    _force: bool,
 ) -> Result<()> {
     let selected_host = select_or_use_host(host)?;
     let selected_playbook = select_or_use_playbook(playbook)?;
@@ -203,11 +222,15 @@ pub fn run_ansible_run(
     }
 }
 
-pub fn run_ansible_check(host: Option<String>, playbook: Option<PathBuf>) -> Result<()> {
-    run_ansible_run(host, playbook, true, None)
+pub fn run_ansible_check(
+    host: Option<String>,
+    playbook: Option<PathBuf>,
+    force: bool,
+) -> Result<()> {
+    run_ansible_run(host, playbook, true, None, force)
 }
 
-pub fn run_ansible_bootstrap(host_name: String, port: u16) -> Result<()> {
+pub fn run_ansible_bootstrap(host_name: String, port: u16, _force: bool) -> Result<()> {
     let host = get_host(&host_name, None)?;
     let bootstrap_playbook =
         crate::services::inventory::find_project_root().join("ansible/playbooks/bootstrap.yml");
