@@ -51,6 +51,38 @@ auberge dns <subcommand>       # DNS management via Cloudflare
 auberge ssh keygen             # Generate SSH keys for hosts
 ```
 
+## CI/CD Automation
+
+The `--force` / `-f` flag skips interactive confirmation prompts for fully automated deployments:
+
+```bash
+# Skip all confirmation prompts (warnings still display)
+auberge ansible run --host my-vps --playbook playbooks/apps.yml --force
+
+# Bootstrap requires --ip when using --force
+auberge ansible bootstrap my-vps --ip 194.164.53.11 --force
+
+# Check mode with --force
+auberge ansible check --host my-vps --playbook playbooks/auberge.yml --force
+```
+
+**Security Note**: The `--force` flag skips confirmation prompts but **always displays warnings**. Using `--force` means you take responsibility for ensuring:
+
+- Provider firewall allows your custom SSH port (bootstrap playbook)
+- Cloudflare API token is correctly configured (apps/auberge playbooks)
+- Port 853 is open for DNS over TLS (apps/auberge playbooks)
+
+**Example GitHub Actions Workflow:**
+
+```yaml
+- name: Deploy to VPS
+  run: |
+    auberge ansible run \
+      --host production \
+      --playbook playbooks/apps.yml \
+      --force
+```
+
 ## Backup & Restore
 
 Auberge includes built-in backup and restore for all application data. See [docs/backup.md](docs/backup.md) for comprehensive documentation.
