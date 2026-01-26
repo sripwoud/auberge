@@ -6,7 +6,8 @@ use clap::Subcommand;
 use eyre::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Instant;
 use tabled::Tabled;
 
 const RSYNC_EXCLUDES: &[&str] = &[
@@ -279,32 +280,47 @@ pub fn run_backup_create(
         return Ok(());
     }
 
-    eprintln!("\nStarting backup...");
+    eprintln!();
+    let start_time = Instant::now();
 
     let mut results = Vec::new();
     for config in app_configs {
         match backup_app(&host, &config, &backup_dest, &ssh_key_path) {
-            Ok(_) => results.push((config.name, true, None)),
+            Ok(size) => results.push((config.name, true, Some(size), None)),
             Err(e) => {
                 eprintln!("✗ {} backup failed: {}", config.name, e);
-                results.push((config.name, false, Some(e.to_string())));
+                results.push((config.name, false, None, Some(e.to_string())));
             }
         }
     }
 
-    eprintln!("\n=== Backup Summary ===");
-    let successful = results.iter().filter(|(_, ok, _)| *ok).count();
-    let failed = results.iter().filter(|(_, ok, _)| !*ok).count();
+    let elapsed = start_time.elapsed().as_secs();
+    let total_size: u64 = results.iter().filter_map(|(_, _, size, _)| *size).sum();
 
-    for (app, ok, err) in &results {
+    eprintln!("\n=== Backup Summary ===");
+    eprintln!("Host: {}", host.name);
+    eprintln!("Location: {}", backup_dest.display());
+    eprintln!();
+
+    let successful = results.iter().filter(|(_, ok, _, _)| *ok).count();
+    let failed = results.iter().filter(|(_, ok, _, _)| !*ok).count();
+
+    for (app, ok, size, err) in &results {
         if *ok {
-            eprintln!("  ✓ {}", app);
+            if let Some(bytes) = size {
+                eprintln!("  ✓ {:<12} {}", app, output::format_size(*bytes));
+            } else {
+                eprintln!("  ✓ {}", app);
+            }
         } else {
             eprintln!("  ✗ {} - {}", app, err.as_ref().unwrap());
         }
     }
 
-    eprintln!("\nTotal: {} successful, {} failed", successful, failed);
+    eprintln!();
+    eprintln!("Total size: {}", output::format_size(total_size));
+    eprintln!("Time taken: {}", output::format_duration(elapsed));
+    eprintln!("Status: {} successful, {} failed", successful, failed);
 
     if failed > 0 {
         eyre::bail!("{} backup(s) failed", failed);
@@ -888,9 +904,11 @@ fn rsync_to_remote(
         .status();
 
     let mut cmd = Command::new("rsync");
-    cmd.arg("-avz")
+    cmd.arg("-az")
         .arg("--delete")
-        .arg("--rsync-path=sudo rsync");
+        .arg("--rsync-path=sudo rsync")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 
     for pattern in RSYNC_EXCLUDES {
         cmd.arg(format!("--exclude={}", pattern));
@@ -1055,8 +1073,8 @@ fn backup_app(
     config: &AppBackupConfig,
     backup_dest: &Path,
     ssh_key: &Path,
-) -> Result<()> {
-    eprintln!("\n--- Backing up {} ---", config.name);
+) -> Result<u64> {
+    let spinner = output::spinner(&format!("Backing up {}", config.name));
 
     let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
     let app_backup_dir = backup_dest
@@ -1072,17 +1090,17 @@ fn backup_app(
     })?;
 
     if let Some(service) = config.systemd_service {
-        eprintln!("  Stopping service: {}", service);
+        spinner.set_message(format!("Backing up {} (stopping service)", config.name));
         remote_systemctl(host, ssh_key, "stop", service)?;
     }
 
+    spinner.set_message(format!("Backing up {} (copying files)", config.name));
     for path in &config.paths {
-        eprintln!("  Backing up: {}", path);
         rsync_from_remote(host, ssh_key, path, &app_backup_dir)?;
     }
 
     if let Some(service) = config.systemd_service {
-        eprintln!("  Starting service: {}", service);
+        spinner.set_message(format!("Backing up {} (starting service)", config.name));
         remote_systemctl(host, ssh_key, "start", service)?;
     }
 
@@ -1100,9 +1118,14 @@ fn backup_app(
         symlink(&timestamp, &latest_link).wrap_err("Failed to create 'latest' symlink")?;
     }
 
-    eprintln!("✓ {} backup completed", config.name);
-    eprintln!("  Location: {}", app_backup_dir.display());
-    Ok(())
+    let backup_size = calculate_dir_size(&app_backup_dir)?;
+    spinner.finish_with_message(format!(
+        "✓ {} backup completed ({})",
+        config.name,
+        output::format_size(backup_size)
+    ));
+
+    Ok(backup_size)
 }
 
 fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
@@ -1246,9 +1269,11 @@ fn rsync_from_remote(
     local_dest: &Path,
 ) -> Result<()> {
     let mut cmd = Command::new("rsync");
-    cmd.arg("-avz")
+    cmd.arg("-az")
         .arg("--relative")
-        .arg("--rsync-path=sudo rsync");
+        .arg("--rsync-path=sudo rsync")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 
     for pattern in RSYNC_EXCLUDES {
         cmd.arg(format!("--exclude={}", pattern));

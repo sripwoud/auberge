@@ -1,3 +1,4 @@
+use indicatif::{ProgressBar, ProgressStyle};
 use std::env;
 use std::io::IsTerminal;
 use tabled::{Table, Tabled, settings::Style as TableStyle};
@@ -58,5 +59,39 @@ pub fn format_size(bytes: u64) -> String {
         format!("{:.2} KB", bytes as f64 / KB as f64)
     } else {
         format!("{} B", bytes)
+    }
+}
+
+pub fn spinner(msg: &str) -> ProgressBar {
+    let spinner = ProgressBar::new_spinner();
+
+    if should_use_colors() {
+        spinner.set_style(
+            ProgressStyle::default_spinner()
+                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+                .template("{spinner} {msg}")
+                .unwrap(),
+        );
+    } else {
+        spinner.set_style(
+            ProgressStyle::default_spinner()
+                .tick_chars("/-\\|")
+                .template("{spinner} {msg}")
+                .unwrap(),
+        );
+    }
+
+    spinner.set_message(msg.to_string());
+    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+    spinner
+}
+
+pub fn format_duration(seconds: u64) -> String {
+    if seconds < 60 {
+        format!("{}s", seconds)
+    } else {
+        let mins = seconds / 60;
+        let secs = seconds % 60;
+        format!("{}m {}s", mins, secs)
     }
 }
