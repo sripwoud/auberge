@@ -1,7 +1,6 @@
 use dialoguer::{Select, theme::ColorfulTheme};
 use eyre::Result;
 use skim::prelude::*;
-use std::env;
 use std::io::{Cursor, IsTerminal};
 
 pub fn has_skim_support() -> bool {
@@ -15,20 +14,13 @@ pub fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
 
     let prompt_str = format!("{}> ", prompt);
 
-    let mut builder = SkimOptionsBuilder::default();
-    builder
+    let options = SkimOptionsBuilder::default()
         .prompt(Some(&prompt_str))
         .height(Some("40%"))
         .multi(false)
-        .reverse(true);
-
-    if env::var("NO_COLOR").is_err() {
-        builder.color(Some(
-            "fg:regular,bg:regular,current:reverse,pointer:magenta",
-        ));
-    }
-
-    let options = builder.build().ok()?;
+        .reverse(true)
+        .build()
+        .ok()?;
 
     let input = items.join("\n");
     let item_reader = SkimItemReader::default();
