@@ -22,7 +22,7 @@
 
     - name: Start and enable MariaDB service
       ansible.builtin.systemd_service:
-        name: mariadb
+        name: mysql
         enabled: true
         state: started
 
