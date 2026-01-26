@@ -290,10 +290,11 @@ pub fn run_backup_create(
 
     eprintln!();
     let start_time = Instant::now();
+    let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
 
     let mut results = Vec::new();
     for config in app_configs {
-        match backup_app(&host, &config, &backup_dest, &ssh_key_path) {
+        match backup_app(&host, &config, &backup_dest, &ssh_key_path, &timestamp) {
             Ok(size) => results.push((config.name, true, Some(size), None)),
             Err(e) => {
                 eprintln!("✗ {} backup failed: {}", config.name, e);
@@ -320,9 +321,10 @@ pub fn run_backup_create(
 
     eprintln!("\n{}", output::section("Backup Summary"));
     eprintln!(
-        "Location: {}/{}/<timestamp>\n",
+        "Location: {}/{}/{}\n",
         backup_dest.join(&host.name).display(),
-        apps_pattern
+        apps_pattern,
+        timestamp
     );
 
     #[derive(Tabled)]
@@ -1105,14 +1107,13 @@ fn backup_app(
     config: &AppBackupConfig,
     backup_dest: &Path,
     ssh_key: &Path,
+    timestamp: &str,
 ) -> Result<u64> {
     let spinner = output::spinner(&format!("Backing up {}", config.name));
-
-    let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
     let app_backup_dir = backup_dest
         .join(&host.name)
         .join(config.name)
-        .join(&timestamp);
+        .join(timestamp);
 
     fs::create_dir_all(&app_backup_dir).wrap_err_with(|| {
         format!(
@@ -1147,7 +1148,7 @@ fn backup_app(
     #[cfg(unix)]
     {
         use std::os::unix::fs::symlink;
-        symlink(&timestamp, &latest_link).wrap_err("Failed to create 'latest' symlink")?;
+        symlink(timestamp, &latest_link).wrap_err("Failed to create 'latest' symlink")?;
     }
 
     let backup_size = calculate_dir_size(&app_backup_dir)?;
