@@ -1,11 +1,14 @@
 use crate::hosts::{Host, HostManager};
+use crate::output;
 use crate::selector::select_item;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Instant;
+use tabled::Tabled;
 
 const RSYNC_EXCLUDES: &[&str] = &[
     ".git",
@@ -52,6 +55,8 @@ pub enum BackupCommands {
         include_music: bool,
         #[arg(short = 'n', long, help = "Dry run (show what would be backed up)")]
         dry_run: bool,
+        #[arg(short, long, help = "Show detailed progress and paths")]
+        verbose: bool,
     },
     #[command(alias = "ls", about = "List available backups")]
     List {
@@ -242,15 +247,22 @@ pub fn run_backup_create(
     ssh_key: Option<PathBuf>,
     include_music: bool,
     dry_run: bool,
+    verbose: bool,
 ) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
     let backup_dest = dest.unwrap_or_else(default_backup_dir);
 
     let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
-    eprintln!("Using SSH key: {}", ssh_key_path.display());
 
-    eprintln!("Creating backup for host: {}", host.name);
-    eprintln!("Backup destination: {}", backup_dest.display());
+    if verbose {
+        eprintln!("Using SSH key: {}", ssh_key_path.display());
+        eprintln!("Backing up to: {}", backup_dest.join(&host.name).display());
+    } else {
+        let short_dest = backup_dest
+            .to_string_lossy()
+            .replace(&std::env::var("HOME").unwrap_or_default(), "~");
+        eprintln!("Backing up {} → {}", host.name, short_dest);
+    }
 
     let app_configs = match apps {
         Some(app_names) => app_names
@@ -264,45 +276,106 @@ pub fn run_backup_create(
         eyre::bail!("No valid apps specified for backup");
     }
 
-    eprintln!("\nApps to backup:");
-    for config in &app_configs {
-        eprintln!("  - {}", config.name);
-        for path in &config.paths {
-            eprintln!("    └─ {}", path);
-        }
+    if verbose {
+        let app_names: Vec<&str> = app_configs.iter().map(|c| c.name).collect();
+        eprintln!("Apps: {}\n", app_names.join(", "));
     }
 
     if dry_run {
         eprintln!("\n✓ Dry run completed (no changes made)");
         return Ok(());
     }
-
-    eprintln!("\nStarting backup...");
+    let start_time = Instant::now();
+    let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
 
     let mut results = Vec::new();
     for config in app_configs {
-        match backup_app(&host, &config, &backup_dest, &ssh_key_path) {
-            Ok(_) => results.push((config.name, true, None)),
+        match backup_app(
+            &host,
+            &config,
+            &backup_dest,
+            &ssh_key_path,
+            &timestamp,
+            verbose,
+        ) {
+            Ok(size) => results.push((config.name, true, Some(size), None)),
             Err(e) => {
                 eprintln!("✗ {} backup failed: {}", config.name, e);
-                results.push((config.name, false, Some(e.to_string())));
+                results.push((config.name, false, None, Some(e.to_string())));
             }
         }
     }
 
-    eprintln!("\n=== Backup Summary ===");
-    let successful = results.iter().filter(|(_, ok, _)| *ok).count();
-    let failed = results.iter().filter(|(_, ok, _)| !*ok).count();
+    let elapsed = start_time.elapsed().as_secs();
+    let total_size: u64 = results.iter().filter_map(|(_, _, size, _)| *size).sum();
+    let successful = results.iter().filter(|(_, ok, _, _)| *ok).count();
+    let failed = results.iter().filter(|(_, ok, _, _)| !*ok).count();
 
-    for (app, ok, err) in &results {
-        if *ok {
-            eprintln!("  ✓ {}", app);
-        } else {
-            eprintln!("  ✗ {} - {}", app, err.as_ref().unwrap());
+    eprintln!();
+
+    if verbose {
+        #[derive(Tabled)]
+        struct BackupResult {
+            #[tabled(rename = "App")]
+            app: String,
+            #[tabled(rename = "Status")]
+            status: String,
+            #[tabled(rename = "Size")]
+            size: String,
         }
+
+        let table_data: Vec<BackupResult> = results
+            .iter()
+            .map(|(app, ok, size, err)| BackupResult {
+                app: app.to_string(),
+                status: if *ok {
+                    "✓".to_string()
+                } else {
+                    format!("✗ {}", err.as_ref().unwrap())
+                },
+                size: size.map(output::format_size).unwrap_or_default(),
+            })
+            .collect();
+
+        output::print_table(&table_data);
+        eprintln!();
     }
 
-    eprintln!("\nTotal: {} successful, {} failed", successful, failed);
+    if failed == 0 {
+        eprintln!(
+            "Backed up {} app{} ({}) in {}",
+            successful,
+            if successful == 1 { "" } else { "s" },
+            output::format_size(total_size),
+            output::format_duration(elapsed)
+        );
+    } else {
+        eprintln!(
+            "Backup completed with errors ({} of {} apps failed)",
+            failed,
+            successful + failed
+        );
+    }
+
+    if verbose {
+        let apps_backed_up: Vec<&str> = results
+            .iter()
+            .filter(|(_, ok, _, _)| *ok)
+            .map(|(app, _, _, _)| *app)
+            .collect();
+        let apps_pattern = if apps_backed_up.len() == 1 {
+            apps_backed_up[0].to_string()
+        } else {
+            format!("{{{}}}", apps_backed_up.join("|"))
+        };
+
+        eprintln!(
+            "Location: {}/{}/{}",
+            backup_dest.join(&host.name).display(),
+            apps_pattern,
+            timestamp
+        );
+    }
 
     if failed > 0 {
         eyre::bail!("{} backup(s) failed", failed);
@@ -319,7 +392,7 @@ pub fn run_backup_list(
     let backup_root = default_backup_dir();
 
     if !backup_root.exists() {
-        eprintln!("No backups found. Backup directory does not exist:");
+        output::info("No backups found. Backup directory does not exist:");
         eprintln!("  {}", backup_root.display());
         return Ok(());
     }
@@ -327,7 +400,7 @@ pub fn run_backup_list(
     let backups = discover_backups(&backup_root, host_filter.as_deref(), app_filter.as_deref())?;
 
     if backups.is_empty() {
-        eprintln!("No backups found");
+        output::info("No backups found");
         return Ok(());
     }
 
@@ -347,6 +420,29 @@ struct BackupEntry {
     timestamp: String,
     path: PathBuf,
     size_bytes: u64,
+}
+
+#[derive(Tabled)]
+struct BackupDisplay {
+    #[tabled(rename = "HOST")]
+    host: String,
+    #[tabled(rename = "APP")]
+    app: String,
+    #[tabled(rename = "TIMESTAMP")]
+    timestamp: String,
+    #[tabled(rename = "SIZE")]
+    size: String,
+}
+
+impl From<&BackupEntry> for BackupDisplay {
+    fn from(entry: &BackupEntry) -> Self {
+        Self {
+            host: entry.host.clone(),
+            app: entry.app.clone(),
+            timestamp: entry.timestamp.clone(),
+            size: output::format_size(entry.size_bytes),
+        }
+    }
 }
 
 fn discover_backups(
@@ -450,22 +546,8 @@ fn calculate_dir_size(path: &Path) -> Result<u64> {
 }
 
 fn print_backups_table(backups: &[BackupEntry]) {
-    println!(
-        "{:<15} {:<12} {:<20} {:<12}",
-        "HOST", "APP", "TIMESTAMP", "SIZE"
-    );
-    println!("{}", "-".repeat(65));
-
-    for backup in backups {
-        println!(
-            "{:<15} {:<12} {:<20} {:<12}",
-            backup.host,
-            backup.app,
-            backup.timestamp,
-            format_size(backup.size_bytes)
-        );
-    }
-
+    let display_backups: Vec<BackupDisplay> = backups.iter().map(BackupDisplay::from).collect();
+    output::print_table(&display_backups);
     println!("\nTotal: {} backup(s)", backups.len());
 }
 
@@ -668,6 +750,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             Some(app_names.clone()),
             Some(backup_root.clone()),
             Some(ssh_key_path.clone()),
+            false,
             false,
             false,
         ) {
@@ -877,9 +960,11 @@ fn rsync_to_remote(
         .status();
 
     let mut cmd = Command::new("rsync");
-    cmd.arg("-avz")
+    cmd.arg("-az")
         .arg("--delete")
-        .arg("--rsync-path=sudo rsync");
+        .arg("--rsync-path=sudo rsync")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 
     for pattern in RSYNC_EXCLUDES {
         cmd.arg(format!("--exclude={}", pattern));
@@ -1044,14 +1129,14 @@ fn backup_app(
     config: &AppBackupConfig,
     backup_dest: &Path,
     ssh_key: &Path,
-) -> Result<()> {
-    eprintln!("\n--- Backing up {} ---", config.name);
-
-    let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+    timestamp: &str,
+    verbose: bool,
+) -> Result<u64> {
+    let spinner = output::spinner(&format!("Backing up {}", config.name));
     let app_backup_dir = backup_dest
         .join(&host.name)
         .join(config.name)
-        .join(&timestamp);
+        .join(timestamp);
 
     fs::create_dir_all(&app_backup_dir).wrap_err_with(|| {
         format!(
@@ -1061,17 +1146,17 @@ fn backup_app(
     })?;
 
     if let Some(service) = config.systemd_service {
-        eprintln!("  Stopping service: {}", service);
+        spinner.set_message(format!("Backing up {} (stopping service)", config.name));
         remote_systemctl(host, ssh_key, "stop", service)?;
     }
 
+    spinner.set_message(format!("Backing up {} (copying files)", config.name));
     for path in &config.paths {
-        eprintln!("  Backing up: {}", path);
         rsync_from_remote(host, ssh_key, path, &app_backup_dir)?;
     }
 
     if let Some(service) = config.systemd_service {
-        eprintln!("  Starting service: {}", service);
+        spinner.set_message(format!("Backing up {} (starting service)", config.name));
         remote_systemctl(host, ssh_key, "start", service)?;
     }
 
@@ -1086,12 +1171,22 @@ fn backup_app(
     #[cfg(unix)]
     {
         use std::os::unix::fs::symlink;
-        symlink(&timestamp, &latest_link).wrap_err("Failed to create 'latest' symlink")?;
+        symlink(timestamp, &latest_link).wrap_err("Failed to create 'latest' symlink")?;
     }
 
-    eprintln!("✓ {} backup completed", config.name);
-    eprintln!("  Location: {}", app_backup_dir.display());
-    Ok(())
+    let backup_size = calculate_dir_size(&app_backup_dir)?;
+
+    if verbose {
+        spinner.finish_and_clear();
+    } else {
+        spinner.finish_with_message(format!(
+            "  ✓ {} ({})",
+            config.name,
+            output::format_size(backup_size)
+        ));
+    }
+
+    Ok(backup_size)
 }
 
 fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
@@ -1235,9 +1330,11 @@ fn rsync_from_remote(
     local_dest: &Path,
 ) -> Result<()> {
     let mut cmd = Command::new("rsync");
-    cmd.arg("-avz")
+    cmd.arg("-az")
         .arg("--relative")
-        .arg("--rsync-path=sudo rsync");
+        .arg("--rsync-path=sudo rsync")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 
     for pattern in RSYNC_EXCLUDES {
         cmd.arg(format!("--exclude={}", pattern));

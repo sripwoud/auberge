@@ -1,4 +1,5 @@
 use crate::models::inventory::Host;
+use crate::output;
 use crate::selector::select_item;
 use crate::services::inventory::get_hosts;
 use clap::Subcommand;
@@ -72,10 +73,10 @@ pub fn run_sync_music(
 
     let remote_path = "/srv/music/";
 
-    eprintln!(
-        "Syncing music to {}@{}:{}...",
+    output::info(&format!(
+        "Syncing music to {}@{}:{}",
         ansible_user, host.vars.ansible_host, remote_path
-    );
+    ));
 
     let mut cmd = Command::new("rsync");
     cmd.arg("-avzP")
@@ -96,13 +97,13 @@ pub fn run_sync_music(
 
     if dry_run {
         cmd.arg("--dry-run");
-        eprintln!("(dry run mode)");
+        output::info("Dry run mode");
     }
 
     let status = cmd.status().wrap_err("Failed to execute rsync")?;
 
     if status.success() {
-        eprintln!("✓ Music sync completed");
+        output::success("Music sync completed");
         Ok(())
     } else {
         eyre::bail!("rsync failed")

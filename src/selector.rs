@@ -13,6 +13,7 @@ pub fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
     }
 
     let prompt_str = format!("{}> ", prompt);
+
     let options = SkimOptionsBuilder::default()
         .prompt(Some(&prompt_str))
         .height(Some("40%"))
