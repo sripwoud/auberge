@@ -103,7 +103,7 @@ pub fn run_ansible_run(
     playbook: Option<PathBuf>,
     check: bool,
     tags: Option<Vec<String>>,
-    _force: bool,
+    force: bool,
 ) -> Result<()> {
     let selected_host = select_or_use_host(host)?;
     let selected_playbook = select_or_use_playbook(playbook)?;
@@ -131,14 +131,18 @@ pub fn run_ansible_run(
         eprintln!("Without this, you'll be locked out after SSH port change!");
         eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-        print!("Have you configured your provider's firewall? [y/N]: ");
-        io::stdout().flush()?;
-        let mut response = String::new();
-        io::stdin().read_line(&mut response)?;
+        if !force {
+            print!("Have you configured your provider's firewall? [y/N]: ");
+            io::stdout().flush()?;
+            let mut response = String::new();
+            io::stdin().read_line(&mut response)?;
 
-        if !response.trim().eq_ignore_ascii_case("y") {
-            eprintln!("\nAborted. Configure provider firewall first, then re-run.");
-            std::process::exit(1);
+            if !response.trim().eq_ignore_ascii_case("y") {
+                eprintln!("\nAborted. Configure provider firewall first, then re-run.");
+                std::process::exit(1);
+            }
+        } else {
+            eprintln!("🤖 Skipping confirmation (--force enabled)\n");
         }
     }
 
