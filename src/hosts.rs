@@ -1,6 +1,7 @@
 use eyre::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,7 +148,7 @@ impl HostManager {
     }
 
     pub fn is_tty() -> bool {
-        atty::is(atty::Stream::Stdin)
+        std::io::stdin().is_terminal()
     }
 }
 

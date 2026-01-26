@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod hosts;
 mod models;
+mod output;
 mod playbooks;
 mod secrets;
 mod selector;

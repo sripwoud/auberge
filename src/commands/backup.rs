@@ -1,4 +1,5 @@
 use crate::hosts::{Host, HostManager};
+use crate::output;
 use crate::selector::select_item;
 use chrono::Utc;
 use clap::Subcommand;
@@ -6,6 +7,7 @@ use eyre::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tabled::Tabled;
 
 const RSYNC_EXCLUDES: &[&str] = &[
     ".git",
@@ -319,7 +321,7 @@ pub fn run_backup_list(
     let backup_root = default_backup_dir();
 
     if !backup_root.exists() {
-        eprintln!("No backups found. Backup directory does not exist:");
+        output::info("No backups found. Backup directory does not exist:");
         eprintln!("  {}", backup_root.display());
         return Ok(());
     }
@@ -327,7 +329,7 @@ pub fn run_backup_list(
     let backups = discover_backups(&backup_root, host_filter.as_deref(), app_filter.as_deref())?;
 
     if backups.is_empty() {
-        eprintln!("No backups found");
+        output::info("No backups found");
         return Ok(());
     }
 
@@ -347,6 +349,29 @@ struct BackupEntry {
     timestamp: String,
     path: PathBuf,
     size_bytes: u64,
+}
+
+#[derive(Tabled)]
+struct BackupDisplay {
+    #[tabled(rename = "HOST")]
+    host: String,
+    #[tabled(rename = "APP")]
+    app: String,
+    #[tabled(rename = "TIMESTAMP")]
+    timestamp: String,
+    #[tabled(rename = "SIZE")]
+    size: String,
+}
+
+impl From<&BackupEntry> for BackupDisplay {
+    fn from(entry: &BackupEntry) -> Self {
+        Self {
+            host: entry.host.clone(),
+            app: entry.app.clone(),
+            timestamp: entry.timestamp.clone(),
+            size: output::format_size(entry.size_bytes),
+        }
+    }
 }
 
 fn discover_backups(
@@ -450,22 +475,8 @@ fn calculate_dir_size(path: &Path) -> Result<u64> {
 }
 
 fn print_backups_table(backups: &[BackupEntry]) {
-    println!(
-        "{:<15} {:<12} {:<20} {:<12}",
-        "HOST", "APP", "TIMESTAMP", "SIZE"
-    );
-    println!("{}", "-".repeat(65));
-
-    for backup in backups {
-        println!(
-            "{:<15} {:<12} {:<20} {:<12}",
-            backup.host,
-            backup.app,
-            backup.timestamp,
-            format_size(backup.size_bytes)
-        );
-    }
-
+    let display_backups: Vec<BackupDisplay> = backups.iter().map(BackupDisplay::from).collect();
+    output::print_table(&display_backups);
     println!("\nTotal: {} backup(s)", backups.len());
 }
 

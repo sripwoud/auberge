@@ -1,9 +1,11 @@
 use crate::hosts::{Host, HostManager};
+use crate::output;
 use crate::selector::select_item;
 use clap::Subcommand;
 use dialoguer::{Confirm, Input, theme::ColorfulTheme};
 use eyre::Result;
 use std::path::PathBuf;
+use tabled::Tabled;
 
 pub struct AddHostArgs {
     pub name: Option<String>,
@@ -14,6 +16,32 @@ pub struct AddHostArgs {
     pub tags: Option<String>,
     pub description: Option<String>,
     pub no_input: bool,
+}
+
+#[derive(Tabled)]
+struct HostDisplay {
+    #[tabled(rename = "NAME")]
+    name: String,
+    #[tabled(rename = "ADDRESS")]
+    address: String,
+    #[tabled(rename = "USER")]
+    user: String,
+    #[tabled(rename = "PORT")]
+    port: u16,
+    #[tabled(rename = "TAGS")]
+    tags: String,
+}
+
+impl From<&Host> for HostDisplay {
+    fn from(host: &Host) -> Self {
+        Self {
+            name: host.name.clone(),
+            address: host.address.clone(),
+            user: host.user.clone(),
+            port: host.port,
+            tags: host.tags.join(", "),
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -205,7 +233,11 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
     HostManager::add_host(host)?;
 
     let config_path = HostManager::config_path()?;
-    println!("✓ Host '{}' added to {}", name, config_path.display());
+    output::success(&format!(
+        "Host '{}' added to {}",
+        name,
+        config_path.display()
+    ));
 
     Ok(())
 }
@@ -216,7 +248,7 @@ pub fn run_host_list(tags: Option<String>, output: Option<String>) -> Result<()>
     let hosts = HostManager::list_hosts_filtered(filter_tags)?;
 
     if hosts.is_empty() {
-        println!("No hosts configured yet.");
+        output::info("No hosts configured yet");
         println!("\nAdd a host with:");
         println!("  auberge host add <name> <address>");
         return Ok(());
@@ -230,19 +262,8 @@ pub fn run_host_list(tags: Option<String>, output: Option<String>) -> Result<()>
             println!("{}", serde_yaml::to_string(&hosts)?);
         }
         _ => {
-            println!(
-                "{:<15} {:<20} {:<15} {:<6} {:<30}",
-                "NAME", "ADDRESS", "USER", "PORT", "TAGS"
-            );
-            println!("{}", "=".repeat(90));
-
-            for host in hosts {
-                let tags_str = host.tags.join(", ");
-                println!(
-                    "{:<15} {:<20} {:<15} {:<6} {:<30}",
-                    host.name, host.address, host.user, host.port, tags_str
-                );
-            }
+            let display_hosts: Vec<HostDisplay> = hosts.iter().map(HostDisplay::from).collect();
+            output::print_table(&display_hosts);
         }
     }
 
@@ -265,7 +286,7 @@ pub fn run_host_remove(name: String, yes: bool) -> Result<()> {
     }
 
     HostManager::remove_host(&name)?;
-    println!("✓ Host '{}' removed", name);
+    output::success(&format!("Host '{}' removed", name));
 
     Ok(())
 }
@@ -342,7 +363,7 @@ pub fn run_host_edit(name: String) -> Result<()> {
     };
 
     HostManager::update_host(&name, updated_host)?;
-    println!("✓ Host '{}' updated", name);
+    output::success(&format!("Host '{}' updated", name));
 
     Ok(())
 }
