@@ -1,6 +1,8 @@
 {{ yourls_subdomain }}.{{ primary_domain }} {
 	root * /var/www/yourls
 
+	redir / /admin/index.php
+
 	@static path *.css *.js *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
 	handle @static {
 		file_server
