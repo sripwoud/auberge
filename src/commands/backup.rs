@@ -307,9 +307,23 @@ pub fn run_backup_create(
     let successful = results.iter().filter(|(_, ok, _, _)| *ok).count();
     let failed = results.iter().filter(|(_, ok, _, _)| !*ok).count();
 
+    let apps_backed_up: Vec<&str> = results
+        .iter()
+        .filter(|(_, ok, _, _)| *ok)
+        .map(|(app, _, _, _)| *app)
+        .collect();
+    let apps_pattern = if apps_backed_up.len() == 1 {
+        apps_backed_up[0].to_string()
+    } else {
+        format!("{{{}}}", apps_backed_up.join("|"))
+    };
+
     eprintln!("\n{}", output::section("Backup Summary"));
-    eprintln!("Host: {}", host.name);
-    eprintln!("Location: {}\n", backup_dest.join(&host.name).display());
+    eprintln!(
+        "Location: {}/{}/<timestamp>\n",
+        backup_dest.join(&host.name).display(),
+        apps_pattern
+    );
 
     #[derive(Tabled)]
     struct BackupResult {
