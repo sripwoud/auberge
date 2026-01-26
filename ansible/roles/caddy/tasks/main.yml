@@ -60,6 +60,7 @@
         shell: /usr/sbin/nologin
         comment: Caddy web server
         state: present
+      notify: Restart caddy
 
     - name: Create Caddy config and sites directories
       ansible.builtin.file:
