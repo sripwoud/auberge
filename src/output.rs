@@ -95,11 +95,3 @@ pub fn format_duration(seconds: u64) -> String {
         format!("{}m {}s", mins, secs)
     }
 }
-
-pub fn section(title: &str) -> String {
-    if should_use_colors() {
-        format!("{}═══ {} ═══{}", CYAN, title, RESET)
-    } else {
-        format!("=== {} ===", title)
-    }
-}

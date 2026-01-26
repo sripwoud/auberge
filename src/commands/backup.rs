@@ -55,6 +55,8 @@ pub enum BackupCommands {
         include_music: bool,
         #[arg(short = 'n', long, help = "Dry run (show what would be backed up)")]
         dry_run: bool,
+        #[arg(short, long, help = "Show detailed progress and paths")]
+        verbose: bool,
     },
     #[command(alias = "ls", about = "List available backups")]
     List {
@@ -245,15 +247,22 @@ pub fn run_backup_create(
     ssh_key: Option<PathBuf>,
     include_music: bool,
     dry_run: bool,
+    verbose: bool,
 ) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
     let backup_dest = dest.unwrap_or_else(default_backup_dir);
 
     let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
-    eprintln!("Using SSH key: {}", ssh_key_path.display());
 
-    eprintln!("Creating backup for host: {}", host.name);
-    eprintln!("Backup destination: {}", backup_dest.display());
+    if verbose {
+        eprintln!("Using SSH key: {}", ssh_key_path.display());
+        eprintln!("Backing up to: {}", backup_dest.join(&host.name).display());
+    } else {
+        let short_dest = backup_dest
+            .to_string_lossy()
+            .replace(&std::env::var("HOME").unwrap_or_default(), "~");
+        eprintln!("Backing up {} → {}", host.name, short_dest);
+    }
 
     let app_configs = match apps {
         Some(app_names) => app_names
@@ -267,34 +276,28 @@ pub fn run_backup_create(
         eyre::bail!("No valid apps specified for backup");
     }
 
-    #[derive(Tabled)]
-    struct AppToBackup {
-        #[tabled(rename = "App")]
-        app: String,
+    if verbose {
+        let app_names: Vec<&str> = app_configs.iter().map(|c| c.name).collect();
+        eprintln!("Apps: {}\n", app_names.join(", "));
     }
-
-    let apps_table: Vec<AppToBackup> = app_configs
-        .iter()
-        .map(|c| AppToBackup {
-            app: c.name.to_string(),
-        })
-        .collect();
-
-    eprintln!("\n{}", output::section("Backup Plan"));
-    output::print_table(&apps_table);
 
     if dry_run {
         eprintln!("\n✓ Dry run completed (no changes made)");
         return Ok(());
     }
-
-    eprintln!();
     let start_time = Instant::now();
     let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
 
     let mut results = Vec::new();
     for config in app_configs {
-        match backup_app(&host, &config, &backup_dest, &ssh_key_path, &timestamp) {
+        match backup_app(
+            &host,
+            &config,
+            &backup_dest,
+            &ssh_key_path,
+            &timestamp,
+            verbose,
+        ) {
             Ok(size) => results.push((config.name, true, Some(size), None)),
             Err(e) => {
                 eprintln!("✗ {} backup failed: {}", config.name, e);
@@ -308,53 +311,71 @@ pub fn run_backup_create(
     let successful = results.iter().filter(|(_, ok, _, _)| *ok).count();
     let failed = results.iter().filter(|(_, ok, _, _)| !*ok).count();
 
-    let apps_backed_up: Vec<&str> = results
-        .iter()
-        .filter(|(_, ok, _, _)| *ok)
-        .map(|(app, _, _, _)| *app)
-        .collect();
-    let apps_pattern = if apps_backed_up.len() == 1 {
-        apps_backed_up[0].to_string()
-    } else {
-        format!("{{{}}}", apps_backed_up.join("|"))
-    };
+    eprintln!();
 
-    eprintln!("\n{}", output::section("Backup Summary"));
-    eprintln!(
-        "Location: {}/{}/{}\n",
-        backup_dest.join(&host.name).display(),
-        apps_pattern,
-        timestamp
-    );
+    if verbose {
+        #[derive(Tabled)]
+        struct BackupResult {
+            #[tabled(rename = "App")]
+            app: String,
+            #[tabled(rename = "Status")]
+            status: String,
+            #[tabled(rename = "Size")]
+            size: String,
+        }
 
-    #[derive(Tabled)]
-    struct BackupResult {
-        #[tabled(rename = "App")]
-        app: String,
-        #[tabled(rename = "Status")]
-        status: String,
-        #[tabled(rename = "Size")]
-        size: String,
+        let table_data: Vec<BackupResult> = results
+            .iter()
+            .map(|(app, ok, size, err)| BackupResult {
+                app: app.to_string(),
+                status: if *ok {
+                    "✓".to_string()
+                } else {
+                    format!("✗ {}", err.as_ref().unwrap())
+                },
+                size: size.map(output::format_size).unwrap_or_default(),
+            })
+            .collect();
+
+        output::print_table(&table_data);
+        eprintln!();
     }
 
-    let table_data: Vec<BackupResult> = results
-        .iter()
-        .map(|(app, ok, size, err)| BackupResult {
-            app: app.to_string(),
-            status: if *ok {
-                "✓".to_string()
-            } else {
-                format!("✗ {}", err.as_ref().unwrap())
-            },
-            size: size.map(output::format_size).unwrap_or_default(),
-        })
-        .collect();
+    if failed == 0 {
+        eprintln!(
+            "Backed up {} app{} ({}) in {}",
+            successful,
+            if successful == 1 { "" } else { "s" },
+            output::format_size(total_size),
+            output::format_duration(elapsed)
+        );
+    } else {
+        eprintln!(
+            "Backup completed with errors ({} of {} apps failed)",
+            failed,
+            successful + failed
+        );
+    }
 
-    output::print_table(&table_data);
+    if verbose {
+        let apps_backed_up: Vec<&str> = results
+            .iter()
+            .filter(|(_, ok, _, _)| *ok)
+            .map(|(app, _, _, _)| *app)
+            .collect();
+        let apps_pattern = if apps_backed_up.len() == 1 {
+            apps_backed_up[0].to_string()
+        } else {
+            format!("{{{}}}", apps_backed_up.join("|"))
+        };
 
-    eprintln!("\nTotal size: {}", output::format_size(total_size));
-    eprintln!("Time taken: {}", output::format_duration(elapsed));
-    eprintln!("Status: {} successful, {} failed", successful, failed);
+        eprintln!(
+            "Location: {}/{}/{}",
+            backup_dest.join(&host.name).display(),
+            apps_pattern,
+            timestamp
+        );
+    }
 
     if failed > 0 {
         eyre::bail!("{} backup(s) failed", failed);
@@ -729,6 +750,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             Some(app_names.clone()),
             Some(backup_root.clone()),
             Some(ssh_key_path.clone()),
+            false,
             false,
             false,
         ) {
@@ -1108,6 +1130,7 @@ fn backup_app(
     backup_dest: &Path,
     ssh_key: &Path,
     timestamp: &str,
+    verbose: bool,
 ) -> Result<u64> {
     let spinner = output::spinner(&format!("Backing up {}", config.name));
     let app_backup_dir = backup_dest
@@ -1152,11 +1175,16 @@ fn backup_app(
     }
 
     let backup_size = calculate_dir_size(&app_backup_dir)?;
-    spinner.finish_with_message(format!(
-        "✓ {} backup completed ({})",
-        config.name,
-        output::format_size(backup_size)
-    ));
+
+    if verbose {
+        spinner.finish_and_clear();
+    } else {
+        spinner.finish_with_message(format!(
+            "  ✓ {} ({})",
+            config.name,
+            output::format_size(backup_size)
+        ));
+    }
 
     Ok(backup_size)
 }
