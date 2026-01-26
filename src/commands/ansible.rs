@@ -172,14 +172,18 @@ pub fn run_ansible_run(
         eprintln!("Without this, SSL certificate generation will fail!");
         eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-        print!("Have you configured your Cloudflare API token? [y/N]: ");
-        io::stdout().flush()?;
-        let mut response = String::new();
-        io::stdin().read_line(&mut response)?;
+        if !force {
+            print!("Have you configured your Cloudflare API token? [y/N]: ");
+            io::stdout().flush()?;
+            let mut response = String::new();
+            io::stdin().read_line(&mut response)?;
 
-        if !response.trim().eq_ignore_ascii_case("y") {
-            eprintln!("\nAborted. Configure Cloudflare API token first, then re-run.");
-            std::process::exit(1);
+            if !response.trim().eq_ignore_ascii_case("y") {
+                eprintln!("\nAborted. Configure Cloudflare API token first, then re-run.");
+                std::process::exit(1);
+            }
+        } else {
+            eprintln!("🤖 Skipping confirmation (--force enabled)\n");
         }
 
         eprintln!("\n⚠️  IMPORTANT: VPS Provider Firewall - Port 853 Required");
