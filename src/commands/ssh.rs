@@ -1,4 +1,5 @@
 use crate::models::inventory::Host;
+use crate::output;
 use crate::selector::select_item;
 use crate::services::inventory::get_hosts;
 use clap::Subcommand;
@@ -69,11 +70,11 @@ pub fn run_ssh_keygen(host_arg: Option<String>, user: String, force: bool) -> Re
     let key_path = ssh_dir.join(format!("{}_{}", user, host.name));
 
     if key_path.exists() && !force {
-        eprintln!("✓ Key already exists: {}", key_path.display());
+        output::success(&format!("Key already exists: {}", key_path.display()));
         return Ok(());
     }
 
-    eprintln!("Generating SSH key for {}@{}...", user, host.name);
+    output::info(&format!("Generating SSH key for {}@{}", user, host.name));
 
     let mut cmd = Command::new("ssh-keygen");
     cmd.arg("-t")
@@ -92,8 +93,8 @@ pub fn run_ssh_keygen(host_arg: Option<String>, user: String, force: bool) -> Re
     let status = cmd.status().wrap_err("Failed to execute ssh-keygen")?;
 
     if status.success() {
-        eprintln!("✓ Generated key: {}", key_path.display());
-        eprintln!("  Public key: {}.pub", key_path.display());
+        output::success(&format!("Generated key: {}", key_path.display()));
+        output::info(&format!("Public key: {}.pub", key_path.display()));
         Ok(())
     } else {
         eyre::bail!("ssh-keygen failed")
@@ -136,7 +137,10 @@ pub fn run_ssh_add_key(
                 .join(format!("{}_{}", user, host.name));
 
             if default_key.exists() {
-                eprintln!("Using default connection key: {}", default_key.display());
+                output::info(&format!(
+                    "Using default connection key: {}",
+                    default_key.display()
+                ));
                 default_key
             } else {
                 let available_keys = scan_private_keys(&home_dir)?;
@@ -188,16 +192,18 @@ pub fn run_ssh_add_key(
         )
     })?;
 
-    eprintln!("\n=== Add SSH Key ===");
-    eprintln!(
+    output::info("Add SSH Key");
+    output::info(&format!(
         "Host: {} ({}:{})",
         host.name, host.vars.ansible_host, host.vars.ansible_port
-    );
-    eprintln!("Remote user: {}", user);
-    eprintln!("Connection key: {}", connect_key.display());
-    eprintln!("Key to authorize: {}", pubkey_to_authorize.display());
-    eprintln!("\nPublic key preview:");
-    eprintln!("  {}", pubkey_content.trim());
+    ));
+    output::info(&format!("Remote user: {}", user));
+    output::info(&format!("Connection key: {}", connect_key.display()));
+    output::info(&format!(
+        "Key to authorize: {}",
+        pubkey_to_authorize.display()
+    ));
+    output::info(&format!("Public key preview: {}", pubkey_content.trim()));
 
     if !yes
         && !dialoguer::Confirm::new()
@@ -205,11 +211,11 @@ pub fn run_ssh_add_key(
             .default(false)
             .interact()?
     {
-        eprintln!("Cancelled");
+        println!("Cancelled");
         return Ok(());
     }
 
-    eprintln!("\nAdding key to remote host...");
+    output::info("Adding key to remote host");
 
     let ssh_cmd = format!(
         "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo 'Key added successfully'",
@@ -230,7 +236,10 @@ pub fn run_ssh_add_key(
         eyre::bail!("Failed to add key to remote host");
     }
 
-    eprintln!("✓ Key authorized successfully on {}@{}", user, host.name);
+    output::success(&format!(
+        "Key authorized successfully on {}@{}",
+        user, host.name
+    ));
     Ok(())
 }
 

@@ -117,7 +117,7 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
             }
             Ok(_) => None,
             Err(e) => {
-                eprintln!("Warning: Could not parse SSH config: {}", e);
+                output::info(&format!("Could not parse SSH config: {}", e));
                 None
             }
         }
@@ -126,7 +126,10 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
     };
 
     let imported_host = if let Some(ref ssh_hosts) = ssh_config_hosts {
-        eprintln!("Found {} new host(s) in ~/.ssh/config\n", ssh_hosts.len());
+        output::info(&format!(
+            "Found {} new host(s) in ~/.ssh/config",
+            ssh_hosts.len()
+        ));
 
         let mut options: Vec<crate::ssh_config::SshConfigHost> =
             vec![crate::ssh_config::SshConfigHost {
@@ -167,15 +170,20 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
             let expanded = shellexpand::tilde(&path).into_owned();
             let key_path = PathBuf::from(&expanded);
             if !key_path.exists() {
-                eprintln!("Warning: SSH key not found: {}", expanded);
-                eprintln!("         Will use default derivation or interactive fallback");
+                output::info(&format!(
+                    "SSH key not found: {} (will use default derivation)",
+                    expanded
+                ));
                 None
             } else {
                 Some(expanded)
             }
         });
 
-        eprintln!("Importing: {} -> {}@{}:{}", name, user, address, port);
+        output::info(&format!(
+            "Importing: {} -> {}@{}:{}",
+            name, user, address, port
+        ));
         (name, address, user, port, ssh_key.or(args.ssh_key))
     } else {
         let name = if let Some(n) = args.name {

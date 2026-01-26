@@ -1,5 +1,6 @@
 use crate::models::inventory::Host;
 use crate::models::playbook::Playbook;
+use crate::output;
 use crate::selector::select_item;
 use crate::services::ansible_runner::{run_bootstrap, run_playbook};
 use crate::services::inventory::{get_host, get_hosts, get_playbooks};
@@ -117,19 +118,19 @@ pub fn run_ansible_run(
     let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
 
     if is_fresh_bootstrap {
-        eprintln!("\n⚠️  IMPORTANT: Provider Firewall Configuration Required");
-        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        eprintln!("Before running bootstrap, ensure your VPS provider's firewall");
-        eprintln!("allows your custom SSH port (separate from UFW on the VPS).");
         eprintln!();
-        eprintln!("Required steps:");
-        eprintln!("  1. Get your SSH_PORT: mise env | grep SSH_PORT");
-        eprintln!("  2. Log into your VPS provider dashboard (IONOS, etc.)");
-        eprintln!("  3. Add firewall rule: Allow TCP on your SSH_PORT");
-        eprintln!("  4. Save and confirm the rule is active");
+        output::info("IMPORTANT: Provider Firewall Configuration Required");
+        output::info("Before running bootstrap, ensure your VPS provider's firewall");
+        output::info("allows your custom SSH port (separate from UFW on the VPS)");
         eprintln!();
-        eprintln!("Without this, you'll be locked out after SSH port change!");
-        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        output::info("Required steps:");
+        output::info("  1. Get your SSH_PORT: mise env | grep SSH_PORT");
+        output::info("  2. Log into your VPS provider dashboard (IONOS, etc.)");
+        output::info("  3. Add firewall rule: Allow TCP on your SSH_PORT");
+        output::info("  4. Save and confirm the rule is active");
+        eprintln!();
+        output::info("Without this, you'll be locked out after SSH port change!");
+        eprintln!();
 
         if !force {
             print!("Have you configured your provider's firewall? [y/N]: ");
@@ -138,11 +139,11 @@ pub fn run_ansible_run(
             io::stdin().read_line(&mut response)?;
 
             if !response.trim().eq_ignore_ascii_case("y") {
-                eprintln!("\nAborted. Configure provider firewall first, then re-run.");
+                eprintln!("Aborted. Configure provider firewall first, then re-run.");
                 std::process::exit(1);
             }
         } else {
-            eprintln!("🤖 Skipping confirmation (--force enabled)\n");
+            output::info("Skipping confirmation (--force enabled)");
         }
     }
 
@@ -150,27 +151,27 @@ pub fn run_ansible_run(
     let needs_cloudflare_warning = playbook_name == "apps.yml" || playbook_name == "auberge.yml";
 
     if needs_cloudflare_warning {
-        eprintln!("\n⚠️  IMPORTANT: Cloudflare API Token Configuration Required");
-        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        eprintln!("Before running apps, ensure your Cloudflare API token has");
-        eprintln!("the correct permissions for DNS-01 ACME challenges.");
         eprintln!();
-        eprintln!("Required steps:");
-        eprintln!("  1. Log into Cloudflare: https://dash.cloudflare.com");
-        eprintln!("  2. Navigate to: My Profile → API Tokens → Create Token");
-        eprintln!("  3. Use 'Edit zone DNS' template");
-        eprintln!("  4. Required permissions:");
-        eprintln!("     - Zone → Zone → Read");
-        eprintln!("     - Zone → DNS → Edit");
-        eprintln!("  5. Set zone resources to your domain");
-        eprintln!(
-            "  6. Copy token and add: mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN"
+        output::info("IMPORTANT: Cloudflare API Token Configuration Required");
+        output::info("Before running apps, ensure your Cloudflare API token has");
+        output::info("the correct permissions for DNS-01 ACME challenges");
+        eprintln!();
+        output::info("Required steps:");
+        output::info("  1. Log into Cloudflare: https://dash.cloudflare.com");
+        output::info("  2. Navigate to: My Profile → API Tokens → Create Token");
+        output::info("  3. Use 'Edit zone DNS' template");
+        output::info("  4. Required permissions:");
+        output::info("     - Zone → Zone → Read");
+        output::info("     - Zone → DNS → Edit");
+        output::info("  5. Set zone resources to your domain");
+        output::info(
+            "  6. Copy token and add: mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN",
         );
         eprintln!();
-        eprintln!("Note: IP whitelisting is optional (all IPs allowed by default)");
+        output::info("Note: IP whitelisting is optional (all IPs allowed by default)");
         eprintln!();
-        eprintln!("Without this, SSL certificate generation will fail!");
-        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        output::info("Without this, SSL certificate generation will fail!");
+        eprintln!();
 
         if !force {
             print!("Have you configured your Cloudflare API token? [y/N]: ");
@@ -179,26 +180,26 @@ pub fn run_ansible_run(
             io::stdin().read_line(&mut response)?;
 
             if !response.trim().eq_ignore_ascii_case("y") {
-                eprintln!("\nAborted. Configure Cloudflare API token first, then re-run.");
+                eprintln!("Aborted. Configure Cloudflare API token first, then re-run.");
                 std::process::exit(1);
             }
         } else {
-            eprintln!("🤖 Skipping confirmation (--force enabled)\n");
+            output::info("Skipping confirmation (--force enabled)");
         }
 
-        eprintln!("\n⚠️  IMPORTANT: VPS Provider Firewall - Port 853 Required");
-        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        eprintln!("For DNS over TLS with Blocky, your VPS provider's firewall");
-        eprintln!("must allow incoming TCP connections on port 853.");
         eprintln!();
-        eprintln!("Required steps:");
-        eprintln!("  1. Log into your VPS provider dashboard (IONOS, etc.)");
-        eprintln!("  2. Navigate to firewall or security settings");
-        eprintln!("  3. Add firewall rule: Allow TCP on port 853");
-        eprintln!("  4. Save and confirm the rule is active");
+        output::info("IMPORTANT: VPS Provider Firewall - Port 853 Required");
+        output::info("For DNS over TLS with Blocky, your VPS provider's firewall");
+        output::info("must allow incoming TCP connections on port 853");
         eprintln!();
-        eprintln!("Without this, DNS over TLS will not be accessible!");
-        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        output::info("Required steps:");
+        output::info("  1. Log into your VPS provider dashboard (IONOS, etc.)");
+        output::info("  2. Navigate to firewall or security settings");
+        output::info("  3. Add firewall rule: Allow TCP on port 853");
+        output::info("  4. Save and confirm the rule is active");
+        eprintln!();
+        output::info("Without this, DNS over TLS will not be accessible!");
+        eprintln!();
 
         if !force {
             print!("Have you opened port 853 in your provider's firewall? [y/N]: ");
@@ -207,18 +208,18 @@ pub fn run_ansible_run(
             io::stdin().read_line(&mut port_response)?;
 
             if !port_response.trim().eq_ignore_ascii_case("y") {
-                eprintln!("\nAborted. Open port 853 in provider firewall first, then re-run.");
+                eprintln!("Aborted. Open port 853 in provider firewall first, then re-run.");
                 std::process::exit(1);
             }
         } else {
-            eprintln!("🤖 Skipping confirmation (--force enabled)\n");
+            output::info("Skipping confirmation (--force enabled)");
         }
     }
 
-    eprintln!(
-        "Running {} on {}...",
+    output::info(&format!(
+        "Running {} on {}",
         selected_playbook.name, selected_host.name
-    );
+    ));
 
     let result = run_playbook(
         &selected_playbook.path,
@@ -230,7 +231,7 @@ pub fn run_ansible_run(
     )?;
 
     if result.success {
-        eprintln!("✓ Playbook completed successfully");
+        output::success("Playbook completed successfully");
         Ok(())
     } else {
         eyre::bail!("Playbook failed with exit code {}", result.exit_code)
@@ -302,10 +303,10 @@ pub fn run_ansible_bootstrap(
         (None, false) => prompt_for_ip(&host_name)?,
     };
 
-    eprintln!(
-        "Bootstrapping {} ({}) as {}...",
+    output::info(&format!(
+        "Bootstrapping {} ({}) as {}",
         host_name, host_ip, host.vars.bootstrap_user
-    );
+    ));
 
     let result = run_bootstrap(
         &bootstrap_playbook,
@@ -316,7 +317,7 @@ pub fn run_ansible_bootstrap(
     )?;
 
     if result.success {
-        eprintln!("✓ Bootstrap completed successfully");
+        output::success("Bootstrap completed successfully");
         Ok(())
     } else {
         eyre::bail!("Bootstrap failed with exit code {}", result.exit_code)

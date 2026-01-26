@@ -1,3 +1,4 @@
+use crate::output;
 use crate::services::dns::DnsService;
 use clap::{Subcommand, ValueEnum};
 use eyre::Result;
@@ -116,7 +117,7 @@ pub async fn run_dns_list(subdomain: Option<String>, production: bool) -> Result
     };
 
     if filtered.is_empty() {
-        eprintln!("No DNS records found");
+        output::info("No DNS records found");
         return Ok(());
     }
 
@@ -157,7 +158,7 @@ fn format_dns_content(content: &cloudflare::endpoints::dns::dns::DnsContent) -> 
 }
 
 fn print_mode_banner() {
-    eprintln!("\x1b[1;32m☁️  CLOUDFLARE DNS\x1b[0m");
+    output::info("CLOUDFLARE DNS");
 }
 
 pub async fn run_dns_status(production: bool) -> Result<()> {
@@ -204,15 +205,15 @@ pub async fn run_dns_set(subdomain: String, ip: String, production: bool) -> Res
     let service = DnsService::new_with_production(Some(production)).await?;
     print_mode_banner();
 
-    eprintln!(
+    output::info(&format!(
         "Setting A record: {}.{} -> {}",
         subdomain,
         service.config().domain,
         ip
-    );
+    ));
 
     service.set_a_record(&subdomain, &ip).await?;
-    eprintln!("Done");
+    output::success("A record set successfully");
 
     Ok(())
 }
@@ -319,14 +320,14 @@ pub async fn run_dns_set_all(
     };
 
     if subdomains_to_process.is_empty() {
-        eprintln!("No subdomains to process");
+        output::info("No subdomains to process");
         return Ok(());
     }
 
     if dry_run {
-        eprintln!("[DRY RUN] Would create the following A records:");
+        output::info("DRY RUN - Would create the following A records:");
     } else {
-        eprintln!("Creating the following A records:");
+        output::info("Creating the following A records:");
     }
 
     for (_, subdomain_value) in &subdomains_to_process {
@@ -344,13 +345,13 @@ pub async fn run_dns_set_all(
         let mut response = String::new();
         io::stdin().lock().read_line(&mut response)?;
         if !response.trim().eq_ignore_ascii_case("y") {
-            eprintln!("Operation cancelled");
+            println!("Operation cancelled");
             return Ok(());
         }
     }
 
     if dry_run {
-        eprintln!("\n[DRY RUN] No changes were made");
+        output::info("DRY RUN - No changes were made");
         return Ok(());
     }
 
@@ -361,16 +362,16 @@ pub async fn run_dns_set_all(
     for (idx, (_app_name, subdomain_value)) in subdomains_to_process.iter().enumerate() {
         match service.set_a_record(subdomain_value, &target_ip).await {
             Ok(_) => {
-                eprintln!(
-                    "  ✓ Created {}.{}",
+                output::success(&format!(
+                    "Created {}.{}",
                     subdomain_value,
                     service.config().domain
-                );
+                ));
                 succeeded += 1;
             }
             Err(e) => {
                 eprintln!(
-                    "  ✗ Failed {}.{}: {}",
+                    "Failed {}.{}: {}",
                     subdomain_value,
                     service.config().domain,
                     e
@@ -387,15 +388,15 @@ pub async fn run_dns_set_all(
         }
     }
 
-    eprintln!(
-        "\n✓ Successfully created {}/{} A records pointing to {}",
+    output::success(&format!(
+        "Successfully created {}/{} A records pointing to {}",
         succeeded,
         subdomains_to_process.len(),
         target_ip
-    );
+    ));
 
     if failed > 0 {
-        eprintln!("✗ Failed to create {} records", failed);
+        eprintln!("Failed to create {} records", failed);
         std::process::exit(1);
     }
 
