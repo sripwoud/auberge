@@ -266,7 +266,7 @@ pub fn run_ansible_bootstrap(
     host_name: String,
     port: u16,
     ip: Option<String>,
-    _force: bool,
+    force: bool,
 ) -> Result<()> {
     let host = get_host(&host_name, None)?;
     let bootstrap_playbook =
@@ -279,9 +279,15 @@ pub fn run_ansible_bootstrap(
         );
     }
 
-    let host_ip = match ip {
-        Some(ip_addr) => ip_addr,
-        None => prompt_for_ip(&host_name)?,
+    let host_ip = match (ip, force) {
+        (Some(ip_addr), _) => {
+            validate_ip(&ip_addr)?;
+            ip_addr
+        }
+        (None, true) => {
+            eyre::bail!("--ip is required when using --force")
+        }
+        (None, false) => prompt_for_ip(&host_name)?,
     };
 
     eprintln!(
