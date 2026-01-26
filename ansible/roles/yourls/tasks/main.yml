@@ -106,7 +106,7 @@
         mode: "0640"
       notify: Restart php-fpm
 
-    - name: Check if YOURLS is already installed
+    - name: Check if YOURLS tables exist
       community.mysql.mysql_query:
         login_unix_socket: /var/run/mysqld/mysqld.sock
         login_db: "{{ yourls_db_name }}"
@@ -114,7 +114,16 @@
       register: yourls_table_check
       changed_when: false
 
-    - name: Initialize YOURLS database tables
+    - name: Check if YOURLS options are initialized
+      community.mysql.mysql_query:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        login_db: "{{ yourls_db_name }}"
+        query: "SELECT COUNT(*) as count FROM {{ yourls_db_prefix }}options WHERE option_name = 'version'"
+      register: yourls_options_check
+      changed_when: false
+      when: yourls_table_check.rowcount[0] > 0
+
+    - name: Initialize YOURLS database
       ansible.builtin.command:
         cmd: |
           php -r "
@@ -124,7 +133,7 @@
             yourls_initialize_options();
           "
         chdir: "{{ yourls_install_path }}"
-      when: yourls_table_check.rowcount[0] == 0
+      when: yourls_table_check.rowcount[0] == 0 or (yourls_options_check.query_result is defined and yourls_options_check.query_result[0][0].count == 0)
       changed_when: true
       become: true
       become_user: "{{ yourls_sys_user }}"
