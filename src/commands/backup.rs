@@ -369,21 +369,9 @@ pub fn run_backup_create(
     }
 
     if verbose {
-        let apps_backed_up: Vec<&str> = results
-            .iter()
-            .filter(|(_, ok, _, _)| *ok)
-            .map(|(app, _, _, _)| *app)
-            .collect();
-        let apps_pattern = if apps_backed_up.len() == 1 {
-            apps_backed_up[0].to_string()
-        } else {
-            format!("{{{}}}", apps_backed_up.join("|"))
-        };
-
         eprintln!(
-            "Location: {}/{}/{}",
+            "Location: {}/{}/",
             backup_dest.join(&host.name).display(),
-            apps_pattern,
             timestamp
         );
     }
@@ -483,40 +471,47 @@ fn discover_backups(
             continue;
         }
 
-        for app_entry in fs::read_dir(host_entry.path())? {
-            let app_entry = app_entry?;
-            if !app_entry.file_type()?.is_dir() {
+        for timestamp_entry in fs::read_dir(host_entry.path())? {
+            let timestamp_entry = timestamp_entry?;
+            let timestamp_path = timestamp_entry.path();
+
+            if timestamp_path.is_symlink() {
                 continue;
             }
 
-            let app_name = app_entry.file_name().to_string_lossy().to_string();
-
-            if let Some(filter) = app_filter
-                && app_name != filter
-            {
+            if !timestamp_path.is_dir() {
                 continue;
             }
 
-            for backup_entry in fs::read_dir(app_entry.path())? {
-                let backup_entry = backup_entry?;
-                let backup_path = backup_entry.path();
+            let timestamp = timestamp_entry.file_name().to_string_lossy().to_string();
 
-                if backup_path.is_symlink() {
+            if !timestamp.contains('_') || !timestamp.starts_with("20") {
+                continue;
+            }
+
+            for app_entry in fs::read_dir(timestamp_path)? {
+                let app_entry = app_entry?;
+                let app_path = app_entry.path();
+
+                if !app_path.is_dir() {
                     continue;
                 }
 
-                if !backup_path.is_dir() {
+                let app_name = app_entry.file_name().to_string_lossy().to_string();
+
+                if let Some(filter) = app_filter
+                    && app_name != filter
+                {
                     continue;
                 }
 
-                let timestamp = backup_entry.file_name().to_string_lossy().to_string();
-                let size_bytes = calculate_dir_size(&backup_path)?;
+                let size_bytes = calculate_dir_size(&app_path)?;
 
                 backups.push(BackupEntry {
                     host: host_name.clone(),
                     app: app_name.clone(),
-                    timestamp,
-                    path: backup_path,
+                    timestamp: timestamp.clone(),
+                    path: app_path,
                     size_bytes,
                 });
             }
@@ -526,8 +521,8 @@ fn discover_backups(
     backups.sort_by(|a, b| {
         a.host
             .cmp(&b.host)
-            .then_with(|| a.app.cmp(&b.app))
             .then_with(|| b.timestamp.cmp(&a.timestamp))
+            .then_with(|| a.app.cmp(&b.app))
     });
 
     Ok(backups)
@@ -651,22 +646,37 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     let mut restore_plan = Vec::new();
 
     for app_name in &app_names {
-        let app_backup_dir = host_backup_dir.join(app_name);
-
-        if !app_backup_dir.exists() {
-            eprintln!("⚠ No backups found for {}, skipping", app_name);
-            continue;
-        }
-
         let backup_path = if opts.backup_id == "latest" {
-            let latest_link = app_backup_dir.join("latest");
-            if !latest_link.exists() {
-                eprintln!("⚠ No 'latest' backup for {}, skipping", app_name);
+            let mut timestamps: Vec<_> = fs::read_dir(&host_backup_dir)?
+                .filter_map(Result::ok)
+                .filter(|e| e.path().is_dir())
+                .filter(|e| !e.path().is_symlink())
+                .filter(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    name.contains('_') && name.starts_with("20")
+                })
+                .collect();
+
+            timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
+
+            let latest_timestamp = timestamps.first();
+
+            if let Some(timestamp_entry) = latest_timestamp {
+                let app_path = timestamp_entry.path().join(app_name);
+                if !app_path.exists() {
+                    eprintln!(
+                        "⚠ No backup found for {} in latest backup, skipping",
+                        app_name
+                    );
+                    continue;
+                }
+                app_path
+            } else {
+                eprintln!("⚠ No backups found for {}, skipping", app_name);
                 continue;
             }
-            fs::canonicalize(latest_link)?
         } else {
-            let backup_path = app_backup_dir.join(&opts.backup_id);
+            let backup_path = host_backup_dir.join(&opts.backup_id).join(app_name);
             if !backup_path.exists() {
                 eprintln!(
                     "⚠ Backup {} not found for {}, skipping",
@@ -769,7 +779,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             Ok(_) => {
                 eprintln!("  ✓ Emergency backup created: {}", emergency_backup_name);
                 eprintln!(
-                    "    Location: {}/{}/{{app}}/{}",
+                    "    Location: {}/{}/{}/",
                     backup_root.display(),
                     host.name,
                     emergency_timestamp
@@ -1147,8 +1157,8 @@ fn backup_app(
     let spinner = output::spinner(&format!("Backing up {}", config.name));
     let app_backup_dir = backup_dest
         .join(&host.name)
-        .join(config.name)
-        .join(timestamp);
+        .join(timestamp)
+        .join(config.name);
 
     fs::create_dir_all(&app_backup_dir).wrap_err_with(|| {
         format!(
@@ -1170,20 +1180,6 @@ fn backup_app(
     if let Some(service) = config.systemd_service {
         spinner.set_message(format!("Backing up {} (starting service)", config.name));
         remote_systemctl(host, ssh_key, "start", service)?;
-    }
-
-    let latest_link = backup_dest
-        .join(&host.name)
-        .join(config.name)
-        .join("latest");
-    if latest_link.exists() || latest_link.is_symlink() {
-        let _ = fs::remove_file(&latest_link);
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::symlink;
-        symlink(timestamp, &latest_link).wrap_err("Failed to create 'latest' symlink")?;
     }
 
     let backup_size = calculate_dir_size(&app_backup_dir)?;
