@@ -3,6 +3,7 @@
 
 	route {
 		try_files {path} {path}/ /yourls-loader.php?{query}
+		file_server
 		php_fastcgi unix//var/run/php/php{{ yourls_php_fpm_version }}-fpm.sock
 	}
 }
