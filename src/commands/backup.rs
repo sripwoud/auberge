@@ -267,13 +267,21 @@ pub fn run_backup_create(
         eyre::bail!("No valid apps specified for backup");
     }
 
-    eprintln!("\nApps to backup:");
-    for config in &app_configs {
-        eprintln!("  - {}", config.name);
-        for path in &config.paths {
-            eprintln!("    └─ {}", path);
-        }
+    #[derive(Tabled)]
+    struct AppToBackup {
+        #[tabled(rename = "App")]
+        app: String,
     }
+
+    let apps_table: Vec<AppToBackup> = app_configs
+        .iter()
+        .map(|c| AppToBackup {
+            app: c.name.to_string(),
+        })
+        .collect();
+
+    eprintln!("\n{}", output::section("Backup Plan"));
+    output::print_table(&apps_table);
 
     if dry_run {
         eprintln!("\n✓ Dry run completed (no changes made)");
@@ -301,7 +309,7 @@ pub fn run_backup_create(
 
     eprintln!("\n{}", output::section("Backup Summary"));
     eprintln!("Host: {}", host.name);
-    eprintln!("Location: {}\n", backup_dest.display());
+    eprintln!("Location: {}\n", backup_dest.join(&host.name).display());
 
     #[derive(Tabled)]
     struct BackupResult {
