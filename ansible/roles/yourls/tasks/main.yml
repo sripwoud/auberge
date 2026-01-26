@@ -106,6 +106,29 @@
         mode: "0640"
       notify: Restart php-fpm
 
+    - name: Check if YOURLS is already installed
+      community.mysql.mysql_query:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        login_db: "{{ yourls_db_name }}"
+        query: "SHOW TABLES LIKE '{{ yourls_db_prefix }}url'"
+      register: yourls_table_check
+      changed_when: false
+
+    - name: Initialize YOURLS database tables
+      ansible.builtin.command:
+        cmd: |
+          php -r "
+            define('YOURLS_INSTALLING', true);
+            require '{{ yourls_install_path }}/includes/load.php';
+            yourls_create_sql_tables();
+            yourls_initialize_options();
+          "
+        chdir: "{{ yourls_install_path }}"
+      when: yourls_table_check.rowcount[0] == 0
+      changed_when: true
+      become: true
+      become_user: "{{ yourls_sys_user }}"
+
     - name: Set ownership for YOURLS directory
       ansible.builtin.file:
         path: "{{ yourls_install_path }}"
