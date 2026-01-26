@@ -45,6 +45,8 @@ pub enum AnsibleCommands {
         host: String,
         #[arg(long, default_value = "22", help = "SSH port for initial connection")]
         port: u16,
+        #[arg(long, help = "IP address (required with --force)")]
+        ip: Option<String>,
         #[arg(
             short = 'f',
             long,
@@ -230,7 +232,22 @@ pub fn run_ansible_check(
     run_ansible_run(host, playbook, true, None, force)
 }
 
-pub fn run_ansible_bootstrap(host_name: String, port: u16, _force: bool) -> Result<()> {
+fn prompt_for_ip(host_name: &str) -> Result<String> {
+    print!("Enter IP address for {}: ", host_name);
+    io::stdout().flush()?;
+    let mut host_ip = String::new();
+    io::stdin()
+        .read_line(&mut host_ip)
+        .wrap_err("Failed to read IP address")?;
+    Ok(host_ip.trim().to_string())
+}
+
+pub fn run_ansible_bootstrap(
+    host_name: String,
+    port: u16,
+    ip: Option<String>,
+    _force: bool,
+) -> Result<()> {
     let host = get_host(&host_name, None)?;
     let bootstrap_playbook =
         crate::services::inventory::find_project_root().join("ansible/playbooks/bootstrap.yml");
@@ -242,13 +259,10 @@ pub fn run_ansible_bootstrap(host_name: String, port: u16, _force: bool) -> Resu
         );
     }
 
-    print!("Enter IP address for {}: ", host_name);
-    io::stdout().flush()?;
-    let mut host_ip = String::new();
-    io::stdin()
-        .read_line(&mut host_ip)
-        .wrap_err("Failed to read IP address")?;
-    let host_ip = host_ip.trim();
+    let host_ip = match ip {
+        Some(ip_addr) => ip_addr,
+        None => prompt_for_ip(&host_name)?,
+    };
 
     eprintln!(
         "Bootstrapping {} ({}) as {}...",
@@ -258,7 +272,7 @@ pub fn run_ansible_bootstrap(host_name: String, port: u16, _force: bool) -> Resu
     let result = run_bootstrap(
         &bootstrap_playbook,
         &host_name,
-        host_ip,
+        &host_ip,
         &host.vars.bootstrap_user,
         port,
     )?;
