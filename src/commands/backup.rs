@@ -296,29 +296,39 @@ pub fn run_backup_create(
 
     let elapsed = start_time.elapsed().as_secs();
     let total_size: u64 = results.iter().filter_map(|(_, _, size, _)| *size).sum();
-
-    eprintln!("\n=== Backup Summary ===");
-    eprintln!("Host: {}", host.name);
-    eprintln!("Location: {}", backup_dest.display());
-    eprintln!();
-
     let successful = results.iter().filter(|(_, ok, _, _)| *ok).count();
     let failed = results.iter().filter(|(_, ok, _, _)| !*ok).count();
 
-    for (app, ok, size, err) in &results {
-        if *ok {
-            if let Some(bytes) = size {
-                eprintln!("  ✓ {:<12} {}", app, output::format_size(*bytes));
-            } else {
-                eprintln!("  ✓ {}", app);
-            }
-        } else {
-            eprintln!("  ✗ {} - {}", app, err.as_ref().unwrap());
-        }
+    eprintln!("\n{}", output::section("Backup Summary"));
+    eprintln!("Host: {}", host.name);
+    eprintln!("Location: {}\n", backup_dest.display());
+
+    #[derive(Tabled)]
+    struct BackupResult {
+        #[tabled(rename = "App")]
+        app: String,
+        #[tabled(rename = "Status")]
+        status: String,
+        #[tabled(rename = "Size")]
+        size: String,
     }
 
-    eprintln!();
-    eprintln!("Total size: {}", output::format_size(total_size));
+    let table_data: Vec<BackupResult> = results
+        .iter()
+        .map(|(app, ok, size, err)| BackupResult {
+            app: app.to_string(),
+            status: if *ok {
+                "✓".to_string()
+            } else {
+                format!("✗ {}", err.as_ref().unwrap())
+            },
+            size: size.map(output::format_size).unwrap_or_default(),
+        })
+        .collect();
+
+    output::print_table(&table_data);
+
+    eprintln!("\nTotal size: {}", output::format_size(total_size));
     eprintln!("Time taken: {}", output::format_duration(elapsed));
     eprintln!("Status: {} successful, {} failed", successful, failed);
 
