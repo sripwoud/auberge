@@ -20,6 +20,16 @@
         state: present
         update_cache: true
 
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: Detect installed PHP-FPM version
+      ansible.builtin.set_fact:
+        yourls_php_fpm_version: "{{ item.key | regex_replace('^php(\\d+\\.\\d+)-fpm$', '\\1') }}"
+      loop: "{{ ansible_facts.packages | dict2items }}"
+      when: item.key is match('^php\\d+\\.\\d+-fpm$')
+
     - name: Start and enable MariaDB service
       ansible.builtin.systemd_service:
         name: mysql
