@@ -1,1 +1,17 @@
+yourls_install_path: /var/www/yourls
+yourls_sys_user: www-data
+yourls_sys_group: www-data
+yourls_domain: "{{ yourls_subdomain }}.{{ primary_domain }}"
+yourls_version: "1.10.2"
 
+yourls_db_name: "{{ lookup('env', 'YOURLS_DB_NAME') | default('yourls', true) }}"
+yourls_db_user: "{{ lookup('env', 'YOURLS_DB_USER') | default('yourls', true) }}"
+yourls_db_password: "{{ lookup('env', 'YOURLS_DB_PASSWORD') }}"
+yourls_db_host: localhost
+yourls_db_prefix: "{{ lookup('env', 'YOURLS_DB_PREFIX') | default('yourls_', true) }}"
+
+yourls_site_title: "{{ lookup('env', 'YOURLS_SITE_TITLE') | default('URL Shortener', true) }}"
+yourls_admin_user: "{{ lookup('env', 'YOURLS_ADMIN_USER') | default('admin', true) }}"
+yourls_admin_password: "{{ lookup('env', 'YOURLS_ADMIN_PASSWORD') }}"
+yourls_cookiekey: "{{ lookup('env', 'YOURLS_COOKIEKEY') }}"
+yourls_api_signature: "{{ lookup('env', 'YOURLS_API_SIGNATURE') }}"

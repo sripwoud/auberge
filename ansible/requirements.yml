@@ -4,3 +4,5 @@ collections:
     version: ">=10.0.0,<13.0.0"
   - name: ansible.posix
     version: ">=2.0.0"
+  - name: community.mysql
+    version: ">=3.0.0"
