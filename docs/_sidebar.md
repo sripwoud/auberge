@@ -1,0 +1,111 @@
+- Getting Started
+  - [Introduction](getting-started/introduction.md)
+  - [Quick Start](getting-started/quick-start.md)
+  - [Installation](getting-started/installation.md)
+  - [First Deployment](getting-started/first-deployment.md)
+
+- Core Concepts
+  - [Architecture](core-concepts/architecture.md)
+  - [Playbooks](core-concepts/playbooks.md)
+  - [Hosts vs Inventory](core-concepts/hosts-vs-inventory.md)
+  - [Infrastructure Layers](core-concepts/infrastructure-layers.md)
+
+- Configuration
+  - [Hosts](configuration/hosts.md)
+  - [SSH Keys](configuration/ssh-keys.md)
+  - [Environment Variables](configuration/environment-variables.md)
+  - [Secrets Management](configuration/secrets.md)
+  - [Ansible Inventory](configuration/ansible-inventory.md)
+
+- Deployment
+  - [Bootstrap](deployment/bootstrap.md)
+  - [Running Playbooks](deployment/running-playbooks.md)
+  - [Check Mode](deployment/check-mode.md)
+  - [Tags](deployment/tags.md)
+  - [CI/CD Automation](deployment/ci-cd.md)
+
+- Backup & Restore
+  - [Overview](backup-restore/overview.md)
+  - [Creating Backups](backup-restore/creating-backups.md)
+  - [Listing Backups](backup-restore/listing-backups.md)
+  - [Restoring Backups](backup-restore/restoring-backups.md)
+  - [Cross-Host Migration](backup-restore/cross-host-migration.md)
+  - [OPML Management](backup-restore/opml-management.md)
+  - [Best Practices](backup-restore/best-practices.md)
+
+- DNS Management
+  - [Cloudflare Setup](dns/cloudflare-setup.md)
+  - [Managing Records](dns/managing-records.md)
+  - [Migration](dns/migration.md)
+  - [Batch Operations](dns/batch-operations.md)
+
+- CLI Reference
+  - [Overview](cli-reference/auberge.md)
+  - Host Management
+    - [add](cli-reference/host/add.md)
+    - [list](cli-reference/host/list.md)
+    - [show](cli-reference/host/show.md)
+    - [edit](cli-reference/host/edit.md)
+    - [remove](cli-reference/host/remove.md)
+  - Ansible
+    - [run](cli-reference/ansible/run.md)
+    - [check](cli-reference/ansible/check.md)
+    - [bootstrap](cli-reference/ansible/bootstrap.md)
+  - Backup
+    - [create](cli-reference/backup/create.md)
+    - [list](cli-reference/backup/list.md)
+    - [restore](cli-reference/backup/restore.md)
+    - [export-opml](cli-reference/backup/export-opml.md)
+    - [import-opml](cli-reference/backup/import-opml.md)
+  - SSH
+    - [keygen](cli-reference/ssh/keygen.md)
+    - [add-key](cli-reference/ssh/add-key.md)
+  - Sync
+    - [music](cli-reference/sync/music.md)
+  - DNS
+    - [list](cli-reference/dns/list.md)
+    - [status](cli-reference/dns/status.md)
+    - [set](cli-reference/dns/set.md)
+    - [migrate](cli-reference/dns/migrate.md)
+    - [set-all](cli-reference/dns/set-all.md)
+  - Select
+    - [host](cli-reference/select/host.md)
+    - [playbook](cli-reference/select/playbook.md)
+
+- Applications
+  - [Overview](applications/overview.md)
+  - Infrastructure
+    - [Caddy](applications/infrastructure/caddy.md)
+    - [fail2ban](applications/infrastructure/fail2ban.md)
+    - [UFW](applications/infrastructure/ufw.md)
+  - Networking
+    - [Blocky](applications/networking/blocky.md)
+    - [WireGuard](applications/networking/wireguard.md)
+    - [Tailscale](applications/networking/tailscale.md)
+  - Apps
+    - [Radicale](applications/apps/radicale.md)
+    - [FreshRSS](applications/apps/freshrss.md)
+    - [Navidrome](applications/apps/navidrome.md)
+    - [Calibre](applications/apps/calibre.md)
+    - [WebDAV](applications/apps/webdav.md)
+    - [YOURLS](applications/apps/yourls.md)
+
+- Development
+  - [Setup](development/setup.md)
+  - [Project Structure](development/project-structure.md)
+  - [Testing](development/testing.md)
+  - [Ansible Roles](development/ansible-roles.md)
+  - [Contributing](development/contributing.md)
+
+- Troubleshooting
+  - [Common Issues](troubleshooting/common-issues.md)
+  - [SSH Problems](troubleshooting/ssh-problems.md)
+  - [Backup/Restore Issues](troubleshooting/backup-restore-issues.md)
+  - [Ansible Errors](troubleshooting/ansible-errors.md)
+  - [DNS Issues](troubleshooting/dns-issues.md)
+
+- About
+  - [Architecture Decisions](about/architecture-decisions.md)
+  - [Roadmap](about/roadmap.md)
+  - [Changelog](about/changelog.md)
+  - [License](about/license.md)
