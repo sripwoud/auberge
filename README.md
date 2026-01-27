@@ -1,253 +1,75 @@
-# Auberge
+# [Auberge](https://auberge.sripwoud.xyz)
 
-Selfware for managing my self-hosted FOSS stack, built around Ansible automation. No Docker bloat, runs lean on a 1€/month 1GB VPS ([IONOS Linux VPS XS](https://www.ionos.de/server/vps)).
+> Ansible-powered VPS management without Docker bloat
 
-## Installation
+Auberge is a CLI tool for managing self-hosted infrastructure using Ansible automation. Deploy a full FOSS stack on a minimal VPS with no container overhead.
+
+## Features
+
+- **Minimal footprint**: Runs on 1GB RAM VPS
+- **No Docker bloat**: Native systemd services
+- **Automated deployment**: Ansible playbooks handle everything
+- **Built-in backups**: Full backup and restore with cross-host migration
+- **DNS management**: Cloudflare integration
+- **SSH security**: Multi-tier key management
+
+## Quick Start
+
+Install Auberge:
 
 ```bash
 cargo install auberge
 ```
 
-## Quick Start
-
-Add your VPS as a host:
+Add your VPS:
 
 ```bash
 auberge host add my-vps 194.164.53.11
-# Prompts for SSH user and port (defaults to current user, port 22)
 ```
 
 Deploy the full stack:
 
 ```bash
 auberge ansible run
-# 1. Select your VPS host
-# 2. Select "auberge" playbook for the complete stack
-# 3. Sit back while it configures everything
 ```
 
-Available commands:
+That's it! Auberge will configure your VPS with all infrastructure and applications.
 
-```bash
-# Host management
-auberge host add <name> <ip>   # Add a VPS host
-auberge host list              # List all hosts
-auberge host remove <name>     # Remove a host
+## What You Get
 
-# Deployment
-auberge ansible run            # Interactive playbook execution
-auberge ansible bootstrap      # Initial VPS setup (first time only)
-auberge ansible check          # Dry-run to preview changes
+After deployment, your VPS will be running:
 
-# Backup & Restore
-auberge backup create          # Backup app data (calendar, RSS, music DB, books)
-auberge backup list            # List available backups
-auberge backup restore latest  # Restore from backup
-auberge backup export-opml     # Export FreshRSS feeds to OPML
-auberge backup import-opml     # Import OPML to FreshRSS
+- **Infrastructure**: Caddy (reverse proxy), fail2ban (intrusion prevention), UFW (firewall)
+- **Networking**: Blocky (DNS + ad-blocking), WireGuard, Tailscale
+- **Apps**: Radicale (calendar/contacts), FreshRSS (RSS reader), Navidrome (music), Calibre (books), WebDAV (file sharing), YOURLS (URL shortener)
 
-# Other
-auberge dns <subcommand>       # DNS management via Cloudflare
-auberge ssh keygen             # Generate SSH keys for hosts
-```
+## Documentation
 
-## CI/CD Automation
+Full documentation available at [auberge.sripwoud.xyz](https://auberge.sripwoud.xyz):
 
-The `--force` / `-f` flag skips interactive confirmation prompts for fully automated deployments:
+- [Installation](https://auberge.sripwoud.xyz/#/getting-started/installation) - Detailed setup guide
+- [First Deployment](https://auberge.sripwoud.xyz/#/getting-started/first-deployment) - Step-by-step walkthrough
+- [CLI Reference](https://auberge.sripwoud.xyz/#/cli-reference/auberge) - All commands documented
+- [Backup & Restore](https://auberge.sripwoud.xyz/#/backup-restore/overview) - Data protection and migration
 
-```bash
-# Skip all confirmation prompts (warnings still display)
-auberge ansible run --host my-vps --playbook playbooks/apps.yml --force
+## Requirements
 
-# Bootstrap requires --ip when using --force
-auberge ansible bootstrap my-vps --ip 194.164.53.11 --force
+- Rust/Cargo for installation
+- A VPS with root/sudo access
+- SSH connectivity to your VPS
+- (Optional) Cloudflare account for DNS management
 
-# Check mode with --force
-auberge ansible check --host my-vps --playbook playbooks/auberge.yml --force
-```
+## Philosophy
 
-**Security Note**: The `--force` flag skips confirmation prompts but **always displays warnings**. Using `--force` means you take responsibility for ensuring:
+Auberge is selfware - software built to manage your self-hosted infrastructure:
 
-- Provider firewall allows your custom SSH port (bootstrap playbook)
-- Cloudflare API token is correctly configured (apps/auberge playbooks)
-- Port 853 is open for DNS over TLS (apps/auberge playbooks)
+- Lean and efficient
+- No unnecessary abstractions
+- Direct control over your services
+- Transparent operations
 
-**Example GitHub Actions Workflow:**
+## Community
 
-```yaml
-- name: Deploy to VPS
-  run: |
-    auberge ansible run \
-      --host production \
-      --playbook playbooks/apps.yml \
-      --force
-```
-
-## Backup & Restore
-
-Auberge includes built-in backup and restore for all application data. See [docs/backup.md](docs/backup.md) for comprehensive documentation.
-
-### Create Backups
-
-```bash
-# Backup all apps for a host
-auberge backup create --host my-vps
-
-# Backup specific apps only
-auberge backup create --apps radicale,freshrss
-
-# Include music files (large, excluded by default)
-auberge backup create --include-music
-
-# Dry run to preview
-auberge backup create --dry-run
-```
-
-Backups are stored locally in `~/.local/share/auberge/backups/` with this structure:
-
-```
-backups/
-└── my-vps/
-    ├── radicale/
-    │   ├── 2026-01-23_14-30-00/
-    │   └── latest -> 2026-01-23_14-30-00
-    ├── freshrss/
-    ├── navidrome/
-    ├── calibre/
-    └── webdav/
-```
-
-### List Backups
-
-```bash
-# List all backups
-auberge backup list
-
-# Filter by host or app
-auberge backup list --host my-vps --app radicale
-
-# Output as JSON or YAML
-auberge backup list --format json
-```
-
-### Restore from Backup
-
-```bash
-# Restore latest backup for all apps
-auberge backup restore latest --host my-vps
-
-# Restore specific apps only
-auberge backup restore latest --apps radicale,freshrss
-
-# Restore a specific backup by timestamp
-auberge backup restore 2026-01-23_14-30-00
-
-# Dry run to preview
-auberge backup restore latest --dry-run
-```
-
-### Cross-Host Restore (Migration)
-
-Restore backups from one host to another (useful for VPS provider migration or disaster recovery):
-
-```bash
-# Restore from old-vps to new-vps
-auberge backup restore latest --from-host old-vps --host new-vps
-
-# Dry run to preview cross-host restore
-auberge backup restore latest --from-host old-vps --host new-vps --dry-run
-```
-
-Cross-host restore includes comprehensive safety checks:
-
-- **Pre-flight validation**: Verifies SSH connectivity, service existence, and disk space on target
-- **Hostname confirmation**: Requires typing the target hostname to prevent accidents
-- **Emergency backup**: Automatically backs up target host's current state before overwriting
-- **Post-restore guidance**: Shows required manual steps (DNS updates, config regeneration, health checks)
-
-**Important**: Cross-host restore may require additional steps after completion:
-
-1. Re-run ansible to regenerate host-specific configs: `auberge ansible run --host new-vps`
-2. Update DNS records if domain names changed
-3. Verify SSL certificates are valid for the new host
-4. Check service logs for errors: `journalctl -u <service> --since "5 minutes ago"`
-
-### OPML Export/Import (FreshRSS)
-
-```bash
-# Export feeds to OPML file
-auberge backup export-opml --host my-vps --output feeds.opml
-
-# Import OPML file
-auberge backup import-opml --host my-vps --input feeds.opml
-```
-
-### SSH Key Configuration
-
-Backup operations support flexible SSH key configuration. See [docs/ssh.md](docs/ssh.md) for details on:
-
-- Using custom SSH keys per host
-- Ad-hoc key overrides with `--ssh-key` flag
-- Default SSH key derivation
-
-**What's backed up:**
-
-- **Radicale**: Calendar and contact data, configuration
-- **FreshRSS**: SQLite database, configuration
-- **Navidrome**: Database and configuration (music files excluded by default)
-- **Calibre**: Book library and metadata
-- **WebDAV**: All files
-
-## Stack
-
-### Infrastructure
-
-| Name                                             | Description                        |
-| ------------------------------------------------ | ---------------------------------- |
-| [Caddy](https://caddyserver.com)                 | Reverse proxy with automatic HTTPS |
-| [fail2ban](https://github.com/fail2ban/fail2ban) | Intrusion prevention system        |
-| [UFW](https://launchpad.net/ufw)                 | Uncomplicated firewall             |
-
-**Required VPS Provider Firewall Ports:**
-
-- **Custom SSH port**: Set via `SSH_PORT` environment variable (shown in CLI warnings)
-- **80 (HTTP)**: For HTTP traffic and ACME challenges
-- **443 (HTTPS)**: For HTTPS traffic
-- **853 (DNS over TLS)**: For Blocky DNS service
-
-### Apps
-
-| Category      | Name                                        | Description                          |
-| ------------- | ------------------------------------------- | ------------------------------------ |
-| Ad-blocker    | [Blocky](https://0xerr0r.github.io/blocky)  | DNS server with ad/tracking blocking |
-| VPN           | [WireGuard](https://wireguard.com)          | Fast, modern VPN                     |
-| VPN           | [Tailscale](https://tailscale.com)          | Mesh VPN for secure remote access    |
-| Calendar      | [Radicale](https://radicale.org)            | Lightweight CalDAV/CardDAV server    |
-| File sharing  | [WebDAV](https://github.com/hacdias/webdav) | File sharing and synchronization     |
-| Books         | [Calibre](https://calibre-ebook.com)        | Ebook library management             |
-| Music         | [Navidrome](https://navidrome.org)          | Music streaming server               |
-| News          | [FreshRSS](https://freshrss.org)            | RSS feed aggregator                  |
-| URL shortener | [YOURLS](https://yourls.org)                | URL shortener                        |
-
-## Develop
-
-See [develop.md](develop.md) for local development setup.
-
-## Playbooks
-
-Playbooks are organized in layers:
-
-| Playbook         | Description                                                    |
-| ---------------- | -------------------------------------------------------------- |
-| `bootstrap`      | Initial VPS setup - creates users and secures SSH              |
-| `hardening`      | Security hardening - firewall, intrusion prevention, kernel    |
-| `infrastructure` | Core infrastructure - package management, shell, reverse proxy |
-| `apps`           | Self-hosted applications layer                                 |
-| `auberge` ⭐     | **Master playbook** - runs all layers (bootstrap → apps)       |
-
-Run individual layers with tags:
-
-```bash
-auberge ansible run --tags hardening  # Security layer only
-auberge ansible run --tags caddy      # Just the reverse proxy
-```
+- [Documentation](https://auberge.sripwoud.xyz)
+- [Report Issues](https://github.com/sripwoud/auberge/issues)
+- [Contributing](https://auberge.sripwoud.xyz/#/development/contributing)
