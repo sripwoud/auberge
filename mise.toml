@@ -50,6 +50,7 @@ ansible = "latest"
 "pipx:ansible-lint" = "latest"
 rust = "latest"
 "cargo:cargo-nextest" = "latest"
+"npm:docsify-cli" = "latest"
 
 [env]
 BLOCKY_SUBDOMAIN = "dns"
