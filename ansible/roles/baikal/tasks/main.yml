@@ -164,13 +164,13 @@
         group: "{{ baikal_sys_user }}"
         mode: "0640"
 
-    - name: Initialize Baikal database
-      ansible.builtin.command:
-        cmd: php {{ baikal_install_dir }}/bin/console baikal:initialize
-      become: true
-      become_user: "{{ baikal_sys_user }}"
-      args:
-        creates: "{{ baikal_data_dir }}/db/db.sqlite"
+    - name: Ensure database directory exists
+      ansible.builtin.file:
+        path: "{{ baikal_data_dir }}/db"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0750"
 
     - name: Enable and restart PHP-FPM service
       ansible.builtin.systemd_service:
