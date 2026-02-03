@@ -137,7 +137,7 @@
     - name: Generate Baikal admin password hash
       ansible.builtin.shell: |
         set -o pipefail
-        echo -n "admin:BaikalDAV:{{ baikal_admin_password }}" | md5sum | cut -d' ' -f1
+        echo -n "{{ admin_user_name }}:BaikalDAV:{{ baikal_admin_password }}" | md5sum | cut -d' ' -f1
       args:
         executable: /bin/bash
       register: baikal_password_hash_result
@@ -201,7 +201,8 @@
     - name: Check if admin user exists in database
       ansible.builtin.shell: |
         set -o pipefail
-        sqlite3 {{ baikal_data_dir }}/db/db.sqlite "SELECT COUNT(*) FROM users WHERE username='admin';"
+        sqlite3 {{ baikal_data_dir }}/db/db.sqlite \
+          "SELECT COUNT(*) FROM users WHERE username='{{ admin_user_name }}';"
       args:
         executable: /bin/bash
       register: baikal_admin_exists
@@ -212,7 +213,7 @@
       ansible.builtin.shell: |
         set -o pipefail
         sqlite3 {{ baikal_data_dir }}/db/db.sqlite \
-          "INSERT INTO users (username, digesta1) VALUES ('admin', '{{ baikal_admin_password_hash }}');"
+          "INSERT INTO users (username, digesta1) VALUES ('{{ admin_user_name }}', '{{ baikal_admin_password_hash }}');"
       args:
         executable: /bin/bash
       changed_when: true
@@ -221,7 +222,8 @@
     - name: Check if admin principal exists in database
       ansible.builtin.shell: |
         set -o pipefail
-        sqlite3 {{ baikal_data_dir }}/db/db.sqlite "SELECT COUNT(*) FROM principals WHERE uri='principals/admin';"
+        sqlite3 {{ baikal_data_dir }}/db/db.sqlite \
+          "SELECT COUNT(*) FROM principals WHERE uri='principals/{{ admin_user_name }}';"
       args:
         executable: /bin/bash
       register: baikal_principal_exists
@@ -233,7 +235,7 @@
         set -o pipefail
         sqlite3 {{ baikal_data_dir }}/db/db.sqlite \
           "INSERT INTO principals (uri, email, displayname) \
-          VALUES ('principals/admin', '{{ admin_user_email }}', 'Administrator');"
+          VALUES ('principals/{{ admin_user_name }}', '{{ admin_user_email }}', '{{ admin_user_name }}');"
       args:
         executable: /bin/bash
       changed_when: true
