@@ -148,7 +148,7 @@
     - name: Generate Baikal admin web interface password hash
       ansible.builtin.shell: |
         set -o pipefail
-        echo -n "admin:BaikalDAV:{{ baikal_admin_password }}" | md5sum | cut -d' ' -f1
+        echo -n "admin:BaikalDAV:{{ baikal_admin_password }}" | sha256sum | cut -d' ' -f1
       args:
         executable: /bin/bash
       register: baikal_admin_web_hash_result
