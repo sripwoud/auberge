@@ -144,19 +144,30 @@
           Ensure mise environment is activated or run with: mise x ansible-playbook ...
         success_msg: "Baikal admin password is set"
 
-    - name: Generate Baikal admin password hash
+    - name: Generate Baikal admin web interface password hash
+      ansible.builtin.shell: |
+        set -o pipefail
+        echo -n "admin:BaikalDAV:{{ baikal_admin_password }}" | md5sum | cut -d' ' -f1
+      args:
+        executable: /bin/bash
+      register: baikal_admin_web_hash_result
+      changed_when: false
+      no_log: true
+
+    - name: Generate Baikal DAV user password hash
       ansible.builtin.shell: |
         set -o pipefail
         echo -n "{{ admin_user_name }}:BaikalDAV:{{ baikal_admin_password }}" | md5sum | cut -d' ' -f1
       args:
         executable: /bin/bash
-      register: baikal_password_hash_result
+      register: baikal_dav_user_hash_result
       changed_when: false
       no_log: true
 
-    - name: Set password hash fact
+    - name: Set password hash facts
       ansible.builtin.set_fact:
-        baikal_admin_password_hash: "{{ baikal_password_hash_result.stdout }}"
+        baikal_admin_password_hash: "{{ baikal_admin_web_hash_result.stdout }}"
+        baikal_dav_user_password_hash: "{{ baikal_dav_user_hash_result.stdout }}"
       no_log: true
 
     - name: Generate encryption key
@@ -223,7 +234,7 @@
       ansible.builtin.shell: |
         set -o pipefail
         sqlite3 {{ baikal_data_dir }}/db/db.sqlite \
-          "INSERT INTO users (username, digesta1) VALUES ('{{ admin_user_name }}', '{{ baikal_admin_password_hash }}');"
+          "INSERT INTO users (username, digesta1) VALUES ('{{ admin_user_name }}', '{{ baikal_dav_user_password_hash }}');"
       args:
         executable: /bin/bash
       changed_when: true
