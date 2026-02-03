@@ -1,4 +1,6 @@
 [workspace]
-# Only release on feat and fix commits (excludes docs, chore, refactor, test, style).
+# Only for release-pr: open/update release PR when commits match (excludes docs, chore, refactor, etc).
 # Includes feat!/fix! (breaking) and feat(scope):/fix(scope):.
+# Does NOT apply to "release-plz release" (publish). Publishing is triggered by merging the release PR
+# (release_always / commit associated with a release-plz-* PR), so no loop.
 release_commits = "^(feat|fix)(!|\\(|:)"
