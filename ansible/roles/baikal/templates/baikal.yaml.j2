@@ -14,5 +14,5 @@ system:
 
 database:
   backend: 'sqlite'
-  sqlite_file: "Specific/db/db.sqlite"
+  sqlite_file: "{{ baikal_install_dir }}/Specific/db/db.sqlite"
   encryption_key: {{ baikal_encryption_key }}
