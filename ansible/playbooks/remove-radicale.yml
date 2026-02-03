@@ -110,6 +110,7 @@
         name: "{{ radicale_sys_user }}"
         state: absent
         remove: true
+        force: true
 
     - name: Display completion message
       ansible.builtin.debug:
