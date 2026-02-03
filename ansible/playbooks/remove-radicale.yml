@@ -1,0 +1,125 @@
+---
+- name: Remove Radicale Installation
+  hosts: vps
+  become: true
+  vars:
+    radicale_config_dir: /etc/radicale
+    radicale_data_dir: /var/lib/radicale/collections
+    radicale_sys_user: radicale
+    radicale_subdomain: calendrier
+    backup_radicale_data: true
+    backup_dir: /tmp/radicale-backup-{{ ansible_date_time.iso8601_basic_short }}
+
+  tasks:
+    - name: Backup Radicale data before removal
+      when: backup_radicale_data | bool
+      block:
+        - name: Check if Radicale data exists
+          ansible.builtin.stat:
+            path: "{{ radicale_data_dir }}"
+          register: radicale_data_stat
+
+        - name: Create backup of Radicale data
+          when: radicale_data_stat.stat.exists
+          block:
+            - name: Create backup directory
+              ansible.builtin.file:
+                path: "{{ backup_dir }}"
+                state: directory
+                mode: "0700"
+
+            - name: Copy Radicale data to backup
+              ansible.builtin.copy:
+                src: "{{ radicale_data_dir }}/"
+                dest: "{{ backup_dir }}/collections/"
+                remote_src: true
+                mode: preserve
+
+            - name: Copy Radicale config to backup
+              ansible.builtin.copy:
+                src: "{{ radicale_config_dir }}/"
+                dest: "{{ backup_dir }}/config/"
+                remote_src: true
+                mode: preserve
+              when: radicale_config_dir is directory
+
+            - name: Display backup location
+              ansible.builtin.debug:
+                msg: "Radicale backup created at: {{ backup_dir }}"
+
+    - name: Stop Radicale service
+      ansible.builtin.systemd_service:
+        name: radicale
+        state: stopped
+      failed_when: false
+
+    - name: Disable Radicale service
+      ansible.builtin.systemd_service:
+        name: radicale
+        enabled: false
+      failed_when: false
+
+    - name: Remove Radicale systemd service file
+      ansible.builtin.file:
+        path: /etc/systemd/system/radicale.service
+        state: absent
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Remove Radicale Caddy site config
+      ansible.builtin.find:
+        paths: /etc/caddy/sites
+        patterns: "{{ radicale_subdomain }}*.caddyfile"
+      register: radicale_caddy_files
+
+    - name: Delete Radicale Caddy configs
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ radicale_caddy_files.files }}"
+      notify: Reload caddy
+
+    - name: Remove Radicale data directory
+      ansible.builtin.file:
+        path: /var/lib/radicale
+        state: absent
+
+    - name: Remove Radicale config directory
+      ansible.builtin.file:
+        path: "{{ radicale_config_dir }}"
+        state: absent
+
+    - name: Remove birthday calendar script
+      ansible.builtin.file:
+        path: /usr/local/bin/create_birthday_calendar.py
+        state: absent
+
+    - name: Remove Radicale packages
+      ansible.builtin.apt:
+        name:
+          - radicale
+          - apache2-utils
+        state: absent
+        purge: true
+        autoremove: true
+
+    - name: Remove Radicale system user
+      ansible.builtin.user:
+        name: "{{ radicale_sys_user }}"
+        state: absent
+        remove: true
+
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg:
+          - "Radicale has been completely removed from the system"
+          - "Backup location (if created): {{ backup_dir }}"
+          - "You can now deploy Baikal with: auberge ansible run --tags baikal"
+
+  handlers:
+    - name: Reload caddy
+      ansible.builtin.systemd_service:
+        name: caddy
+        state: reloaded
