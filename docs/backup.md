@@ -6,7 +6,7 @@ Auberge provides built-in backup and restore functionality for all self-hosted a
 
 ## Supported Applications
 
-- **Radicale**: Calendar and contact data, configuration files
+- **Baikal**: Calendar and contact data, configuration files
 - **FreshRSS**: SQLite database, configuration, user data
 - **Navidrome**: Database and configuration (music files excluded by default)
 - **Calibre**: Book library, metadata database, user database (login credentials)
@@ -19,7 +19,7 @@ Backups are stored locally in `~/.local/share/auberge/backups/` with the followi
 ```
 backups/
 └── {hostname}/
-    ├── radicale/
+    ├── baikal/
     │   ├── 2026-01-23_14-30-00/
     │   ├── 2026-01-23_18-45-12/
     │   └── latest -> 2026-01-23_18-45-12
@@ -44,7 +44,7 @@ This creates a timestamped backup of all applications with their data and config
 ### Backup Specific Apps
 
 ```bash
-auberge backup create --host my-vps --apps radicale,freshrss
+auberge backup create --host my-vps --apps baikal,freshrss
 ```
 
 ### Include Music Files
@@ -82,7 +82,7 @@ Example output:
 ```
 HOST            APP          TIMESTAMP            SIZE
 -----------------------------------------------------------------
-my-vps          radicale     2026-01-23_14-30-00  3.24 MB
+my-vps          baikal     2026-01-23_14-30-00  3.24 MB
 my-vps          freshrss     2026-01-23_14-30-01  39.57 MB
 my-vps          navidrome    2026-01-23_14-30-02  856.06 KB
 ```
@@ -91,7 +91,7 @@ my-vps          navidrome    2026-01-23_14-30-02  856.06 KB
 
 ```bash
 auberge backup list --host my-vps
-auberge backup list --app radicale
+auberge backup list --app baikal
 auberge backup list --host my-vps --app freshrss
 ```
 
@@ -121,7 +121,7 @@ auberge backup restore 2026-01-23_14-30-00 --host my-vps
 Restore only specific apps:
 
 ```bash
-auberge backup restore latest --host my-vps --apps radicale,freshrss
+auberge backup restore latest --host my-vps --apps baikal,freshrss
 ```
 
 Dry run to preview:
@@ -145,7 +145,7 @@ auberge backup restore latest --from-host old-vps --host new-vps
 Restore specific apps only:
 
 ```bash
-auberge backup restore latest --from-host old-vps --host new-vps --apps radicale,freshrss
+auberge backup restore latest --from-host old-vps --host new-vps --apps baikal,freshrss
 ```
 
 Dry run to preview cross-host restore:
@@ -215,13 +215,13 @@ After a successful cross-host restore, manual verification and configuration upd
 Check that services are running:
 
 ```bash
-ssh user@new-vps 'systemctl status radicale freshrss navidrome'
+ssh user@new-vps 'systemctl status php*-fpm freshrss navidrome'
 ```
 
 Check logs for errors:
 
 ```bash
-ssh user@new-vps 'journalctl -u radicale --since "5 minutes ago" | grep -i error'
+ssh user@new-vps 'journalctl -u php*-fpm --since "5 minutes ago" | grep -i error'
 ```
 
 ### Configuration Updates
@@ -229,7 +229,7 @@ ssh user@new-vps 'journalctl -u radicale --since "5 minutes ago" | grep -i error
 Re-run Ansible to regenerate host-specific configurations:
 
 ```bash
-auberge ansible run --host new-vps --tags radicale,freshrss,navidrome
+auberge ansible run --host new-vps --tags baikal,freshrss,navidrome
 ```
 
 ### DNS Updates
@@ -250,10 +250,9 @@ curl -I https://cal.example.com
 
 ### App-Specific Notes
 
-**Radicale** (CalDAV/CardDAV):
+**Baikal** (CalDAV/CardDAV):
 
-- Git config may reference old hostname in commit author
-- Fix: `ssh user@new-vps 'cd /var/lib/radicale && sudo -u radicale git config user.email radicale@$(hostname)'`
+- Data lives in `/opt/baikal/Specific`; verify admin and DAV users in the Baikal web admin after restore.
 
 **Navidrome** (Music Streaming):
 
@@ -272,7 +271,7 @@ curl -I https://cal.example.com
 Set up a cron job for regular backups:
 
 ```bash
-0 2 * * * auberge backup create --host my-vps --apps radicale,freshrss,navidrome
+0 2 * * * auberge backup create --host my-vps --apps baikal,freshrss,navidrome
 ```
 
 ### Retention Policy
@@ -289,7 +288,7 @@ find ~/.local/share/auberge/backups/my-vps/*/20* -type d -mtime +7 -exec rm -rf 
 Periodically test restores to verify backups are working:
 
 ```bash
-auberge backup restore latest --host my-vps --apps radicale --dry-run
+auberge backup restore latest --host my-vps --apps baikal --dry-run
 ```
 
 ### Before Major Changes
@@ -298,7 +297,7 @@ Always create a backup before running Ansible playbooks or system updates:
 
 ```bash
 auberge backup create --host my-vps
-auberge ansible run --host my-vps --tags radicale
+auberge ansible run --host my-vps --tags baikal
 ```
 
 ## Troubleshooting
@@ -346,7 +345,7 @@ rm /tmp/ssh-*
 Check service logs:
 
 ```bash
-ssh user@host 'journalctl -u radicale -n 50'
+ssh user@host 'journalctl -u php*-fpm -n 50'
 ```
 
 Common issues:
@@ -403,12 +402,12 @@ This uploads the OPML file to the server and imports it into FreshRSS, then clea
 
 The following patterns are excluded from backups to reduce size:
 
-- `.git/` directories (except Radicale's VCS)
+- `.git/` directories (except Baikal's VCS)
 - `node_modules/`
 - `venv/`, `__pycache__/`
 - `*.pyc`, `*.pyo`, `*.tmp`, `*.log`
 - `.DS_Store`, `.cache/`
-- `.Radicale.cache/`
+- `.Baikal.cache/`
 
 ### SSH Connection Pooling
 

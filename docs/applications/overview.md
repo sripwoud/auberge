@@ -20,15 +20,14 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 
 ## Apps
 
-| Application                    | Description                       |
-| ------------------------------ | --------------------------------- |
-| [Baikal](apps/baikal.md)       | Modern CalDAV/CardDAV server      |
-| [Radicale](apps/radicale.md)   | Lightweight CalDAV/CardDAV server |
-| [FreshRSS](apps/freshrss.md)   | RSS feed aggregator               |
-| [Navidrome](apps/navidrome.md) | Music streaming server            |
-| [Calibre](apps/calibre.md)     | Ebook library management          |
-| [WebDAV](apps/webdav.md)       | File sharing and synchronization  |
-| [YOURLS](apps/yourls.md)       | URL shortener                     |
+| Application                    | Description                      |
+| ------------------------------ | -------------------------------- |
+| [Baikal](apps/baikal.md)       | CalDAV/CardDAV server            |
+| [FreshRSS](apps/freshrss.md)   | RSS feed aggregator              |
+| [Navidrome](apps/navidrome.md) | Music streaming server           |
+| [Calibre](apps/calibre.md)     | Ebook library management         |
+| [WebDAV](apps/webdav.md)       | File sharing and synchronization |
+| [YOURLS](apps/yourls.md)       | URL shortener                    |
 
 ## Deployment
 

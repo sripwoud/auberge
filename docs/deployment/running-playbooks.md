@@ -18,7 +18,7 @@ auberge ansible run --playbook playbooks/auberge.yml --skip-tags bootstrap
 auberge ansible run --playbook playbooks/apps.yml
 
 # Specific apps
-auberge ansible run --tags radicale,freshrss
+auberge ansible run --tags baikal,freshrss
 
 # Single component
 auberge ansible run --tags caddy
@@ -36,7 +36,7 @@ auberge ansible run --playbook playbooks/auberge.yml --skip-tags bootstrap
 **Update single app:**
 
 ```bash
-auberge ansible run --tags radicale
+auberge ansible run --tags baikal
 ```
 
 **Update infrastructure:**

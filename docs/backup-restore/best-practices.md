@@ -5,7 +5,7 @@
 Set up a cron job for regular backups:
 
 ```bash
-0 2 * * * auberge backup create --host my-vps --apps radicale,freshrss,navidrome
+0 2 * * * auberge backup create --host my-vps --apps baikal,freshrss,navidrome
 ```
 
 ## Retention Policy
@@ -22,7 +22,7 @@ find ~/.local/share/auberge/backups/my-vps/*/20* -type d -mtime +7 -exec rm -rf 
 Periodically test restores to verify backups are working:
 
 ```bash
-auberge backup restore latest --host my-vps --apps radicale --dry-run
+auberge backup restore latest --host my-vps --apps baikal --dry-run
 ```
 
 ## Before Major Changes
@@ -31,7 +31,7 @@ Always create a backup before running Ansible playbooks or system updates:
 
 ```bash
 auberge backup create --host my-vps
-auberge ansible run --host my-vps --tags radicale
+auberge ansible run --host my-vps --tags baikal
 ```
 
 ## Music Files

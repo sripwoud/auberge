@@ -7,24 +7,29 @@ For detailed changes, see [GitHub Releases](https://github.com/sripwoud/auberge/
 ## v0.2.0 (2026-01-XX)
 
 **Breaking Changes:**
+
 - Reorganized backup structure to timestamp-first for better organization
 
 **Features:**
+
 - YOURLS URL shortener support
 - Improved backup/restore safety checks
 
 **Improvements:**
+
 - Better error messages
 - Harden workflow permissions
 
 ## v0.1.4 (2025-XX-XX)
 
 **Features:**
+
 - YOURLS automated deployment with database initialization
 
 ## v0.1.3 (Earlier)
 
 **Features:**
+
 - Initial backup and restore functionality
 - Core application deployments
 - DNS management via Cloudflare
@@ -58,19 +63,21 @@ Releases are automated via GitHub Actions:
 **Backup structure change:**
 
 Old structure:
+
 ```
 backups/
 └── my-vps/
-    └── radicale/
+    └── baikal/
         ├── latest/
         └── 2026-01-23_14-30-00/
 ```
 
 New structure:
+
 ```
 backups/
 └── my-vps/
-    └── radicale/
+    └── baikal/
         ├── 2026-01-23_14-30-00/
         └── latest -> 2026-01-23_14-30-00
 ```

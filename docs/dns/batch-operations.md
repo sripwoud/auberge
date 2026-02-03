@@ -34,7 +34,7 @@ Uses the provided IP address.
 
 1. **Discover configured subdomains** from environment variables
    - Reads `*_SUBDOMAIN` environment vars
-   - Example: `RADICALE_SUBDOMAIN=cal`
+   - Example: `BAIKAL_SUBDOMAIN=cal`
 
 2. **Determine target IP**
    - From `--host` (lookups IP in inventory)
@@ -173,7 +173,7 @@ BLOCKY_SUBDOMAIN = "dns"
 CALIBRE_SUBDOMAIN = "lire"
 FRESHRSS_SUBDOMAIN = "rss"
 NAVIDROME_SUBDOMAIN = "musique"
-RADICALE_SUBDOMAIN = "calendrier"
+BAIKAL_SUBDOMAIN = "calendrier"
 WEBDAV_SUBDOMAIN = "webdav"
 YOURLS_SUBDOMAIN = "url"
 ```
@@ -194,7 +194,7 @@ Override defaults:
 
 ```toml
 # mise.toml
-RADICALE_SUBDOMAIN = "cal"      # calendrier → cal
+BAIKAL_SUBDOMAIN = "cal"      # calendrier → cal
 NAVIDROME_SUBDOMAIN = "music"   # musique → music
 ```
 

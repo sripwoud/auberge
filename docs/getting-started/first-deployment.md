@@ -57,7 +57,7 @@ Set required environment variables:
 ```bash
 mise set --age-encrypt --prompt PRIMARY_DOMAIN
 mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
-mise set --age-encrypt --prompt RADICALE_PASSWORD
+mise set --age-encrypt --prompt BAIKAL_ADMIN_PASSWORD
 mise set --age-encrypt --prompt WEBDAV_PASSWORD
 ```
 
@@ -101,7 +101,7 @@ This creates A records for all subdomains:
 Check that services are running:
 
 ```bash
-ssh user@my-vps 'systemctl status caddy radicale freshrss'
+ssh user@my-vps 'systemctl status caddy php*-fpm freshrss'
 ```
 
 Access services in your browser:
@@ -128,7 +128,7 @@ Your VPS provider's firewall may be blocking the new SSH port. Log into the prov
 Check logs:
 
 ```bash
-ssh user@my-vps 'journalctl -u radicale -n 50'
+ssh user@my-vps 'journalctl -u php*-fpm -n 50'
 ```
 
 ### DNS Records Not Created

@@ -37,7 +37,7 @@ Self-hosted applications
 ```bash
 auberge ansible run --tags apps
 # Or specific apps
-auberge ansible run --tags radicale,freshrss
+auberge ansible run --tags baikal,freshrss
 ```
 
 ### auberge.yml
@@ -55,7 +55,7 @@ Use tags for selective execution:
 ```bash
 auberge ansible run --tags ssh              # Only SSH config
 auberge ansible run --tags apps             # All apps
-auberge ansible run --tags radicale         # Single app
+auberge ansible run --tags baikal         # Single app
 auberge ansible run --skip-tags navidrome   # Exclude app
 ```
 

@@ -35,7 +35,7 @@ mise set --age-encrypt --prompt ADMIN_USER_NAME
 mise set --age-encrypt --prompt ADMIN_USER_EMAIL
 mise set --age-encrypt --prompt PRIMARY_DOMAIN
 mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
-mise set --age-encrypt --prompt RADICALE_PASSWORD
+mise set --age-encrypt --prompt BAIKAL_ADMIN_PASSWORD
 mise set --age-encrypt --prompt WEBDAV_PASSWORD
 mise set --age-encrypt --prompt TAILSCALE_AUTHKEY
 mise set --age-encrypt --prompt SSH_PORT
@@ -52,7 +52,7 @@ Already defined in `mise.toml` [env] section:
 - `CALIBRE_SUBDOMAIN` - Subdomain for Calibre (default: lire)
 - `FRESHRSS_SUBDOMAIN` - Subdomain for FreshRSS (default: rss)
 - `NAVIDROME_SUBDOMAIN` - Subdomain for Navidrome (default: musique)
-- `RADICALE_SUBDOMAIN` - Subdomain for Radicale (default: calendrier)
+- `BAIKAL_SUBDOMAIN` - Subdomain for Baikal (default: calendrier)
 - `WEBDAV_SUBDOMAIN` - Subdomain for WebDAV (default: webdav)
 - `YOURLS_SUBDOMAIN` - Subdomain for YOURLS (default: url)
 

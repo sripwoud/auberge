@@ -114,7 +114,7 @@ jobs:
           ssh -i ~/.ssh/identities/ansible_production \
               -p ${{ secrets.SSH_PORT }} \
               ansible@${{ secrets.AUBERGE_HOST }} \
-              "systemctl is-active radicale freshrss navidrome"
+              "systemctl is-active baikal freshrss navidrome"
 ```
 
 ### Required GitHub Secrets
@@ -126,7 +126,7 @@ Set these in repository settings → Secrets and variables → Actions:
 - `SSH_PRIVATE_KEY` - ansible user's SSH private key (full content)
 - `ADMIN_USER_NAME` - Admin username
 - `CLOUDFLARE_DNS_API_TOKEN` - Cloudflare API token
-- Other app-specific secrets (RADICALE_PASSWORD, etc.)
+- Other app-specific secrets (BAIKAL_ADMIN_PASSWORD, etc.)
 
 ## GitLab CI
 
@@ -161,7 +161,7 @@ deploy_production:
     - ssh -i ~/.ssh/identities/ansible_production
       -p $SSH_PORT
       ansible@$AUBERGE_HOST
-      "systemctl status radicale freshrss navidrome"
+      "systemctl status php*-fpm freshrss navidrome"
 ```
 
 ### Required GitLab Variables

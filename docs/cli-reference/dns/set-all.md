@@ -16,7 +16,7 @@ auberge dns set-all [OPTIONS]
 
 Interactively or automatically creates DNS A records for all configured app subdomains pointing to a host's IP address.
 
-Discovers subdomain names from environment variables (SUBDOMAIN_FRESHRSS, SUBDOMAIN_RADICALE, etc.) and creates A records pointing to the selected host's IP.
+Discovers subdomain names from environment variables (SUBDOMAIN_FRESHRSS, SUBDOMAIN_BAIKAL, etc.) and creates A records pointing to the selected host's IP.
 
 ## Options
 
@@ -52,7 +52,7 @@ auberge dns set-all --host myserver --dry-run
 auberge dns set-all --host myserver --yes
 
 # Only specific subdomains
-auberge dns set-all --host myserver --subdomains freshrss,radicale
+auberge dns set-all --host myserver --subdomains freshrss,baikal
 
 # Skip specific subdomains
 auberge dns set-all --host myserver --skip calibre,yourls
@@ -72,7 +72,7 @@ Reads environment variables to discover subdomains:
 - SUBDOMAIN_CALIBRE
 - SUBDOMAIN_FRESHRSS
 - SUBDOMAIN_NAVIDROME
-- SUBDOMAIN_RADICALE
+- SUBDOMAIN_BAIKAL
 - SUBDOMAIN_WEBDAV
 - SUBDOMAIN_YOURLS
 
@@ -80,7 +80,7 @@ Configure with mise:
 
 ```bash
 mise set SUBDOMAIN_FRESHRSS="freshrss"
-mise set SUBDOMAIN_RADICALE="radicale"
+mise set SUBDOMAIN_BAIKAL="baikal"
 mise set SUBDOMAIN_CALIBRE="calibre"
 mise set SUBDOMAIN_NAVIDROME="music"
 mise set SUBDOMAIN_WEBDAV="files"
@@ -96,7 +96,7 @@ mise set SUBDOMAIN_BLOCKY="dns"
 CLOUDFLARE DNS
 DRY RUN - Would create the following A records:
   • freshrss.example.com → 192.168.1.10
-  • radicale.example.com → 192.168.1.10
+  • baikal.example.com → 192.168.1.10
   • calibre.example.com → 192.168.1.10
   • music.example.com → 192.168.1.10
 
@@ -109,14 +109,14 @@ DRY RUN - No changes were made
 CLOUDFLARE DNS
 Creating the following A records:
   • freshrss.example.com → 192.168.1.10
-  • radicale.example.com → 192.168.1.10
+  • baikal.example.com → 192.168.1.10
   • calibre.example.com → 192.168.1.10
   • music.example.com → 192.168.1.10
 
 Proceed? [y/N]: y
 
 ✓ Created freshrss.example.com
-✓ Created radicale.example.com
+✓ Created baikal.example.com
 ✓ Created calibre.example.com
 ✓ Created music.example.com
 
@@ -164,7 +164,7 @@ auberge dns set-all --host myserver
 
 ```bash
 # Only create specific app records
-auberge dns set-all --host myserver --subdomains freshrss,radicale
+auberge dns set-all --host myserver --subdomains freshrss,baikal
 ```
 
 ## Rate Limiting
@@ -200,7 +200,7 @@ Example with errors:
 
 ```
 ✓ Created freshrss.example.com
-Failed radicale.example.com: API error
+Failed baikal.example.com: API error
 ✓ Created calibre.example.com
 
 Successfully created 2/3 A records pointing to 192.168.1.10

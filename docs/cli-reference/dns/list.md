@@ -61,7 +61,7 @@ DNS Records for example.com
 NAME                                     TYPE     CONTENT                  TTL
 @                                        A        192.168.1.10             1
 freshrss                                 A        192.168.1.10             1
-radicale                                 A        192.168.1.10             1
+baikal                                   A        192.168.1.10             1
 www                                      CNAME    example.com              1
 mail                                     MX       mail.example.com (10)    1
 @                                        TXT      v=spf1 include:_...      1

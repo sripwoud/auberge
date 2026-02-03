@@ -423,7 +423,7 @@ If you override defaults:
 ```toml
 # mise.toml
 # Custom subdomains (document why)
-RADICALE_SUBDOMAIN = "cal"      # Shorter URL
+BAIKAL_SUBDOMAIN = "cal"      # Shorter URL
 NAVIDROME_SUBDOMAIN = "tunes"   # Branding
 ```
 

@@ -44,7 +44,7 @@ auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml
 auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --check
 
 # Run with specific tags
-auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --tags freshrss,radicale
+auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --tags freshrss,baikal
 
 # Skip confirmations (for automation)
 auberge ansible run --host myserver --playbook ansible/playbooks/bootstrap.yml --force

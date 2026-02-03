@@ -4,7 +4,7 @@ Auberge provides built-in backup and restore functionality for all self-hosted a
 
 ## Supported Applications
 
-- **Radicale**: Calendar and contact data, configuration files
+- **Baikal**: Calendar and contact data, configuration files
 - **FreshRSS**: SQLite database, configuration, user data
 - **Navidrome**: Database and configuration (music files excluded by default)
 - **Calibre**: Book library, metadata database, user database (login credentials)
@@ -17,7 +17,7 @@ Backups are stored locally in `~/.local/share/auberge/backups/` with the followi
 ```
 backups/
 └── {hostname}/
-    ├── radicale/
+    ├── baikal/
     │   ├── 2026-01-23_14-30-00/
     │   ├── 2026-01-23_18-45-12/
     │   └── latest -> 2026-01-23_18-45-12
@@ -53,12 +53,12 @@ Each app has a `latest` symlink pointing to the most recent backup for easy acce
 
 The following patterns are excluded from backups to reduce size:
 
-- `.git/` directories (except Radicale's VCS)
+- `.git/` directories (except Baikal's VCS)
 - `node_modules/`
 - `venv/`, `__pycache__/`
 - `*.pyc`, `*.pyo`, `*.tmp`, `*.log`
 - `.DS_Store`, `.cache/`
-- `.Radicale.cache/`
+- `.Baikal.cache/`
 
 ### SSH Connection Pooling
 

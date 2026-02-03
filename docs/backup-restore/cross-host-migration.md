@@ -15,7 +15,7 @@ auberge backup restore latest --from-host old-vps --host new-vps
 Restore specific apps only:
 
 ```bash
-auberge backup restore latest --from-host old-vps --host new-vps --apps radicale,freshrss
+auberge backup restore latest --from-host old-vps --host new-vps --apps baikal,freshrss
 ```
 
 Dry run to preview cross-host restore:
@@ -85,13 +85,13 @@ After a successful cross-host restore, manual verification and configuration upd
 Check that services are running:
 
 ```bash
-ssh user@new-vps 'systemctl status radicale freshrss navidrome'
+ssh user@new-vps 'systemctl status php*-fpm freshrss navidrome'
 ```
 
 Check logs for errors:
 
 ```bash
-ssh user@new-vps 'journalctl -u radicale --since "5 minutes ago" | grep -i error'
+ssh user@new-vps 'journalctl -u php*-fpm --since "5 minutes ago" | grep -i error'
 ```
 
 ### Configuration Updates
@@ -99,7 +99,7 @@ ssh user@new-vps 'journalctl -u radicale --since "5 minutes ago" | grep -i error
 Re-run Ansible to regenerate host-specific configurations:
 
 ```bash
-auberge ansible run --host new-vps --tags radicale,freshrss,navidrome
+auberge ansible run --host new-vps --tags baikal,freshrss,navidrome
 ```
 
 ### DNS Updates
@@ -120,10 +120,9 @@ curl -I https://cal.example.com
 
 ### App-Specific Notes
 
-**Radicale** (CalDAV/CardDAV):
+**Baikal** (CalDAV/CardDAV):
 
-- Git config may reference old hostname in commit author
-- Fix: `ssh user@new-vps 'cd /var/lib/radicale && sudo -u radicale git config user.email radicale@$(hostname)'`
+- Data lives in `/opt/baikal/Specific`; verify admin and DAV users in the Baikal web admin after restore.
 
 **Navidrome** (Music Streaming):
 
@@ -154,7 +153,7 @@ Target host doesn't have enough space for the restore. Free up space or use a la
 Check service logs:
 
 ```bash
-ssh user@host 'journalctl -u radicale -n 50'
+ssh user@host 'journalctl -u php*-fpm -n 50'
 ```
 
 Common issues:

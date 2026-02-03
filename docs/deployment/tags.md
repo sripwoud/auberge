@@ -75,8 +75,8 @@ auberge ansible run --tags kernel_hardening
 # DNS + ad-blocking
 auberge ansible run --tags blocky
 
-# Calendar/contacts
-auberge ansible run --tags radicale
+# Calendar/contacts (CalDAV/CardDAV)
+auberge ansible run --tags baikal
 
 # RSS reader
 auberge ansible run --tags freshrss
@@ -122,8 +122,8 @@ auberge ansible run --tags web
 Run tasks with **any** of the specified tags:
 
 ```bash
-# Run Radicale OR FreshRSS OR Navidrome
-auberge ansible run --tags radicale,freshrss,navidrome
+# Run Baikal OR FreshRSS OR Navidrome
+auberge ansible run --tags baikal,freshrss,navidrome
 ```
 
 **Result:** All three applications deploy.
@@ -152,16 +152,16 @@ auberge ansible run --tags apps --skip-tags calibre
 ### Update Single Application
 
 ```bash
-# Update only Radicale
-auberge ansible run --host auberge --tags radicale
+# Update only Baikal
+auberge ansible run --host auberge --tags baikal
 ```
 
 **What runs:**
 
-- Radicale installation
-- Radicale configuration
-- Radicale systemd service
-- Radicale data directory setup
+- Baikal installation
+- Baikal configuration
+- Baikal PHP-FPM pool and Caddy
+- Baikal data directory setup
 - Service restart (if config changed)
 
 **What doesn't run:**
@@ -174,14 +174,14 @@ auberge ansible run --host auberge --tags radicale
 
 ```bash
 # Update all media/storage apps
-auberge ansible run --tags radicale,navidrome,calibre,webdav
+auberge ansible run --tags baikal,navidrome,calibre,webdav
 ```
 
 ### Update Infrastructure + One App
 
 ```bash
-# Update Caddy and Radicale (e.g., after changing Caddy route)
-auberge ansible run --tags caddy,radicale
+# Update Caddy and Baikal (e.g., after changing Caddy route)
+auberge ansible run --tags caddy,baikal
 ```
 
 ### Security Updates Only
@@ -217,7 +217,7 @@ apps
 ├── calibre
 ├── freshrss
 ├── navidrome
-├── radicale
+├── baikal
 ├── webdav
 ├── wireguard
 └── yourls
@@ -253,7 +253,7 @@ Running `--tags security` executes all security-related tasks.
 | `fail2ban`         | Component | Intrusion prevention |
 | `kernel_hardening` | Component | Kernel security      |
 | `blocky`           | App       | DNS + ad-blocking    |
-| `radicale`         | App       | CalDAV/CardDAV       |
+| `baikal`           | App       | CalDAV/CardDAV       |
 | `freshrss`         | App       | RSS reader           |
 | `navidrome`        | App       | Music streaming      |
 | `calibre`          | App       | Ebook library        |
@@ -290,7 +290,7 @@ playbook: playbooks/auberge.yml
     TAGS: [apt, bash, caddy, infrastructure]
 
   play #4 (vps): Applications
-    TAGS: [apps, blocky, calibre, freshrss, navidrome, radicale, webdav, wireguard, yourls]
+    TAGS: [apps, blocky, calibre, freshrss, navidrome, baikal, webdav, wireguard, yourls]
 ```
 
 ## How Tags Work
@@ -318,8 +318,8 @@ Most tasks have explicit tags:
 Roles are tagged when included:
 
 ```yaml
-- role: radicale
-  tags: [apps, radicale, storage, caldav]
+- role: baikal
+  tags: [apps, baikal, storage, caldav]
 ```
 
 **All tasks in the role inherit these tags.**
@@ -344,8 +344,8 @@ Entire plays can be tagged:
 ### Use Tags for Incremental Updates
 
 ```bash
-# Changed Radicale config → update only Radicale
-auberge ansible run --tags radicale
+# Changed Baikal config → update only Baikal
+auberge ansible run --tags baikal
 
 # Not necessary to run entire apps.yml
 ```
@@ -368,10 +368,10 @@ auberge ansible run --playbook playbooks/auberge.yml
 
 ```bash
 # Preview what specific tag would change
-auberge ansible check --tags radicale
+auberge ansible check --tags baikal
 
 # If safe, apply
-auberge ansible run --tags radicale
+auberge ansible run --tags baikal
 ```
 
 ### Tag Application Groups
@@ -383,7 +383,7 @@ Update related apps together:
 auberge ansible run --tags navidrome,calibre
 
 # All productivity apps
-auberge ansible run --tags radicale,freshrss
+auberge ansible run --tags baikal,freshrss
 ```
 
 ### Use Layer Tags for Major Updates
@@ -435,15 +435,15 @@ Handlers only run if notifying task executed.
 
 ```bash
 # Run only specific app
-auberge ansible run --tags radicale
+auberge ansible run --tags baikal
 ```
 
-If Radicale config didn't change, restart handler won't run.
+If Baikal config didn't change, restart handler won't run.
 
 **Solution:** Manually restart if needed:
 
 ```bash
-ssh ansible@auberge "sudo systemctl restart radicale"
+ssh ansible@auberge "sudo systemctl restart php*-fpm"
 ```
 
 ## Related Pages
