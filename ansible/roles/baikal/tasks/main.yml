@@ -11,6 +11,7 @@
           - php-mbstring
           - unzip
           - curl
+          - sqlite3
         state: present
         update_cache: true
 
@@ -180,6 +181,32 @@
         owner: "{{ baikal_sys_user }}"
         group: "{{ baikal_sys_user }}"
         mode: "0770"
+
+    - name: Check if database is already initialized
+      ansible.builtin.stat:
+        path: "{{ baikal_data_dir }}/db/db.sqlite"
+      register: baikal_db_exists
+
+    - name: Initialize SQLite database schema
+      when: not baikal_db_exists.stat.exists
+      ansible.builtin.shell: |
+        set -o pipefail
+        sqlite3 {{ baikal_data_dir }}/db/db.sqlite < {{ baikal_install_dir }}/Core/Resources/Db/SQLite/db.sql
+        chown {{ baikal_sys_user }}:{{ baikal_sys_user }} {{ baikal_data_dir }}/db/db.sqlite
+        chmod 660 {{ baikal_data_dir }}/db/db.sqlite
+      args:
+        executable: /bin/bash
+        creates: "{{ baikal_data_dir }}/db/db.sqlite"
+
+    - name: Create INSTALL_DISABLED file
+      ansible.builtin.file:
+        path: "{{ baikal_data_dir }}/INSTALL_DISABLED"
+        state: touch
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
 
     - name: Enable and restart PHP-FPM service
       ansible.builtin.systemd_service:
