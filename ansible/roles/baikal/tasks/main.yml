@@ -9,6 +9,7 @@
           - php-xml
           - php-curl
           - php-mbstring
+          - php-yaml
           - unzip
           - curl
           - sqlite3
