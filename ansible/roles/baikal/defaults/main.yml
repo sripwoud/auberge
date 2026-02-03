@@ -3,4 +3,3 @@ baikal_data_dir: "{{ baikal_install_dir }}/Specific"
 baikal_domain: "{{ baikal_subdomain }}.{{ primary_domain }}"
 baikal_sys_user: baikal
 baikal_fpm_socket: /var/run/php/baikal-fpm.sock
-baikal_release_url: https://github.com/sabre-io/Baikal/releases/latest/download/baikal.zip

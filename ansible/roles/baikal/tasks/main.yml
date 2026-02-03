@@ -45,10 +45,22 @@
         path: "{{ baikal_install_dir }}/html/index.php"
       register: baikal_installed
 
+    - name: Get latest Baikal release info from GitHub API
+      when: not baikal_installed.stat.exists
+      ansible.builtin.uri:
+        url: https://api.github.com/repos/sabre-io/Baikal/releases/latest
+        return_content: true
+      register: baikal_release_info
+
+    - name: Extract download URL from release info
+      when: not baikal_installed.stat.exists
+      ansible.builtin.set_fact:
+        baikal_download_url: "{{ baikal_release_info.json.assets[0].browser_download_url }}"
+
     - name: Download Baikal release
       when: not baikal_installed.stat.exists
       ansible.builtin.get_url:
-        url: "{{ baikal_release_url }}"
+        url: "{{ baikal_download_url }}"
         dest: /tmp/baikal.zip
         mode: "0644"
 
