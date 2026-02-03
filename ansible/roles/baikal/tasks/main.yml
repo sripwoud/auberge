@@ -194,7 +194,7 @@
         dest: "{{ baikal_install_dir }}/config/baikal.yaml"
         owner: "{{ baikal_sys_user }}"
         group: "{{ baikal_sys_user }}"
-        mode: "0640"
+        mode: "0644"
 
     - name: Ensure database directory exists
       ansible.builtin.file:
