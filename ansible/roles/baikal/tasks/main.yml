@@ -64,21 +64,39 @@
         dest: /tmp/baikal.zip
         mode: "0644"
 
-    - name: Extract Baikal to installation directory
+    - name: Extract Baikal to temporary directory
       when: not baikal_installed.stat.exists
       ansible.builtin.unarchive:
         src: /tmp/baikal.zip
-        dest: "{{ baikal_install_dir }}"
+        dest: /tmp
         remote_src: true
-        owner: "{{ baikal_sys_user }}"
-        group: "{{ baikal_sys_user }}"
-        extra_opts:
-          - --strip-components=1
+
+    - name: Find extracted Baikal directory
+      when: not baikal_installed.stat.exists
+      ansible.builtin.find:
+        paths: /tmp
+        patterns: "baikal-*"
+        file_type: directory
+      register: baikal_extracted_dir
+
+    - name: Move Baikal files to installation directory
+      when: not baikal_installed.stat.exists
+      ansible.builtin.shell: |
+        mv {{ baikal_extracted_dir.files[0].path }}/* {{ baikal_install_dir }}/
+        chown -R {{ baikal_sys_user }}:{{ baikal_sys_user }} {{ baikal_install_dir }}
+      args:
+        creates: "{{ baikal_install_dir }}/html/index.php"
 
     - name: Remove Baikal zip file
       when: not baikal_installed.stat.exists
       ansible.builtin.file:
         path: /tmp/baikal.zip
+        state: absent
+
+    - name: Remove extracted Baikal temp directory
+      when: not baikal_installed.stat.exists and baikal_extracted_dir.files | length > 0
+      ansible.builtin.file:
+        path: "{{ baikal_extracted_dir.files[0].path }}"
         state: absent
 
     - name: Set proper permissions on Baikal directories
