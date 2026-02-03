@@ -148,30 +148,29 @@
         baikal_admin_password_hash: "{{ baikal_password_hash_result.stdout }}"
       no_log: true
 
-    - name: Generate encryption key
-      ansible.builtin.command: openssl rand -hex 16
-      register: baikal_encryption_key_result
-      changed_when: false
+    - name: Ensure Baikal config directory exists
+      ansible.builtin.file:
+        path: "{{ baikal_install_dir }}/config"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0750"
 
-    - name: Set encryption key fact
-      ansible.builtin.set_fact:
-        baikal_encryption_key: "{{ baikal_encryption_key_result.stdout }}"
-
-    - name: Deploy Baikal configuration
+    - name: Deploy Baikal YAML configuration
       ansible.builtin.template:
-        src: templates/config.php.j2
-        dest: "{{ baikal_data_dir }}/config.php"
+        src: templates/baikal.yaml.j2
+        dest: "{{ baikal_install_dir }}/config/baikal.yaml"
         owner: "{{ baikal_sys_user }}"
         group: "{{ baikal_sys_user }}"
         mode: "0640"
 
-    - name: Deploy Baikal system configuration
-      ansible.builtin.template:
-        src: templates/config.system.php.j2
-        dest: "{{ baikal_data_dir }}/config.system.php"
-        owner: "{{ baikal_sys_user }}"
-        group: "{{ baikal_sys_user }}"
-        mode: "0640"
+    - name: Initialize Baikal database
+      ansible.builtin.command:
+        cmd: php {{ baikal_install_dir }}/bin/console baikal:initialize
+      become: true
+      become_user: "{{ baikal_sys_user }}"
+      args:
+        creates: "{{ baikal_data_dir }}/db/db.sqlite"
 
     - name: Enable and restart PHP-FPM service
       ansible.builtin.systemd_service:
