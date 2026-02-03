@@ -107,7 +107,7 @@
         state: directory
         owner: "{{ baikal_sys_user }}"
         group: "{{ baikal_sys_user }}"
-        mode: "0750"
+        mode: "0770"
 
     - name: Deploy PHP-FPM pool configuration
       ansible.builtin.template:
