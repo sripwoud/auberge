@@ -1,3 +1,4 @@
 [workspace]
-# Only release on feat and fix commits (excludes docs, chore, refactor, test, style)
-release_commits = "^(feat|fix)(\\(|!|:)"
+# Only release on feat and fix commits (excludes docs, chore, refactor, test, style).
+# Includes feat!/fix! (breaking) and feat(scope):/fix(scope):.
+release_commits = "^(feat|fix)(!|\\(|:)"
