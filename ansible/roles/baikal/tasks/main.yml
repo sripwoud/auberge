@@ -3,14 +3,26 @@
     - name: Install PHP and dependencies via apt
       ansible.builtin.apt:
         name:
-          - php{{ baikal_php_version }}-fpm
-          - php{{ baikal_php_version }}-sqlite3
-          - php{{ baikal_php_version }}-xml
-          - php{{ baikal_php_version }}-curl
-          - php{{ baikal_php_version }}-mbstring
+          - php
+          - php-fpm
+          - php-sqlite3
+          - php-xml
+          - php-curl
+          - php-mbstring
           - unzip
           - curl
+        state: present
         update_cache: true
+
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: Detect installed PHP-FPM version
+      ansible.builtin.set_fact:
+        baikal_php_version: "{{ item.key | regex_replace('^php(\\d+\\.\\d+)-fpm$', '\\1') }}"
+      loop: "{{ ansible_facts.packages | dict2items }}"
+      when: item.key is match('^php\\d+\\.\\d+-fpm$')
 
     - name: Create baikal system user
       ansible.builtin.user:
