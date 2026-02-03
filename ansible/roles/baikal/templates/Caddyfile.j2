@@ -1,0 +1,33 @@
+{{ baikal_domain }} {
+	root * {{ baikal_install_dir }}/html
+
+	php_fastcgi unix/{{ baikal_fpm_socket }} {
+		env SERVER_SOFTWARE Caddy
+		env REQUEST_SCHEME https
+	}
+
+	file_server
+
+	encode gzip
+
+	@forbidden {
+		path /Specific/*
+		path *.db
+	}
+	respond @forbidden 403
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "no-referrer"
+	}
+
+	request_body {
+		max_size 100M
+	}
+
+	log {
+		output file /var/log/caddy/{{ baikal_domain }}.log
+	}
+}

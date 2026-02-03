@@ -40,7 +40,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to backup (radicale,freshrss,navidrome,calibre,webdav,yourls). Default: all"
+            help = "Apps to backup (baikal,freshrss,navidrome,calibre,webdav,yourls). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(short, long, help = "Backup destination directory")]
@@ -89,7 +89,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to restore (radicale,freshrss,navidrome,calibre,webdav,yourls). Default: all"
+            help = "Apps to restore (baikal,freshrss,navidrome,calibre,webdav,yourls). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(
@@ -169,7 +169,7 @@ pub struct RestoreOptions {
 impl AppBackupConfig {
     pub fn all() -> Vec<Self> {
         vec![
-            Self::radicale(),
+            Self::baikal(),
             Self::freshrss(),
             Self::navidrome(false),
             Self::calibre(),
@@ -180,7 +180,7 @@ impl AppBackupConfig {
 
     pub fn by_name(name: &str, include_music: bool) -> Option<Self> {
         match name {
-            "radicale" => Some(Self::radicale()),
+            "baikal" => Some(Self::baikal()),
             "freshrss" => Some(Self::freshrss()),
             "navidrome" => Some(Self::navidrome(include_music)),
             "calibre" => Some(Self::calibre()),
@@ -190,12 +190,12 @@ impl AppBackupConfig {
         }
     }
 
-    fn radicale() -> Self {
+    fn baikal() -> Self {
         Self {
-            name: "radicale",
-            systemd_service: Some("radicale"),
-            paths: vec!["/var/lib/radicale/collections", "/etc/radicale"],
-            owner: Some(("radicale", "radicale")),
+            name: "baikal",
+            systemd_service: None,
+            paths: vec!["/opt/baikal/Specific"],
+            owner: Some(("baikal", "baikal")),
         }
     }
 
@@ -634,7 +634,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
 
     let app_names = opts.apps.unwrap_or_else(|| {
         vec![
-            "radicale".to_string(),
+            "baikal".to_string(),
             "freshrss".to_string(),
             "navidrome".to_string(),
             "calibre".to_string(),
@@ -896,13 +896,6 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         eprintln!("  ⚠  App-specific notes:");
         for app_name in &app_names {
             match app_name.as_str() {
-                "radicale" => {
-                    eprintln!("     - Radicale: Git config may reference old hostname");
-                    eprintln!(
-                        "       Fix: ssh {}@{} 'cd /var/lib/radicale && sudo -u radicale git config user.email radicale@$(hostname)'",
-                        host.user, host.address
-                    );
-                }
                 "navidrome" => {
                     eprintln!("     - Navidrome: May need to rescan music library");
                     eprintln!("       Fix: Trigger rescan from web UI or restart service");

@@ -11,6 +11,7 @@ mise set --age-encrypt --prompt ADMIN_USER_NAME
 mise set --age-encrypt --prompt ADMIN_USER_EMAIL
 mise set --age-encrypt --prompt PRIMARY_DOMAIN
 mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
+mise set --age-encrypt --prompt BAIKAL_ADMIN_PASSWORD
 mise set --age-encrypt --prompt RADICALE_PASSWORD
 mise set --age-encrypt --prompt WEBDAV_PASSWORD
 mise set --age-encrypt --prompt TAILSCALE_AUTHKEY
@@ -24,6 +25,7 @@ mise set --age-encrypt --prompt VIBECODER_HOST
 Already defined in `mise.toml` [env] section:
 
 - `DNS_DEFAULT_TTL` - DNS record TTL in seconds (default: 300)
+- `BAIKAL_SUBDOMAIN` - Subdomain for Baikal (default: calendrier)
 - `BLOCKY_SUBDOMAIN` - Subdomain for Blocky DNS (default: dns)
 - `CALIBRE_SUBDOMAIN` - Subdomain for Calibre (default: lire)
 - `FRESHRSS_SUBDOMAIN` - Subdomain for FreshRSS (default: rss)

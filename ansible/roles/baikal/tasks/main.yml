@@ -1,0 +1,109 @@
+- name: Install and Configure Baikal
+  block:
+    - name: Install PHP and dependencies via apt
+      ansible.builtin.apt:
+        name:
+          - php{{ baikal_php_version }}-fpm
+          - php{{ baikal_php_version }}-sqlite3
+          - php{{ baikal_php_version }}-xml
+          - php{{ baikal_php_version }}-curl
+          - php{{ baikal_php_version }}-mbstring
+          - unzip
+          - curl
+        update_cache: true
+
+    - name: Create baikal system user
+      ansible.builtin.user:
+        name: "{{ baikal_sys_user }}"
+        system: true
+        home: /
+        shell: /usr/sbin/nologin
+        createhome: false
+
+    - name: Create Baikal installation directory
+      ansible.builtin.file:
+        path: "{{ baikal_install_dir }}"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0755"
+
+    - name: Check if Baikal is already installed
+      ansible.builtin.stat:
+        path: "{{ baikal_install_dir }}/html/index.php"
+      register: baikal_installed
+
+    - name: Download Baikal release
+      when: not baikal_installed.stat.exists
+      ansible.builtin.get_url:
+        url: "{{ baikal_release_url }}"
+        dest: /tmp/baikal.zip
+        mode: "0644"
+
+    - name: Extract Baikal to installation directory
+      when: not baikal_installed.stat.exists
+      ansible.builtin.unarchive:
+        src: /tmp/baikal.zip
+        dest: "{{ baikal_install_dir }}"
+        remote_src: true
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        extra_opts:
+          - --strip-components=1
+
+    - name: Remove Baikal zip file
+      when: not baikal_installed.stat.exists
+      ansible.builtin.file:
+        path: /tmp/baikal.zip
+        state: absent
+
+    - name: Set proper permissions on Baikal directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0755"
+        recurse: true
+      loop:
+        - "{{ baikal_install_dir }}"
+        - "{{ baikal_data_dir }}"
+
+    - name: Ensure Specific directory is writable
+      ansible.builtin.file:
+        path: "{{ baikal_data_dir }}"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0750"
+
+    - name: Deploy PHP-FPM pool configuration
+      ansible.builtin.template:
+        src: templates/baikal-fpm.conf.j2
+        dest: /etc/php/{{ baikal_php_version }}/fpm/pool.d/baikal.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart php-fpm
+
+    - name: Remove default PHP-FPM pool if it exists
+      ansible.builtin.file:
+        path: /etc/php/{{ baikal_php_version }}/fpm/pool.d/www.conf
+        state: absent
+      notify: Restart php-fpm
+
+    - name: Copy Baikal Caddyfile to sites directory
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ baikal_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
+    - name: Enable and start PHP-FPM service
+      ansible.builtin.systemd_service:
+        name: php{{ baikal_php_version }}-fpm
+        enabled: true
+        state: started
+        daemon_reload: true

@@ -53,11 +53,11 @@ rust = "latest"
 "npm:docsify-cli" = "latest"
 
 [env]
+BAIKAL_SUBDOMAIN = "calendrier"
 BLOCKY_SUBDOMAIN = "dns"
 CALIBRE_SUBDOMAIN = "lire"
 FRESHRSS_SUBDOMAIN = "rss"
 NAVIDROME_SUBDOMAIN = "musique"
-RADICALE_SUBDOMAIN = "calendrier"
 WEBDAV_SUBDOMAIN = "webdav"
 YOURLS_SUBDOMAIN = "url"
 

@@ -42,7 +42,7 @@ Auberge just:
 
 Services are available at subdomains of your primary domain:
 
-- `https://cal.yourdomain.com` - Radicale (calendar/contacts)
+- `https://cal.yourdomain.com` - Baikal (calendar/contacts)
 - `https://rss.yourdomain.com` - FreshRSS
 - `https://musique.yourdomain.com` - Navidrome
 - `https://lire.yourdomain.com` - Calibre
