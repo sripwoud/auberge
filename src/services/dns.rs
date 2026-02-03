@@ -33,11 +33,11 @@ pub struct DnsService {
 }
 
 const KNOWN_APP_SUBDOMAINS: &[&str] = &[
+    "BAIKAL",
     "BLOCKY",
     "CALIBRE",
     "FRESHRSS",
     "NAVIDROME",
-    "RADICALE",
     "WEBDAV",
     "YOURLS",
 ];
