@@ -11,7 +11,7 @@ Example output:
 ```
 HOST            APP          TIMESTAMP            SIZE
 -----------------------------------------------------------------
-my-vps          radicale     2026-01-23_14-30-00  3.24 MB
+my-vps          baikal     2026-01-23_14-30-00  3.24 MB
 my-vps          freshrss     2026-01-23_14-30-01  39.57 MB
 my-vps          navidrome    2026-01-23_14-30-02  856.06 KB
 ```
@@ -20,7 +20,7 @@ my-vps          navidrome    2026-01-23_14-30-02  856.06 KB
 
 ```bash
 auberge backup list --host my-vps
-auberge backup list --app radicale
+auberge backup list --app baikal
 auberge backup list --host my-vps --app freshrss
 ```
 

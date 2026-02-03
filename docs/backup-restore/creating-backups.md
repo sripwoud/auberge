@@ -11,7 +11,7 @@ This creates a timestamped backup of all applications with their data and config
 ## Backup Specific Apps
 
 ```bash
-auberge backup create --host my-vps --apps radicale,freshrss
+auberge backup create --host my-vps --apps baikal,freshrss
 ```
 
 ## Include Music Files

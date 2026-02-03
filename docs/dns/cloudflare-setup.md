@@ -124,7 +124,7 @@ BLOCKY_SUBDOMAIN = "dns"
 CALIBRE_SUBDOMAIN = "lire"
 FRESHRSS_SUBDOMAIN = "rss"
 NAVIDROME_SUBDOMAIN = "musique"
-RADICALE_SUBDOMAIN = "calendrier"
+BAIKAL_SUBDOMAIN = "calendrier"
 WEBDAV_SUBDOMAIN = "webdav"
 YOURLS_SUBDOMAIN = "url"
 ```
@@ -135,7 +135,7 @@ YOURLS_SUBDOMAIN = "url"
 - `lire.example.com` (Calibre)
 - `rss.example.com` (FreshRSS)
 - `musique.example.com` (Navidrome)
-- `calendrier.example.com` (Radicale)
+- `calendrier.example.com` (Baikal)
 - `webdav.example.com` (WebDAV)
 - `url.example.com` (YOURLS)
 
@@ -145,14 +145,14 @@ Override defaults in `mise.toml`:
 
 ```toml
 [env]
-RADICALE_SUBDOMAIN = "cal"        # calendrier → cal
+BAIKAL_SUBDOMAIN = "cal"        # calendrier → cal
 NAVIDROME_SUBDOMAIN = "music"     # musique → music
 FRESHRSS_SUBDOMAIN = "feeds"      # rss → feeds
 ```
 
 **Result:**
 
-- `cal.example.com` (Radicale)
+- `cal.example.com` (Baikal)
 - `music.example.com` (Navidrome)
 - `feeds.example.com` (FreshRSS)
 

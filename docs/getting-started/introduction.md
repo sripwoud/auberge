@@ -37,7 +37,7 @@ After deployment, your VPS will be running:
 
 **Applications**:
 
-- Radicale (calendar/contacts)
+- Baikal (calendar/contacts)
 - FreshRSS (RSS reader)
 - Navidrome (music streaming)
 - Calibre (ebook library)

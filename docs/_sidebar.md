@@ -83,7 +83,7 @@
     - [WireGuard](applications/networking/wireguard.md)
     - [Tailscale](applications/networking/tailscale.md)
   - Apps
-    - [Radicale](applications/apps/radicale.md)
+    - [Baikal](applications/apps/baikal.md)
     - [FreshRSS](applications/apps/freshrss.md)
     - [Navidrome](applications/apps/navidrome.md)
     - [Calibre](applications/apps/calibre.md)

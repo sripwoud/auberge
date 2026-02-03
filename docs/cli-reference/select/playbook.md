@@ -76,7 +76,7 @@ Recognized playbooks:
 - bootstrap.yml
 - apps.yml
 - auberge.yml
-- Individual app playbooks (freshrss.yml, radicale.yml, etc.)
+- Individual app playbooks (freshrss.yml, baikal.yml, etc.)
 
 ## Use Cases
 

@@ -11,15 +11,15 @@ primary_domain: "{{ lookup('env', 'PRIMARY_DOMAIN') }}"
 dns_domain: "{{ lookup('env', 'PRIMARY_DOMAIN') }}"
 dns_default_ttl: "{{ lookup('env', 'DNS_DEFAULT_TTL') | int }}"
 
+baikal_subdomain: "{{ lookup('env', 'BAIKAL_SUBDOMAIN') }}"
 blocky_subdomain: "{{ lookup('env', 'BLOCKY_SUBDOMAIN') }}"
 calibre_subdomain: "{{ lookup('env', 'CALIBRE_SUBDOMAIN') }}"
 freshrss_subdomain: "{{ lookup('env', 'FRESHRSS_SUBDOMAIN') }}"
 navidrome_subdomain: "{{ lookup('env', 'NAVIDROME_SUBDOMAIN') }}"
-radicale_subdomain: "{{ lookup('env', 'RADICALE_SUBDOMAIN') }}"
 webdav_subdomain: "{{ lookup('env', 'WEBDAV_SUBDOMAIN') }}"
 yourls_subdomain: "{{ lookup('env', 'YOURLS_SUBDOMAIN') }}"
 
-radicale_password: "{{ lookup('env', 'RADICALE_PASSWORD') }}"
+baikal_admin_password: "{{ lookup('env', 'BAIKAL_ADMIN_PASSWORD') }}"
 webdav_password: "{{ lookup('env', 'WEBDAV_PASSWORD') }}"
 
 cloudflare_dns_api_token: "{{ lookup('env', 'CLOUDFLARE_DNS_API_TOKEN') }}"

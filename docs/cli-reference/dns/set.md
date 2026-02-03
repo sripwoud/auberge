@@ -33,7 +33,7 @@ If the record exists, it will be updated. If it doesn't exist, it will be create
 auberge dns set --subdomain freshrss --ip 192.168.1.10
 
 # Update existing record
-auberge dns set --subdomain radicale --ip 10.0.0.5
+auberge dns set --subdomain baikal --ip 10.0.0.5
 
 # Production API
 auberge dns set --subdomain calibre --ip 192.168.1.10 --production
@@ -94,7 +94,7 @@ auberge dns set --subdomain freshrss --ip 192.168.1.10
 **IP change after migration**:
 
 ```bash
-auberge dns set --subdomain radicale --ip 10.0.0.5
+auberge dns set --subdomain baikal --ip 10.0.0.5
 ```
 
 **Fix missing record**:
@@ -115,7 +115,7 @@ auberge dns set-all --host myserver
 Or script individual sets:
 
 ```bash
-for sub in freshrss radicale calibre; do
+for sub in freshrss baikal calibre; do
   auberge dns set --subdomain $sub --ip 192.168.1.10
 done
 ```

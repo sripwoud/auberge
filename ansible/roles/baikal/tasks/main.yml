@@ -1,0 +1,285 @@
+- name: Install and Configure Baikal
+  block:
+    - name: Install PHP and dependencies via apt
+      ansible.builtin.apt:
+        name:
+          - php
+          - php-fpm
+          - php-sqlite3
+          - php-xml
+          - php-curl
+          - php-mbstring
+          - php-yaml
+          - unzip
+          - curl
+          - sqlite3
+        state: present
+        update_cache: true
+
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: Detect installed PHP-FPM version
+      ansible.builtin.set_fact:
+        baikal_php_version: "{{ item.key | regex_replace('^php(\\d+\\.\\d+)-fpm$', '\\1') }}"
+      loop: "{{ ansible_facts.packages | dict2items }}"
+      when: item.key is match('^php\\d+\\.\\d+-fpm$')
+
+    - name: Create baikal system user
+      ansible.builtin.user:
+        name: "{{ baikal_sys_user }}"
+        system: true
+        home: /
+        shell: /usr/sbin/nologin
+        createhome: false
+
+    - name: Create Baikal installation directory
+      ansible.builtin.file:
+        path: "{{ baikal_install_dir }}"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0755"
+
+    - name: Check if Baikal is already installed
+      ansible.builtin.stat:
+        path: "{{ baikal_install_dir }}/html/index.php"
+      register: baikal_installed
+
+    - name: Get latest Baikal release info from GitHub API
+      when: not baikal_installed.stat.exists
+      ansible.builtin.uri:
+        url: https://api.github.com/repos/sabre-io/Baikal/releases/latest
+        return_content: true
+      register: baikal_release_info
+
+    - name: Extract download URL from release info
+      when: not baikal_installed.stat.exists
+      ansible.builtin.set_fact:
+        baikal_download_url: "{{ baikal_release_info.json.assets[0].browser_download_url }}"
+
+    - name: Download Baikal release
+      when: not baikal_installed.stat.exists
+      ansible.builtin.get_url:
+        url: "{{ baikal_download_url }}"
+        dest: /tmp/baikal.zip
+        mode: "0644"
+
+    - name: Extract and move Baikal files
+      when: not baikal_installed.stat.exists
+      ansible.builtin.shell: |
+        set -o pipefail
+        cd /tmp
+        unzip -q baikal.zip
+        BAIKAL_DIR=$(find . -maxdepth 1 -type d -name "baikal-*" -o -type d -name "Baikal-*" | head -1)
+        if [ -n "$BAIKAL_DIR" ]; then
+          mv "$BAIKAL_DIR"/* {{ baikal_install_dir }}/
+          rm -rf "$BAIKAL_DIR"
+        else
+          # If no subdirectory, files might be at root of zip
+          mv baikal/* {{ baikal_install_dir }}/ 2>/dev/null || true
+        fi
+        chown -R {{ baikal_sys_user }}:{{ baikal_sys_user }} {{ baikal_install_dir }}
+      args:
+        executable: /bin/bash
+        creates: "{{ baikal_install_dir }}/html/index.php"
+
+    - name: Remove Baikal zip file
+      when: not baikal_installed.stat.exists
+      ansible.builtin.file:
+        path: /tmp/baikal.zip
+        state: absent
+
+    - name: Set proper permissions on Baikal directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0755"
+        recurse: true
+      loop:
+        - "{{ baikal_install_dir }}"
+        - "{{ baikal_data_dir }}"
+
+    - name: Ensure Specific directory is writable
+      ansible.builtin.file:
+        path: "{{ baikal_data_dir }}"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0770"
+
+    - name: Deploy PHP-FPM pool configuration
+      ansible.builtin.template:
+        src: templates/baikal-fpm.conf.j2
+        dest: /etc/php/{{ baikal_php_version }}/fpm/pool.d/baikal.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart php-fpm
+
+    - name: Remove default PHP-FPM pool if it exists
+      ansible.builtin.file:
+        path: /etc/php/{{ baikal_php_version }}/fpm/pool.d/www.conf
+        state: absent
+      notify: Restart php-fpm
+
+    - name: Copy Baikal Caddyfile to sites directory
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ baikal_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
+    - name: Validate Baikal admin password is set
+      ansible.builtin.assert:
+        that:
+          - baikal_admin_password is defined
+          - baikal_admin_password | length > 0
+        fail_msg: |
+          BAIKAL_ADMIN_PASSWORD is not set or empty.
+          Ensure mise environment is activated or run with: mise x ansible-playbook ...
+        success_msg: "Baikal admin password is set"
+
+    - name: Generate Baikal admin web interface password hash
+      ansible.builtin.shell: |
+        set -o pipefail
+        printf '%s' "admin:BaikalDAV:${BAIKAL_PASSWORD}" | sha256sum | cut -d' ' -f1
+      environment:
+        BAIKAL_PASSWORD: "{{ baikal_admin_password }}"
+      args:
+        executable: /bin/bash
+      register: baikal_admin_web_hash_result
+      changed_when: false
+      no_log: true
+
+    - name: Generate Baikal DAV user password hash
+      ansible.builtin.shell: |
+        set -o pipefail
+        printf '%s' "${BAIKAL_USERNAME}:BaikalDAV:${BAIKAL_PASSWORD}" | md5sum | cut -d' ' -f1
+      environment:
+        BAIKAL_USERNAME: "{{ admin_user_name }}"
+        BAIKAL_PASSWORD: "{{ baikal_admin_password }}"
+      args:
+        executable: /bin/bash
+      register: baikal_dav_user_hash_result
+      changed_when: false
+      no_log: true
+
+    - name: Set password hash facts
+      ansible.builtin.set_fact:
+        baikal_admin_password_hash: "{{ baikal_admin_web_hash_result.stdout }}"
+        baikal_dav_user_password_hash: "{{ baikal_dav_user_hash_result.stdout }}"
+      no_log: true
+
+    - name: Generate encryption key
+      ansible.builtin.command: openssl rand -hex 16
+      register: baikal_encryption_key_result
+      changed_when: false
+
+    - name: Set encryption key fact
+      ansible.builtin.set_fact:
+        baikal_encryption_key: "{{ baikal_encryption_key_result.stdout }}"
+
+    - name: Ensure Baikal config directory exists
+      ansible.builtin.file:
+        path: "{{ baikal_install_dir }}/config"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0750"
+
+    - name: Deploy Baikal YAML configuration
+      ansible.builtin.template:
+        src: templates/baikal.yaml.j2
+        dest: "{{ baikal_install_dir }}/config/baikal.yaml"
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0644"
+
+    - name: Ensure database directory exists
+      ansible.builtin.file:
+        path: "{{ baikal_data_dir }}/db"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0770"
+
+    - name: Check if database is already initialized
+      ansible.builtin.stat:
+        path: "{{ baikal_data_dir }}/db/db.sqlite"
+      register: baikal_db_exists
+
+    - name: Initialize SQLite database schema
+      when: not baikal_db_exists.stat.exists
+      ansible.builtin.shell: |
+        set -o pipefail
+        sqlite3 {{ baikal_data_dir }}/db/db.sqlite < {{ baikal_install_dir }}/Core/Resources/Db/SQLite/db.sql
+        chown {{ baikal_sys_user }}:{{ baikal_sys_user }} {{ baikal_data_dir }}/db/db.sqlite
+        chmod 660 {{ baikal_data_dir }}/db/db.sqlite
+      args:
+        executable: /bin/bash
+        creates: "{{ baikal_data_dir }}/db/db.sqlite"
+
+    - name: Check if admin user exists in database
+      ansible.builtin.shell: |
+        set -o pipefail
+        sqlite3 {{ baikal_data_dir }}/db/db.sqlite \
+          "SELECT COUNT(*) FROM users WHERE username='{{ admin_user_name }}';"
+      args:
+        executable: /bin/bash
+      register: baikal_admin_exists
+      changed_when: false
+
+    - name: Insert admin user into database
+      when: baikal_admin_exists.stdout == "0"
+      ansible.builtin.shell: |
+        set -o pipefail
+        sqlite3 {{ baikal_data_dir }}/db/db.sqlite \
+          "INSERT INTO users (username, digesta1) VALUES ('{{ admin_user_name }}', '{{ baikal_dav_user_password_hash }}');"
+      args:
+        executable: /bin/bash
+      changed_when: true
+      no_log: true
+
+    - name: Check if admin principal exists in database
+      ansible.builtin.shell: |
+        set -o pipefail
+        sqlite3 {{ baikal_data_dir }}/db/db.sqlite \
+          "SELECT COUNT(*) FROM principals WHERE uri='principals/{{ admin_user_name }}';"
+      args:
+        executable: /bin/bash
+      register: baikal_principal_exists
+      changed_when: false
+
+    - name: Insert admin principal into database
+      when: baikal_principal_exists.stdout == "0"
+      ansible.builtin.shell: |
+        set -o pipefail
+        sqlite3 {{ baikal_data_dir }}/db/db.sqlite \
+          "INSERT INTO principals (uri, email, displayname) \
+          VALUES ('principals/{{ admin_user_name }}', '{{ admin_user_email }}', '{{ admin_user_name }}');"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Create INSTALL_DISABLED file
+      ansible.builtin.file:
+        path: "{{ baikal_data_dir }}/INSTALL_DISABLED"
+        state: touch
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Enable and restart PHP-FPM service
+      ansible.builtin.systemd_service:
+        name: php{{ baikal_php_version }}-fpm
+        enabled: true
+        state: restarted
+        daemon_reload: true

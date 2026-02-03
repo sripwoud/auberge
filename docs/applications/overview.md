@@ -20,14 +20,14 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 
 ## Apps
 
-| Application                    | Description                       |
-| ------------------------------ | --------------------------------- |
-| [Radicale](apps/radicale.md)   | Lightweight CalDAV/CardDAV server |
-| [FreshRSS](apps/freshrss.md)   | RSS feed aggregator               |
-| [Navidrome](apps/navidrome.md) | Music streaming server            |
-| [Calibre](apps/calibre.md)     | Ebook library management          |
-| [WebDAV](apps/webdav.md)       | File sharing and synchronization  |
-| [YOURLS](apps/yourls.md)       | URL shortener                     |
+| Application                    | Description                      |
+| ------------------------------ | -------------------------------- |
+| [Baikal](apps/baikal.md)       | CalDAV/CardDAV server            |
+| [FreshRSS](apps/freshrss.md)   | RSS feed aggregator              |
+| [Navidrome](apps/navidrome.md) | Music streaming server           |
+| [Calibre](apps/calibre.md)     | Ebook library management         |
+| [WebDAV](apps/webdav.md)       | File sharing and synchronization |
+| [YOURLS](apps/yourls.md)       | URL shortener                    |
 
 ## Deployment
 
@@ -38,7 +38,7 @@ All applications are deployed via Ansible playbooks. See [Running Playbooks](../
 auberge ansible run --playbook playbooks/apps.yml
 
 # Deploy specific app
-auberge ansible run --tags radicale
+auberge ansible run --tags baikal
 ```
 
 ## Backup Support

@@ -7,7 +7,7 @@ Detailed breakdown of each infrastructure layer, their components, dependencies,
 ```
 ┌─────────────────────────────────────────┐
 │  Layer 4: Applications (apps.yml)       │
-│  - Blocky, Radicale, FreshRSS, etc.     │
+│  - Blocky, Baikal, FreshRSS, etc.     │
 └─────────────────┬───────────────────────┘
                   │ depends on
 ┌─────────────────▼───────────────────────┐
@@ -296,11 +296,11 @@ Deploy self-hosted applications on top of infrastructure.
 
 #### Storage & Media
 
-**Radicale (CalDAV/CardDAV):**
+**Baikal (CalDAV/CardDAV):**
 
-- Port: 5232
-- Subdomain: `cal.{domain}`
-- Data: `/var/lib/radicale/`
+- Served via Caddy + PHP-FPM
+- Subdomain: `cal.{domain}` (or `BAIKAL_SUBDOMAIN`)
+- Data: `/opt/baikal/Specific`
 - Purpose: Calendar and contact sync
 
 **Navidrome (Music):**
@@ -511,7 +511,7 @@ auberge ansible run --tags infrastructure
 auberge ansible run --tags apps
 
 # Specific app
-auberge ansible run --tags radicale
+auberge ansible run --tags baikal
 
 # Multiple layers
 auberge ansible run --tags hardening,infrastructure

@@ -3,6 +3,8 @@
   hosts: vps
   become: true
   roles:
+    - role: baikal
+      tags: [apps, storage, caldav, baikal]
     - role: blocky
       tags: [apps, network, dns, blocky]
     - role: calibre
@@ -11,8 +13,6 @@
       tags: [apps, web, rss, freshrss]
     - role: navidrome
       tags: [apps, storage, media, music, navidrome]
-    - role: radicale
-      tags: [apps, storage, caldav, radicale]
     - role: webdav
       tags: [apps, storage, webdav]
     - role: wireguard

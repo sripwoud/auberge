@@ -15,7 +15,7 @@ Auberge: Rust CLI → Ansible → systemd services
 1. **Bootstrap** - Initial VPS setup (users, SSH, firewall)
 2. **Hardening** - Security (fail2ban, kernel hardening)
 3. **Infrastructure** - Core services (apt, bash, Caddy)
-4. **Applications** - Self-hosted apps (Radicale, FreshRSS, Navidrome, etc.)
+4. **Applications** - Self-hosted apps (Baikal, FreshRSS, Navidrome, etc.)
 
 ## Data Flow
 

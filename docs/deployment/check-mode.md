@@ -33,7 +33,7 @@ auberge ansible check --host auberge --playbook playbooks/apps.yml
 ### With Tags
 
 ```bash
-auberge ansible check --host auberge --tags radicale
+auberge ansible check --host auberge --tags baikal
 ```
 
 ### Forced (No Confirmation)
@@ -62,7 +62,7 @@ ok: [auberge]
 **changed (yellow):**
 
 ```
-TASK [radicale : Deploy Radicale config] ****
+TASK [baikal : Deploy Baikal config] ****
 changed: [auberge]
 ```
 
@@ -94,19 +94,19 @@ failed: [auberge]
 ### Example Output
 
 ```
-TASK [radicale : Install Radicale] ****
+TASK [baikal : Install Baikal] ****
 ok: [auberge]
 
-TASK [radicale : Deploy configuration] ****
+TASK [baikal : Deploy configuration] ****
 changed: [auberge]
 
-TASK [radicale : Create data directory] ****
+TASK [baikal : Create data directory] ****
 ok: [auberge]
 
-TASK [radicale : Deploy systemd service] ****
+TASK [baikal : Deploy systemd service] ****
 changed: [auberge]
 
-TASK [radicale : Start Radicale service] ****
+TASK [baikal : Start Baikal service] ****
 changed: [auberge]
 
 PLAY RECAP ****
@@ -168,7 +168,7 @@ Shows whether services would be:
 **Example:**
 
 ```
-TASK [radicale : Restart Radicale] ****
+TASK [baikal : Restart Baikal] ****
 changed: [auberge]
 ```
 
@@ -224,7 +224,7 @@ Some tasks check system state and conditionally execute:
 ```yaml
 - name: Reload service
   ansible.builtin.systemd:
-    name: radicale
+    name: baikal
     state: reloaded
   when: config_changed
 ```
@@ -306,13 +306,13 @@ Verify your changes would apply correctly:
 
 ```bash
 # Edit configuration
-vim ansible/roles/radicale/templates/config.j2
+vim ansible/roles/baikal/templates/config.j2
 
 # Check what would change
-auberge ansible check --host auberge --tags radicale
+auberge ansible check --host auberge --tags baikal
 
 # Review output, then apply
-auberge ansible run --host auberge --tags radicale
+auberge ansible run --host auberge --tags baikal
 ```
 
 ### Testing New Playbooks
@@ -346,21 +346,21 @@ Add `-v` flags for more detail:
 
 ```bash
 # Basic check
-auberge ansible check --host auberge --tags radicale
+auberge ansible check --host auberge --tags baikal
 
 # With verbosity (see file diffs)
-auberge ansible check --host auberge --tags radicale -v
+auberge ansible check --host auberge --tags baikal -v
 
 # More verbosity (see all task parameters)
-auberge ansible check --host auberge --tags radicale -vv
+auberge ansible check --host auberge --tags baikal -vv
 ```
 
 **Example output with `-v`:**
 
 ```
-TASK [radicale : Deploy config] ****
+TASK [baikal : Deploy config] ****
 changed: [auberge]
---- before: /etc/radicale/config
+--- before: /etc/baikal/config
 +++ after: /tmp/ansible-tmp-*/config.j2
 @@ -1,3 +1,3 @@
  [server]
@@ -444,7 +444,7 @@ auberge ansible run --host production --playbook playbooks/apps.yml
 
 ```bash
 # Check only what you're changing
-auberge ansible check --host auberge --tags radicale
+auberge ansible check --host auberge --tags baikal
 
 # Not necessary to check everything
 ```

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **(breaking)** Replace Radicale with Baikal as CalDAV/CardDAV backend
+  - New `baikal` Ansible role (PHP-FPM, Caddy, SQLite)
+  - Playbook `remove-radicale.yml` for migration with optional backup
+  - CLI backup/restore and DNS use `baikal` app; env: `BAIKAL_ADMIN_PASSWORD`, `BAIKAL_SUBDOMAIN`
+
 ## [0.2.0](https://github.com/sripwoud/auberge/compare/v0.1.4...v0.2.0) - 2026-01-26
 
 ### Added

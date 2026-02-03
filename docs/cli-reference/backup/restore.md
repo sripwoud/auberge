@@ -51,7 +51,7 @@ auberge backup restore latest
 auberge backup restore 2024-01-27_14-30-00 --host myserver
 
 # Restore specific apps only
-auberge backup restore latest --host myserver --apps radicale,freshrss
+auberge backup restore latest --host myserver --apps baikal,freshrss
 
 # Cross-host migration
 auberge backup restore latest --host newserver --from-host oldserver
@@ -110,7 +110,7 @@ Host: myserver
 Backup ID: 2024-01-27_14-30-00
 
 Apps to restore:
-  - radicale     from /path/to/backup/radicale
+  - baikal     from /path/to/backup/baikal
   - freshrss     from /path/to/backup/freshrss
   - navidrome    from /path/to/backup/navidrome
 
@@ -133,7 +133,7 @@ Target: newserver (192.168.1.20:22)
   Checking SSH connectivity...
     ✓ SSH connection successful
   Checking services on target...
-    ✓ radicale service exists
+    ✓ baikal service exists
     ✓ freshrss service exists
   Checking disk space...
     Available: 45.2 GB, Required: 24.1 GB (with 20% buffer)
@@ -157,10 +157,10 @@ Target host name: newserver
   Cross-host restore completed. Manual verification needed:
 
   1. Verify services are running:
-     ssh ansible@192.168.1.20 'systemctl status radicale freshrss'
+     ssh ansible@192.168.1.20 'systemctl status php*-fpm freshrss'
 
   2. Check service logs for errors:
-     ssh ansible@192.168.1.20 'journalctl -u radicale --since "5 minutes ago" | grep -i error'
+     ssh ansible@192.168.1.20 'journalctl -u php*-fpm --since "5 minutes ago" | grep -i error'
 
   3. Update DNS records if hostnames changed
 
@@ -184,15 +184,15 @@ auberge backup restore latest --host myserver --skip-playbook-unsafe
 If skipped, manually run:
 
 ```bash
-cd ansible && ansible-playbook playbooks/apps.yml --tags radicale,freshrss
+cd ansible && ansible-playbook playbooks/apps.yml --tags baikal,freshrss
 ```
 
 ## Troubleshooting
 
 **Services fail after restore**:
 
-- Check file ownership: `ls -la /var/lib/radicale`
-- Run playbooks manually: `ansible-playbook playbooks/apps.yml --tags radicale`
+- Check file ownership: `ls -la /var/lib/baikal`
+- Run playbooks manually: `ansible-playbook playbooks/apps.yml --tags baikal`
 
 **Cross-host restore validation fails**:
 

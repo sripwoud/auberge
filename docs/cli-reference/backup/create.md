@@ -25,7 +25,7 @@ auberge backup create [OPTIONS]
 auberge backup create
 
 # Specific apps
-auberge backup create --host myserver --apps radicale,freshrss
+auberge backup create --host myserver --apps baikal,freshrss
 
 # Include music (large)
 auberge backup create --host myserver --apps navidrome --include-music

@@ -24,7 +24,7 @@ auberge backup create --host my-vps --ssh-key /path/to/key
 
 ```bash
 # Deploy service first
-auberge ansible run --host my-vps --tags radicale
+auberge ansible run --host my-vps --tags baikal
 
 # Then backup
 auberge backup create --host my-vps
@@ -59,10 +59,10 @@ auberge backup create --host my-vps
 
 ```bash
 # Verify ansible user has sudo access
-ssh ansible@vps "sudo -n ls /var/lib/radicale"
+ssh ansible@vps "sudo -n ls /opt/baikal/Specific"
 
 # Re-run ansible to fix permissions
-auberge ansible run --host my-vps --tags radicale
+auberge ansible run --host my-vps --tags baikal
 ```
 
 ## Restore Fails
@@ -90,7 +90,7 @@ auberge backup create --host my-vps
 
 ```bash
 # Deploy service first
-auberge ansible run --host new-vps --tags radicale
+auberge ansible run --host new-vps --tags baikal
 
 # Then restore
 auberge backup restore latest --host new-vps
@@ -108,7 +108,7 @@ ssh ansible@vps "df -h"
 
 # Free up space or use larger VPS
 # Exclude large apps from restore
-auberge backup restore latest --host vps --apps radicale,freshrss
+auberge backup restore latest --host vps --apps baikal,freshrss
 ```
 
 ### Service won't start after restore
@@ -123,13 +123,13 @@ auberge backup restore latest --host vps --apps radicale,freshrss
 
 ```bash
 # Check service logs
-ssh ansible@vps "journalctl -u radicale -n 50"
+ssh ansible@vps "journalctl -u php*-fpm -n 50"
 
 # Re-run ansible to fix permissions/config
-auberge ansible run --host vps --tags radicale
+auberge ansible run --host vps --tags baikal
 
 # Restart service
-ssh ansible@vps "sudo systemctl restart radicale"
+ssh ansible@vps "sudo systemctl restart php*-fpm"
 ```
 
 ## Cross-Host Restore Issues
@@ -214,7 +214,7 @@ auberge backup create --host vps --include-music
 
 ```bash
 # Backup apps individually
-auberge backup create --host vps --apps radicale
+auberge backup create --host vps --apps baikal
 auberge backup create --host vps --apps freshrss
 ```
 
@@ -224,10 +224,10 @@ auberge backup create --host vps --apps freshrss
 
 ```bash
 # List backup directory
-ls -lah ~/.local/share/auberge/backups/my-vps/radicale/latest/
+ls -lah ~/.local/share/auberge/backups/my-vps/baikal/latest/
 
 # Check file count
-find ~/.local/share/auberge/backups/my-vps/radicale/latest/ -type f | wc -l
+find ~/.local/share/auberge/backups/my-vps/baikal/latest/ -type f | wc -l
 ```
 
 ### Compare backup to source

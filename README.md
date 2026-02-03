@@ -41,7 +41,7 @@ After deployment, your VPS will be running:
 
 - **Infrastructure**: Caddy (reverse proxy), fail2ban (intrusion prevention), UFW (firewall)
 - **Networking**: Blocky (DNS + ad-blocking), WireGuard, Tailscale
-- **Apps**: Radicale (calendar/contacts), FreshRSS (RSS reader), Navidrome (music), Calibre (books), WebDAV (file sharing), YOURLS (URL shortener)
+- **Apps**: Baikal (calendar/contacts), FreshRSS (RSS reader), Navidrome (music), Calibre (books), WebDAV (file sharing), YOURLS (URL shortener)
 
 ## Documentation
 

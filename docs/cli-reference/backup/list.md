@@ -34,7 +34,7 @@ auberge backup list
 auberge backup list --host myserver
 
 # Filter by application
-auberge backup list --app radicale
+auberge backup list --app baikal
 
 # Combine filters
 auberge backup list --host myserver --app freshrss
@@ -52,10 +52,10 @@ auberge backup list --format yaml
 
 ```
 HOST       APP        TIMESTAMP            SIZE
-myserver   radicale   2024-01-27_14-30-00  2.3 MB
+myserver   baikal   2024-01-27_14-30-00  2.3 MB
 myserver   freshrss   2024-01-27_14-30-00  15.7 MB
 myserver   navidrome  2024-01-27_14-30-00  45.2 KB
-devbox     radicale   2024-01-26_10-15-30  1.8 MB
+devbox     baikal   2024-01-26_10-15-30  1.8 MB
 
 Total: 4 backup(s)
 ```
@@ -66,9 +66,9 @@ Total: 4 backup(s)
 [
   {
     "host": "myserver",
-    "app": "radicale",
+    "app": "baikal",
     "timestamp": "2024-01-27_14-30-00",
-    "path": "/home/user/.local/share/auberge/backups/myserver/2024-01-27_14-30-00/radicale",
+    "path": "/home/user/.local/share/auberge/backups/myserver/2024-01-27_14-30-00/baikal",
     "size_bytes": 2411520
   }
 ]
@@ -78,9 +78,9 @@ Total: 4 backup(s)
 
 ```yaml
 - host: myserver
-  app: radicale
+  app: baikal
   timestamp: 2024-01-27_14-30-00
-  path: /home/user/.local/share/auberge/backups/myserver/2024-01-27_14-30-00/radicale
+  path: /home/user/.local/share/auberge/backups/myserver/2024-01-27_14-30-00/baikal
   size_bytes: 2411520
 ```
 
@@ -92,11 +92,11 @@ Backups are stored in timestamp-first structure:
 ~/.local/share/auberge/backups/
 └── myserver/
     ├── 2024-01-27_14-30-00/
-    │   ├── radicale/
+    │   ├── baikal/
     │   ├── freshrss/
     │   └── navidrome/
     └── 2024-01-26_10-15-30/
-        └── radicale/
+        └── baikal/
 ```
 
 ## Related Commands

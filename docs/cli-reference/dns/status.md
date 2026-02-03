@@ -41,14 +41,14 @@ CLOUDFLARE DNS
 DNS Status for example.com
 ----------------------------------------
 
-Configured subdomains: blocky, calibre, freshrss, navidrome, radicale, webdav, yourls
+Configured subdomains: blocky, calibre, freshrss, navidrome, baikal, webdav, yourls
 
 Active A records: 7
   blocky -> 192.168.1.10
   calibre -> 192.168.1.10
   freshrss -> 192.168.1.10
   navidrome -> 192.168.1.10
-  radicale -> 192.168.1.10
+  baikal -> 192.168.1.10
   webdav -> 192.168.1.10
   yourls -> 192.168.1.10
 
@@ -79,7 +79,7 @@ Configured subdomains are discovered from environment variables:
 - SUBDOMAIN_CALIBRE
 - SUBDOMAIN_FRESHRSS
 - SUBDOMAIN_NAVIDROME
-- SUBDOMAIN_RADICALE
+- SUBDOMAIN_BAIKAL
 - SUBDOMAIN_WEBDAV
 - SUBDOMAIN_YOURLS
 
@@ -87,7 +87,7 @@ Set with mise:
 
 ```bash
 mise set SUBDOMAIN_FRESHRSS="freshrss"
-mise set SUBDOMAIN_RADICALE="radicale"
+mise set SUBDOMAIN_BAIKAL="baikal"
 ```
 
 ## Use Cases

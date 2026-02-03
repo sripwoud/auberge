@@ -296,7 +296,7 @@ Don't decommission old VPS immediately:
 
 **Environment vars have:**
 
-- RADICALE_SUBDOMAIN=cal
+- BAIKAL_SUBDOMAIN=cal
 - FRESHRSS_SUBDOMAIN=rss
 
 **After `dns migrate --ip 10.0.0.1`:**

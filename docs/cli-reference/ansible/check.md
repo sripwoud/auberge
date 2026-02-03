@@ -50,13 +50,13 @@ Ansible check mode output indicates:
 Example output:
 
 ```
-TASK [radicale : Install radicale] ****************************
+TASK [baikal : Install baikal] ****************************
 changed: [myserver]  # Package would be installed
 
-TASK [radicale : Configure radicale] **************************
+TASK [baikal : Configure baikal] **************************
 ok: [myserver]  # Configuration already correct
 
-TASK [radicale : Restart service] *****************************
+TASK [baikal : Restart service] *****************************
 skipped: [myserver]  # Conditional not met
 ```
 

@@ -47,7 +47,7 @@ impl SecretsManager {
             "ADMIN_USER_EMAIL",
             "PRIMARY_DOMAIN",
             "CLOUDFLARE_DNS_API_TOKEN",
-            "RADICALE_PASSWORD",
+            "BAIKAL_ADMIN_PASSWORD",
             "WEBDAV_PASSWORD",
             "TAILSCALE_AUTHKEY",
             "SSH_PORT",

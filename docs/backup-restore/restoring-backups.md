@@ -17,7 +17,7 @@ auberge backup restore 2026-01-23_14-30-00 --host my-vps
 Restore only specific apps:
 
 ```bash
-auberge backup restore latest --host my-vps --apps radicale,freshrss
+auberge backup restore latest --host my-vps --apps baikal,freshrss
 ```
 
 Dry run to preview:
