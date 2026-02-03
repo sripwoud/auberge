@@ -136,7 +136,7 @@
     - name: Generate Baikal admin password hash
       ansible.builtin.shell: |
         set -o pipefail
-        echo -n "{{ admin_user_name }}:BaikalDAV:{{ baikal_admin_password }}" | md5sum | cut -d' ' -f1
+        echo -n "admin:BaikalDAV:{{ baikal_admin_password }}" | md5sum | cut -d' ' -f1
       args:
         executable: /bin/bash
       register: baikal_password_hash_result
