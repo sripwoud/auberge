@@ -148,6 +148,15 @@
         baikal_admin_password_hash: "{{ baikal_password_hash_result.stdout }}"
       no_log: true
 
+    - name: Generate encryption key
+      ansible.builtin.command: openssl rand -hex 16
+      register: baikal_encryption_key_result
+      changed_when: false
+
+    - name: Set encryption key fact
+      ansible.builtin.set_fact:
+        baikal_encryption_key: "{{ baikal_encryption_key_result.stdout }}"
+
     - name: Ensure Baikal config directory exists
       ansible.builtin.file:
         path: "{{ baikal_install_dir }}/config"

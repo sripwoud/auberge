@@ -13,5 +13,6 @@ system:
   base_uri: ''
 
 database:
-  sqlite:
-    file: Specific/db/db.sqlite
+  backend: 'sqlite'
+  sqlite_file: "Specific/db/db.sqlite"
+  encryption_key: {{ baikal_encryption_key }}
