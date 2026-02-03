@@ -64,39 +64,29 @@
         dest: /tmp/baikal.zip
         mode: "0644"
 
-    - name: Extract Baikal to temporary directory
-      when: not baikal_installed.stat.exists
-      ansible.builtin.unarchive:
-        src: /tmp/baikal.zip
-        dest: /tmp
-        remote_src: true
-
-    - name: Find extracted Baikal directory
-      when: not baikal_installed.stat.exists
-      ansible.builtin.find:
-        paths: /tmp
-        patterns: "baikal-*"
-        file_type: directory
-      register: baikal_extracted_dir
-
-    - name: Move Baikal files to installation directory
+    - name: Extract and move Baikal files
       when: not baikal_installed.stat.exists
       ansible.builtin.shell: |
-        mv {{ baikal_extracted_dir.files[0].path }}/* {{ baikal_install_dir }}/
+        set -o pipefail
+        cd /tmp
+        unzip -q baikal.zip
+        BAIKAL_DIR=$(find . -maxdepth 1 -type d -name "baikal-*" -o -type d -name "Baikal-*" | head -1)
+        if [ -n "$BAIKAL_DIR" ]; then
+          mv "$BAIKAL_DIR"/* {{ baikal_install_dir }}/
+          rm -rf "$BAIKAL_DIR"
+        else
+          # If no subdirectory, files might be at root of zip
+          mv baikal/* {{ baikal_install_dir }}/ 2>/dev/null || true
+        fi
         chown -R {{ baikal_sys_user }}:{{ baikal_sys_user }} {{ baikal_install_dir }}
       args:
+        executable: /bin/bash
         creates: "{{ baikal_install_dir }}/html/index.php"
 
     - name: Remove Baikal zip file
       when: not baikal_installed.stat.exists
       ansible.builtin.file:
         path: /tmp/baikal.zip
-        state: absent
-
-    - name: Remove extracted Baikal temp directory
-      when: not baikal_installed.stat.exists and baikal_extracted_dir.files | length > 0
-      ansible.builtin.file:
-        path: "{{ baikal_extracted_dir.files[0].path }}"
         state: absent
 
     - name: Set proper permissions on Baikal directories
