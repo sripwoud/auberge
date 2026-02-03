@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/sripwoud/auberge/compare/v0.2.0...v0.3.0) - 2026-02-03
+
+### Added
+
+- [**breaking**] replace Radicale with Baikal for CalDAV/CardDAV ([#50](https://github.com/sripwoud/auberge/pull/50))
+
+### Other
+
+- fix release_commits regex
+- restructure documentation with `docsify` ([#48](https://github.com/sripwoud/auberge/pull/48))
+- Create CNAME
+- streamline README and link to documentation site
+
 ### Added
 
 - **(breaking)** Replace Radicale with Baikal as CalDAV/CardDAV backend
