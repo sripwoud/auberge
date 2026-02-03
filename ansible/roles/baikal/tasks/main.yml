@@ -133,6 +133,46 @@
         mode: "0644"
       notify: Restart caddy
 
+    - name: Generate Baikal admin password hash
+      ansible.builtin.shell: |
+        set -o pipefail
+        echo -n "admin:BaikalDAV:{{ baikal_admin_password }}" | md5sum | cut -d' ' -f1
+      args:
+        executable: /bin/bash
+      register: baikal_password_hash_result
+      changed_when: false
+      no_log: true
+
+    - name: Set password hash fact
+      ansible.builtin.set_fact:
+        baikal_admin_password_hash: "{{ baikal_password_hash_result.stdout }}"
+      no_log: true
+
+    - name: Generate encryption key
+      ansible.builtin.command: openssl rand -hex 16
+      register: baikal_encryption_key_result
+      changed_when: false
+
+    - name: Set encryption key fact
+      ansible.builtin.set_fact:
+        baikal_encryption_key: "{{ baikal_encryption_key_result.stdout }}"
+
+    - name: Deploy Baikal configuration
+      ansible.builtin.template:
+        src: templates/config.php.j2
+        dest: "{{ baikal_data_dir }}/config.php"
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0640"
+
+    - name: Deploy Baikal system configuration
+      ansible.builtin.template:
+        src: templates/config.system.php.j2
+        dest: "{{ baikal_data_dir }}/config.system.php"
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0640"
+
     - name: Enable and restart PHP-FPM service
       ansible.builtin.systemd_service:
         name: php{{ baikal_php_version }}-fpm
