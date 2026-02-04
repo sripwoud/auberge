@@ -56,6 +56,7 @@
 
 - name: Verify openclaw binary in PATH
   ansible.builtin.command: which openclaw
+  become_user: "{{ openclaw_user }}"
   register: openclaw_which_result
   changed_when: false
   failed_when: openclaw_which_result.rc != 0
