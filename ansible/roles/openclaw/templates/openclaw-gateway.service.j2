@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 WorkingDirectory={{ openclaw_config_dir }}
 EnvironmentFile={{ openclaw_config_dir }}/.env
-Environment="PATH={{ ansible_env.PATH }}:{{ ansible_env.HOME }}/.npm-global/bin"
+Environment="PATH=/usr/local/bin:/usr/bin:/bin:%h/.npm-global/bin"
 ExecStart=openclaw gateway --bind {{ openclaw_gateway_bind }} --port {{ openclaw_gateway_port }}
 Restart=always
 RestartSec=10
