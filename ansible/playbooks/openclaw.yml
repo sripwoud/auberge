@@ -4,30 +4,34 @@
   become: true
 
   pre_tasks:
-    - name: Verify Tailscale is installed and authenticated
-      ansible.builtin.shell: |
-        set -o pipefail
-        tailscale status --json | jq -r '.BackendState'
-      register: tailscale_backend_state
+    - name: Get Tailscale status as JSON
+      ansible.builtin.command: tailscale status --json
+      register: tailscale_status_raw
       changed_when: false
       failed_when: false
 
-    - name: Get Tailscale IP
-      ansible.builtin.shell: |
-        set -o pipefail
-        tailscale status --json | jq -r '.Self.TailscaleIPs[0]'
-      register: tailscale_ip_result
-      when: tailscale_backend_state.rc == 0 and tailscale_backend_state.stdout == "Running"
+    - name: Parse Tailscale status JSON
+      ansible.builtin.set_fact:
+        tailscale_status: "{{ tailscale_status_raw.stdout | from_json }}"
+      when: tailscale_status_raw.rc == 0
+      changed_when: false
+
+    - name: Extract Tailscale backend state
+      ansible.builtin.set_fact:
+        tailscale_backend_state: "{{ tailscale_status.BackendState | default('') }}"
+      when: tailscale_status is defined
       changed_when: false
 
     - name: Set Tailscale IP fact
       ansible.builtin.set_fact:
-        tailscale_ip: "{{ tailscale_ip_result.stdout }}"
+        tailscale_ip: "{{ tailscale_status.Self.TailscaleIPs[0] }}"
       when:
-        - tailscale_backend_state.rc == 0
-        - tailscale_backend_state.stdout == "Running"
-        - tailscale_ip_result.stdout is defined
-        - tailscale_ip_result.stdout != "null"
+        - tailscale_status_raw.rc == 0
+        - tailscale_backend_state == "Running"
+        - tailscale_status.Self is defined
+        - tailscale_status.Self.TailscaleIPs is defined
+        - tailscale_status.Self.TailscaleIPs | length > 0
+      changed_when: false
 
     - name: Display Tailscale IP
       ansible.builtin.debug:
