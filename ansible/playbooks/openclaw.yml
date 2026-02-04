@@ -4,16 +4,30 @@
   become: true
 
   pre_tasks:
-    - name: Verify Tailscale is installed
-      ansible.builtin.command: tailscale status --json
-      register: tailscale_status
+    - name: Verify Tailscale is installed and authenticated
+      ansible.builtin.shell: |
+        set -o pipefail
+        tailscale status --json | jq -r '.BackendState'
+      register: tailscale_backend_state
       changed_when: false
       failed_when: false
 
-    - name: Parse Tailscale IP
+    - name: Get Tailscale IP
+      ansible.builtin.shell: |
+        set -o pipefail
+        tailscale status --json | jq -r '.Self.TailscaleIPs[0]'
+      register: tailscale_ip_result
+      when: tailscale_backend_state.rc == 0 and tailscale_backend_state.stdout == "Running"
+      changed_when: false
+
+    - name: Set Tailscale IP fact
       ansible.builtin.set_fact:
-        tailscale_ip: "{{ (tailscale_status.stdout | from_json).Self.TailscaleIPs[0] }}"
-      when: tailscale_status.rc == 0
+        tailscale_ip: "{{ tailscale_ip_result.stdout }}"
+      when:
+        - tailscale_backend_state.rc == 0
+        - tailscale_backend_state.stdout == "Running"
+        - tailscale_ip_result.stdout is defined
+        - tailscale_ip_result.stdout != "null"
 
     - name: Display Tailscale IP
       ansible.builtin.debug:
@@ -22,8 +36,8 @@
 
     - name: Warn if Tailscale not found
       ansible.builtin.debug:
-        msg: "WARNING: Tailscale not found. OpenClaw will bind to localhost only."
-      when: tailscale_status.rc != 0
+        msg: "WARNING: Tailscale not running or not authenticated. OpenClaw will bind to localhost only."
+      when: tailscale_ip is not defined
 
   roles:
     - role: openclaw

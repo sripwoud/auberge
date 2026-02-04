@@ -15,7 +15,10 @@ Your Laptop (Web UI access via Tailscale)
 ## Prerequisites
 
 1. **Bootstrap layer** must be run first (users, SSH, firewall)
-2. **Infrastructure layer** must include Tailscale (`infrastructure.yml`)
+2. **Infrastructure layer** must be run with Tailscale enabled
+   - Tailscale is installed via `infrastructure.yml` playbook
+   - Provides secure VPN mesh network for accessing OpenClaw gateway
+   - OpenClaw gateway binds to Tailscale IP (not public internet)
 3. **Environment variables** must be set (see Configuration below)
 
 ## Configuration
@@ -55,7 +58,7 @@ openssl rand -hex 32
 ### Deploy OpenClaw Only
 
 ```bash
-cd /home/sripwoud/code/auberge
+cd /path/to/auberge
 ansible-playbook ansible/playbooks/openclaw.yml -i ansible/inventory.yml
 ```
 
@@ -275,14 +278,14 @@ Check for:
 
 ```bash
 ssh user@your-vps
-pnpm update -g openclaw
+npm update -g openclaw
 systemctl --user restart openclaw-gateway
 ```
 
 ### Update via Ansible
 
 ```bash
-cd /home/sripwoud/code/auberge
+cd /path/to/auberge
 ansible-playbook ansible/playbooks/openclaw.yml -i ansible/inventory.yml
 ```
 
@@ -299,7 +302,7 @@ systemctl --user disable openclaw-gateway
 ### Uninstall OpenClaw
 
 ```bash
-pnpm uninstall -g openclaw
+npm uninstall -g openclaw
 rm -rf ~/.openclaw
 rm ~/.config/systemd/user/openclaw-gateway.service
 systemctl --user daemon-reload

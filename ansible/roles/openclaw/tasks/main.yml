@@ -26,12 +26,6 @@
   ansible.builtin.debug:
     msg: "Node.js version: {{ openclaw_node_version_output.stdout }}"
 
-- name: Install pnpm globally
-  community.general.npm:
-    name: pnpm
-    global: true
-    state: present
-
 - name: Create systemd user directory
   ansible.builtin.file:
     path: "{{ openclaw_home }}/.config/systemd/user"
@@ -52,14 +46,16 @@
     - "{{ openclaw_workspace_dir }}"
 
 - name: Install OpenClaw globally
-  become: true
-  become_user: "{{ openclaw_user }}"
   community.general.npm:
     name: "openclaw@{{ openclaw_version }}"
     global: true
     state: present
-  environment:
-    HOME: "{{ openclaw_home }}"
+
+- name: Verify openclaw binary in PATH
+  ansible.builtin.command: which openclaw
+  register: openclaw_which_result
+  changed_when: false
+  failed_when: openclaw_which_result.rc != 0
 
 - name: Deploy environment file for OpenClaw
   ansible.builtin.template:
