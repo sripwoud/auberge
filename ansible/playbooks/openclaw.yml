@@ -1,0 +1,56 @@
+---
+- name: Deploy OpenClaw Personal AI Assistant
+  hosts: vps
+  become: true
+
+  pre_tasks:
+    - name: Verify Tailscale is installed
+      ansible.builtin.command: tailscale status --json
+      register: tailscale_status
+      changed_when: false
+      failed_when: false
+
+    - name: Parse Tailscale IP
+      ansible.builtin.set_fact:
+        tailscale_ip: "{{ (tailscale_status.stdout | from_json).Self.TailscaleIPs[0] }}"
+      when: tailscale_status.rc == 0
+
+    - name: Display Tailscale IP
+      ansible.builtin.debug:
+        msg: "OpenClaw will bind to Tailscale IP: {{ tailscale_ip }}"
+      when: tailscale_ip is defined
+
+    - name: Warn if Tailscale not found
+      ansible.builtin.debug:
+        msg: "WARNING: Tailscale not found. OpenClaw will bind to localhost only."
+      when: tailscale_status.rc != 0
+
+  roles:
+    - role: openclaw
+      tags: [openclaw]
+
+  post_tasks:
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg:
+          - "==================================="
+          - "OpenClaw Deployment Complete!"
+          - "==================================="
+          - "Gateway Bind: {{ openclaw_gateway_bind }}"
+          - "Gateway Port: {{ openclaw_gateway_port }}"
+          - "Bridge Port: {{ openclaw_bridge_port }}"
+          - "Config Dir: {{ openclaw_config_dir }}"
+          - "Workspace: {{ openclaw_workspace_dir }}"
+          - ""
+          - "Next steps:"
+          - "1. Check service: systemctl --user status openclaw-gateway"
+          - "2. View logs: journalctl --user -u openclaw-gateway -f"
+          - "3. SSH to VPS: ssh {{ openclaw_user }}@{{ inventory_hostname }}"
+          - "4. Run onboarding: openclaw onboard"
+          - "5. Connect channels (WhatsApp/Telegram/etc)"
+          - ""
+          - "Web UI access:"
+          - "{% if tailscale_ip is defined %}http://{{ tailscale_ip }}:{{ openclaw_gateway_port }}{% else %}SSH tunnel required{% endif %}"
+          - ""
+          - "Install Tailscale on laptop:"
+          - "https://tailscale.com/download"

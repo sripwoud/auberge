@@ -1,0 +1,20 @@
+[Unit]
+Description=OpenClaw Gateway - Personal AI Assistant
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ openclaw_config_dir }}
+EnvironmentFile={{ openclaw_config_dir }}/.env
+ExecStart=/usr/bin/openclaw gateway --bind {{ openclaw_gateway_bind }} --port {{ openclaw_gateway_port }}
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
