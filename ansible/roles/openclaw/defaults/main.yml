@@ -1,7 +1,7 @@
 ---
 openclaw_version: latest
-openclaw_user: "{{ ansible_user | default(ansible_ssh_user) }}"
-openclaw_group: "{{ ansible_user | default(ansible_ssh_user) }}"
+openclaw_user: "{{ admin_user_name | default(ansible_user | default(ansible_ssh_user)) }}"
+openclaw_group: "{{ admin_user_name | default(ansible_user | default(ansible_ssh_user)) }}"
 openclaw_home: "/home/{{ openclaw_user }}"
 openclaw_config_dir: "{{ openclaw_home }}/.openclaw"
 openclaw_workspace_dir: "{{ openclaw_config_dir }}/workspace"
