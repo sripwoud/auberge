@@ -7,7 +7,10 @@
 
 - name: Add NodeSource APT repository
   ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ openclaw_node_version }}.x {{ ansible_distribution_release | lower }} main"
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/nodesource.gpg]
+      https://deb.nodesource.com/node_{{ openclaw_node_version }}.x
+      {{ ansible_distribution_release | lower }} main
     filename: "nodesource"
     state: present
 
