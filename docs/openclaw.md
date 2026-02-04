@@ -25,19 +25,18 @@ Your Laptop (Web UI access via Tailscale)
 
 ### Required Environment Variables
 
-Add to `mise.toml` in auberge root:
+Set using age-encrypted secrets (see [Secrets Management](configuration/secrets.md)):
 
-```toml
-[env]
-OPENCLAW_GATEWAY_TOKEN = "generate-secure-token-here"
-CLAUDE_AI_SESSION_KEY = "sk-ant-..."
+```bash
+mise set --age-encrypt --prompt OPENCLAW_GATEWAY_TOKEN
+mise set --age-encrypt --prompt CLAUDE_AI_SESSION_KEY
 ```
 
 Optional variables:
 
-```toml
-CLAUDE_WEB_SESSION_KEY = "..."
-CLAUDE_WEB_COOKIE = "..."
+```bash
+mise set --age-encrypt --prompt CLAUDE_WEB_SESSION_KEY
+mise set --age-encrypt --prompt CLAUDE_WEB_COOKIE
 ```
 
 ### Generate Gateway Token
@@ -225,10 +224,10 @@ openclaw doctor
 
 ### Secret Management
 
-- Environment variables via mise.toml
-- Never commit .env files
+- Environment variables via age-encrypted mise secrets
+- Never commit plaintext secrets
 - Rotate tokens regularly
-- Use strong gateway token
+- Use strong gateway token (generate with `openssl rand -hex 32`)
 
 ## Troubleshooting
 
