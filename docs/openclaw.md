@@ -58,22 +58,25 @@ openssl rand -hex 32
 ### Deploy OpenClaw Only
 
 ```bash
-cd /path/to/auberge
-ansible-playbook ansible/playbooks/openclaw.yml -i ansible/inventory.yml
+auberge ansible run --tags openclaw
 ```
 
 ### Deploy with Other Layers
 
 ```bash
-ansible-playbook ansible/playbooks/bootstrap.yml -i ansible/inventory.yml
-ansible-playbook ansible/playbooks/infrastructure.yml -i ansible/inventory.yml
-ansible-playbook ansible/playbooks/openclaw.yml -i ansible/inventory.yml
+auberge ansible run --tags bootstrap,infrastructure,openclaw
+```
+
+Or run full deployment:
+
+```bash
+auberge ansible run
 ```
 
 ### Check Mode (Dry Run)
 
 ```bash
-ansible-playbook ansible/playbooks/openclaw.yml -i ansible/inventory.yml --check
+auberge ansible run --tags openclaw --check
 ```
 
 ## Post-Deployment Setup
@@ -285,8 +288,7 @@ systemctl --user restart openclaw-gateway
 ### Update via Ansible
 
 ```bash
-cd /path/to/auberge
-ansible-playbook ansible/playbooks/openclaw.yml -i ansible/inventory.yml
+auberge ansible run --tags openclaw
 ```
 
 ## Removal
