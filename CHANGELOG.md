@@ -12,12 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - [**breaking**] replace Radicale with Baikal for CalDAV/CardDAV ([#50](https://github.com/sripwoud/auberge/pull/50))
-- OpenClaw ansible role for deploying personal AI assistant
-  - Installs Node.js 22 with npm for OpenClaw package management
-  - Creates systemd user service with security hardening (NoNewPrivileges, PrivateTmp)
-  - Binds gateway to Tailscale VPN IP for secure web UI access (no public internet exposure)
-  - Supports WhatsApp, Telegram, Slack, Discord integrations via outbound API connections
-  - Environment-based secret management via mise.toml configuration
 
 ### Other
 
