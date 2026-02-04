@@ -57,6 +57,18 @@
   changed_when: false
   failed_when: openclaw_which_result.rc != 0
 
+- name: Validate required OpenClaw environment variables
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_token is defined
+      - openclaw_gateway_token | length > 0
+      - openclaw_claude_ai_session_key is defined
+      - openclaw_claude_ai_session_key | length > 0
+    fail_msg: |
+      OPENCLAW_GATEWAY_TOKEN and CLAUDE_AI_SESSION_KEY must be set and non-empty.
+      Ensure mise environment is activated or run with: mise x ansible-playbook ...
+    success_msg: "Required OpenClaw environment variables are set"
+
 - name: Deploy environment file for OpenClaw
   ansible.builtin.template:
     src: env.j2
@@ -65,6 +77,7 @@
     group: "{{ openclaw_group }}"
     mode: "0600"
   notify: Restart openclaw gateway
+  no_log: true
 
 - name: Deploy OpenClaw gateway systemd service
   ansible.builtin.template:
