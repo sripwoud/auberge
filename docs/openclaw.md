@@ -220,7 +220,7 @@ openclaw doctor
 22/tcp    ALLOW  # SSH
 41641/udp ALLOW  # Tailscale
 18789/tcp DENY   # OpenClaw gateway (Tailscale-only)
-18790/tcp DENY   # OpenClaw bridge (Tailscale-only)
+18790/tcp DENY   # Reserved for future OpenClaw bridge (currently unused)
 ```
 
 ### Secret Management
