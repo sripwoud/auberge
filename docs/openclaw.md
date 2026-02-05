@@ -47,7 +47,7 @@ openssl rand -hex 32
 
 ### Get Claude AI Session Key
 
-1. Login to https://claude.ai
+1. Log in to https://claude.ai
 2. Open browser DevTools (F12)
 3. Go to Application → Cookies
 4. Copy `sessionKey` value
