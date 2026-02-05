@@ -49,6 +49,8 @@ pub enum AnsibleCommands {
         port: u16,
         #[arg(long, help = "IP address (required with --force)")]
         ip: Option<String>,
+        #[arg(long, help = "Bootstrap user (overrides inventory setting)")]
+        user: Option<String>,
         #[arg(
             short = 'f',
             long,
@@ -279,6 +281,7 @@ pub fn run_ansible_bootstrap(
     host_name: String,
     port: u16,
     ip: Option<String>,
+    user: Option<String>,
     force: bool,
 ) -> Result<()> {
     let host = get_host(&host_name, None)?;
@@ -303,16 +306,18 @@ pub fn run_ansible_bootstrap(
         (None, false) => prompt_for_ip(&host_name)?,
     };
 
+    let bootstrap_user = user.as_deref().unwrap_or(&host.vars.bootstrap_user);
+
     output::info(&format!(
         "Bootstrapping {} ({}) as {}",
-        host_name, host_ip, host.vars.bootstrap_user
+        host_name, host_ip, bootstrap_user
     ));
 
     let result = run_bootstrap(
         &bootstrap_playbook,
         &host_name,
         &host_ip,
-        &host.vars.bootstrap_user,
+        bootstrap_user,
         port,
     )?;
 

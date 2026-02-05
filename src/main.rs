@@ -118,8 +118,9 @@ async fn main() -> Result<()> {
                 host,
                 port,
                 ip,
+                user,
                 force,
-            } => run_ansible_bootstrap(host, port, ip, force),
+            } => run_ansible_bootstrap(host, port, ip, user, force),
         },
         Commands::Backup(cmd) => match cmd {
             BackupCommands::Create {
