@@ -42,6 +42,21 @@
     msg: "WARNING: Tailscale not running or not authenticated. OpenClaw will bind to localhost only."
   when: openclaw_tailscale_ip is not defined
 
+- name: Get user UID
+  ansible.builtin.command: id -u {{ openclaw_user }}
+  register: openclaw_user_uid
+  changed_when: false
+
+- name: Check if linger is already enabled for user
+  ansible.builtin.stat:
+    path: "/var/lib/systemd/linger/{{ openclaw_user }}"
+  register: openclaw_linger_file
+
+- name: Enable linger for user
+  ansible.builtin.command: loginctl enable-linger {{ openclaw_user }}
+  when: not openclaw_linger_file.stat.exists
+  changed_when: true
+
 - name: Add NodeSource APT repository key
   ansible.builtin.get_url:
     url: "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
@@ -135,20 +150,6 @@
     group: "{{ openclaw_group }}"
     mode: "0644"
   notify: Reload systemd user
-
-- name: Get user UID
-  ansible.builtin.command: id -u {{ openclaw_user }}
-  register: openclaw_user_uid
-  changed_when: false
-
-- name: Check if linger is already enabled for user
-  ansible.builtin.stat:
-    path: "/var/lib/systemd/linger/{{ openclaw_user }}"
-  register: openclaw_linger_file
-
-- name: Enable linger for user
-  ansible.builtin.command: loginctl enable-linger {{ openclaw_user }}
-  when: not openclaw_linger_file.stat.exists
 
 - name: Enable and start OpenClaw gateway service
   become: true
