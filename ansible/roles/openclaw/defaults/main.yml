@@ -8,7 +8,7 @@ openclaw_workspace_dir: "{{ openclaw_config_dir }}/workspace"
 
 openclaw_gateway_port: 18789
 openclaw_bridge_port: 18790
-openclaw_gateway_bind: "{{ tailscale_ip | default('localhost') }}"
+openclaw_gateway_bind: "{{ openclaw_tailscale_ip | default('localhost') }}"
 
 openclaw_gateway_token: "{{ lookup('env', 'OPENCLAW_GATEWAY_TOKEN') }}"
 openclaw_claude_ai_session_key: "{{ lookup('env', 'CLAUDE_AI_SESSION_KEY') }}"

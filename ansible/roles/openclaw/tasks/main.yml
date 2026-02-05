@@ -1,4 +1,47 @@
 ---
+- name: Get Tailscale status as JSON
+  ansible.builtin.command: tailscale status --json
+  register: openclaw_tailscale_status_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse Tailscale status JSON
+  ansible.builtin.set_fact:
+    openclaw_tailscale_status: "{{ openclaw_tailscale_status_raw.stdout | from_json }}"
+  when: openclaw_tailscale_status_raw.rc == 0
+  changed_when: false
+
+- name: Extract Tailscale backend state
+  ansible.builtin.set_fact:
+    openclaw_tailscale_backend_state: "{{ openclaw_tailscale_status.BackendState | default('') }}"
+  when: openclaw_tailscale_status is defined
+  changed_when: false
+
+- name: Set Tailscale IP fact
+  ansible.builtin.set_fact:
+    openclaw_tailscale_ip: "{{ openclaw_tailscale_status.Self.TailscaleIPs[0] }}"
+  when:
+    - openclaw_tailscale_status_raw.rc == 0
+    - openclaw_tailscale_backend_state == "Running"
+    - openclaw_tailscale_status.Self is defined
+    - openclaw_tailscale_status.Self.TailscaleIPs is defined
+    - openclaw_tailscale_status.Self.TailscaleIPs | length > 0
+  changed_when: false
+
+- name: Set gateway bind address
+  ansible.builtin.set_fact:
+    openclaw_gateway_bind: "{{ openclaw_tailscale_ip | default('127.0.0.1') }}"
+
+- name: Display Tailscale IP
+  ansible.builtin.debug:
+    msg: "OpenClaw will bind to Tailscale IP: {{ openclaw_tailscale_ip }}"
+  when: openclaw_tailscale_ip is defined
+
+- name: Warn if Tailscale not found
+  ansible.builtin.debug:
+    msg: "WARNING: Tailscale not running or not authenticated. OpenClaw will bind to localhost only."
+  when: openclaw_tailscale_ip is not defined
+
 - name: Add NodeSource APT repository key
   ansible.builtin.get_url:
     url: "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
@@ -56,6 +99,7 @@
 
 - name: Verify openclaw binary in PATH
   ansible.builtin.command: which openclaw
+  become: true
   become_user: "{{ openclaw_user }}"
   register: openclaw_which_result
   changed_when: false
@@ -111,3 +155,28 @@
     scope: user
   environment:
     XDG_RUNTIME_DIR: "/run/user/{{ openclaw_user_uid.stdout }}"
+
+- name: Display deployment summary
+  ansible.builtin.debug:
+    msg:
+      - "==================================="
+      - "OpenClaw Deployment Complete!"
+      - "==================================="
+      - "Gateway Bind: {{ openclaw_gateway_bind }}"
+      - "Gateway Port: {{ openclaw_gateway_port }}"
+      - "Bridge Port: {{ openclaw_bridge_port }}"
+      - "Config Dir: {{ openclaw_config_dir }}"
+      - "Workspace: {{ openclaw_workspace_dir }}"
+      - ""
+      - "Next steps:"
+      - "1. Check service: systemctl --user status openclaw-gateway"
+      - "2. View logs: journalctl --user -u openclaw-gateway -f"
+      - "3. SSH to VPS: ssh {{ openclaw_user }}@{{ inventory_hostname }}"
+      - "4. Run onboarding: openclaw onboard"
+      - "5. Connect channels (WhatsApp/Telegram/etc)"
+      - ""
+      - "Web UI access:"
+      - "{% if openclaw_tailscale_ip is defined %}http://{{ openclaw_tailscale_ip }}:{{ openclaw_gateway_port }}{% else %}SSH tunnel required{% endif %}"
+      - ""
+      - "Install Tailscale on laptop:"
+      - "https://tailscale.com/download"

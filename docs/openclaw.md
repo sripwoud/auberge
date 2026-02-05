@@ -63,12 +63,13 @@ auberge ansible run --tags openclaw
 ### Deploy with Other Layers
 
 ```bash
+# Deploy infrastructure and openclaw together
+auberge ansible run --tags infrastructure,openclaw
+
+# Or bootstrap + infrastructure + openclaw
 auberge ansible run --tags bootstrap,infrastructure,openclaw
-```
 
-Or run full deployment:
-
-```bash
+# Or full deployment (includes all apps)
 auberge ansible run
 ```
 
