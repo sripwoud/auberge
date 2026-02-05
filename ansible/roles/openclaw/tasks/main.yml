@@ -170,7 +170,6 @@
       - "==================================="
       - "Gateway Bind: {{ openclaw_gateway_bind }}"
       - "Gateway Port: {{ openclaw_gateway_port }}"
-      - "Bridge Port: {{ openclaw_bridge_port }}"
       - "Config Dir: {{ openclaw_config_dir }}"
       - "Workspace: {{ openclaw_workspace_dir }}"
       - ""
