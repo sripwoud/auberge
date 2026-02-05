@@ -101,15 +101,6 @@
   ansible.builtin.command: loginctl enable-linger {{ openclaw_user }}
   changed_when: false
 
-- name: Reload systemd user daemon
-  become: true
-  become_user: "{{ openclaw_user }}"
-  ansible.builtin.systemd:
-    daemon_reload: true
-    scope: user
-  environment:
-    XDG_RUNTIME_DIR: "/run/user/{{ openclaw_user_uid.stdout }}"
-
 - name: Enable and start OpenClaw gateway service
   become: true
   become_user: "{{ openclaw_user }}"
