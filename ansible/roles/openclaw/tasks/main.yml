@@ -141,9 +141,14 @@
   register: openclaw_user_uid
   changed_when: false
 
+- name: Check if linger is already enabled for user
+  ansible.builtin.stat:
+    path: "/var/lib/systemd/linger/{{ openclaw_user }}"
+  register: openclaw_linger_file
+
 - name: Enable linger for user
   ansible.builtin.command: loginctl enable-linger {{ openclaw_user }}
-  changed_when: false
+  when: not openclaw_linger_file.stat.exists
 
 - name: Enable and start OpenClaw gateway service
   become: true
