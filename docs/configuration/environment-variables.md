@@ -17,6 +17,10 @@ mise set --age-encrypt --prompt TAILSCALE_AUTHKEY
 mise set --age-encrypt --prompt SSH_PORT
 mise set --age-encrypt --prompt AUBERGE_HOST
 mise set --age-encrypt --prompt VIBECODER_HOST
+mise set --age-encrypt --prompt OPENCLAW_GATEWAY_TOKEN
+mise set --age-encrypt --prompt CLAUDE_AI_SESSION_KEY
+mise set --age-encrypt --prompt CLAUDE_WEB_SESSION_KEY
+mise set --age-encrypt --prompt CLAUDE_WEB_COOKIE
 ```
 
 ## Public Configuration

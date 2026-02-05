@@ -1,0 +1,8 @@
+---
+- name: Deploy OpenClaw Personal AI Assistant
+  hosts: vps
+  become: true
+
+  roles:
+    - role: openclaw
+      tags: [openclaw]

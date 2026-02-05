@@ -13,6 +13,8 @@
       tags: [apps, web, rss, freshrss]
     - role: navidrome
       tags: [apps, storage, media, music, navidrome]
+    - role: openclaw
+      tags: [apps, ai, openclaw]
     - role: webdav
       tags: [apps, storage, webdav]
     - role: wireguard

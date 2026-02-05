@@ -1,0 +1,19 @@
+---
+- name: Reload systemd user
+  become: true
+  become_user: "{{ openclaw_user }}"
+  ansible.builtin.systemd:
+    daemon_reload: true
+    scope: user
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ openclaw_user_uid.stdout }}"
+
+- name: Restart openclaw gateway
+  become: true
+  become_user: "{{ openclaw_user }}"
+  ansible.builtin.systemd:
+    name: openclaw-gateway
+    state: restarted
+    scope: user
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ openclaw_user_uid.stdout }}"
