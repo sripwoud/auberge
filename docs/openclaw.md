@@ -133,7 +133,7 @@ The wizard will guide you through:
 # macOS/Linux
 https://tailscale.com/download
 
-# Login with same account as VPS
+# Log in with same account as VPS
 tailscale login
 ```
 
