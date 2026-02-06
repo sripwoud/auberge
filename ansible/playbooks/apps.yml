@@ -15,6 +15,8 @@
       tags: [apps, storage, media, music, navidrome]
     - role: openclaw
       tags: [apps, ai, openclaw]
+    - role: syncthing
+      tags: [apps, sync, syncthing]
     - role: webdav
       tags: [apps, storage, webdav]
     - role: wireguard

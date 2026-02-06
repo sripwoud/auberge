@@ -1,0 +1,6 @@
+---
+- name: Restart Syncthing
+  ansible.builtin.systemd_service:
+    name: "syncthing@{{ syncthing_user }}"
+    state: restarted
+  become: true
