@@ -231,8 +231,7 @@ pub fn run_ansible_run(
 
     let extra_vars = user
         .as_ref()
-        .map(|u| vec![("ansible_user", u.as_str())])
-        .map(|v| v.into_iter().collect::<Vec<_>>());
+        .map(|u| vec![("ansible_user", u.as_str())]);
 
     let result = run_playbook(
         &selected_playbook.path,
