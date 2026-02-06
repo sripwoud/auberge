@@ -89,9 +89,22 @@
     path: /tmp/nodesource_setup.sh
     state: absent
 
+- name: Check if npm is installed
+  ansible.builtin.command: which npm
+  register: openclaw_npm_check
+  changed_when: false
+  failed_when: false
+
+- name: Install npm separately if missing
+  ansible.builtin.apt:
+    name: npm
+    state: present
+    update_cache: true
+  when: openclaw_npm_check.rc != 0
+
 - name: Reset connection to pick up new PATH
   ansible.builtin.meta: reset_connection
-  when: openclaw_node_check.rc != 0
+  when: openclaw_node_check.rc != 0 or openclaw_npm_check.rc != 0
 
 - name: Verify Node.js version
   ansible.builtin.command: node --version
