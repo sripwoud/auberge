@@ -1,6 +1,6 @@
 ---
 # Syncthing user (typically the user running OpenClaw)
-syncthing_user: "{{ ansible_user | default('sripwoud') }}"
+syncthing_user: "{{ admin_user_name | default(ansible_user | default(ansible_ssh_user)) }}"
 
 # Syncthing config path
 syncthing_config_path: "/home/{{ syncthing_user }}/.local/state/syncthing"
