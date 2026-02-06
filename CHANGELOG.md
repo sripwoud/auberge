@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/sripwoud/auberge/compare/v0.3.0...v0.3.1) - 2026-02-06
+
+### Added
+
+- *(ansible)* add openclaw deployment role ([#54](https://github.com/sripwoud/auberge/pull/54))
+
+### Fixed
+
+- deploy OpenClaw with dynamic bootstrap user support ([#63](https://github.com/sripwoud/auberge/pull/63))
+
+### Other
+
+- *(deps)* bump time from 0.3.45 to 0.3.47 in the cargo group across 1 directory ([#62](https://github.com/sripwoud/auberge/pull/62))
+- *(deps)* bump bytes from 1.11.0 to 1.11.1 in the cargo group across 1 directory ([#53](https://github.com/sripwoud/auberge/pull/53))
+- fix release_commits regex
+
 ## [0.3.0](https://github.com/sripwoud/auberge/compare/v0.2.0...v0.3.0) - 2026-02-03
 
 ### Added
