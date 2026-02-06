@@ -68,6 +68,7 @@
           rsync,
           wget,
         ]
+        force: true
     - name: Create symlink for 'go' binary in /usr/local/bin
       ansible.builtin.file:
         src: /usr/lib/go-1.24/bin/go
