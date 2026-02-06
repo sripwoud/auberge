@@ -5,7 +5,7 @@ Installs and configures [Syncthing](https://syncthing.net/) for file synchroniza
 ## Features
 
 - Installs Syncthing from official APT repository
-- Enables and starts Syncthing as a systemd user service
+- Enables and starts Syncthing as a systemd service instance (running under the `syncthing_user` account)
 - Optionally configures OpenClaw workspace folder for sync
 - Supports remote web UI access (optional)
 
