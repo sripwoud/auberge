@@ -229,9 +229,7 @@ pub fn run_ansible_run(
         selected_playbook.name, selected_host.name
     ));
 
-    let extra_vars = user
-        .as_ref()
-        .map(|u| vec![("ansible_user", u.as_str())]);
+    let extra_vars = user.as_ref().map(|u| vec![("ansible_user", u.as_str())]);
 
     let result = run_playbook(
         &selected_playbook.path,
