@@ -52,10 +52,21 @@
       when: ansible_distribution == "Debian"
       ansible.builtin.copy:
         content: |
-          Package: bind9-libs bind9-dnsutils
+          Package: bind9-libs bind9-dnsutils bind9-host
           Pin: release a=testing
           Pin-Priority: 990
         dest: /etc/apt/preferences.d/bind9.pref
+        owner: root
+        group: root
+        mode: "0644"
+    - name: Set up APT pinning for neovim
+      when: ansible_distribution == "Debian"
+      ansible.builtin.copy:
+        content: |
+          Package: neovim libluajit-5.1-2 libluajit-5.1-common
+          Pin: release a=testing
+          Pin-Priority: 990
+        dest: /etc/apt/preferences.d/neovim.pref
         owner: root
         group: root
         mode: "0644"
