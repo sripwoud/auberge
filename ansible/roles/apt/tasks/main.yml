@@ -48,6 +48,17 @@
         owner: root
         group: root
         mode: "0644"
+    - name: Set up APT pinning for bind9 packages
+      when: ansible_distribution == "Debian"
+      ansible.builtin.copy:
+        content: |
+          Package: bind9-libs bind9-dnsutils
+          Pin: release a=testing
+          Pin-Priority: 990
+        dest: /etc/apt/preferences.d/bind9.pref
+        owner: root
+        group: root
+        mode: "0644"
     - name: Update apt package cache
       ansible.builtin.apt:
         update_cache: true
@@ -60,6 +71,7 @@
           acl,
           curl,
           dasel,
+          dnsutils,
           git,
           golang-1.24,
           lsof,
