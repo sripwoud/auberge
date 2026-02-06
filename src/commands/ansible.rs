@@ -22,6 +22,8 @@ pub enum AnsibleCommands {
         check: bool,
         #[arg(short, long, help = "Only run tasks with these tags")]
         tags: Option<Vec<String>>,
+        #[arg(long, help = "Bootstrap user (overrides inventory setting)")]
+        user: Option<String>,
         #[arg(
             short = 'f',
             long,
@@ -106,6 +108,7 @@ pub fn run_ansible_run(
     playbook: Option<PathBuf>,
     check: bool,
     tags: Option<Vec<String>>,
+    user: Option<String>,
     force: bool,
 ) -> Result<()> {
     let selected_host = select_or_use_host(host)?;
@@ -223,12 +226,17 @@ pub fn run_ansible_run(
         selected_playbook.name, selected_host.name
     ));
 
+    let extra_vars = user
+        .as_ref()
+        .map(|u| vec![("ansible_user", u.as_str())])
+        .map(|v| v.into_iter().collect::<Vec<_>>());
+
     let result = run_playbook(
         &selected_playbook.path,
         &selected_host.name,
         check,
         tags.as_deref(),
-        None,
+        extra_vars.as_deref(),
         false,
     )?;
 
@@ -245,7 +253,7 @@ pub fn run_ansible_check(
     playbook: Option<PathBuf>,
     force: bool,
 ) -> Result<()> {
-    run_ansible_run(host, playbook, true, None, force)
+    run_ansible_run(host, playbook, true, None, None, force)
 }
 
 fn validate_ip(ip: &str) -> Result<()> {

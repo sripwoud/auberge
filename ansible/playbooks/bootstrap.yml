@@ -22,6 +22,8 @@
   remote_user: "{{ ansible_user }}"
   become: true
   gather_facts: true
+  vars:
+    ansible_port: 22
   tasks:
     - name: Set hostname to inventory name
       ansible.builtin.hostname:
