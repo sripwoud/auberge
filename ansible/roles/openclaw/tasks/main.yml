@@ -95,10 +95,21 @@
   ansible.builtin.apt:
     update_cache: true
 
-- name: Install Node.js
+- name: Check current Node.js version
+  ansible.builtin.command: node --version
+  register: openclaw_current_node_version
+  changed_when: false
+  failed_when: false
+
+- name: Upgrade Node.js if version is less than 22
   ansible.builtin.apt:
     name: nodejs
     state: present
+    update_cache: true
+    force: true
+  when: >
+    openclaw_current_node_version.rc != 0 or
+    (openclaw_current_node_version.stdout | regex_replace('^v', '') | split('.') | first | int) < 22
 
 - name: Verify Node.js installation
   ansible.builtin.command: node --version
