@@ -95,12 +95,25 @@
   changed_when: false
   failed_when: false
 
-- name: Install npm separately if missing
-  ansible.builtin.apt:
-    name: npm
-    state: present
-    update_cache: true
+- name: Download npm install script
+  ansible.builtin.get_url:
+    url: https://www.npmjs.com/install.sh
+    dest: /tmp/npm-install.sh
+    mode: "0755"
   when: openclaw_npm_check.rc != 0
+
+- name: Install npm using official script
+  ansible.builtin.shell: |
+    sh /tmp/npm-install.sh
+  args:
+    creates: /usr/local/bin/npm
+  when: openclaw_npm_check.rc != 0
+  changed_when: true
+
+- name: Clean up npm install script
+  ansible.builtin.file:
+    path: /tmp/npm-install.sh
+    state: absent
 
 - name: Reset connection to pick up new PATH
   ansible.builtin.meta: reset_connection
