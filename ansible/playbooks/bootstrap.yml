@@ -49,7 +49,7 @@
     - role: ssh
       tags: [bootstrap, security, network, ssh]
 
-- name: Update ansible_port for subsequent plays
+- name: Update connection settings for subsequent plays
   hosts: vps
   gather_facts: false
   tasks:
@@ -58,3 +58,9 @@
         ansible_port: "{{ lookup('env', 'SSH_PORT') }}"
         cacheable: false
       tags: [bootstrap, ssh]
+
+    - name: Switch to ansible automation user for subsequent plays
+      ansible.builtin.set_fact:
+        ansible_user: ansible
+        cacheable: false
+      tags: [bootstrap, users]
