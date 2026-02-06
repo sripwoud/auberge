@@ -87,6 +87,10 @@
     path: /tmp/nodesource_setup.sh
     state: absent
 
+- name: Reset connection to pick up new PATH
+  ansible.builtin.meta: reset_connection
+  when: openclaw_node_check.rc != 0
+
 - name: Verify Node.js version
   ansible.builtin.command: node --version
   register: openclaw_node_version_output
@@ -95,6 +99,15 @@
 - name: Display Node.js version
   ansible.builtin.debug:
     msg: "Node.js version: {{ openclaw_node_version_output.stdout }}"
+
+- name: Verify npm is installed
+  ansible.builtin.command: npm --version
+  register: openclaw_npm_version_output
+  changed_when: false
+
+- name: Display npm version
+  ansible.builtin.debug:
+    msg: "npm version: {{ openclaw_npm_version_output.stdout }}"
 
 - name: Create systemd user directory
   ansible.builtin.file:
