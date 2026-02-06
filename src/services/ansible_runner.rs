@@ -52,7 +52,7 @@ pub fn run_playbook(
         );
     }
 
-    if ask_pass {
+    if ask_pass && !is_fresh_bootstrap {
         cmd.arg("--ask-pass");
     }
 
