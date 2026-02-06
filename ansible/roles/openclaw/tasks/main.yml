@@ -57,26 +57,35 @@
   when: not openclaw_linger_file.stat.exists
   changed_when: true
 
-- name: Add NodeSource APT repository key
-  ansible.builtin.get_url:
-    url: "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
-    dest: /usr/share/keyrings/nodesource.gpg
-    mode: "0644"
+- name: Check if Node.js is already installed
+  ansible.builtin.command: node --version
+  register: openclaw_node_check
+  changed_when: false
+  failed_when: false
 
-- name: Add NodeSource APT repository
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [signed-by=/usr/share/keyrings/nodesource.gpg]
-      https://deb.nodesource.com/node_{{ openclaw_node_version }}.x
-      bookworm main
-    filename: "nodesource"
-    state: present
+- name: Download NodeSource setup script
+  ansible.builtin.get_url:
+    url: "https://deb.nodesource.com/setup_{{ openclaw_node_version }}.x"
+    dest: /tmp/nodesource_setup.sh
+    mode: "0755"
+  when: openclaw_node_check.rc != 0
+
+- name: Run NodeSource setup script
+  ansible.builtin.command: bash /tmp/nodesource_setup.sh
+  when: openclaw_node_check.rc != 0
+  changed_when: true
 
 - name: Install Node.js
   ansible.builtin.apt:
     name: nodejs
     state: present
     update_cache: true
+  when: openclaw_node_check.rc != 0
+
+- name: Clean up NodeSource setup script
+  ansible.builtin.file:
+    path: /tmp/nodesource_setup.sh
+    state: absent
 
 - name: Verify Node.js version
   ansible.builtin.command: node --version
