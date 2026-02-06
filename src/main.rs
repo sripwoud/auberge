@@ -107,8 +107,10 @@ async fn main() -> Result<()> {
                 playbook,
                 check,
                 tags,
+                user,
+                ask_pass,
                 force,
-            } => run_ansible_run(host, playbook, check, tags, force),
+            } => run_ansible_run(host, playbook, check, tags, user, ask_pass, force),
             AnsibleCommands::Check {
                 host,
                 playbook,
@@ -118,8 +120,9 @@ async fn main() -> Result<()> {
                 host,
                 port,
                 ip,
+                user,
                 force,
-            } => run_ansible_bootstrap(host, port, ip, force),
+            } => run_ansible_bootstrap(host, port, ip, user, force),
         },
         Commands::Backup(cmd) => match cmd {
             BackupCommands::Create {

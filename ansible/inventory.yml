@@ -16,6 +16,10 @@ all:
           ansible_host: "{{ lookup('env', 'VIBECODER_HOST') }}"
           ansible_port: "{{ lookup('env', 'SSH_PORT') }}"
           bootstrap_user: debian
+        openclaw:
+          ansible_host: "{{ lookup('env', 'OPENCLAW_HOST') }}"
+          ansible_port: "{{ lookup('env', 'SSH_PORT') }}"
+          bootstrap_user: root
       vars:
         # Default to ansible automation user
         ansible_user: ansible

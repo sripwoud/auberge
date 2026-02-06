@@ -15,6 +15,7 @@ pub fn run_playbook(
     tags: Option<&[String]>,
     extra_vars: Option<&[(&str, &str)]>,
     ask_vault_pass: bool,
+    ask_pass: bool,
 ) -> Result<AnsibleResult> {
     let project_root = find_project_root();
     let ansible_dir = project_root.join("ansible");
@@ -49,6 +50,10 @@ pub fn run_playbook(
         cmd.arg("-e").arg(
             "ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'",
         );
+    }
+
+    if ask_pass && !is_fresh_bootstrap {
+        cmd.arg("--ask-pass");
     }
 
     if let Some(tags) = tags {

@@ -1,4 +1,5 @@
 ansible/.ansible
+.ansible/
 .vscode
 .env*
 .claude/

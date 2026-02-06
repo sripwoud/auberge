@@ -22,6 +22,10 @@ pub enum AnsibleCommands {
         check: bool,
         #[arg(short, long, help = "Only run tasks with these tags")]
         tags: Option<Vec<String>>,
+        #[arg(long, help = "Bootstrap user (overrides inventory setting)")]
+        user: Option<String>,
+        #[arg(long, help = "Prompt for SSH password (needed for initial bootstrap)")]
+        ask_pass: bool,
         #[arg(
             short = 'f',
             long,
@@ -49,6 +53,8 @@ pub enum AnsibleCommands {
         port: u16,
         #[arg(long, help = "IP address (required with --force)")]
         ip: Option<String>,
+        #[arg(long, help = "Bootstrap user (overrides inventory setting)")]
+        user: Option<String>,
         #[arg(
             short = 'f',
             long,
@@ -104,6 +110,8 @@ pub fn run_ansible_run(
     playbook: Option<PathBuf>,
     check: bool,
     tags: Option<Vec<String>>,
+    user: Option<String>,
+    ask_pass: bool,
     force: bool,
 ) -> Result<()> {
     let selected_host = select_or_use_host(host)?;
@@ -221,13 +229,16 @@ pub fn run_ansible_run(
         selected_playbook.name, selected_host.name
     ));
 
+    let extra_vars = user.as_ref().map(|u| vec![("ansible_user", u.as_str())]);
+
     let result = run_playbook(
         &selected_playbook.path,
         &selected_host.name,
         check,
         tags.as_deref(),
-        None,
+        extra_vars.as_deref(),
         false,
+        ask_pass,
     )?;
 
     if result.success {
@@ -243,7 +254,7 @@ pub fn run_ansible_check(
     playbook: Option<PathBuf>,
     force: bool,
 ) -> Result<()> {
-    run_ansible_run(host, playbook, true, None, force)
+    run_ansible_run(host, playbook, true, None, None, false, force)
 }
 
 fn validate_ip(ip: &str) -> Result<()> {
@@ -279,6 +290,7 @@ pub fn run_ansible_bootstrap(
     host_name: String,
     port: u16,
     ip: Option<String>,
+    user: Option<String>,
     force: bool,
 ) -> Result<()> {
     let host = get_host(&host_name, None)?;
@@ -303,16 +315,18 @@ pub fn run_ansible_bootstrap(
         (None, false) => prompt_for_ip(&host_name)?,
     };
 
+    let bootstrap_user = user.as_deref().unwrap_or(&host.vars.bootstrap_user);
+
     output::info(&format!(
         "Bootstrapping {} ({}) as {}",
-        host_name, host_ip, host.vars.bootstrap_user
+        host_name, host_ip, bootstrap_user
     ));
 
     let result = run_bootstrap(
         &bootstrap_playbook,
         &host_name,
         &host_ip,
-        &host.vars.bootstrap_user,
+        bootstrap_user,
         port,
     )?;
 

@@ -57,35 +57,87 @@
   when: not openclaw_linger_file.stat.exists
   changed_when: true
 
-- name: Add NodeSource APT repository key
-  ansible.builtin.get_url:
-    url: "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
-    dest: /usr/share/keyrings/nodesource.gpg
-    mode: "0644"
-
-- name: Add NodeSource APT repository
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [signed-by=/usr/share/keyrings/nodesource.gpg]
-      https://deb.nodesource.com/node_{{ openclaw_node_version }}.x
-      {{ ansible_distribution_release | lower }} main
-    filename: "nodesource"
-    state: present
-
-- name: Install Node.js
+- name: Install required packages for Node.js
   ansible.builtin.apt:
-    name: nodejs
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
     state: present
+
+- name: Create directory for NodeSource GPG key
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add NodeSource GPG key
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | \
+        gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+      chmod a+r /etc/apt/keyrings/nodesource.gpg
+    creates: /etc/apt/keyrings/nodesource.gpg
+    executable: /bin/bash
+
+- name: Add NodeSource repository
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] \
+        https://deb.nodesource.com/node_{{ openclaw_node_version }} nodistro main" | \
+        tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+    creates: /etc/apt/sources.list.d/nodesource.list
+    executable: /bin/bash
+
+- name: Update apt cache after adding NodeSource repo
+  ansible.builtin.apt:
     update_cache: true
 
-- name: Verify Node.js version
+- name: Check current Node.js version
+  ansible.builtin.command: node --version
+  register: openclaw_current_node_version
+  changed_when: false
+  failed_when: false
+
+- name: Get latest NodeSource Node.js 22.x version
+  ansible.builtin.shell: |
+    set -o pipefail
+    apt-cache madison nodejs | grep nodesource | grep '^nodejs' | head -1 | awk '{print $3}'
+  args:
+    executable: /bin/bash
+  register: openclaw_nodesource_version
+  changed_when: false
+  when: >
+    openclaw_current_node_version.rc != 0 or
+    (openclaw_current_node_version.stdout | regex_replace('^v', '') | split('.') | first | int) < 22
+
+- name: Install Node.js from NodeSource with specific version
+  ansible.builtin.apt:
+    name: "nodejs={{ openclaw_nodesource_version.stdout }}"
+    state: present
+    allow_downgrade: true
+    force: true
+  when: >
+    openclaw_current_node_version.rc != 0 or
+    (openclaw_current_node_version.stdout | regex_replace('^v', '') | split('.') | first | int) < 22
+
+- name: Verify Node.js installation
   ansible.builtin.command: node --version
   register: openclaw_node_version_output
   changed_when: false
 
-- name: Display Node.js version
+- name: Verify npm installation
+  ansible.builtin.command: npm --version
+  register: openclaw_npm_version_output
+  changed_when: false
+
+- name: Display Node.js and npm versions
   ansible.builtin.debug:
-    msg: "Node.js version: {{ openclaw_node_version_output.stdout }}"
+    msg:
+      - "Node.js version: {{ openclaw_node_version_output.stdout }}"
+      - "npm version: {{ openclaw_npm_version_output.stdout }}"
 
 - name: Create systemd user directory
   ansible.builtin.file:
@@ -119,28 +171,6 @@
   register: openclaw_which_result
   changed_when: false
   failed_when: openclaw_which_result.rc != 0
-
-- name: Validate required OpenClaw environment variables
-  ansible.builtin.assert:
-    that:
-      - openclaw_gateway_token is defined
-      - openclaw_gateway_token | length > 0
-      - openclaw_claude_ai_session_key is defined
-      - openclaw_claude_ai_session_key | length > 0
-    fail_msg: |
-      OPENCLAW_GATEWAY_TOKEN and CLAUDE_AI_SESSION_KEY must be set and non-empty.
-      Ensure mise environment is activated or run with: mise x ansible-playbook ...
-    success_msg: "Required OpenClaw environment variables are set"
-
-- name: Deploy environment file for OpenClaw
-  ansible.builtin.template:
-    src: env.j2
-    dest: "{{ openclaw_config_dir }}/.env"
-    owner: "{{ openclaw_user }}"
-    group: "{{ openclaw_group }}"
-    mode: "0600"
-  notify: Restart openclaw gateway
-  no_log: true
 
 - name: Deploy OpenClaw gateway systemd service
   ansible.builtin.template:

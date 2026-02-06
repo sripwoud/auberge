@@ -1,0 +1,14 @@
+---
+# OpenClaw full stack deployment
+# Runs complete VPS setup with OpenClaw only (no other apps)
+#
+# Usage:
+#   Full deployment:     ansible-playbook openclaw-full.yml
+#   Skip bootstrap:      ansible-playbook openclaw-full.yml --skip-tags bootstrap
+#   Run specific layer:  ansible-playbook openclaw-full.yml --tags hardening
+#   Update app only:     ansible-playbook openclaw-full.yml --tags openclaw
+
+- import_playbook: bootstrap.yml # noqa: name[play]
+- import_playbook: hardening.yml # noqa: name[play]
+- import_playbook: infrastructure.yml # noqa: name[play]
+- import_playbook: openclaw.yml # noqa: name[play]
