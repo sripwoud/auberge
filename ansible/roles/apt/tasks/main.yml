@@ -59,17 +59,6 @@
         owner: root
         group: root
         mode: "0644"
-    - name: Set up APT pinning for neovim
-      when: ansible_distribution == "Debian"
-      ansible.builtin.copy:
-        content: |
-          Package: neovim libluajit-5.1-2 libluajit-5.1-common
-          Pin: release a=testing
-          Pin-Priority: 990
-        dest: /etc/apt/preferences.d/neovim.pref
-        owner: root
-        group: root
-        mode: "0644"
     - name: Update apt package cache
       ansible.builtin.apt:
         update_cache: true
@@ -86,8 +75,8 @@
           git,
           golang-1.24,
           lsof,
-          neovim,
           rsync,
+          vim,
           wget,
         ]
     - name: Create symlink for 'go' binary in /usr/local/bin
