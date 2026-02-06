@@ -224,6 +224,35 @@ pub fn run_ansible_run(
         }
     }
 
+    // Validate OpenClaw environment variables
+    let is_openclaw = playbook_name == "openclaw.yml" || playbook_name == "openclaw-full.yml";
+
+    if is_openclaw {
+        let gateway_token = std::env::var("OPENCLAW_GATEWAY_TOKEN").unwrap_or_default();
+        let claude_session = std::env::var("CLAUDE_AI_SESSION_KEY").unwrap_or_default();
+
+        if gateway_token.is_empty() || claude_session.is_empty() {
+            eprintln!();
+            output::info("IMPORTANT: OpenClaw Environment Variables Required");
+            eprintln!();
+            output::info("The following environment variables must be set:");
+            output::info("  - OPENCLAW_GATEWAY_TOKEN");
+            output::info("  - CLAUDE_AI_SESSION_KEY");
+            eprintln!();
+            output::info("Set them with:");
+            output::info("  mise set --age-encrypt --prompt OPENCLAW_GATEWAY_TOKEN");
+            output::info("  mise set --age-encrypt --prompt CLAUDE_AI_SESSION_KEY");
+            eprintln!();
+            output::info("Optional variables:");
+            output::info("  - CLAUDE_WEB_SESSION_KEY");
+            output::info("  - CLAUDE_WEB_COOKIE");
+            eprintln!();
+            eyre::bail!("Missing required OpenClaw environment variables");
+        }
+
+        output::success("OpenClaw environment variables validated");
+    }
+
     output::info(&format!(
         "Running {} on {}",
         selected_playbook.name, selected_host.name
