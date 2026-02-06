@@ -24,6 +24,8 @@ pub enum AnsibleCommands {
         tags: Option<Vec<String>>,
         #[arg(long, help = "Bootstrap user (overrides inventory setting)")]
         user: Option<String>,
+        #[arg(long, help = "Prompt for SSH password (needed for initial bootstrap)")]
+        ask_pass: bool,
         #[arg(
             short = 'f',
             long,
@@ -109,6 +111,7 @@ pub fn run_ansible_run(
     check: bool,
     tags: Option<Vec<String>>,
     user: Option<String>,
+    ask_pass: bool,
     force: bool,
 ) -> Result<()> {
     let selected_host = select_or_use_host(host)?;
@@ -238,6 +241,7 @@ pub fn run_ansible_run(
         tags.as_deref(),
         extra_vars.as_deref(),
         false,
+        ask_pass,
     )?;
 
     if result.success {
@@ -253,7 +257,7 @@ pub fn run_ansible_check(
     playbook: Option<PathBuf>,
     force: bool,
 ) -> Result<()> {
-    run_ansible_run(host, playbook, true, None, None, force)
+    run_ansible_run(host, playbook, true, None, None, false, force)
 }
 
 fn validate_ip(ip: &str) -> Result<()> {

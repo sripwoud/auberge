@@ -834,6 +834,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                 Some(&tags),
                 None,
                 false,
+                false,
             ) {
                 Ok(result) if result.success => {
                     eprintln!("✓ Ansible playbooks completed successfully");

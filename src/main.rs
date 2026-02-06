@@ -108,8 +108,9 @@ async fn main() -> Result<()> {
                 check,
                 tags,
                 user,
+                ask_pass,
                 force,
-            } => run_ansible_run(host, playbook, check, tags, user, force),
+            } => run_ansible_run(host, playbook, check, tags, user, ask_pass, force),
             AnsibleCommands::Check {
                 host,
                 playbook,
