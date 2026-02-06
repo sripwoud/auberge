@@ -57,86 +57,64 @@
   when: not openclaw_linger_file.stat.exists
   changed_when: true
 
-- name: Check if Node.js is already installed
-  ansible.builtin.command: node --version
-  register: openclaw_node_check
-  changed_when: false
-  failed_when: false
-
-- name: Download NodeSource setup script
-  ansible.builtin.get_url:
-    url: "https://deb.nodesource.com/setup_{{ openclaw_node_version }}.x"
-    dest: /tmp/nodesource_setup.sh
-    mode: "0755"
-  when: openclaw_node_check.rc != 0
-
-- name: Run NodeSource setup script
-  ansible.builtin.command: bash /tmp/nodesource_setup.sh
-  when: openclaw_node_check.rc != 0
-  changed_when: true
-
-- name: Install Node.js and npm
+- name: Install required packages for Node.js
   ansible.builtin.apt:
     name:
-      - nodejs
-      - npm
+      - ca-certificates
+      - curl
+      - gnupg
     state: present
-    update_cache: true
-  when: openclaw_node_check.rc != 0
 
-- name: Clean up NodeSource setup script
+- name: Create directory for NodeSource GPG key
   ansible.builtin.file:
-    path: /tmp/nodesource_setup.sh
-    state: absent
-
-- name: Check if npm is installed
-  ansible.builtin.command: which npm
-  register: openclaw_npm_check
-  changed_when: false
-  failed_when: false
-
-- name: Download npm install script
-  ansible.builtin.get_url:
-    url: https://www.npmjs.com/install.sh
-    dest: /tmp/npm-install.sh
+    path: /etc/apt/keyrings
+    state: directory
     mode: "0755"
-  when: openclaw_npm_check.rc != 0
 
-- name: Install npm using official script
-  ansible.builtin.shell: |
-    sh /tmp/npm-install.sh
-  args:
-    creates: /usr/local/bin/npm
-  when: openclaw_npm_check.rc != 0
-  changed_when: true
+- name: Add NodeSource GPG key
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | \
+        gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+      chmod a+r /etc/apt/keyrings/nodesource.gpg
+    creates: /etc/apt/keyrings/nodesource.gpg
+    executable: /bin/bash
 
-- name: Clean up npm install script
-  ansible.builtin.file:
-    path: /tmp/npm-install.sh
-    state: absent
+- name: Add NodeSource repository
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] \
+        https://deb.nodesource.com/node_{{ openclaw_node_version }} nodistro main" | \
+        tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+    creates: /etc/apt/sources.list.d/nodesource.list
+    executable: /bin/bash
 
-- name: Reset connection to pick up new PATH
-  ansible.builtin.meta: reset_connection
-  when: openclaw_node_check.rc != 0 or openclaw_npm_check.rc != 0
+- name: Update apt cache after adding NodeSource repo
+  ansible.builtin.apt:
+    update_cache: true
 
-- name: Verify Node.js version
+- name: Install Node.js
+  ansible.builtin.apt:
+    name: nodejs
+    state: present
+
+- name: Verify Node.js installation
   ansible.builtin.command: node --version
   register: openclaw_node_version_output
   changed_when: false
 
-- name: Display Node.js version
-  ansible.builtin.debug:
-    msg: "Node.js version: {{ openclaw_node_version_output.stdout }}"
-
-- name: Verify npm is installed
+- name: Verify npm installation
   ansible.builtin.command: npm --version
   register: openclaw_npm_version_output
   changed_when: false
-  failed_when: false
 
-- name: Display npm version
+- name: Display Node.js and npm versions
   ansible.builtin.debug:
-    msg: "npm version: {{ openclaw_npm_version_output.stdout }}"
+    msg:
+      - "Node.js version: {{ openclaw_node_version_output.stdout }}"
+      - "npm version: {{ openclaw_npm_version_output.stdout }}"
 
 - name: Create systemd user directory
   ansible.builtin.file:
