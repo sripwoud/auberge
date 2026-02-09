@@ -1,0 +1,97 @@
+---
+- name: Install and Configure Syncthing
+  block:
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Download Syncthing GPG key
+      ansible.builtin.get_url:
+        url: https://syncthing.net/release-key.gpg
+        dest: /usr/share/keyrings/syncthing-archive-keyring.gpg
+        mode: "0644"
+
+    - name: Add Syncthing APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/syncthing-archive-keyring.gpg] https://apt.syncthing.net/ syncthing stable"
+        state: present
+        filename: syncthing
+
+    - name: Install Syncthing
+      ansible.builtin.apt:
+        name: syncthing
+        state: present
+        update_cache: true
+
+    - name: Enable and start Syncthing service for user
+      ansible.builtin.systemd_service:
+        name: "syncthing@{{ syncthing_user }}"
+        enabled: true
+        state: started
+      become: true
+
+    - name: Wait for Syncthing to generate config
+      ansible.builtin.wait_for:
+        path: "{{ syncthing_config_path }}/config.xml"
+        state: present
+        timeout: 30
+
+    - name: Configure Syncthing to listen on all interfaces
+      ansible.builtin.replace:
+        path: "{{ syncthing_config_path }}/config.xml"
+        regexp: '<address>127\.0\.0\.1:8384</address>'
+        replace: "        <address>0.0.0.0:8384</address>"
+      when: syncthing_listen_all_interfaces | default(false)
+      notify: Restart Syncthing
+
+    - name: Create workspace directory
+      ansible.builtin.file:
+        path: "{{ syncthing_workspace_path }}"
+        state: directory
+        owner: "{{ syncthing_user }}"
+        group: "{{ syncthing_user }}"
+        mode: "0755"
+      when: syncthing_configure_workspace | default(false)
+
+    - name: Add OpenClaw workspace folder to Syncthing config
+      ansible.builtin.blockinfile:
+        path: "{{ syncthing_config_path }}/config.xml"
+        marker: "<!-- {mark} ANSIBLE MANAGED WORKSPACE FOLDER -->"
+        insertbefore: "</configuration>"
+        block: |
+          <folder id="{{ syncthing_workspace_id }}"
+                  label="{{ syncthing_workspace_label }}"
+                  path="{{ syncthing_workspace_path }}"
+                  type="sendreceive"
+                  rescanIntervalS="60"
+                  fsWatcherEnabled="true"
+                  fsWatcherDelayS="10"
+                  ignorePerms="false"
+                  autoNormalize="true">
+              <filesystemType>basic</filesystemType>
+              {% if syncthing_device_id | length > 0 %}
+              <device id="{{ syncthing_device_id }}" introducedBy=""></device>
+              {% endif %}
+              <minDiskFree unit="%">1</minDiskFree>
+              <versioning></versioning>
+              <copiers>0</copiers>
+              <pullerMaxPendingKiB>0</pullerMaxPendingKiB>
+              <hashers>0</hashers>
+              <order>random</order>
+              <ignoreDelete>false</ignoreDelete>
+              <scanProgressIntervalS>0</scanProgressIntervalS>
+              <pullerPauseS>0</pullerPauseS>
+              <maxConflicts>10</maxConflicts>
+              <disableSparseFiles>false</disableSparseFiles>
+              <disableTempIndexes>false</disableTempIndexes>
+              <paused>false</paused>
+              <weakHashThresholdPct>25</weakHashThresholdPct>
+              <markerName>.stfolder</markerName>
+          </folder>
+      when: syncthing_configure_workspace | default(false)
+      notify: Restart Syncthing

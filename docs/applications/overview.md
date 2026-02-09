@@ -27,6 +27,7 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | [Navidrome](apps/navidrome.md) | Music streaming server           |
 | [Calibre](apps/calibre.md)     | Ebook library management         |
 | [WebDAV](apps/webdav.md)       | File sharing and synchronization |
+| [Syncthing](apps/syncthing.md) | Continuous file synchronization  |
 | [YOURLS](apps/yourls.md)       | URL shortener                    |
 
 ## Deployment

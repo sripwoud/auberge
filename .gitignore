@@ -6,3 +6,4 @@ ansible/.ansible
 ansible/group_vars/all/*.vault
 /target
 config.toml
+CLAUDE.md

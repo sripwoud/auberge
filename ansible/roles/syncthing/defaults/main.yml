@@ -1,0 +1,9 @@
+---
+syncthing_user: "{{ admin_user_name | default(ansible_user | default(ansible_ssh_user)) }}"
+syncthing_config_path: "/home/{{ syncthing_user }}/.local/state/syncthing"
+syncthing_listen_all_interfaces: false
+syncthing_configure_workspace: false
+syncthing_workspace_id: "openclaw-workspace"
+syncthing_workspace_label: "OpenClaw Workspace"
+syncthing_workspace_path: "/home/{{ syncthing_user }}/.openclaw/workspace"
+syncthing_device_id: ""
