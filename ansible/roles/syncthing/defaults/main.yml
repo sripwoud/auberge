@@ -1,18 +1,9 @@
 ---
-# Syncthing user (typically the user running OpenClaw)
 syncthing_user: "{{ admin_user_name | default(ansible_user | default(ansible_ssh_user)) }}"
-
-# Syncthing config path
 syncthing_config_path: "/home/{{ syncthing_user }}/.local/state/syncthing"
-
-# Listen on all interfaces (set to true if accessing web UI remotely)
 syncthing_listen_all_interfaces: false
-
-# Workspace configuration
-syncthing_configure_workspace: true
+syncthing_configure_workspace: false
 syncthing_workspace_id: "openclaw-workspace"
 syncthing_workspace_label: "OpenClaw Workspace"
 syncthing_workspace_path: "/home/{{ syncthing_user }}/.openclaw/workspace"
-
-# Device ID (empty by default, should be set per-host or discovered)
 syncthing_device_id: ""

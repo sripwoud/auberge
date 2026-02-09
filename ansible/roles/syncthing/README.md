@@ -11,16 +11,16 @@ Installs and configures [Syncthing](https://syncthing.net/) for file synchroniza
 
 ## Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `syncthing_user` | `ansible_user` | User to run Syncthing as |
-| `syncthing_config_path` | `~/.local/state/syncthing` | Syncthing config directory |
-| `syncthing_listen_all_interfaces` | `false` | Listen on 0.0.0.0 instead of 127.0.0.1 |
-| `syncthing_configure_workspace` | `true` | Auto-configure OpenClaw workspace folder |
-| `syncthing_workspace_id` | `openclaw-workspace` | Folder ID in Syncthing |
-| `syncthing_workspace_label` | `OpenClaw Workspace` | Folder label |
-| `syncthing_workspace_path` | `~/.openclaw/workspace` | Path to sync |
-| `syncthing_device_id` | `""` | Device ID to share folder with (optional) |
+| Variable                          | Default                    | Description                               |
+| --------------------------------- | -------------------------- | ----------------------------------------- |
+| `syncthing_user`                  | `ansible_user`             | User to run Syncthing as                  |
+| `syncthing_config_path`           | `~/.local/state/syncthing` | Syncthing config directory                |
+| `syncthing_listen_all_interfaces` | `false`                    | Listen on 0.0.0.0 instead of 127.0.0.1    |
+| `syncthing_configure_workspace`   | `false`                    | Auto-configure OpenClaw workspace folder  |
+| `syncthing_workspace_id`          | `openclaw-workspace`       | Folder ID in Syncthing                    |
+| `syncthing_workspace_label`       | `OpenClaw Workspace`       | Folder label                              |
+| `syncthing_workspace_path`        | `~/.openclaw/workspace`    | Path to sync                              |
+| `syncthing_device_id`             | `""`                       | Device ID to share folder with (optional) |
 
 ## Usage
 
@@ -33,7 +33,14 @@ Add to your playbook:
 
 ### Remote Web UI Access
 
-If you need to access the Syncthing web UI remotely (not recommended for security):
+The recommended way to access the Syncthing web UI is via SSH port forwarding:
+
+```bash
+ssh -L 8384:localhost:8384 user@vps
+# Then access http://localhost:8384 locally
+```
+
+If SSH tunneling is not practical, you can expose the GUI on all interfaces:
 
 ```yaml
 - role: syncthing
@@ -41,13 +48,10 @@ If you need to access the Syncthing web UI remotely (not recommended for securit
     syncthing_listen_all_interfaces: true
 ```
 
-Then access via: `http://VPS_IP:8384`
+**Security warning:** Exposing the Syncthing GUI on all interfaces without authentication allows anyone who can reach port 8384 to control your Syncthing instance. If you must use this option:
 
-**Security warning:** Use SSH port forwarding instead:
-```bash
-ssh -L 8384:localhost:8384 user@vps
-# Then access http://localhost:8384 locally
-```
+1. Configure GUI authentication (username/password) in the Syncthing web UI immediately
+2. Restrict access with a firewall rule (e.g., `ufw allow from YOUR_IP to any port 8384`)
 
 ## Post-Install
 

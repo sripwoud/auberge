@@ -10,11 +10,11 @@
         state: present
         update_cache: true
 
-    - name: Add Syncthing GPG key
-      ansible.builtin.apt_key:
+    - name: Download Syncthing GPG key
+      ansible.builtin.get_url:
         url: https://syncthing.net/release-key.gpg
-        state: present
-        keyring: /usr/share/keyrings/syncthing-archive-keyring.gpg
+        dest: /usr/share/keyrings/syncthing-archive-keyring.gpg
+        mode: "0644"
 
     - name: Add Syncthing APT repository
       ansible.builtin.apt_repository:
@@ -41,12 +41,13 @@
         state: present
         timeout: 30
 
-    - name: Configure Syncthing to listen on all interfaces (if needed)
-      ansible.builtin.lineinfile:
+    - name: Configure Syncthing to listen on all interfaces
+      ansible.builtin.replace:
         path: "{{ syncthing_config_path }}/config.xml"
-        regexp: '<address>127.0.0.1:8384</address>'
-        line: '        <address>0.0.0.0:8384</address>'
-        backrefs: true
+        regexp: '<address>127\.0\.0\.1:8384</address>'
+        replace: "        <address>0.0.0.0:8384</address>"
+      register: syncthing_listen_all_replace
+      failed_when: syncthing_listen_all_replace.msg is defined and "Pattern not found" in syncthing_listen_all_replace.msg
       when: syncthing_listen_all_interfaces | default(false)
       notify: Restart Syncthing
 
@@ -54,11 +55,21 @@
       ansible.builtin.blockinfile:
         path: "{{ syncthing_config_path }}/config.xml"
         marker: "<!-- {mark} ANSIBLE MANAGED WORKSPACE FOLDER -->"
-        insertafter: '<folder '
+        insertbefore: "<folder "
         block: |
-          <folder id="{{ syncthing_workspace_id }}" label="{{ syncthing_workspace_label }}" path="{{ syncthing_workspace_path }}" type="sendreceive" rescanIntervalS="60" fsWatcherEnabled="true" fsWatcherDelayS="10" ignorePerms="false" autoNormalize="true">
+          <folder id="{{ syncthing_workspace_id }}"
+                  label="{{ syncthing_workspace_label }}"
+                  path="{{ syncthing_workspace_path }}"
+                  type="sendreceive"
+                  rescanIntervalS="60"
+                  fsWatcherEnabled="true"
+                  fsWatcherDelayS="10"
+                  ignorePerms="false"
+                  autoNormalize="true">
               <filesystemType>basic</filesystemType>
+              {% if syncthing_device_id | length > 0 %}
               <device id="{{ syncthing_device_id }}" introducedBy=""></device>
+              {% endif %}
               <minDiskFree unit="%">1</minDiskFree>
               <versioning></versioning>
               <copiers>0</copiers>
