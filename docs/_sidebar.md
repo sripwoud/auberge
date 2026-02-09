@@ -88,6 +88,7 @@
     - [Navidrome](applications/apps/navidrome.md)
     - [Calibre](applications/apps/calibre.md)
     - [WebDAV](applications/apps/webdav.md)
+    - [Syncthing](applications/apps/syncthing.md)
     - [YOURLS](applications/apps/yourls.md)
 
 - Development
