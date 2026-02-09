@@ -11,16 +11,16 @@ Installs and configures [Syncthing](https://syncthing.net/) for file synchroniza
 
 ## Variables
 
-| Variable                          | Default                            | Description                                        |
-| --------------------------------- | ---------------------------------- | -------------------------------------------------- |
-| `syncthing_user`                  | `admin_user_name` / `ansible_user` | User to run Syncthing as                           |
-| `syncthing_config_path`           | `~/.config/syncthing`              | Syncthing configuration directory (`config.xml`)   |
-| `syncthing_listen_all_interfaces` | `false`                            | Listen on 0.0.0.0 instead of 127.0.0.1             |
-| `syncthing_configure_workspace`   | `false`                            | Auto-configure OpenClaw workspace folder           |
-| `syncthing_workspace_id`          | `openclaw-workspace`               | Folder ID in Syncthing                    |
-| `syncthing_workspace_label`       | `OpenClaw Workspace`               | Folder label                              |
-| `syncthing_workspace_path`        | `~/.openclaw/workspace`            | Path to sync                              |
-| `syncthing_device_id`             | `""`                               | Device ID to share folder with (optional) |
+| Variable                          | Default                            | Description                                      |
+| --------------------------------- | ---------------------------------- | ------------------------------------------------ |
+| `syncthing_user`                  | `admin_user_name` / `ansible_user` | User to run Syncthing as                         |
+| `syncthing_config_path`           | `~/.config/syncthing`              | Syncthing configuration directory (`config.xml`) |
+| `syncthing_listen_all_interfaces` | `false`                            | Listen on 0.0.0.0 instead of 127.0.0.1           |
+| `syncthing_configure_workspace`   | `false`                            | Auto-configure OpenClaw workspace folder         |
+| `syncthing_workspace_id`          | `openclaw-workspace`               | Folder ID in Syncthing                           |
+| `syncthing_workspace_label`       | `OpenClaw Workspace`               | Folder label                                     |
+| `syncthing_workspace_path`        | `~/.openclaw/workspace`            | Path to sync                                     |
+| `syncthing_device_id`             | `""`                               | Device ID to share folder with (optional)        |
 
 ## Usage
 
