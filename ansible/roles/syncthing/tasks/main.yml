@@ -46,16 +46,23 @@
         path: "{{ syncthing_config_path }}/config.xml"
         regexp: '<address>127\.0\.0\.1:8384</address>'
         replace: "        <address>0.0.0.0:8384</address>"
-      register: syncthing_listen_all_replace
-      failed_when: syncthing_listen_all_replace.msg is defined and "Pattern not found" in syncthing_listen_all_replace.msg
       when: syncthing_listen_all_interfaces | default(false)
       notify: Restart Syncthing
+
+    - name: Create workspace directory
+      ansible.builtin.file:
+        path: "{{ syncthing_workspace_path }}"
+        state: directory
+        owner: "{{ syncthing_user }}"
+        group: "{{ syncthing_user }}"
+        mode: "0755"
+      when: syncthing_configure_workspace | default(false)
 
     - name: Add OpenClaw workspace folder to Syncthing config
       ansible.builtin.blockinfile:
         path: "{{ syncthing_config_path }}/config.xml"
         marker: "<!-- {mark} ANSIBLE MANAGED WORKSPACE FOLDER -->"
-        insertbefore: "<folder "
+        insertbefore: "</configuration>"
         block: |
           <folder id="{{ syncthing_workspace_id }}"
                   label="{{ syncthing_workspace_label }}"
