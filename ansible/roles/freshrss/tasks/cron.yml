@@ -1,6 +1,7 @@
 - name: Configure FreshRSS automatic feed updates
   block:
     - name: Create cron job for feed updates
+      when: not (freshrss_use_systemd_timer | default(true))
       ansible.builtin.cron:
         name: FreshRSS feed actualization
         minute: "*/15"
@@ -19,7 +20,7 @@
         owner: root
         group: root
         mode: "0644"
-      when: freshrss_use_systemd_timer | default(false)
+      when: freshrss_use_systemd_timer | default(true)
 
     - name: Create systemd service for feed updates
       ansible.builtin.template:
@@ -28,7 +29,7 @@
         owner: root
         group: root
         mode: "0644"
-      when: freshrss_use_systemd_timer | default(false)
+      when: freshrss_use_systemd_timer | default(true)
 
     - name: Enable systemd timer for feed updates
       ansible.builtin.systemd_service:
@@ -36,4 +37,4 @@
         enabled: true
         state: started
         daemon_reload: true
-      when: freshrss_use_systemd_timer | default(false)
+      when: freshrss_use_systemd_timer | default(true)
