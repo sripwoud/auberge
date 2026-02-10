@@ -6,5 +6,3 @@ freshrss_domain: "{{ freshrss_subdomain }}.{{ primary_domain }}"
 freshrss_version: edge
 freshrss_data_dir: /var/lib/freshrss
 freshrss_db_type: sqlite
-freshrss_enable_cron: false
-freshrss_use_systemd_timer: false

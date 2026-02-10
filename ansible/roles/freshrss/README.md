@@ -51,13 +51,16 @@ sudo -u freshrss git pull
 sudo systemctl restart freshrss
 ```
 
-## Cron Jobs
+## Feed Updates
 
-For automatic feed updates, add to system crontab:
+Feeds are automatically updated every 15 minutes via a systemd timer (`freshrss-update.timer`).
 
 ```bash
-# Update feeds every 15 minutes
-*/15 * * * * freshrss /usr/bin/php /opt/freshrss/app/actualize_script.php > /dev/null 2>&1
+# Check timer status
+sudo systemctl status freshrss-update.timer
+
+# View update logs
+sudo journalctl -u freshrss-update.service --since "1 hour ago"
 ```
 
 ## Security

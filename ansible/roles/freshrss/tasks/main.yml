@@ -128,3 +128,28 @@
         group: root
         mode: "0644"
       notify: Restart caddy
+
+    - name: Deploy systemd timer for feed updates
+      ansible.builtin.template:
+        src: templates/freshrss-update.timer.j2
+        dest: /etc/systemd/system/freshrss-update.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart freshrss-update
+
+    - name: Deploy systemd service for feed updates
+      ansible.builtin.template:
+        src: templates/freshrss-update.service.j2
+        dest: /etc/systemd/system/freshrss-update.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart freshrss-update
+
+    - name: Enable and start systemd timer for feed updates
+      ansible.builtin.systemd_service:
+        name: freshrss-update.timer
+        enabled: true
+        state: started
+        daemon_reload: true
