@@ -7,3 +7,9 @@
   ansible.builtin.systemd_service:
     name: caddy
     state: restarted
+
+- name: Restart freshrss-update
+  ansible.builtin.systemd_service:
+    name: freshrss-update.timer
+    state: restarted
+    daemon_reload: true
