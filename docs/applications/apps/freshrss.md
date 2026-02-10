@@ -10,6 +10,15 @@ Official Documentation: [https://freshrss.org](https://freshrss.org)
 auberge ansible run --tags freshrss
 ```
 
+## Feed Updates
+
+Feeds are automatically refreshed every 15 minutes via a systemd timer (`freshrss-update.timer`).
+
+```bash
+sudo systemctl status freshrss-update.timer
+sudo journalctl -u freshrss-update.service --since "1 hour ago"
+```
+
 ## Backup
 
 Backed up by default. Includes:
