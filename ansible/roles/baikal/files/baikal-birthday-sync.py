@@ -105,7 +105,12 @@ class BaikalBirthdaySync:
         return "Unknown"
 
     def get_or_create_birthday_calendar(self, principal_uri):
-        """Get or create the birthday calendar."""
+        """
+        Get or create the birthday calendar.
+        
+        Uses 'birthdays' as the calendar URI and 'Birthdays' as the display name.
+        These are standard values, but could be made configurable if needed.
+        """
         cursor = self.conn.cursor()
         
         # Check if birthday calendar exists
@@ -185,6 +190,8 @@ END:VCALENDAR
             return False
         
         # Use first principal for now (typically the admin user)
+        # NOTE: This currently only syncs birthdays for the first principal.
+        # To support multiple users, iterate through all principals.
         principal_uri = principals[0]['uri']
         
         # Get or create birthday calendar
@@ -203,14 +210,18 @@ END:VCALENDAR
             print("No contacts with birthdays found")
             return True
         
-        # Clear existing birthday events
+        # Get existing birthday events to check for updates
         cursor.execute("""
-            DELETE FROM calendarobjects
+            SELECT uri, calendardata FROM calendarobjects
             WHERE calendarid = ?
         """, (calendar_id,))
         
+        existing_events = {row['uri']: row['calendardata'] for row in cursor.fetchall()}
+        
         # Process each contact
         birthday_count = 0
+        processed_uris = set()
+        
         for contact in contacts:
             vcard_data = contact['carddata']
             
@@ -226,23 +237,49 @@ END:VCALENDAR
             
             # Generate unique URI for the event
             event_uri = hashlib.md5(f"birthday-{name}-{bday_date}".encode()).hexdigest() + ".ics"
+            processed_uris.add(event_uri)
             
-            # Insert into calendar
-            cursor.execute("""
-                INSERT INTO calendarobjects (calendarid, uri, calendardata, lastmodified, etag, size, componenttype, firstoccurence, lastoccurence)
-                VALUES (?, ?, ?, ?, ?, ?, 'VEVENT', ?, ?)
-            """, (
-                calendar_id,
-                event_uri,
-                ical_data,
-                int(datetime.now().timestamp()),
-                hashlib.md5(ical_data.encode()).hexdigest(),
-                len(ical_data),
-                int(datetime.now().timestamp()),
-                2147483647  # Max int32 for recurring events
-            ))
+            # Check if event exists and needs updating
+            if event_uri in existing_events:
+                if existing_events[event_uri] != ical_data:
+                    # Update existing event
+                    cursor.execute("""
+                        UPDATE calendarobjects
+                        SET calendardata = ?, lastmodified = ?, etag = ?, size = ?
+                        WHERE calendarid = ? AND uri = ?
+                    """, (
+                        ical_data,
+                        int(datetime.now().timestamp()),
+                        hashlib.md5(ical_data.encode()).hexdigest(),
+                        len(ical_data),
+                        calendar_id,
+                        event_uri
+                    ))
+            else:
+                # Insert new event
+                cursor.execute("""
+                    INSERT INTO calendarobjects (calendarid, uri, calendardata, lastmodified, etag, size, componenttype, firstoccurence, lastoccurence)
+                    VALUES (?, ?, ?, ?, ?, ?, 'VEVENT', ?, ?)
+                """, (
+                    calendar_id,
+                    event_uri,
+                    ical_data,
+                    int(datetime.now().timestamp()),
+                    hashlib.md5(ical_data.encode()).hexdigest(),
+                    len(ical_data),
+                    int(datetime.now().timestamp()),
+                    2147483647  # Max int32 for recurring events
+                ))
             
             birthday_count += 1
+        
+        # Remove events for contacts that no longer have birthdays
+        stale_uris = set(existing_events.keys()) - processed_uris
+        for stale_uri in stale_uris:
+            cursor.execute("""
+                DELETE FROM calendarobjects
+                WHERE calendarid = ? AND uri = ?
+            """, (calendar_id, stale_uri))
         
         self.conn.commit()
         print(f"Successfully synced {birthday_count} birthdays to calendar")
