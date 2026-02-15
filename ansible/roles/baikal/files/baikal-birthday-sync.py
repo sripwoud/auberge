@@ -192,6 +192,10 @@ END:VCALENDAR
         # Use first principal for now (typically the admin user)
         # NOTE: This currently only syncs birthdays for the first principal.
         # To support multiple users, iterate through all principals.
+        if len(principals) > 1:
+            print(f"Found {len(principals)} principals. Using only the first one: {principals[0]['uri']}")
+            print("To sync birthdays for all users, the script would need to be enhanced to iterate through all principals.")
+        
         principal_uri = principals[0]['uri']
         
         # Get or create birthday calendar
@@ -257,6 +261,7 @@ END:VCALENDAR
                     ))
             else:
                 # Insert new event
+                # Note: Baikal's schema uses 'firstoccurence' and 'lastoccurence' (not 'occurrence')
                 cursor.execute("""
                     INSERT INTO calendarobjects (calendarid, uri, calendardata, lastmodified, etag, size, componenttype, firstoccurence, lastoccurence)
                     VALUES (?, ?, ?, ?, ?, ?, 'VEVENT', ?, ?)
