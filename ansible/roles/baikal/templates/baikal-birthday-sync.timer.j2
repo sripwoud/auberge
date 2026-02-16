@@ -1,0 +1,10 @@
+[Unit]
+Description=Baikal birthday calendar sync timer
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1d
+AccuracySec=1h
+
+[Install]
+WantedBy=timers.target

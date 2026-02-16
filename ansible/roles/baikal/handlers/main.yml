@@ -8,3 +8,9 @@
   ansible.builtin.systemd_service:
     name: caddy
     state: restarted
+
+- name: Restart birthday sync timer
+  ansible.builtin.systemd_service:
+    name: baikal-birthday-sync.timer
+    state: restarted
+    daemon_reload: true

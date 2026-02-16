@@ -1,0 +1,17 @@
+[Unit]
+Description=Baikal birthday calendar sync service
+After=php{{ baikal_php_version }}-fpm.service
+
+[Service]
+Type=oneshot
+User={{ baikal_sys_user }}
+Group={{ baikal_sys_user }}
+WorkingDirectory={{ baikal_install_dir }}
+ExecStart=/usr/bin/python3 {{ baikal_install_dir }}/baikal-birthday-sync.py {{ baikal_data_dir }}/db/db.sqlite
+StandardOutput=journal
+StandardError=journal
+ProtectSystem=strict
+ReadWritePaths={{ baikal_data_dir }}/db
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true

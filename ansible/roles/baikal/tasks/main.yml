@@ -13,6 +13,7 @@
           - unzip
           - curl
           - sqlite3
+          - python3
         state: present
         update_cache: true
 
@@ -282,4 +283,37 @@
         name: php{{ baikal_php_version }}-fpm
         enabled: true
         state: restarted
+        daemon_reload: true
+
+    - name: Deploy birthday sync script
+      ansible.builtin.copy:
+        src: baikal-birthday-sync.py
+        dest: "{{ baikal_install_dir }}/baikal-birthday-sync.py"
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0750"
+
+    - name: Deploy birthday sync systemd service
+      ansible.builtin.template:
+        src: templates/baikal-birthday-sync.service.j2
+        dest: /etc/systemd/system/baikal-birthday-sync.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart birthday sync timer
+
+    - name: Deploy birthday sync systemd timer
+      ansible.builtin.template:
+        src: templates/baikal-birthday-sync.timer.j2
+        dest: /etc/systemd/system/baikal-birthday-sync.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart birthday sync timer
+
+    - name: Enable and start birthday sync timer
+      ansible.builtin.systemd_service:
+        name: baikal-birthday-sync.timer
+        enabled: true
+        state: started
         daemon_reload: true
