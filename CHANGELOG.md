@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4](https://github.com/sripwoud/auberge/compare/v0.3.3...v0.3.4) - 2026-02-16
+
+### Added
+
+- *(calendar)* add automatic birthday calendar sync ([#69](https://github.com/sripwoud/auberge/pull/69))
+
 ## [0.3.3](https://github.com/sripwoud/auberge/compare/v0.3.2...v0.3.3) - 2026-02-10
 
 ### Fixed
