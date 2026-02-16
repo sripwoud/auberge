@@ -57,10 +57,7 @@ sudo systemctl start baikal-birthday-sync.service
 To check the sync status:
 
 ```bash
-# Check timer status
 systemctl status baikal-birthday-sync.timer
-
-# Check last sync run
 journalctl -u baikal-birthday-sync.service -n 50
 ```
 
