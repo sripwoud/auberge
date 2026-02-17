@@ -11,7 +11,7 @@ For users installing via `cargo install`, hosts are managed in `~/.config/auberg
 auberge host add my-vps
 
 # Or non-interactively
-auberge host add my-vps 194.164.53.11 --user admin --port 22
+auberge host add my-vps 203.0.113.10 --user admin --port 22
 
 # List hosts
 auberge host list
@@ -31,7 +31,7 @@ The `hosts.toml` format:
 ```toml
 [[hosts]]
 name = "auberge"
-address = "194.164.53.11"
+address = "203.0.113.10"
 user = "sripwoud"
 port = 22
 tags = ["production"]

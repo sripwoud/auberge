@@ -28,7 +28,7 @@ First-time VPS setup. Run once on fresh VPS.
 ## Running
 
 ```bash
-auberge ansible bootstrap auberge --ip 194.164.53.11
+auberge ansible bootstrap auberge --ip 203.0.113.10
 ```
 
 ## What It Does

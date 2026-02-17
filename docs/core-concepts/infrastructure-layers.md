@@ -499,7 +499,7 @@ This applies to:
 
 ```bash
 # Bootstrap only (first time)
-auberge ansible bootstrap my-vps --ip 194.164.53.11
+auberge ansible bootstrap my-vps --ip 203.0.113.10
 
 # Hardening only
 auberge ansible run --tags hardening

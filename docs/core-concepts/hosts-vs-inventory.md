@@ -31,7 +31,7 @@ Personal host registry for backup and SSH operations. Each user maintains their 
 ```toml
 [[hosts]]
 name = "my-vps"
-address = "194.164.53.11"
+address = "203.0.113.10"
 user = "sripwoud"
 port = 22
 ssh_key = "~/.ssh/identities/sripwoud_my-vps"
@@ -56,7 +56,7 @@ Use CLI commands to manage hosts:
 auberge host add
 
 # Add host non-interactively
-auberge host add my-vps 194.164.53.11 --user ansible --port 22
+auberge host add my-vps 203.0.113.10 --user ansible --port 22
 
 # List all hosts
 auberge host list
@@ -190,7 +190,7 @@ This file **is committed** to git:
 
 ```bash
 # Add host
-auberge host add my-vps 194.164.53.11
+auberge host add my-vps 203.0.113.10
 
 # Create backup
 auberge backup create --host my-vps
@@ -206,7 +206,7 @@ auberge backup create --host my-vps
 
 ```bash
 # Set environment variables
-export AUBERGE_HOST="194.164.53.11"
+export AUBERGE_HOST="203.0.113.10"
 export SSH_PORT="2222"
 
 # Deploy
@@ -226,7 +226,7 @@ auberge ansible run --host auberge --playbook playbooks/apps.yml
 ```toml
 [[hosts]]
 name = "my-vps"
-address = "194.164.53.11"
+address = "203.0.113.10"
 user = "sripwoud"
 port = 2222
 ```
@@ -243,7 +243,7 @@ hosts:
 **Environment:**
 
 ```bash
-export AUBERGE_HOST="194.164.53.11"
+export AUBERGE_HOST="203.0.113.10"
 export SSH_PORT="2222"
 ```
 
@@ -271,7 +271,7 @@ Found 3 host(s) in ~/.ssh/config
 
 ? Import from SSH config or enter manually?:
   > Enter manually
-    ansible-old (194.164.53.11)
+    ansible-old (203.0.113.10)
     myserver (10.0.0.1)
 ```
 
@@ -309,7 +309,7 @@ Use **hosts.toml** exclusively:
 
 ```bash
 # Add all your VPS hosts
-auberge host add production 194.164.53.11
+auberge host add production 203.0.113.10
 auberge host add staging 10.0.0.1
 
 # Use for everything
@@ -345,7 +345,7 @@ auberge backup create --host auberge
 ansible_host: "{{ lookup('env', 'PROD_HOST') }}"
 
 # Each team member's .env (personal)
-PROD_HOST="194.164.53.11"  # Actual IP
+PROD_HOST="203.0.113.10"  # Actual IP
 ```
 
 ## Related Pages

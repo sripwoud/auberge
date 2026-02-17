@@ -11,7 +11,7 @@ Initial VPS setup (root user → ansible user)
 Creates users, configures SSH, sets up firewall
 
 ```bash
-auberge ansible bootstrap my-vps --ip 194.164.53.11
+auberge ansible bootstrap my-vps --ip 203.0.113.10
 ```
 
 ### hardening.yml

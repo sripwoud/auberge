@@ -24,7 +24,7 @@ cargo install auberge
 Add your VPS:
 
 ```bash
-auberge host add my-vps 194.164.53.11
+auberge host add my-vps 203.0.113.10
 ```
 
 Deploy the full stack:

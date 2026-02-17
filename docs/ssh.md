@@ -76,7 +76,7 @@ Found 3 host(s) in ~/.ssh/config
 
 ? Import from SSH config or enter manually?:
   > Enter manually
-    ansible-old (194.164.53.11)
+    ansible-old (203.0.113.10)
     myserver (10.0.0.1)
 ```
 

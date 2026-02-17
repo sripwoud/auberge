@@ -28,11 +28,11 @@ CLOUDFLARE DNS
 DNS Records for example.com
 NAME                                     TYPE     CONTENT                  TTL
 --------------------------------------------------------------------------------
-example.com                              A        194.164.53.11            300
+example.com                              A        203.0.113.10            300
 www.example.com                          CNAME    example.com              300
-cal.example.com                          A        194.164.53.11            300
-rss.example.com                          A        194.164.53.11            300
-music.example.com                        A        194.164.53.11            300
+cal.example.com                          A        203.0.113.10            300
+rss.example.com                          A        203.0.113.10            300
+music.example.com                        A        203.0.113.10            300
 ```
 
 ### Filter by Subdomain
@@ -46,7 +46,7 @@ auberge dns list --subdomain cal
 ```
 NAME                                     TYPE     CONTENT                  TTL
 --------------------------------------------------------------------------------
-cal.example.com                          A        194.164.53.11            300
+cal.example.com                          A        203.0.113.10            300
 ```
 
 ### Alias
@@ -77,11 +77,11 @@ DNS Status for example.com
 Configured subdomains: dns, lire, rss, musique, calendrier, webdav, url
 
 Active A records: 5
-  cal.example.com -> 194.164.53.11
-  rss.example.com -> 194.164.53.11
-  music.example.com -> 194.164.53.11
-  files.example.com -> 194.164.53.11
-  url.example.com -> 194.164.53.11
+  cal.example.com -> 203.0.113.10
+  rss.example.com -> 203.0.113.10
+  music.example.com -> 203.0.113.10
+  files.example.com -> 203.0.113.10
+  url.example.com -> 203.0.113.10
 
 Missing subdomains: dns, lire
 ```
@@ -99,7 +99,7 @@ auberge dns st
 Create or update a single A record:
 
 ```bash
-auberge dns set --subdomain cal --ip 194.164.53.11
+auberge dns set --subdomain cal --ip 203.0.113.10
 ```
 
 **Example output:**
@@ -107,7 +107,7 @@ auberge dns set --subdomain cal --ip 194.164.53.11
 ```
 CLOUDFLARE DNS
 
-Setting A record: cal.example.com -> 194.164.53.11
+Setting A record: cal.example.com -> 203.0.113.10
 ✓ A record set successfully
 ```
 
@@ -133,7 +133,7 @@ Set up all records for a new deployment:
 
 ```bash
 # Get VPS IP
-AUBERGE_IP="194.164.53.11"
+AUBERGE_IP="203.0.113.10"
 
 # Set each subdomain
 auberge dns set --subdomain dns --ip $AUBERGE_IP
@@ -162,7 +162,7 @@ After adding a new app:
 echo 'MYAPP_SUBDOMAIN = "myapp"' >> mise.toml
 
 # Create DNS record
-auberge dns set --subdomain myapp --ip 194.164.53.11
+auberge dns set --subdomain myapp --ip 203.0.113.10
 ```
 
 ### Move Single Service to Different IP
@@ -170,7 +170,7 @@ auberge dns set --subdomain myapp --ip 194.164.53.11
 Migrate one subdomain to new VPS:
 
 ```bash
-# Old IP: 194.164.53.11
+# Old IP: 203.0.113.10
 # New IP: 10.0.0.1
 
 auberge dns set --subdomain cal --ip 10.0.0.1
@@ -197,13 +197,13 @@ dig +short test.example.com
 Current commands only support A records:
 
 ```bash
-auberge dns set --subdomain www --ip 194.164.53.11
+auberge dns set --subdomain www --ip 203.0.113.10
 ```
 
 Creates:
 
 ```
-www.example.com  A  194.164.53.11
+www.example.com  A  203.0.113.10
 ```
 
 ### AAAA Records (IPv6)
@@ -267,7 +267,7 @@ Not currently supported via CLI.
 Records created via CLI are **DNS-only** (not proxied through Cloudflare):
 
 ```bash
-auberge dns set --subdomain cal --ip 194.164.53.11
+auberge dns set --subdomain cal --ip 203.0.113.10
 # Creates DNS-only A record
 ```
 
@@ -359,10 +359,10 @@ IP format incorrect.
 
 ```bash
 # Good
-auberge dns set --subdomain cal --ip 194.164.53.11
+auberge dns set --subdomain cal --ip 203.0.113.10
 
 # Bad
-auberge dns set --subdomain cal --ip 194.164.53.11:22  # No port
+auberge dns set --subdomain cal --ip 203.0.113.10:22  # No port
 auberge dns set --subdomain cal --ip example.com       # No hostname
 ```
 
@@ -454,7 +454,7 @@ echo "DNS migration complete"
 #!/bin/bash
 
 # Verify all subdomains resolve to expected IP
-EXPECTED_IP="194.164.53.11"
+EXPECTED_IP="203.0.113.10"
 DOMAIN="example.com"
 SUBDOMAINS=("cal" "rss" "music")
 

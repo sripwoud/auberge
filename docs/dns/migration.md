@@ -37,12 +37,12 @@ auberge dns migrate --ip 10.0.0.1 --dry-run
 --------------------------------------------------
 SUBDOMAIN      CURRENT              NEW
 --------------------------------------------------
-cal            194.164.53.11    ->  10.0.0.1
-rss            194.164.53.11    ->  10.0.0.1
-music          194.164.53.11    ->  10.0.0.1
-books          194.164.53.11    ->  10.0.0.1
-files          194.164.53.11    ->  10.0.0.1
-url            194.164.53.11    ->  10.0.0.1
+cal            203.0.113.10    ->  10.0.0.1
+rss            203.0.113.10    ->  10.0.0.1
+music          203.0.113.10    ->  10.0.0.1
+books          203.0.113.10    ->  10.0.0.1
+files          203.0.113.10    ->  10.0.0.1
+url            203.0.113.10    ->  10.0.0.1
 
 Would update 6 A record(s).
 ```
@@ -63,7 +63,7 @@ Would update 6 A record(s).
 Moving from one provider to another:
 
 ```bash
-# Old VPS: 194.164.53.11 (IONOS)
+# Old VPS: 203.0.113.10 (IONOS)
 # New VPS: 10.0.0.1 (Hetzner)
 
 # 1. Deploy to new VPS
@@ -100,7 +100,7 @@ auberge dns migrate --ip 10.0.0.1
 Provider changed your IP:
 
 ```bash
-# Old IP: 194.164.53.11
+# Old IP: 203.0.113.10
 # New IP: 194.164.53.99
 
 auberge dns migrate --ip 194.164.53.99
@@ -127,8 +127,8 @@ auberge dns migrate --ip 194.164.53.99
 **Before migration:**
 
 ```
-cal.example.com       A      194.164.53.11
-rss.example.com       A      194.164.53.11
+cal.example.com       A      203.0.113.10
+rss.example.com       A      203.0.113.10
 staging.example.com   A      10.0.0.50      # Different IP
 www.example.com       CNAME  example.com
 ```
@@ -230,7 +230,7 @@ If migration goes wrong, revert to old IP:
 
 ```bash
 # Rollback DNS
-auberge dns migrate --ip 194.164.53.11  # Old IP
+auberge dns migrate --ip 203.0.113.10  # Old IP
 
 # Verify
 auberge dns status
@@ -291,8 +291,8 @@ Don't decommission old VPS immediately:
 
 **Cloudflare has:**
 
-- cal.example.com → 194.164.53.11
-- old-app.example.com → 194.164.53.11
+- cal.example.com → 203.0.113.10
+- old-app.example.com → 203.0.113.10
 
 **Environment vars have:**
 
@@ -309,7 +309,7 @@ Don't decommission old VPS immediately:
 
 - cal.example.com → 10.0.0.1 (created/updated)
 - rss.example.com → 10.0.0.1 (created)
-- old-app.example.com → 194.164.53.11 (not touched)
+- old-app.example.com → 203.0.113.10 (not touched)
 
 **Choose:**
 

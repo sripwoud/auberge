@@ -25,7 +25,7 @@ Automatically uses the IP address from inventory for the specified host.
 ### With Explicit IP
 
 ```bash
-auberge dns set-all --ip 194.164.53.11
+auberge dns set-all --ip 203.0.113.10
 ```
 
 Uses the provided IP address.
@@ -54,13 +54,13 @@ $ auberge dns set-all --host auberge
 CLOUDFLARE DNS
 
 Creating the following A records:
-  • dns.example.com → 194.164.53.11
-  • lire.example.com → 194.164.53.11
-  • rss.example.com → 194.164.53.11
-  • musique.example.com → 194.164.53.11
-  • calendrier.example.com → 194.164.53.11
-  • webdav.example.com → 194.164.53.11
-  • url.example.com → 194.164.53.11
+  • dns.example.com → 203.0.113.10
+  • lire.example.com → 203.0.113.10
+  • rss.example.com → 203.0.113.10
+  • musique.example.com → 203.0.113.10
+  • calendrier.example.com → 203.0.113.10
+  • webdav.example.com → 203.0.113.10
+  • url.example.com → 203.0.113.10
 
 Proceed? [y/N]: y
 
@@ -72,7 +72,7 @@ Proceed? [y/N]: y
 ✓ Created webdav.example.com
 ✓ Created url.example.com
 
-✓ Successfully created 7/7 A records pointing to 194.164.53.11
+✓ Successfully created 7/7 A records pointing to 203.0.113.10
 ```
 
 ## Options
@@ -225,7 +225,7 @@ hosts:
 ### Using --ip
 
 ```bash
-auberge dns set-all --ip 194.164.53.11
+auberge dns set-all --ip 203.0.113.10
 ```
 
 **Behavior:**
@@ -313,7 +313,7 @@ $ auberge dns set-all --host auberge --continue-on-error
 ✓ Created books.example.com
 # Continues through all records
 
-✓ Successfully created 4/5 A records pointing to 194.164.53.11
+✓ Successfully created 4/5 A records pointing to 203.0.113.10
 Failed to create 1 records
 ```
 
@@ -446,7 +446,7 @@ Specified host doesn't exist.
 ansible-inventory -i ansible/inventory.yml --list
 
 # Or use IP instead
-auberge dns set-all --ip 194.164.53.11
+auberge dns set-all --ip 203.0.113.10
 ```
 
 ### "Rate limit exceeded"

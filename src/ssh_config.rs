@@ -283,23 +283,23 @@ Host github github.com
   IdentitiesOnly yes
   PreferredAuthentications publickey
 
-Host lechuck-cloud
-  HostName 194.164.53.11
-  IdentityFile ~/.ssh/identities/ionos
+Host staging
+  HostName 203.0.113.10
+  IdentityFile ~/.ssh/identities/staging
   IdentitiesOnly yes
-  User sripwoud
+  User deploy
   Port 2209
 
-Host aur.archlinux.org
-  IdentityFile ~/.ssh/identities/aur
+Host registry
+  IdentityFile ~/.ssh/identities/registry
   IdentitiesOnly yes
-  User sripwoud
+  User admin
 
-Host vibecoder
-  HostName 135.125.107.230
-  IdentityFile ~/.ssh/identities/vibecoder
+Host production
+  HostName 198.51.100.42
+  IdentityFile ~/.ssh/identities/production
   IdentitiesOnly yes
-  User sripwoud
+  User deploy
   Port 59865
 
 Host *
@@ -325,13 +325,13 @@ Host *
         assert_eq!(github.hostname, Some("github.com".to_string()));
         assert!(github.identity_file.is_some());
 
-        let lechuck = filtered.iter().find(|h| h.name == "lechuck-cloud").unwrap();
-        assert_eq!(lechuck.hostname, Some("194.164.53.11".to_string()));
-        assert_eq!(lechuck.user, Some("sripwoud".to_string()));
-        assert_eq!(lechuck.port, Some(2209));
+        let staging = filtered.iter().find(|h| h.name == "staging").unwrap();
+        assert_eq!(staging.hostname, Some("203.0.113.10".to_string()));
+        assert_eq!(staging.user, Some("deploy".to_string()));
+        assert_eq!(staging.port, Some(2209));
 
-        let vibecoder = filtered.iter().find(|h| h.name == "vibecoder").unwrap();
-        assert_eq!(vibecoder.port, Some(59865));
+        let production = filtered.iter().find(|h| h.name == "production").unwrap();
+        assert_eq!(production.port, Some(59865));
 
         assert!(filtered.iter().all(|h| !h.name.contains('*')));
     }

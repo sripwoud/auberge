@@ -21,7 +21,7 @@ Common Ansible playbook failures and fixes.
 ssh ansible@vps "sudo -n true"
 
 # Re-bootstrap if needed
-auberge ansible bootstrap my-vps --ip 194.164.53.11
+auberge ansible bootstrap my-vps --ip 203.0.113.10
 ```
 
 ### "apt lock" errors

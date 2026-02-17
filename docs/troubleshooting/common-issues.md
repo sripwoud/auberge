@@ -72,7 +72,7 @@ ls -l ~/.config/age/key.txt
 
 ```bash
 # Add host
-auberge host add my-vps 194.164.53.11
+auberge host add my-vps 203.0.113.10
 
 # Or check inventory
 ansible-inventory -i ansible/inventory.yml --list
@@ -89,7 +89,7 @@ ansible-inventory -i ansible/inventory.yml --list
 mkdir -p ~/.config/auberge
 
 # Add first host
-auberge host add my-vps 194.164.53.11
+auberge host add my-vps 203.0.113.10
 ```
 
 ## Backup Issues
@@ -141,7 +141,7 @@ rm -rf ~/.ssh/ctl-*
 ssh ansible@vps-host "sudo -n true"
 
 # Re-run bootstrap if needed
-auberge ansible bootstrap my-vps --ip 194.164.53.11
+auberge ansible bootstrap my-vps --ip 203.0.113.10
 ```
 
 ### Handler not running

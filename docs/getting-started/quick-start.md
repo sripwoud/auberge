@@ -11,7 +11,7 @@ cargo install auberge
 ## 2. Add Your VPS
 
 ```bash
-auberge host add my-vps 194.164.53.11
+auberge host add my-vps 203.0.113.10
 ```
 
 Follow the prompts to enter SSH user and port (defaults to current user, port 22).

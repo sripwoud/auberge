@@ -74,7 +74,7 @@ mise set --age-encrypt --prompt PRIMARY_DOMAIN
 
 ```bash
 # Use valid IPv4 format
-auberge dns set --subdomain cal --ip 194.164.53.11
+auberge dns set --subdomain cal --ip 203.0.113.10
 
 # Not:
 # - Hostname

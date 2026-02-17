@@ -14,7 +14,7 @@ Detailed walkthrough of deploying Auberge for the first time.
 Add your VPS as a host:
 
 ```bash
-auberge host add my-vps 194.164.53.11
+auberge host add my-vps 203.0.113.10
 ```
 
 You'll be prompted for:
@@ -38,7 +38,7 @@ This creates a key at `~/.ssh/identities/root_my-vps`.
 First-time VPS setup (creates admin user, secures SSH):
 
 ```bash
-auberge ansible bootstrap --host my-vps --ip 194.164.53.11
+auberge ansible bootstrap --host my-vps --ip 203.0.113.10
 ```
 
 This:
