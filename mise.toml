@@ -55,7 +55,7 @@ rust = "latest"
 [env]
 BAIKAL_SUBDOMAIN = "calendrier"
 BLOCKY_SUBDOMAIN = "dns"
-CALIBRE_SUBDOMAIN = "lire"
+BOOKLORE_SUBDOMAIN = "lire"
 FRESHRSS_SUBDOMAIN = "rss"
 NAVIDROME_SUBDOMAIN = "musique"
 WEBDAV_SUBDOMAIN = "webdav"

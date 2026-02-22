@@ -1,0 +1,15 @@
+booklore_install_path: /opt/booklore
+booklore_data_path: /srv/booklore
+booklore_bookdrop_path: /srv/bookdrop
+booklore_sys_user: booklore
+booklore_sys_group: booklore
+booklore_port: 6060
+booklore_domain: "{{ booklore_subdomain }}.{{ primary_domain }}"
+
+booklore_db_host: localhost
+booklore_db_name: booklore
+booklore_db_user: booklore
+# booklore_db_password must be set in your inventory or Ansible Vault
+
+booklore_github_repo: booklore-app/booklore
+booklore_github_api_latest_release_url: "https://api.github.com/repos/{{ booklore_github_repo }}/releases/latest"

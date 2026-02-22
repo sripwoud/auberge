@@ -1,0 +1,17 @@
+[Unit]
+Description=Booklore - Self-hosted book library
+After=network.target mysql.service
+Requires=mysql.service
+
+[Service]
+Type=simple
+User={{ booklore_sys_user }}
+Group={{ booklore_sys_group }}
+WorkingDirectory={{ booklore_install_path }}
+EnvironmentFile={{ booklore_install_path }}/.env
+ExecStart=/usr/bin/java -jar {{ booklore_install_path }}/app.jar
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

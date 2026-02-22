@@ -1,0 +1,9 @@
+- name: Restart booklore
+  ansible.builtin.systemd_service:
+    name: booklore
+    state: restarted
+
+- name: Restart caddy
+  ansible.builtin.systemd_service:
+    name: caddy
+    state: restarted

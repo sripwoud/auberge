@@ -1,0 +1,263 @@
+- name: Install and configure Booklore
+  block:
+    - name: Fetch latest Booklore release information from GitHub API
+      become: false
+      delegate_to: localhost
+      register: booklore_release_info
+      ansible.builtin.uri:
+        url: "{{ booklore_github_api_latest_release_url }}"
+        method: GET
+        return_content: true
+
+    - name: Set Booklore version
+      when: booklore_release_info.json is defined
+      delegate_to: localhost
+      ansible.builtin.set_fact:
+        booklore_version: "{{ booklore_release_info.json.tag_name | replace('v', '') }}"
+
+    - name: Check if Booklore version file exists
+      ansible.builtin.stat:
+        path: "{{ booklore_install_path }}/version"
+      register: booklore_version_file
+
+    - name: Read installed Booklore version
+      when: booklore_version_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ booklore_install_path }}/version"
+      register: booklore_installed_version_raw
+
+    - name: Set installed Booklore version fact
+      ansible.builtin.set_fact:
+        booklore_installed_version: >-
+          {{ booklore_installed_version_raw.content | b64decode | trim
+             if booklore_version_file.stat.exists else '' }}
+
+    - name: Download Eclipse Temurin APT repository GPG key
+      ansible.builtin.get_url:
+        url: https://packages.adoptium.net/artifactory/api/gpg/key/public
+        dest: /tmp/adoptium.asc
+        mode: "0644"
+
+    - name: Dearmor Eclipse Temurin APT repository GPG key
+      ansible.builtin.command:
+        cmd: gpg --dearmor -o /usr/share/keyrings/adoptium.gpg /tmp/adoptium.asc
+        creates: /usr/share/keyrings/adoptium.gpg
+      changed_when: true
+
+    - name: Add Eclipse Temurin APT repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [signed-by=/usr/share/keyrings/adoptium.gpg]
+          https://packages.adoptium.net/artifactory/deb
+          {{ ansible_distribution_release }} main
+        filename: adoptium
+        state: present
+
+    - name: Download NodeSource APT repository GPG key
+      ansible.builtin.get_url:
+        url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+        dest: /tmp/nodesource.asc
+        mode: "0644"
+
+    - name: Dearmor NodeSource APT repository GPG key
+      ansible.builtin.command:
+        cmd: gpg --dearmor -o /usr/share/keyrings/nodesource.gpg /tmp/nodesource.asc
+        creates: /usr/share/keyrings/nodesource.gpg
+      changed_when: true
+
+    - name: Add NodeSource APT repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [signed-by=/usr/share/keyrings/nodesource.gpg]
+          https://deb.nodesource.com/node_22.x nodistro main
+        filename: nodesource
+        state: present
+
+    - name: Install Booklore dependencies
+      ansible.builtin.apt:
+        name:
+          - temurin-25-jdk
+          - nodejs
+          - mariadb-server
+          - mariadb-client
+          - python3-pymysql
+        state: present
+        update_cache: true
+
+    - name: Start and enable MariaDB service
+      ansible.builtin.systemd_service:
+        name: mysql
+        enabled: true
+        state: started
+
+    - name: Create Booklore database
+      community.mysql.mysql_db:
+        name: "{{ booklore_db_name }}"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create Booklore database user
+      community.mysql.mysql_user:
+        name: "{{ booklore_db_user }}"
+        password: "{{ booklore_db_password }}"
+        priv: "{{ booklore_db_name }}.*:ALL"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create Booklore system group
+      ansible.builtin.group:
+        name: "{{ booklore_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create Booklore system user
+      ansible.builtin.user:
+        name: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ booklore_install_path }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create Booklore installation directory
+      ansible.builtin.file:
+        path: "{{ booklore_install_path }}"
+        state: directory
+        owner: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        mode: "0755"
+
+    - name: Create Booklore data directory
+      ansible.builtin.file:
+        path: "{{ booklore_data_path }}"
+        state: directory
+        owner: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        mode: "0755"
+
+    - name: Create Booklore bookdrop directory
+      ansible.builtin.file:
+        path: "{{ booklore_bookdrop_path }}"
+        state: directory
+        owner: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        mode: "0755"
+
+    - name: Build and deploy Booklore
+      when: booklore_installed_version != booklore_version
+      block:
+        - name: Download Booklore source tarball
+          ansible.builtin.get_url:
+            url: "https://github.com/{{ booklore_github_repo }}/archive/refs/tags/v{{ booklore_version }}.tar.gz"
+            dest: "/tmp/booklore-{{ booklore_version }}.tar.gz"
+            mode: "0644"
+
+        - name: Extract Booklore source tarball
+          ansible.builtin.unarchive:
+            src: "/tmp/booklore-{{ booklore_version }}.tar.gz"
+            dest: /tmp
+            remote_src: true
+            creates: "/tmp/booklore-{{ booklore_version }}"
+
+        - name: Install Node.js dependencies for Booklore UI
+          ansible.builtin.command:
+            cmd: npm ci --force
+            chdir: "/tmp/booklore-{{ booklore_version }}/booklore-ui"
+          changed_when: true
+
+        - name: Build Booklore Angular frontend
+          ansible.builtin.command:
+            cmd: npm run build -- --configuration=production
+            chdir: "/tmp/booklore-{{ booklore_version }}/booklore-ui"
+          changed_when: true
+
+        - name: Create Spring Boot static resources directory
+          ansible.builtin.file:
+            path: "/tmp/booklore-{{ booklore_version }}/booklore-api/src/main/resources/static"
+            state: directory
+            mode: "0755"
+
+        - name: Copy Angular build output to Spring Boot static resources
+          ansible.builtin.copy:
+            src: "/tmp/booklore-{{ booklore_version }}/booklore-ui/dist/booklore/browser/"
+            dest: "/tmp/booklore-{{ booklore_version }}/booklore-api/src/main/resources/static/"
+            remote_src: true
+            mode: preserve
+
+        - name: Build Booklore Spring Boot JAR
+          ansible.builtin.command:
+            cmd: ./gradlew clean build -x test --no-daemon
+            chdir: "/tmp/booklore-{{ booklore_version }}/booklore-api"
+          changed_when: true
+          environment:
+            JAVA_HOME: /usr/lib/jvm/temurin-25-jdk-amd64
+
+        - name: Find built Booklore JAR
+          ansible.builtin.find:
+            paths: "/tmp/booklore-{{ booklore_version }}/booklore-api/build/libs"
+            patterns: "booklore-api-*.jar"
+            excludes: "*-plain.jar"
+          register: booklore_jar_files
+
+        - name: Deploy Booklore JAR
+          ansible.builtin.copy:
+            src: "{{ booklore_jar_files.files[0].path }}"
+            dest: "{{ booklore_install_path }}/app.jar"
+            owner: "{{ booklore_sys_user }}"
+            group: "{{ booklore_sys_group }}"
+            mode: "0644"
+            remote_src: true
+          notify: Restart booklore
+
+        - name: Write installed version file
+          ansible.builtin.copy:
+            content: "{{ booklore_version }}"
+            dest: "{{ booklore_install_path }}/version"
+            owner: "{{ booklore_sys_user }}"
+            group: "{{ booklore_sys_group }}"
+            mode: "0644"
+
+        - name: Clean up build directory
+          ansible.builtin.file:
+            path: "/tmp/booklore-{{ booklore_version }}"
+            state: absent
+
+        - name: Clean up source tarball
+          ansible.builtin.file:
+            path: "/tmp/booklore-{{ booklore_version }}.tar.gz"
+            state: absent
+
+    - name: Deploy Booklore environment file
+      ansible.builtin.template:
+        src: templates/booklore.env.j2
+        dest: "{{ booklore_install_path }}/.env"
+        owner: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        mode: "0600"
+      notify: Restart booklore
+
+    - name: Deploy Booklore systemd service file
+      ansible.builtin.template:
+        src: templates/booklore.service.j2
+        dest: /etc/systemd/system/booklore.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart booklore
+
+    - name: Enable and start Booklore service
+      ansible.builtin.systemd_service:
+        name: booklore
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Deploy Booklore Caddyfile
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ booklore_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
