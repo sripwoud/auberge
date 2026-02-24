@@ -24,30 +24,31 @@
           {{ booklore_installed_version_raw.content | b64decode | trim
              if booklore_version_file.stat.exists else '' }}
 
-    - name: Download Eclipse Temurin APT repository GPG key
-      ansible.builtin.get_url:
-        url: https://packages.adoptium.net/artifactory/api/gpg/key/public
-        dest: /tmp/adoptium.asc
-        mode: "0644"
+    - name: Create Java installation directory
+      ansible.builtin.file:
+        path: "{{ booklore_java_home }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
 
-    - name: Dearmor Eclipse Temurin APT repository GPG key
-      ansible.builtin.command:
-        cmd: gpg --dearmor -o /usr/share/keyrings/adoptium.gpg /tmp/adoptium.asc
-        creates: /usr/share/keyrings/adoptium.gpg
+    - name: Check if JRE is already installed
+      ansible.builtin.stat:
+        path: "{{ booklore_java_home }}/bin/java"
+      register: booklore_java_binary
 
-    - name: Add Eclipse Temurin APT repository
-      ansible.builtin.apt_repository:
-        repo: >-
-          deb [signed-by=/usr/share/keyrings/adoptium.gpg]
-          https://packages.adoptium.net/artifactory/deb
-          {{ ansible_distribution_release }} main
-        filename: adoptium
-        state: present
+    - name: Download and extract Eclipse Temurin JRE
+      when: not booklore_java_binary.stat.exists
+      ansible.builtin.unarchive:
+        src: "{{ booklore_java_url }}"
+        dest: "{{ booklore_java_home }}"
+        remote_src: true
+        extra_opts:
+          - --strip-components=1
 
     - name: Install Booklore dependencies
       ansible.builtin.apt:
         name:
-          - temurin-25-jre
           - mariadb-server
           - mariadb-client
           - python3-pymysql

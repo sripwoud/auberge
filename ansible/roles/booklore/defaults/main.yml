@@ -15,3 +15,7 @@ booklore_github_repo: booklore-app/booklore
 booklore_version: "2.0.1"
 booklore_jar_url: "https://github.com/sripwoud/auberge/releases/download/booklore/v{{ booklore_version }}/booklore-api.jar"
 booklore_jvm_opts: "-Xmx768m -XX:+UseG1GC -XX:+UseStringDeduplication"
+
+booklore_java_major: "25"
+booklore_java_home: "/opt/java/temurin-{{ booklore_java_major }}-jre"
+booklore_java_url: "https://api.adoptium.net/v3/binary/latest/{{ booklore_java_major }}/ga/linux/x64/jre/hotspot/normal/eclipse"
