@@ -9,6 +9,7 @@ booklore_domain: "{{ booklore_subdomain }}.{{ primary_domain }}"
 booklore_db_host: localhost
 booklore_db_name: booklore
 booklore_db_user: booklore
+booklore_db_password: "{{ lookup('env', 'BOOKLORE_DB_PASSWORD') }}"
 
 booklore_github_repo: booklore-app/booklore
 booklore_version: "2.0.1"
