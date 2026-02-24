@@ -28,7 +28,7 @@ jobs:
 
       - run: curl -fsSL "https://github.com/booklore-app/booklore/archive/refs/tags/v${{ inputs.version }}.tar.gz" | tar -xz
 
-      - run: npm ci
+      - run: npm ci --force
         working-directory: booklore-${{ inputs.version }}/booklore-ui
 
       - run: npm run build -- --configuration=production
