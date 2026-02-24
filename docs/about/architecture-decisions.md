@@ -8,7 +8,7 @@ Why Auberge is built the way it is.
 
 **Reasoning:**
 
-- **Memory efficiency:** 1GB VPS can't spare 200-300MB for Docker daemon
+- **Memory efficiency:** Small VPS can't spare 200-300MB for Docker daemon
 - **Simplicity:** No container orchestration complexity
 - **Performance:** Native binaries, no virtualization overhead
 - **Debugging:** Standard systemd tools (journalctl, systemctl)

@@ -1,6 +1,6 @@
 # Calibre
 
-Calibre-Web is available as an alternative to the default [Booklore](booklore.md) book library.
+Calibre-Web is a lightweight alternative to the default [Booklore](booklore.md) book library. It uses significantly less RAM (~50MB vs ~1GB) and doesn't require MariaDB or a JVM.
 
 Ebook library management and web interface for reading and organizing books.
 
