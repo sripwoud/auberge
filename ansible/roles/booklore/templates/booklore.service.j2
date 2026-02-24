@@ -9,9 +9,19 @@ User={{ booklore_sys_user }}
 Group={{ booklore_sys_group }}
 WorkingDirectory={{ booklore_install_path }}
 EnvironmentFile={{ booklore_install_path }}/.env
-ExecStart=/usr/bin/java -jar {{ booklore_install_path }}/app.jar
+ExecStart=/usr/bin/java {{ booklore_jvm_opts }} -jar {{ booklore_install_path }}/app.jar
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ReadWritePaths={{ booklore_install_path }} {{ booklore_data_path }} {{ booklore_bookdrop_path }}
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

@@ -9,7 +9,8 @@ booklore_domain: "{{ booklore_subdomain }}.{{ primary_domain }}"
 booklore_db_host: localhost
 booklore_db_name: booklore
 booklore_db_user: booklore
-# booklore_db_password must be set in your inventory or Ansible Vault
 
 booklore_github_repo: booklore-app/booklore
-booklore_github_api_latest_release_url: "https://api.github.com/repos/{{ booklore_github_repo }}/releases/latest"
+booklore_version: "2.0.1"
+booklore_jar_url: "https://github.com/sripwoud/auberge/releases/download/booklore/v{{ booklore_version }}/booklore-api.jar"
+booklore_jvm_opts: "-Xmx768m -XX:+UseG1GC -XX:+UseStringDeduplication"
