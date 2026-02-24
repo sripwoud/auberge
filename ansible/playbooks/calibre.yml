@@ -1,0 +1,7 @@
+---
+- name: Deploy Calibre-Web
+  hosts: vps
+  become: true
+  roles:
+    - role: calibre
+      tags: [calibre]

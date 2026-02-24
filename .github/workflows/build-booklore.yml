@@ -1,0 +1,51 @@
+name: build-booklore
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Booklore version (without v prefix, e.g. 2.0.1)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - run: curl -fsSL "https://github.com/booklore-app/booklore/archive/refs/tags/v${{ inputs.version }}.tar.gz" | tar -xz
+
+      - run: npm ci
+        working-directory: booklore-${{ inputs.version }}/booklore-ui
+
+      - run: npm run build -- --configuration=production
+        working-directory: booklore-${{ inputs.version }}/booklore-ui
+
+      - run: cp -r booklore-${{ inputs.version }}/booklore-ui/dist/booklore/browser/. booklore-${{ inputs.version }}/booklore-api/src/main/resources/static/
+
+      - run: ./gradlew clean build -x test --no-daemon
+        working-directory: booklore-${{ inputs.version }}/booklore-api
+
+      - run: |
+          JAR=$(find booklore-${{ inputs.version }}/booklore-api/build/libs/ -name 'booklore-api-*.jar' ! -name '*-plain.jar')
+          cp "$JAR" booklore-api.jar
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: booklore/v${{ inputs.version }}
+          files: booklore-api.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
