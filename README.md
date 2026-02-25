@@ -1,4 +1,11 @@
-# [Auberge](https://auberge.sripwoud.xyz)
+<p align="center">
+  <h1 align="center"><a href="https://auberge.sripwoud.xyz">Auberge</a></h1>
+</p>
+<p align="center"
+  <a href="https://crates.io/crates/auberge">
+    <img src="https://img.shields.io/crates/v/auberge" alt="Crates.io">
+  </a>
+</p>
 
 > Ansible-powered VPS management without Docker bloat
 
