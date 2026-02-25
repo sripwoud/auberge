@@ -6,7 +6,7 @@ booklore_sys_group: booklore
 booklore_port: 6060
 booklore_domain: "{{ booklore_subdomain }}.{{ primary_domain }}"
 
-booklore_db_host: localhost
+booklore_db_host: "127.0.0.1"
 booklore_db_name: booklore
 booklore_db_user: booklore
 booklore_db_password: "{{ lookup('env', 'BOOKLORE_DB_PASSWORD') }}"
