@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5](https://github.com/sripwoud/auberge/compare/v0.3.4...v0.3.5) - 2026-02-25
+
+### Added
+
+- use booklore instead of calibre by default ([#72](https://github.com/sripwoud/auberge/pull/72))
+
+### Fixed
+
+- *(ci)* add --legacy-peer-deps to npm ci for booklore build
+
+### Other
+
+- *(booklore)* add GH Action to build JAR from source
+- remove lechuck-cloud references and replace old IP in docs
+
 ## [0.3.4](https://github.com/sripwoud/auberge/compare/v0.3.3...v0.3.4) - 2026-02-16
 
 ### Added
