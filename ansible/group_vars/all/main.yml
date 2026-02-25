@@ -13,7 +13,7 @@ dns_default_ttl: "{{ lookup('env', 'DNS_DEFAULT_TTL') | int }}"
 
 baikal_subdomain: "{{ lookup('env', 'BAIKAL_SUBDOMAIN') }}"
 blocky_subdomain: "{{ lookup('env', 'BLOCKY_SUBDOMAIN') }}"
-calibre_subdomain: "{{ lookup('env', 'CALIBRE_SUBDOMAIN') }}"
+booklore_subdomain: "{{ lookup('env', 'BOOKLORE_SUBDOMAIN') }}"
 freshrss_subdomain: "{{ lookup('env', 'FRESHRSS_SUBDOMAIN') }}"
 navidrome_subdomain: "{{ lookup('env', 'NAVIDROME_SUBDOMAIN') }}"
 webdav_subdomain: "{{ lookup('env', 'WEBDAV_SUBDOMAIN') }}"

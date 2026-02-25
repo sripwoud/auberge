@@ -1,0 +1,195 @@
+- name: Install and configure Booklore
+  block:
+    - name: Validate booklore_db_password is set
+      ansible.builtin.assert:
+        that:
+          - booklore_db_password is defined
+          - booklore_db_password | length > 0
+          - booklore_admin_password is defined
+          - booklore_admin_password | length > 0
+        fail_msg: "booklore_db_password and booklore_admin_password must be defined and non-empty"
+
+    - name: Check if Booklore version file exists
+      ansible.builtin.stat:
+        path: "{{ booklore_install_path }}/version"
+      register: booklore_version_file
+
+    - name: Read installed Booklore version
+      when: booklore_version_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ booklore_install_path }}/version"
+      register: booklore_installed_version_raw
+
+    - name: Set installed Booklore version fact
+      ansible.builtin.set_fact:
+        booklore_installed_version: >-
+          {{ booklore_installed_version_raw.content | b64decode | trim
+             if booklore_version_file.stat.exists else '' }}
+
+    - name: Create Java installation directory
+      ansible.builtin.file:
+        path: "{{ booklore_java_home }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Check if JRE is already installed
+      ansible.builtin.stat:
+        path: "{{ booklore_java_home }}/bin/java"
+      register: booklore_java_binary
+
+    - name: Download and extract Eclipse Temurin JRE
+      when: not booklore_java_binary.stat.exists
+      ansible.builtin.unarchive:
+        src: "{{ booklore_java_url }}"
+        dest: "{{ booklore_java_home }}"
+        remote_src: true
+        extra_opts:
+          - --strip-components=1
+
+    - name: Install Booklore dependencies
+      ansible.builtin.apt:
+        name:
+          - mariadb-server
+          - mariadb-client
+          - python3-pymysql
+        state: present
+        update_cache: true
+
+    - name: Start and enable MariaDB service
+      ansible.builtin.systemd_service:
+        name: mysql
+        enabled: true
+        state: started
+
+    - name: Create Booklore database
+      community.mysql.mysql_db:
+        name: "{{ booklore_db_name }}"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create Booklore database user
+      no_log: true
+      community.mysql.mysql_user:
+        name: "{{ booklore_db_user }}"
+        password: "{{ booklore_db_password }}"
+        priv: "{{ booklore_db_name }}.*:ALL"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create Booklore system group
+      ansible.builtin.group:
+        name: "{{ booklore_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create Booklore system user
+      ansible.builtin.user:
+        name: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ booklore_install_path }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create Booklore installation directory
+      ansible.builtin.file:
+        path: "{{ booklore_install_path }}"
+        state: directory
+        owner: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        mode: "0755"
+
+    - name: Create Booklore data directory
+      ansible.builtin.file:
+        path: "{{ booklore_data_path }}"
+        state: directory
+        owner: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        mode: "0755"
+
+    - name: Create Booklore bookdrop directory
+      ansible.builtin.file:
+        path: "{{ booklore_bookdrop_path }}"
+        state: directory
+        owner: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        mode: "0755"
+
+    - name: Download Booklore JAR
+      when: booklore_installed_version != booklore_version
+      ansible.builtin.get_url:
+        url: "{{ booklore_jar_url }}"
+        dest: "{{ booklore_install_path }}/app.jar"
+        owner: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        mode: "0644"
+      notify: Restart booklore
+
+    - name: Write installed version file
+      when: booklore_installed_version != booklore_version
+      ansible.builtin.copy:
+        content: "{{ booklore_version }}"
+        dest: "{{ booklore_install_path }}/version"
+        owner: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        mode: "0644"
+
+    - name: Deploy Booklore environment file
+      ansible.builtin.template:
+        src: templates/booklore.env.j2
+        dest: "{{ booklore_install_path }}/.env"
+        owner: "{{ booklore_sys_user }}"
+        group: "{{ booklore_sys_group }}"
+        mode: "0600"
+      notify: Restart booklore
+
+    - name: Deploy Booklore systemd service file
+      ansible.builtin.template:
+        src: templates/booklore.service.j2
+        dest: /etc/systemd/system/booklore.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart booklore
+
+    - name: Enable and start Booklore service
+      ansible.builtin.systemd_service:
+        name: booklore
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Wait for Booklore to be ready
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ booklore_port }}/api/v1/setup/status"
+        method: GET
+      register: booklore_setup_status
+      until: booklore_setup_status.status == 200
+      retries: 30
+      delay: 2
+
+    - name: Provision admin user
+      when: not booklore_setup_status.json.data
+      no_log: true
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ booklore_port }}/api/v1/setup"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ booklore_admin_user }}"
+          name: "{{ booklore_admin_name }}"
+          email: "{{ booklore_admin_email }}"
+          password: "{{ booklore_admin_password }}"
+        status_code: 200
+
+    - name: Deploy Booklore Caddyfile
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ booklore_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy

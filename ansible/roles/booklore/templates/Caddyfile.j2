@@ -1,0 +1,17 @@
+{{ booklore_domain }} {
+	reverse_proxy 127.0.0.1:{{ booklore_port }} {
+		header_up X-Real-IP {remote_ip}
+		header_up X-Forwarded-For {remote_ip}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	request_body {
+		max_size 100M
+	}
+
+	encode gzip
+
+	log {
+		output file /var/log/caddy/{{ booklore_domain }}.log
+	}
+}

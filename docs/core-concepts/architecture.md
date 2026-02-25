@@ -4,7 +4,7 @@ Auberge: Rust CLI → Ansible → systemd services
 
 ## Design Philosophy
 
-**No Docker**: Direct systemd services for minimal resource overhead (critical for 1GB VPS)
+**No Docker**: Direct systemd services for minimal resource overhead
 
 **Rust CLI**: Type-safe wrapper around Ansible with safety checks and backup automation
 

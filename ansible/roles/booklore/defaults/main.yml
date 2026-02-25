@@ -1,0 +1,26 @@
+booklore_install_path: /opt/booklore
+booklore_data_path: /srv/booklore
+booklore_bookdrop_path: /srv/bookdrop
+booklore_sys_user: booklore
+booklore_sys_group: booklore
+booklore_port: 6060
+booklore_domain: "{{ booklore_subdomain }}.{{ primary_domain }}"
+
+booklore_db_host: "127.0.0.1"
+booklore_db_name: booklore
+booklore_db_user: booklore
+booklore_db_password: "{{ lookup('env', 'BOOKLORE_DB_PASSWORD') }}"
+
+booklore_admin_user: "{{ lookup('env', 'BOOKLORE_ADMIN_USER') | default(lookup('env', 'ADMIN_USER_NAME'), true) | default('admin', true) }}"
+booklore_admin_name: "{{ booklore_admin_user }}"
+booklore_admin_email: "{{ booklore_admin_user }}@{{ primary_domain }}"
+booklore_admin_password: "{{ lookup('env', 'BOOKLORE_ADMIN_PASSWORD') }}"
+
+booklore_github_repo: booklore-app/booklore
+booklore_version: "2.0.1"
+booklore_jar_url: "https://github.com/sripwoud/auberge/releases/download/booklore/v{{ booklore_version }}/booklore-api.jar"
+booklore_jvm_opts: "-Xmx768m -XX:+UseG1GC -XX:+UseStringDeduplication"
+
+booklore_java_major: "25"
+booklore_java_home: "/opt/java/temurin-{{ booklore_java_major }}-jre"
+booklore_java_url: "https://api.adoptium.net/v3/binary/latest/{{ booklore_java_major }}/ga/linux/x64/jre/hotspot/normal/eclipse"
