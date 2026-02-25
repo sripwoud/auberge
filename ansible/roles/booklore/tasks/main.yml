@@ -5,7 +5,9 @@
         that:
           - booklore_db_password is defined
           - booklore_db_password | length > 0
-        fail_msg: "booklore_db_password must be defined and non-empty"
+          - booklore_admin_password is defined
+          - booklore_admin_password | length > 0
+        fail_msg: "booklore_db_password and booklore_admin_password must be defined and non-empty"
 
     - name: Check if Booklore version file exists
       ansible.builtin.stat:
@@ -159,6 +161,29 @@
         enabled: true
         state: started
         daemon_reload: true
+
+    - name: Wait for Booklore to be ready
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ booklore_port }}/api/v1/setup/status"
+        method: GET
+      register: booklore_setup_status
+      until: booklore_setup_status.status == 200
+      retries: 30
+      delay: 2
+
+    - name: Provision admin user
+      when: not booklore_setup_status.json.data
+      no_log: true
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ booklore_port }}/api/v1/setup"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ booklore_admin_user }}"
+          name: "{{ booklore_admin_name }}"
+          email: "{{ booklore_admin_email }}"
+          password: "{{ booklore_admin_password }}"
+        status_code: 200
 
     - name: Deploy Booklore Caddyfile
       ansible.builtin.template:
