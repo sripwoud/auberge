@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5](https://github.com/sripwoud/auberge/compare/v0.3.4...v0.3.5) - 2026-02-26
+
+### Fixed
+
+- *(ci)* add cross-toolchain setup for aarch64-linux builds
+
+### Other
+
+- add pre-compiled binary install option ([#75](https://github.com/sripwoud/auberge/pull/75))
+- add workflow_dispatch for manual binary builds
+- add multi-platform binary releases ([#74](https://github.com/sripwoud/auberge/pull/74))
+- add crates.io version badge to README
+
 ## [0.3.4](https://github.com/sripwoud/auberge/compare/v0.3.3...v0.3.4) - 2026-02-16
 
 ### Added
