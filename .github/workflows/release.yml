@@ -14,6 +14,7 @@ jobs:
       pull-requests: read
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
+      tag: ${{ steps.get-tag.outputs.tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,6 +33,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Get release tag
+        id: get-tag
+        if: steps.release.outputs.releases_created == 'true'
+        run: echo "tag=${{ fromJSON(steps.release.outputs.releases)[0].tag_name }}" >> "$GITHUB_OUTPUT"
 
   release-plz-pr:
     name: Release-plz PR
@@ -83,6 +89,8 @@ jobs:
             os: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-plz-release.outputs.tag }}
 
       - uses: taiki-e/setup-cross-toolchain-action@v1
         with:
@@ -93,4 +101,5 @@ jobs:
         with:
           bin: auberge
           target: ${{ matrix.target }}
+          ref: refs/tags/${{ needs.release-plz-release.outputs.tag }}
           token: ${{ secrets.GITHUB_TOKEN }}
