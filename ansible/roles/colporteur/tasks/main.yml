@@ -86,22 +86,12 @@
         mode: "0644"
 
     - name: Deploy Colporteur config file
-      ansible.builtin.template:
-        src: templates/config.toml.j2
+      ansible.builtin.copy:
+        src: "{{ colporteur_config_src }}"
         dest: "{{ colporteur_config_dir }}/config.toml"
         owner: root
         group: "{{ colporteur_sys_group }}"
-        mode: "0644"
-      notify: Restart colporteur
-
-    - name: Deploy Colporteur environment file
-      no_log: true
-      ansible.builtin.template:
-        src: templates/colporteur.env.j2
-        dest: "{{ colporteur_config_dir }}/colporteur.env"
-        owner: root
-        group: "{{ colporteur_sys_group }}"
-        mode: "0640"
+        mode: "0600"
       notify: Restart colporteur
 
     - name: Deploy Colporteur systemd service file

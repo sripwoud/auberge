@@ -7,7 +7,6 @@ Wants=network-online.target
 Type=oneshot
 User={{ colporteur_sys_user }}
 Group={{ colporteur_sys_group }}
-EnvironmentFile={{ colporteur_config_dir }}/colporteur.env
 Environment=XDG_CONFIG_HOME=/etc
 Environment=XDG_DATA_HOME=/var/lib
 ExecStart={{ colporteur_install_path }}/colporteur fetch

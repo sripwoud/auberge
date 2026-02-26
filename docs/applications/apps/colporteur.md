@@ -24,33 +24,22 @@ Feeds are consumed by [FreshRSS](freshrss.md) or any RSS reader via their static
 
 ## Configuration
 
-### Environment Variables
+Config is managed locally at `~/.config/colporteur/config.toml` and copied to the VPS on deploy. The file must exist locally before running `auberge ansible run --tags colporteur`.
 
-| Variable                             | Description                               |
-| ------------------------------------ | ----------------------------------------- |
-| `COLPORTEUR_SUBDOMAIN`               | Subdomain for feed serving (e.g. `feeds`) |
-| `COLPORTEUR_IMAP_<ACCOUNT>_PASSWORD` | IMAP password per account (age-encrypted) |
+Example config:
 
-### Accounts and Feeds
+```toml
+output_dir = "/var/lib/colporteur/feeds"
 
-Accounts and feeds are defined via `colporteur_accounts` and `colporteur_feeds` Ansible variables:
+[accounts.mxroute]
+server = "mail.mxroute.com"
+username = "user@domain.com"
+password = "secret"
 
-```yaml
-colporteur_accounts:
-  mxroute1:
-    server: "mail.mxroute.com"
-    username: "user@domain1.com"
-    password: "{{ lookup('env', 'COLPORTEUR_IMAP_MXROUTE1_PASSWORD') }}"
-  mxroute2:
-    server: "mail.mxroute.com"
-    username: "news@domain2.com"
-    password: "{{ lookup('env', 'COLPORTEUR_IMAP_MXROUTE2_PASSWORD') }}"
-
-colporteur_feeds:
-  my-newsletter:
-    title: "My Newsletter"
-    account: "mxroute1"
-    senders: ["hello@newsletter.com"]
+[feeds.my-newsletter]
+title = "My Newsletter"
+account = "mxroute"
+senders = ["hello@newsletter.com"]
 ```
 
 ## Operations

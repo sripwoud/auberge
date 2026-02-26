@@ -8,6 +8,4 @@ colporteur_domain: "{{ colporteur_subdomain }}.{{ primary_domain }}"
 colporteur_version: "0.2.6"
 colporteur_binary_url: "https://github.com/sripwoud/colporteur/releases/download/v{{ colporteur_version }}/colporteur-x86_64-unknown-linux-gnu.tar.gz"
 colporteur_check_interval: 15min
-
-colporteur_accounts: {}
-colporteur_feeds: {}
+colporteur_config_src: "~/.config/colporteur/config.toml"
