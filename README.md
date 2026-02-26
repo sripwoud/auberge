@@ -22,7 +22,7 @@ Auberge is a CLI tool for managing self-hosted infrastructure using Ansible auto
 
 ## Quick Start
 
-Install Auberge:
+Install Auberge from a [pre-compiled binary](https://github.com/sripwoud/auberge/releases/latest) or via cargo:
 
 ```bash
 cargo install auberge
@@ -61,7 +61,6 @@ Full documentation available at [auberge.sripwoud.xyz](https://auberge.sripwoud.
 
 ## Requirements
 
-- Rust/Cargo for installation
 - A VPS with root/sudo access
 - SSH connectivity to your VPS
 - (Optional) Cloudflare account for DNS management

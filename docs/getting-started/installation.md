@@ -2,21 +2,18 @@
 
 ## Prerequisites
 
-- Rust and Cargo (latest stable)
 - A VPS with root/sudo access
 - SSH connectivity to your VPS
 
-## Install Rust
+## Pre-compiled binaries
 
-If you don't have Rust installed:
+Download a binary for your platform from the [latest release](https://github.com/sripwoud/auberge/releases/latest). Binaries are available for Linux (x86_64, aarch64), macOS (Intel, Apple Silicon), and Windows (x64).
 
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
+Extract it somewhere on your `PATH`, e.g. `~/.local/bin`.
 
-Follow the prompts and restart your shell.
+## Install from crates.io
 
-## Install Auberge
+Requires [Rust](https://rustup.rs/).
 
 ```bash
 cargo install auberge
