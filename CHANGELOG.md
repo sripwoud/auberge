@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.11](https://github.com/sripwoud/auberge/compare/v0.3.10...v0.3.11) - 2026-02-26
+
+### Fixed
+
+- *(ci)* drop x86_64-apple-darwin target (macos intel runners deprecated)
+
 ## [0.3.10](https://github.com/sripwoud/auberge/compare/v0.3.9...v0.3.10) - 2026-02-26
 
 ### Fixed
