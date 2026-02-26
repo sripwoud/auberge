@@ -37,7 +37,7 @@ jobs:
       - name: Get release tag
         id: get-tag
         if: steps.release.outputs.releases_created == 'true'
-        run: echo "tag=${{ fromJSON(steps.release.outputs.releases)[0].tag_name }}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=${{ fromJSON(steps.release.outputs.releases)[0].tag }}" >> "$GITHUB_OUTPUT"
 
   release-plz-pr:
     name: Release-plz PR
