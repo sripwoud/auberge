@@ -28,8 +28,6 @@ chrono = { version = "0.4.43", features = ["serde"] }
 shellexpand = "3.1"
 tabled = "0.16"
 indicatif = "0.17"
-
-[target.'cfg(not(windows))'.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
