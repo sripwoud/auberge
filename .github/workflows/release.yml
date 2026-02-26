@@ -84,6 +84,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: auberge
