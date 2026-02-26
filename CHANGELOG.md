@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.12](https://github.com/sripwoud/auberge/compare/v0.3.11...v0.3.12) - 2026-02-26
+
+### Fixed
+
+- *(ci)* make vendored openssl conditional on non-windows targets
+
+### Other
+
+- update README.md ([#84](https://github.com/sripwoud/auberge/pull/84))
+
 ## [0.3.11](https://github.com/sripwoud/auberge/compare/v0.3.10...v0.3.11) - 2026-02-26
 
 ### Fixed
