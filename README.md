@@ -61,6 +61,7 @@ Full documentation available at [auberge.sripwoud.xyz](https://auberge.sripwoud.
 
 ## Requirements
 
+- Linux or macOS (Windows is not supported — Ansible requires a Unix-based control node)
 - A VPS with root/sudo access
 - SSH connectivity to your VPS
 - (Optional) Cloudflare account for DNS management
