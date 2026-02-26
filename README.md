@@ -13,7 +13,7 @@ Auberge is a CLI tool for managing self-hosted infrastructure using Ansible auto
 
 ## Features
 
-- **Minimal footprint**: Runs on 1GB RAM VPS
+- **Minimal footprint**: Runs _almost all apps together_ on 1GB RAM VPS
 - **No Docker bloat**: Native systemd services
 - **Automated deployment**: Ansible playbooks handle everything
 - **Built-in backups**: Full backup and restore with cross-host migration
