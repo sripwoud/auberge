@@ -1,0 +1,25 @@
+[Unit]
+Description=Colporteur newsletter-to-feed fetch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ colporteur_sys_user }}
+Group={{ colporteur_sys_group }}
+EnvironmentFile={{ colporteur_config_dir }}/colporteur.env
+Environment=XDG_CONFIG_HOME=/etc
+Environment=XDG_DATA_HOME=/var/lib
+ExecStart={{ colporteur_install_path }}/colporteur fetch
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ReadWritePaths={{ colporteur_data_dir }}
+UMask=0027

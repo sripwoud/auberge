@@ -1,0 +1,139 @@
+- name: Install and configure Colporteur
+  block:
+    - name: Create Colporteur system group
+      ansible.builtin.group:
+        name: "{{ colporteur_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create Colporteur system user
+      ansible.builtin.user:
+        name: "{{ colporteur_sys_user }}"
+        group: "{{ colporteur_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ colporteur_install_path }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create Colporteur installation directory
+      ansible.builtin.file:
+        path: "{{ colporteur_install_path }}"
+        state: directory
+        owner: "{{ colporteur_sys_user }}"
+        group: "{{ colporteur_sys_group }}"
+        mode: "0755"
+
+    - name: Create Colporteur data directory
+      ansible.builtin.file:
+        path: "{{ colporteur_data_dir }}"
+        state: directory
+        owner: "{{ colporteur_sys_user }}"
+        group: "{{ colporteur_sys_group }}"
+        mode: "0700"
+
+    - name: Create Colporteur feeds directory
+      ansible.builtin.file:
+        path: "{{ colporteur_feeds_dir }}"
+        state: directory
+        owner: "{{ colporteur_sys_user }}"
+        group: "{{ colporteur_sys_group }}"
+        mode: "0755"
+
+    - name: Create Colporteur config directory
+      ansible.builtin.file:
+        path: "{{ colporteur_config_dir }}"
+        state: directory
+        owner: root
+        group: "{{ colporteur_sys_group }}"
+        mode: "0750"
+
+    - name: Check if Colporteur version file exists
+      ansible.builtin.stat:
+        path: "{{ colporteur_install_path }}/version"
+      register: colporteur_version_file
+
+    - name: Read installed Colporteur version
+      when: colporteur_version_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ colporteur_install_path }}/version"
+      register: colporteur_installed_version_raw
+
+    - name: Set installed Colporteur version fact
+      ansible.builtin.set_fact:
+        colporteur_installed_version: >-
+          {{ colporteur_installed_version_raw.content | b64decode | trim
+             if colporteur_version_file.stat.exists else '' }}
+
+    - name: Download and extract Colporteur binary
+      when: colporteur_installed_version != colporteur_version
+      ansible.builtin.unarchive:
+        src: "{{ colporteur_binary_url }}"
+        dest: "{{ colporteur_install_path }}"
+        remote_src: true
+        owner: "{{ colporteur_sys_user }}"
+        group: "{{ colporteur_sys_group }}"
+        mode: "0755"
+      notify: Restart colporteur
+
+    - name: Write installed version file
+      when: colporteur_installed_version != colporteur_version
+      ansible.builtin.copy:
+        content: "{{ colporteur_version }}"
+        dest: "{{ colporteur_install_path }}/version"
+        owner: "{{ colporteur_sys_user }}"
+        group: "{{ colporteur_sys_group }}"
+        mode: "0644"
+
+    - name: Deploy Colporteur config file
+      ansible.builtin.template:
+        src: templates/config.toml.j2
+        dest: "{{ colporteur_config_dir }}/config.toml"
+        owner: root
+        group: "{{ colporteur_sys_group }}"
+        mode: "0644"
+      notify: Restart colporteur
+
+    - name: Deploy Colporteur environment file
+      no_log: true
+      ansible.builtin.template:
+        src: templates/colporteur.env.j2
+        dest: "{{ colporteur_config_dir }}/colporteur.env"
+        owner: root
+        group: "{{ colporteur_sys_group }}"
+        mode: "0640"
+      notify: Restart colporteur
+
+    - name: Deploy Colporteur systemd service file
+      ansible.builtin.template:
+        src: templates/colporteur.service.j2
+        dest: /etc/systemd/system/colporteur.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart colporteur
+
+    - name: Deploy Colporteur systemd timer file
+      ansible.builtin.template:
+        src: templates/colporteur.timer.j2
+        dest: /etc/systemd/system/colporteur.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart colporteur
+
+    - name: Enable and start Colporteur timer
+      ansible.builtin.systemd_service:
+        name: colporteur.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Deploy Colporteur Caddyfile
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ colporteur_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy

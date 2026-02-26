@@ -1,0 +1,10 @@
+[Unit]
+Description=Colporteur newsletter-to-feed fetch timer
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec={{ colporteur_check_interval }}
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

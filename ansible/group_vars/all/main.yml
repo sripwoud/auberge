@@ -12,6 +12,7 @@ dns_domain: "{{ lookup('env', 'PRIMARY_DOMAIN') }}"
 dns_default_ttl: "{{ lookup('env', 'DNS_DEFAULT_TTL') | int }}"
 
 baikal_subdomain: "{{ lookup('env', 'BAIKAL_SUBDOMAIN') }}"
+colporteur_subdomain: "{{ lookup('env', 'COLPORTEUR_SUBDOMAIN') }}"
 blocky_subdomain: "{{ lookup('env', 'BLOCKY_SUBDOMAIN') }}"
 booklore_subdomain: "{{ lookup('env', 'BOOKLORE_SUBDOMAIN') }}"
 freshrss_subdomain: "{{ lookup('env', 'FRESHRSS_SUBDOMAIN') }}"

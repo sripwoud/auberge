@@ -1,0 +1,22 @@
+output_dir = "{{ colporteur_feeds_dir }}"
+
+{% for name, account in colporteur_accounts.items() %}
+[accounts.{{ name }}]
+server = "{{ account.server }}"
+username = "{{ account.username }}"
+password_env = "COLPORTEUR_IMAP_{{ name | upper }}_PASSWORD"
+{% if account.mailbox is defined %}
+mailbox = "{{ account.mailbox }}"
+{% endif %}
+
+{% endfor %}
+{% for name, feed in colporteur_feeds.items() %}
+[feeds.{{ name }}]
+title = "{{ feed.title }}"
+account = "{{ feed.account }}"
+senders = {{ feed.senders | to_json }}
+{% if feed.max_entries is defined %}
+max_entries = {{ feed.max_entries }}
+{% endif %}
+
+{% endfor %}
