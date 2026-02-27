@@ -12,6 +12,7 @@ mise set --age-encrypt --prompt ADMIN_USER_EMAIL
 mise set --age-encrypt --prompt PRIMARY_DOMAIN
 mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
 mise set --age-encrypt --prompt BAIKAL_ADMIN_PASSWORD
+mise set --age-encrypt --prompt COLPORTEUR_FEEDS_PASSWORD
 mise set --age-encrypt --prompt WEBDAV_PASSWORD
 mise set --age-encrypt --prompt TAILSCALE_AUTHKEY
 mise set --age-encrypt --prompt SSH_PORT

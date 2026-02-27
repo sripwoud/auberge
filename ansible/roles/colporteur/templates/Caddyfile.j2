@@ -1,4 +1,8 @@
 {{ colporteur_domain }} {
+	basic_auth {
+		{{ admin_user_name }} {{ colporteur_hashed_password }}
+	}
+
 	root * {{ colporteur_feeds_dir }}
 	file_server
 

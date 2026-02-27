@@ -149,6 +149,16 @@
         state: started
         daemon_reload: true
 
+    - name: Hash Colporteur feeds password
+      ansible.builtin.command: "caddy hash-password --plaintext '{{ colporteur_feeds_password }}'"
+      register: colporteur_hashed_password
+      changed_when: false
+      no_log: true
+
+    - name: Set Colporteur hashed password fact
+      ansible.builtin.set_fact:
+        colporteur_hashed_password: "{{ colporteur_hashed_password.stdout | trim }}"
+
     - name: Deploy Colporteur Caddyfile
       ansible.builtin.template:
         src: templates/Caddyfile.j2
