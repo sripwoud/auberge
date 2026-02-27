@@ -9,6 +9,8 @@
       tags: [apps, network, dns, blocky]
     - role: booklore
       tags: [apps, storage, media, books, booklore]
+    - role: colporteur
+      tags: [apps, web, rss, colporteur]
     - role: freshrss
       tags: [apps, web, rss, freshrss]
     - role: navidrome

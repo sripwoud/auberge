@@ -12,6 +12,7 @@ dns_domain: "{{ lookup('env', 'PRIMARY_DOMAIN') }}"
 dns_default_ttl: "{{ lookup('env', 'DNS_DEFAULT_TTL') | int }}"
 
 baikal_subdomain: "{{ lookup('env', 'BAIKAL_SUBDOMAIN') }}"
+colporteur_subdomain: "{{ lookup('env', 'COLPORTEUR_SUBDOMAIN') }}"
 blocky_subdomain: "{{ lookup('env', 'BLOCKY_SUBDOMAIN') }}"
 booklore_subdomain: "{{ lookup('env', 'BOOKLORE_SUBDOMAIN') }}"
 freshrss_subdomain: "{{ lookup('env', 'FRESHRSS_SUBDOMAIN') }}"
@@ -20,6 +21,7 @@ webdav_subdomain: "{{ lookup('env', 'WEBDAV_SUBDOMAIN') }}"
 yourls_subdomain: "{{ lookup('env', 'YOURLS_SUBDOMAIN') }}"
 
 baikal_admin_password: "{{ lookup('env', 'BAIKAL_ADMIN_PASSWORD') }}"
+colporteur_feeds_password: "{{ lookup('env', 'COLPORTEUR_FEEDS_PASSWORD') }}"
 webdav_password: "{{ lookup('env', 'WEBDAV_PASSWORD') }}"
 
 cloudflare_dns_api_token: "{{ lookup('env', 'CLOUDFLARE_DNS_API_TOKEN') }}"

@@ -1,0 +1,12 @@
+colporteur_install_path: /opt/colporteur
+colporteur_sys_user: colporteur
+colporteur_sys_group: colporteur
+colporteur_data_dir: /var/lib/colporteur
+colporteur_feeds_dir: /var/lib/colporteur/feeds
+colporteur_config_dir: /etc/colporteur
+colporteur_domain: "{{ colporteur_subdomain }}.{{ primary_domain }}"
+colporteur_version: "0.3.1"
+colporteur_binary_url: "https://github.com/sripwoud/colporteur/releases/download/v{{ colporteur_version }}/colporteur-x86_64-unknown-linux-gnu.tar.gz"
+colporteur_checksum_url: "https://github.com/sripwoud/colporteur/releases/download/v{{ colporteur_version }}/colporteur-x86_64-unknown-linux-gnu.sha256"
+colporteur_check_interval: 15min
+colporteur_config_src: "~/.config/colporteur/config.toml"
