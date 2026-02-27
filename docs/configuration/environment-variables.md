@@ -31,6 +31,7 @@ Already defined in `mise.toml` [env] section:
 - `BAIKAL_SUBDOMAIN` - Subdomain for Baikal (default: calendrier)
 - `BLOCKY_SUBDOMAIN` - Subdomain for Blocky DNS (default: dns)
 - `CALIBRE_SUBDOMAIN` - Subdomain for Calibre (default: lire)
+- `COLPORTEUR_SUBDOMAIN` - Subdomain for Colporteur (default: feeds)
 - `FRESHRSS_SUBDOMAIN` - Subdomain for FreshRSS (default: rss)
 - `NAVIDROME_SUBDOMAIN` - Subdomain for Navidrome (default: musique)
 - `WEBDAV_SUBDOMAIN` - Subdomain for WebDAV (default: webdav)

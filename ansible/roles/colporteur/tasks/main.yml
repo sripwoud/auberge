@@ -65,16 +65,46 @@
           {{ colporteur_installed_version_raw.content | b64decode | trim
              if colporteur_version_file.stat.exists else '' }}
 
-    - name: Download and extract Colporteur binary
+    - name: Fetch Colporteur binary checksum
+      when: colporteur_installed_version != colporteur_version
+      become: false
+      delegate_to: localhost
+      register: colporteur_checksum_content
+      ansible.builtin.uri:
+        url: "{{ colporteur_checksum_url }}"
+        return_content: true
+
+    - name: Set Colporteur checksum fact
+      when: colporteur_installed_version != colporteur_version
+      ansible.builtin.set_fact:
+        colporteur_checksum_sha256: "{{ colporteur_checksum_content.content.split() | first }}"
+
+    - name: Download Colporteur binary archive
+      when: colporteur_installed_version != colporteur_version
+      ansible.builtin.get_url:
+        url: "{{ colporteur_binary_url }}"
+        dest: "/tmp/colporteur-{{ colporteur_version }}.tar.gz"
+        mode: "0644"
+        checksum: "sha256:{{ colporteur_checksum_sha256 }}"
+
+    - name: Extract Colporteur binary archive
       when: colporteur_installed_version != colporteur_version
       ansible.builtin.unarchive:
-        src: "{{ colporteur_binary_url }}"
+        src: "/tmp/colporteur-{{ colporteur_version }}.tar.gz"
         dest: "{{ colporteur_install_path }}"
         remote_src: true
         owner: "{{ colporteur_sys_user }}"
         group: "{{ colporteur_sys_group }}"
         mode: "0755"
       notify: Restart colporteur
+
+    - name: Ensure Colporteur binary permissions
+      when: colporteur_installed_version != colporteur_version
+      ansible.builtin.file:
+        path: "{{ colporteur_install_path }}/colporteur"
+        owner: "{{ colporteur_sys_user }}"
+        group: "{{ colporteur_sys_group }}"
+        mode: "0755"
 
     - name: Write installed version file
       when: colporteur_installed_version != colporteur_version
