@@ -98,4 +98,5 @@ jobs:
           bin: auberge
           target: ${{ matrix.target }}
           ref: refs/tags/${{ needs.release-plz-release.outputs.tag }}
+          checksum: sha256
           token: ${{ secrets.GITHUB_TOKEN }}
