@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.13](https://github.com/sripwoud/auberge/compare/v0.3.12...v0.3.13) - 2026-02-27
+
+### Added
+
+- *(ci)* add sha256 checksums to release binaries
+
+### Fixed
+
+- *(ci)* drop windows target (ansible requires unix control node)
+- *(ci)* drop x86_64-pc-windows-msvc target
+
+### Other
+
+- update platform support after dropping windows target
+
 ## [0.3.12](https://github.com/sripwoud/auberge/compare/v0.3.11...v0.3.12) - 2026-02-26
 
 ### Fixed
