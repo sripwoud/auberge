@@ -121,7 +121,7 @@
         dest: "{{ colporteur_config_dir }}/config.toml"
         owner: root
         group: "{{ colporteur_sys_group }}"
-        mode: "0600"
+        mode: "0640"
       notify: Restart colporteur
 
     - name: Deploy Colporteur systemd service file
@@ -150,7 +150,12 @@
         daemon_reload: true
 
     - name: Hash Colporteur feeds password
-      ansible.builtin.command: "caddy hash-password --plaintext '{{ colporteur_feeds_password }}'"
+      ansible.builtin.command:
+        argv:
+          - caddy
+          - hash-password
+          - --plaintext
+          - "{{ colporteur_feeds_password }}"
       register: colporteur_hashed_password
       changed_when: false
       no_log: true

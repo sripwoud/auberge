@@ -20,7 +20,7 @@ Colporteur runs as a systemd timer (every 15 minutes by default):
 4. Generates Atom XML feed files
 5. Caddy serves the static XML files
 
-Feeds are protected by basic auth (Caddy) and consumed by [FreshRSS](freshrss.md) or any RSS reader using authenticated URLs (`https://user:password@feeds.domain.com/feed.xml`).
+Feeds are protected by HTTP basic auth (Caddy). Configure the feed URL (e.g. `https://feeds.domain.com/feed.xml`) in [FreshRSS](freshrss.md) or any RSS reader and enter credentials in the reader's authentication settings.
 
 ## Configuration
 
