@@ -4,10 +4,10 @@ mod hosts;
 mod models;
 mod output;
 mod playbooks;
-mod secrets;
 mod selector;
 mod services;
 mod ssh_config;
+mod user_config;
 
 use clap::{Parser, Subcommand};
 use commands::ansible::{
