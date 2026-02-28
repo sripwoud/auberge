@@ -1,4 +1,5 @@
 use crate::config::{Config, DnsConfig};
+use crate::user_config::UserConfig;
 use cloudflare::endpoints::dns::dns::{
     CreateDnsRecord, CreateDnsRecordParams, DnsContent, DnsRecord, ListDnsRecords, UpdateDnsRecord,
     UpdateDnsRecordParams,
@@ -10,7 +11,6 @@ use cloudflare::framework::client::ClientConfig;
 use cloudflare::framework::client::async_api::Client;
 use eyre::Result;
 use std::collections::HashMap;
-use std::env;
 
 pub struct MigrationResult {
     pub subdomain: String,
@@ -32,22 +32,29 @@ pub struct DnsService {
     zone_id: String,
 }
 
-const KNOWN_APP_SUBDOMAINS: &[&str] = &[
-    "BAIKAL",
-    "BLOCKY",
-    "CALIBRE",
-    "FRESHRSS",
-    "NAVIDROME",
-    "WEBDAV",
-    "YOURLS",
+const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
+    "baikal_subdomain",
+    "blocky_subdomain",
+    "booklore_subdomain",
+    "colporteur_subdomain",
+    "freshrss_subdomain",
+    "navidrome_subdomain",
+    "webdav_subdomain",
+    "yourls_subdomain",
 ];
 
 pub fn discover_subdomains() -> HashMap<String, String> {
-    KNOWN_APP_SUBDOMAINS
+    let config = match UserConfig::load() {
+        Ok(c) => c,
+        Err(_) => return HashMap::new(),
+    };
+    KNOWN_SUBDOMAIN_KEYS
         .iter()
-        .filter_map(|app| {
-            let key = format!("{}_SUBDOMAIN", app);
-            env::var(&key).ok().map(|value| (app.to_lowercase(), value))
+        .filter_map(|key| {
+            config.get(key).filter(|v| !v.is_empty()).map(|value| {
+                let app = key.strip_suffix("_subdomain").unwrap_or(key);
+                (app.to_string(), value)
+            })
         })
         .collect()
 }
@@ -55,9 +62,12 @@ pub fn discover_subdomains() -> HashMap<String, String> {
 impl DnsService {
     pub async fn new_with_production(_production_override: Option<bool>) -> Result<Self> {
         let app_config = Config::load()?;
+        let user_config = UserConfig::load()?;
 
-        let api_token = env::var("CLOUDFLARE_DNS_API_TOKEN")
-            .map_err(|_| eyre::eyre!("CLOUDFLARE_DNS_API_TOKEN not set"))?;
+        let api_token = user_config
+            .get("cloudflare_dns_api_token")
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| eyre::eyre!("cloudflare_dns_api_token not set in config"))?;
 
         let credentials = Credentials::UserAuthToken { token: api_token };
 
