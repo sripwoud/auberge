@@ -17,6 +17,10 @@ use commands::backup::{
     BackupCommands, RestoreOptions, run_backup_create, run_backup_list, run_backup_restore,
     run_export_opml, run_import_opml,
 };
+use commands::config_cmd::{
+    ConfigCommands, run_config_edit, run_config_get, run_config_init, run_config_list,
+    run_config_path, run_config_remove, run_config_set,
+};
 use commands::dns::{
     DnsCommands, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all, run_dns_status,
 };
@@ -63,6 +67,8 @@ enum Commands {
     Sync(SyncCommands),
     #[command(subcommand, alias = "d", about = "DNS management via Namecheap")]
     Dns(DnsCommands),
+    #[command(subcommand, alias = "c", about = "Manage user configuration")]
+    Config(ConfigCommands),
 }
 
 #[tokio::main]
@@ -226,6 +232,15 @@ async fn main() -> Result<()> {
                 )
                 .await
             }
+        },
+        Commands::Config(cmd) => match cmd {
+            ConfigCommands::Init => run_config_init(),
+            ConfigCommands::Set { key, value } => run_config_set(key, value),
+            ConfigCommands::Get { key } => run_config_get(key),
+            ConfigCommands::List => run_config_list(),
+            ConfigCommands::Remove { key } => run_config_remove(key),
+            ConfigCommands::Edit => run_config_edit(),
+            ConfigCommands::Path => run_config_path(),
         },
     }
 }
