@@ -10,9 +10,4 @@ openclaw_gateway_port: 18789
 openclaw_bridge_port: 18790
 openclaw_gateway_bind: "{{ openclaw_tailscale_ip | default('localhost') }}"
 
-openclaw_gateway_token: "{{ lookup('env', 'OPENCLAW_GATEWAY_TOKEN') }}"
-openclaw_claude_ai_session_key: "{{ lookup('env', 'CLAUDE_AI_SESSION_KEY') }}"
-openclaw_claude_web_session_key: "{{ lookup('env', 'CLAUDE_WEB_SESSION_KEY') | default('') }}"
-openclaw_claude_web_cookie: "{{ lookup('env', 'CLAUDE_WEB_COOKIE') | default('') }}"
-
 openclaw_node_version: "22.x"
