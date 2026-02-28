@@ -1,18 +1,64 @@
-# Auberge CLI Configuration (Optional)
-# Only needed if using CLI DNS commands (not required for Ansible)
-# Copy this file to config.toml and customize with your values
-# config.toml is gitignored and will not be committed
-#
-# NOTE: For Ansible deployments, all config is in mise.toml [env] section
+# Auberge unified configuration
+# Location: ~/.config/auberge/config.toml (mode 600)
+# Create with: auberge config init
+# All keys are passed as Ansible extra-vars at runtime
 
 [dns]
-# Your domain name (e.g., example.com)
-domain = "example.com"
-
-# Default TTL for DNS records in seconds
-default_ttl = 300
+domain = ""
 
 [cloudflare]
-# Optional: Your Cloudflare zone ID for improved performance
-# If omitted, zone will be auto-discovered from domain
-# zone_id = "your-zone-id-here"
+# zone_id = ""
+
+[identity]
+admin_user_name = ""
+admin_user_email = ""
+primary_domain = ""
+ssh_port = 22022
+
+[api_tokens]
+cloudflare_dns_api_token = ""
+tailscale_authkey = ""
+namecheap_api_key = ""
+namecheap_api_user = ""
+namecheap_client_ip = ""
+
+[baikal]
+baikal_subdomain = ""
+baikal_admin_password = ""
+
+[colporteur]
+colporteur_subdomain = ""
+colporteur_feeds_password = ""
+
+[blocky]
+blocky_subdomain = ""
+
+[booklore]
+booklore_subdomain = ""
+booklore_db_password = ""
+booklore_admin_user = ""
+booklore_admin_password = ""
+
+[freshrss]
+freshrss_subdomain = ""
+
+[navidrome]
+navidrome_subdomain = ""
+
+[webdav]
+webdav_subdomain = ""
+webdav_password = ""
+
+[yourls]
+yourls_subdomain = ""
+yourls_db_password = ""
+yourls_admin_user = ""
+yourls_admin_password = ""
+yourls_cookiekey = ""
+yourls_api_signature = ""
+
+[openclaw]
+openclaw_gateway_token = ""
+openclaw_claude_ai_session_key = ""
+openclaw_claude_web_session_key = ""
+openclaw_claude_web_cookie = ""
