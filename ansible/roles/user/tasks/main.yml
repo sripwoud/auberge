@@ -1,9 +1,9 @@
-- name: Set user configuration from environment
+- name: Set user configuration
   block:
-    - name: Get admin username from environment
+    - name: Set admin username fact
       ansible.builtin.set_fact:
-        user_name: "{{ lookup('env', 'ADMIN_USER_NAME') }}"
-        user_home: "/home/{{ lookup('env', 'ADMIN_USER_NAME') }}"
+        user_name: "{{ admin_user_name }}"
+        user_home: "/home/{{ admin_user_name }}"
       delegate_to: localhost
       run_once: true
 
