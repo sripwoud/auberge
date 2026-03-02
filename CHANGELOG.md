@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/sripwoud/auberge/compare/v0.3.13...v0.4.0) - 2026-03-02
+
+### Added
+
+- [**breaking**] unify config to replace env vars ([#88](https://github.com/sripwoud/auberge/pull/88))
+- *(colporteur)* add ansible role for newsletter-to-feed service ([#86](https://github.com/sripwoud/auberge/pull/86))
+
 ## [0.3.13](https://github.com/sripwoud/auberge/compare/v0.3.12...v0.3.13) - 2026-02-27
 
 ### Added
