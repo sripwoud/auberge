@@ -896,18 +896,20 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     if is_cross_host {
         eprintln!("\n=== Post-Restore Actions Required ===");
         eprintln!("  Cross-host restore completed. Manual verification needed:\n");
-        eprintln!("  1. Verify services are running:");
         let all_services: Vec<&str> = app_names
             .iter()
             .filter_map(|name| AppBackupConfig::by_name(name, false))
             .flat_map(|cfg| cfg.systemd_services)
             .collect();
-        eprintln!(
-            "     ssh {}@{} 'systemctl status {}'",
-            host.user,
-            host.address,
-            all_services.join(" ")
-        );
+        if !all_services.is_empty() {
+            eprintln!("  1. Verify services are running:");
+            eprintln!(
+                "     ssh {}@{} 'systemctl status {}'",
+                host.user,
+                host.address,
+                all_services.join(" ")
+            );
+        }
         eprintln!("\n  2. Check service logs for errors:");
         for app_name in &app_names {
             if let Some(cfg) = AppBackupConfig::by_name(app_name, false) {
@@ -1204,14 +1206,25 @@ fn backup_app(
         Ok(())
     })();
 
+    let mut start_failures: Vec<String> = Vec::new();
     if !config.systemd_services.is_empty() {
         spinner.set_message(format!("Backing up {} (starting services)", config.name));
         for service in &config.systemd_services {
-            let _ = remote_systemctl(host, ssh_key, "start", service);
+            if let Err(e) = remote_systemctl(host, ssh_key, "start", service) {
+                start_failures.push(format!("{}: {}", service, e));
+            }
         }
     }
 
     rsync_result?;
+
+    if !start_failures.is_empty() {
+        eyre::bail!(
+            "Backup of {} succeeded but failed to restart services:\n  {}",
+            config.name,
+            start_failures.join("\n  ")
+        );
+    }
 
     let backup_size = calculate_dir_size(&app_backup_dir)?;
 
