@@ -63,6 +63,13 @@ yourls_admin_password = ""
 yourls_cookiekey = ""
 yourls_api_signature = ""
 
+[paperless]
+paperless_subdomain = ""
+paperless_secret_key = ""
+paperless_admin_user = ""
+paperless_admin_password = ""
+paperless_db_password = ""
+
 [openclaw]
 openclaw_gateway_token = ""
 openclaw_claude_ai_session_key = ""
@@ -78,6 +85,7 @@ const SENSITIVE_SECTIONS: &[&str] = &[
     "webdav",
     "yourls",
     "openclaw",
+    "paperless",
 ];
 
 impl UserConfig {

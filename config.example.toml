@@ -58,6 +58,7 @@ yourls_cookiekey = ""
 yourls_api_signature = ""
 
 [paperless]
+paperless_subdomain = ""
 paperless_secret_key = ""
 paperless_admin_user = ""
 paperless_admin_password = ""
