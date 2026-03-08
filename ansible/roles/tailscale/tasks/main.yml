@@ -1,19 +1,4 @@
 ---
-- name: Prompt for Tailscale configuration
-  block:
-    - name: Prompt for Tailscale auth key if not provided
-      when: tailscale_authkey | default('') | length == 0
-      ansible.builtin.pause:
-        prompt: "Enter Tailscale auth key (optional, press enter to skip)"
-      register: tailscale_authkey_prompt_result
-      no_log: true
-
-    - name: Set Tailscale auth key variable from prompt
-      when: tailscale_authkey | default('') | length == 0
-      ansible.builtin.set_fact:
-        tailscale_authkey: "{{ tailscale_authkey_prompt_result.user_input | default('', true) }}"
-      no_log: true
-
 - name: Tailscale Installation and Configuration
   block:
     - name: Download and add Tailscale GPG key
@@ -56,6 +41,14 @@
             ((tailscale_status_check.stdout | from_json).BackendState in ["Running", "Starting"])
           }}
 
+    - name: Validate auth key for initial connection
+      ansible.builtin.assert:
+        that:
+          - tailscale_authkey is defined
+          - tailscale_authkey | length > 0
+        fail_msg: "tailscale_authkey must be set in config.toml for initial Tailscale authentication"
+      when: not tailscale_is_authenticated
+
     - name: Connect to Tailscale network
       ansible.builtin.command: >-
         tailscale up
@@ -64,13 +57,12 @@
         {% if tailscale_advertise_exit_node %}--advertise-exit-node{% endif %}
         {% if not tailscale_accept_dns %}--accept-dns=false{% endif %}
         {% if tailscale_advertise_tags | length > 0 %}--advertise-tags={{ tailscale_advertise_tags | join(',') }}{% endif %}
-        {% if tailscale_authkey %}--authkey={{ tailscale_authkey }}{% endif %}
+        --authkey={{ tailscale_authkey }}
         {{ tailscale_extra_args }}
-      when:
-        - not tailscale_is_authenticated
-        - tailscale_authkey | length > 0
+      when: not tailscale_is_authenticated
       register: tailscale_connect_result
       changed_when: tailscale_connect_result.rc == 0
+      no_log: true
 
     - name: Configure UFW firewall for Tailscale
       when: ansible_facts.services['ufw'] is defined and ansible_facts.services['ufw'].state == 'running'

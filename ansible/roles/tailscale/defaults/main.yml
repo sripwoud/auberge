@@ -1,6 +1,6 @@
 ---
 # Tailscale configuration
-tailscale_authkey: "" # Set this in your vault or inventory (required for initial setup)
+tailscale_authkey: "" # Required for initial auth — set in config.toml
 tailscale_hostname: "{{ ansible_hostname }}" # Hostname to use in tailnet
 tailscale_accept_routes: false # Accept subnet routes advertised by other nodes
 tailscale_advertise_exit_node: false # Advertise as exit node
