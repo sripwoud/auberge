@@ -40,7 +40,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to backup (baikal,freshrss,navidrome,calibre,webdav,yourls). Default: all"
+            help = "Apps to backup (baikal,freshrss,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(short, long, help = "Backup destination directory")]
@@ -89,7 +89,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to restore (baikal,freshrss,navidrome,calibre,webdav,yourls). Default: all"
+            help = "Apps to restore (baikal,freshrss,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(
@@ -175,6 +175,7 @@ impl AppBackupConfig {
             Self::calibre(),
             Self::webdav(),
             Self::yourls(),
+            Self::paperless(),
         ]
     }
 
@@ -186,6 +187,7 @@ impl AppBackupConfig {
             "calibre" => Some(Self::calibre()),
             "webdav" => Some(Self::webdav()),
             "yourls" => Some(Self::yourls()),
+            "paperless" => Some(Self::paperless()),
             _ => None,
         }
     }
@@ -247,6 +249,15 @@ impl AppBackupConfig {
             systemd_service: None,
             paths: vec!["/var/www/yourls"],
             owner: Some(("www-data", "www-data")),
+        }
+    }
+
+    fn paperless() -> Self {
+        Self {
+            name: "paperless",
+            systemd_service: Some("paperless-webserver"),
+            paths: vec!["/opt/paperless/data", "/opt/paperless/media"],
+            owner: Some(("paperless", "paperless")),
         }
     }
 }
