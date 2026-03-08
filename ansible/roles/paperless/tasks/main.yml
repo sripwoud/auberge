@@ -26,16 +26,16 @@
       when: paperless_tailscale_status_raw.rc == 0
       changed_when: false
 
-    - name: Set Tailscale IP fact
+    - name: Set Tailscale IPv4 fact
       ansible.builtin.set_fact:
-        paperless_tailscale_ip: "{{ paperless_tailscale_status.Self.TailscaleIPs[0] }}"
+        paperless_tailscale_ip: "{{ paperless_tailscale_status.Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
       when:
         - paperless_tailscale_status_raw.rc == 0
         - paperless_tailscale_status is defined
         - paperless_tailscale_status.BackendState | default('') == "Running"
         - paperless_tailscale_status.Self is defined
         - paperless_tailscale_status.Self.TailscaleIPs is defined
-        - paperless_tailscale_status.Self.TailscaleIPs | length > 0
+        - paperless_tailscale_status.Self.TailscaleIPs | select('match', '^[0-9]+\\.') | list | length > 0
       changed_when: false
 
     - name: Fail if Tailscale not available
