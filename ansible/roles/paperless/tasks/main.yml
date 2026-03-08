@@ -252,6 +252,7 @@
         PAPERLESS_CONFIGURATION_PATH: "{{ paperless_install_path }}/paperless.conf"
         DJANGO_SUPERUSER_USERNAME: "{{ paperless_admin_user }}"
         DJANGO_SUPERUSER_PASSWORD: "{{ paperless_admin_password }}"
+        DJANGO_SUPERUSER_EMAIL: "{{ admin_user_email }}"
       register: paperless_createsuperuser_result
       changed_when: "'Superuser created' in paperless_createsuperuser_result.stdout"
       failed_when:
