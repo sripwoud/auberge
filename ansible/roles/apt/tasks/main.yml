@@ -6,7 +6,7 @@
         state: present
         update_cache: true
 
-    - name: Add Debian Testing repository (for specific packages like dasel and golang-1.24)
+    - name: Add Debian Testing repository (for specific packages like dasel)
       when: ansible_distribution == "Debian"
       ansible.builtin.copy:
         content: |
@@ -34,20 +34,10 @@
         owner: root
         group: root
         mode: "0644"
-    - name: Set up APT pinning for golang-1.24
-      ansible.builtin.copy:
-        content: |
-          Package: golang-1.24
-          Pin: release n=trixie
-          Pin-Priority: 900
-
-          Package: *
-          Pin: release n=trixie
-          Pin-Priority: -1
-        dest: /etc/apt/preferences.d/golang-1.24.pref
-        owner: root
-        group: root
-        mode: "0644"
+    - name: Remove obsolete golang-1.24 APT pinning (trixie is now stable)
+      ansible.builtin.file:
+        path: /etc/apt/preferences.d/golang-1.24.pref
+        state: absent
     - name: Set up APT pinning for bind9 packages
       when: ansible_distribution == "Debian"
       ansible.builtin.copy:
