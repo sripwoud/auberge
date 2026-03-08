@@ -1,0 +1,29 @@
+[Unit]
+Description=Paperless-ngx document consumer
+After=network.target redis-server.service postgresql.service
+Requires=redis-server.service postgresql.service
+
+[Service]
+Type=simple
+User={{ paperless_sys_user }}
+Group={{ paperless_sys_group }}
+WorkingDirectory={{ paperless_install_path }}/src
+EnvironmentFile={{ paperless_install_path }}/paperless.conf
+
+ExecStart={{ paperless_install_path }}/venv/bin/python3 manage.py document_consumer
+
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ReadWritePaths={{ paperless_install_path }} {{ paperless_data_dir }} {{ paperless_media_root }} {{ paperless_consumption_dir }}
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

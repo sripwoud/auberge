@@ -40,7 +40,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to backup (baikal,freshrss,navidrome,calibre,webdav,yourls). Default: all"
+            help = "Apps to backup (baikal,freshrss,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(short, long, help = "Backup destination directory")]
@@ -89,7 +89,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to restore (baikal,freshrss,navidrome,calibre,webdav,yourls). Default: all"
+            help = "Apps to restore (baikal,freshrss,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(
@@ -150,7 +150,7 @@ pub enum OutputFormat {
 #[derive(Debug)]
 pub struct AppBackupConfig {
     pub name: &'static str,
-    pub systemd_service: Option<&'static str>,
+    pub systemd_services: Vec<&'static str>,
     pub paths: Vec<&'static str>,
     pub owner: Option<(&'static str, &'static str)>,
 }
@@ -175,6 +175,7 @@ impl AppBackupConfig {
             Self::calibre(),
             Self::webdav(),
             Self::yourls(),
+            Self::paperless(),
         ]
     }
 
@@ -186,6 +187,7 @@ impl AppBackupConfig {
             "calibre" => Some(Self::calibre()),
             "webdav" => Some(Self::webdav()),
             "yourls" => Some(Self::yourls()),
+            "paperless" => Some(Self::paperless()),
             _ => None,
         }
     }
@@ -193,7 +195,7 @@ impl AppBackupConfig {
     fn baikal() -> Self {
         Self {
             name: "baikal",
-            systemd_service: None,
+            systemd_services: vec![],
             paths: vec!["/opt/baikal/Specific"],
             owner: Some(("baikal", "baikal")),
         }
@@ -202,7 +204,7 @@ impl AppBackupConfig {
     fn freshrss() -> Self {
         Self {
             name: "freshrss",
-            systemd_service: Some("freshrss"),
+            systemd_services: vec!["freshrss"],
             paths: vec!["/var/lib/freshrss", "/opt/freshrss/data"],
             owner: Some(("freshrss", "freshrss")),
         }
@@ -217,7 +219,7 @@ impl AppBackupConfig {
 
         Self {
             name: "navidrome",
-            systemd_service: Some("navidrome"),
+            systemd_services: vec!["navidrome"],
             paths,
             owner: Some(("navidrome", "navidrome")),
         }
@@ -226,7 +228,7 @@ impl AppBackupConfig {
     fn calibre() -> Self {
         Self {
             name: "calibre",
-            systemd_service: Some("calibre"),
+            systemd_services: vec!["calibre"],
             paths: vec!["/srv/calibre", "/opt/calibre", "/home/calibre"],
             owner: Some(("calibre", "calibre")),
         }
@@ -235,7 +237,7 @@ impl AppBackupConfig {
     fn webdav() -> Self {
         Self {
             name: "webdav",
-            systemd_service: None,
+            systemd_services: vec![],
             paths: vec!["/var/www/webdav-files"],
             owner: None,
         }
@@ -244,9 +246,23 @@ impl AppBackupConfig {
     fn yourls() -> Self {
         Self {
             name: "yourls",
-            systemd_service: None,
+            systemd_services: vec![],
             paths: vec!["/var/www/yourls"],
             owner: Some(("www-data", "www-data")),
+        }
+    }
+
+    fn paperless() -> Self {
+        Self {
+            name: "paperless",
+            systemd_services: vec![
+                "paperless-webserver",
+                "paperless-consumer",
+                "paperless-task-queue",
+                "paperless-scheduler",
+            ],
+            paths: vec!["/opt/paperless/data", "/opt/paperless/media"],
+            owner: Some(("paperless", "paperless")),
         }
     }
 }
@@ -880,22 +896,29 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     if is_cross_host {
         eprintln!("\n=== Post-Restore Actions Required ===");
         eprintln!("  Cross-host restore completed. Manual verification needed:\n");
-        eprintln!("  1. Verify services are running:");
-        eprintln!(
-            "     ssh {}@{} 'systemctl status {}'",
-            host.user,
-            host.address,
-            app_names.join(" ")
-        );
+        let all_services: Vec<&str> = app_names
+            .iter()
+            .filter_map(|name| AppBackupConfig::by_name(name, false))
+            .flat_map(|cfg| cfg.systemd_services)
+            .collect();
+        if !all_services.is_empty() {
+            eprintln!("  1. Verify services are running:");
+            eprintln!(
+                "     ssh {}@{} 'systemctl status {}'",
+                host.user,
+                host.address,
+                all_services.join(" ")
+            );
+        }
         eprintln!("\n  2. Check service logs for errors:");
         for app_name in &app_names {
-            if let Some(cfg) = AppBackupConfig::by_name(app_name, false)
-                && let Some(service) = cfg.systemd_service
-            {
-                eprintln!(
-                    "     ssh {}@{} 'journalctl -u {} --since \"5 minutes ago\" | grep -i error'",
-                    host.user, host.address, service
-                );
+            if let Some(cfg) = AppBackupConfig::by_name(app_name, false) {
+                for service in &cfg.systemd_services {
+                    eprintln!(
+                        "     ssh {}@{} 'journalctl -u {} --since \"5 minutes ago\" | grep -i error'",
+                        host.user, host.address, service
+                    );
+                }
             }
         }
         eprintln!("\n  3. Update DNS records if hostnames changed");
@@ -927,26 +950,62 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
     let config = AppBackupConfig::by_name(app_name, false)
         .ok_or_else(|| eyre::eyre!("Unknown app: {}", app_name))?;
 
-    if let Some(service) = config.systemd_service {
+    let mut stopped_services: Vec<&str> = Vec::new();
+    for service in &config.systemd_services {
         eprintln!("  Stopping service: {}", service);
-        remote_systemctl(host, ssh_key, "stop", service)?;
+        if let Err(e) = remote_systemctl(host, ssh_key, "stop", service) {
+            for previously_stopped in &stopped_services {
+                let _ = remote_systemctl(host, ssh_key, "start", previously_stopped);
+            }
+            return Err(e).wrap_err_with(|| format!("Failed to stop service {}", service));
+        }
+        stopped_services.push(service);
     }
 
-    for remote_path in &config.paths {
-        eprintln!("  Restoring to: {}", remote_path);
-        rsync_to_remote(host, ssh_key, backup_path, remote_path)?;
-    }
-
-    if let Some((user, group)) = config.owner {
-        eprintln!("  Setting ownership to {}:{}", user, group);
+    let restore_result = (|| -> Result<()> {
         for remote_path in &config.paths {
-            set_remote_ownership(host, ssh_key, remote_path, user, group)?;
+            eprintln!("  Restoring to: {}", remote_path);
+            rsync_to_remote(host, ssh_key, backup_path, remote_path)?;
+        }
+
+        if let Some((user, group)) = config.owner {
+            eprintln!("  Setting ownership to {}:{}", user, group);
+            for remote_path in &config.paths {
+                set_remote_ownership(host, ssh_key, remote_path, user, group)?;
+            }
+        }
+        Ok(())
+    })();
+
+    let mut start_failures: Vec<String> = Vec::new();
+    for service in &config.systemd_services {
+        eprintln!("  Starting service: {}", service);
+        if let Err(e) = remote_systemctl(host, ssh_key, "start", service) {
+            start_failures.push(format!("{}: {}", service, e));
         }
     }
 
-    if let Some(service) = config.systemd_service {
-        eprintln!("  Starting service: {}", service);
-        remote_systemctl(host, ssh_key, "start", service)?;
+    match restore_result {
+        Ok(()) => {
+            if !start_failures.is_empty() {
+                eyre::bail!(
+                    "Restore of {} succeeded but failed to restart services:\n  {}",
+                    app_name,
+                    start_failures.join("\n  ")
+                );
+            }
+        }
+        Err(e) => {
+            if !start_failures.is_empty() {
+                eyre::bail!(
+                    "Restore of {} failed: {}\nAdditionally, failed to restart services:\n  {}",
+                    app_name,
+                    e,
+                    start_failures.join("\n  ")
+                );
+            }
+            return Err(e);
+        }
     }
 
     eprintln!("✓ {} restore completed", app_name);
@@ -1168,19 +1227,59 @@ fn backup_app(
         )
     })?;
 
-    if let Some(service) = config.systemd_service {
-        spinner.set_message(format!("Backing up {} (stopping service)", config.name));
-        remote_systemctl(host, ssh_key, "stop", service)?;
+    let mut stopped_services: Vec<&str> = Vec::new();
+    if !config.systemd_services.is_empty() {
+        spinner.set_message(format!("Backing up {} (stopping services)", config.name));
+        for service in &config.systemd_services {
+            if let Err(e) = remote_systemctl(host, ssh_key, "stop", service) {
+                for previously_stopped in &stopped_services {
+                    let _ = remote_systemctl(host, ssh_key, "start", previously_stopped);
+                }
+                return Err(e).wrap_err_with(|| format!("Failed to stop service {}", service));
+            }
+            stopped_services.push(service);
+        }
     }
 
     spinner.set_message(format!("Backing up {} (copying files)", config.name));
-    for path in &config.paths {
-        rsync_from_remote(host, ssh_key, path, &app_backup_dir)?;
+    let rsync_result = (|| -> Result<()> {
+        for path in &config.paths {
+            rsync_from_remote(host, ssh_key, path, &app_backup_dir)?;
+        }
+        Ok(())
+    })();
+
+    let mut start_failures: Vec<String> = Vec::new();
+    if !config.systemd_services.is_empty() {
+        spinner.set_message(format!("Backing up {} (starting services)", config.name));
+        for service in &config.systemd_services {
+            if let Err(e) = remote_systemctl(host, ssh_key, "start", service) {
+                start_failures.push(format!("{}: {}", service, e));
+            }
+        }
     }
 
-    if let Some(service) = config.systemd_service {
-        spinner.set_message(format!("Backing up {} (starting service)", config.name));
-        remote_systemctl(host, ssh_key, "start", service)?;
+    match rsync_result {
+        Ok(()) => {
+            if !start_failures.is_empty() {
+                eyre::bail!(
+                    "Backup of {} succeeded but failed to restart services:\n  {}",
+                    config.name,
+                    start_failures.join("\n  ")
+                );
+            }
+        }
+        Err(e) => {
+            if !start_failures.is_empty() {
+                eyre::bail!(
+                    "Backup of {} failed during file copy: {}\nAdditionally, failed to restart services:\n  {}",
+                    config.name,
+                    e,
+                    start_failures.join("\n  ")
+                );
+            }
+            return Err(e);
+        }
     }
 
     let backup_size = calculate_dir_size(&app_backup_dir)?;
@@ -1461,23 +1560,23 @@ fn validate_cross_host_restore(
     eprintln!("  Checking services on target...");
     for app in apps {
         let config = AppBackupConfig::by_name(app, false);
-        if let Some(cfg) = config
-            && let Some(service) = cfg.systemd_service
-        {
-            match check_remote_service_exists(host, ssh_key, service) {
-                Ok(true) => {
-                    eprintln!("    ✓ {} service exists", service);
-                }
-                Ok(false) => {
-                    eprintln!("    ⚠ {} service not found on target", service);
-                    eprintln!(
-                        "      Run 'auberge ansible run --host {}' to install services",
-                        host.name
-                    );
-                    eyre::bail!("Required service {} not found on target host", service);
-                }
-                Err(e) => {
-                    eprintln!("    ⚠ Failed to check {}: {}", service, e);
+        if let Some(cfg) = config {
+            for service in &cfg.systemd_services {
+                match check_remote_service_exists(host, ssh_key, service) {
+                    Ok(true) => {
+                        eprintln!("    ✓ {} service exists", service);
+                    }
+                    Ok(false) => {
+                        eprintln!("    ⚠ {} service not found on target", service);
+                        eprintln!(
+                            "      Run 'auberge ansible run --host {}' to install services",
+                            host.name
+                        );
+                        eyre::bail!("Required service {} not found on target host", service);
+                    }
+                    Err(e) => {
+                        eprintln!("    ⚠ Failed to check {}: {}", service, e);
+                    }
                 }
             }
         }

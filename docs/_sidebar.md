@@ -91,6 +91,7 @@
     - [WebDAV](applications/apps/webdav.md)
     - [Syncthing](applications/apps/syncthing.md)
     - [YOURLS](applications/apps/yourls.md)
+    - [Paperless-ngx](applications/apps/paperless.md)
 
 - Development
   - [Setup](development/setup.md)

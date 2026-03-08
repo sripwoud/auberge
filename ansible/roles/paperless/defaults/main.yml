@@ -1,0 +1,18 @@
+paperless_version: "2.20.10"
+paperless_install_path: /opt/paperless
+paperless_sys_user: paperless
+paperless_sys_group: paperless
+paperless_port: 8000
+
+paperless_data_dir: /opt/paperless/data
+paperless_media_root: /opt/paperless/media
+paperless_consumption_dir: /opt/paperless/consume
+paperless_scratch_dir: /opt/paperless/scratch
+
+paperless_db_name: paperless
+paperless_db_user: paperless
+
+paperless_ocr_language: deu+fra+spa+eng
+paperless_time_zone: Europe/Berlin
+
+paperless_release_url: "https://github.com/paperless-ngx/paperless-ngx/releases/download/v{{ paperless_version }}/paperless-ngx-v{{ paperless_version }}.tar.xz"

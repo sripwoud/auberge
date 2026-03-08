@@ -19,13 +19,13 @@
 
 - name: Set Tailscale IP fact
   ansible.builtin.set_fact:
-    openclaw_tailscale_ip: "{{ openclaw_tailscale_status.Self.TailscaleIPs[0] }}"
+    openclaw_tailscale_ip: "{{ openclaw_tailscale_status.Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
   when:
     - openclaw_tailscale_status_raw.rc == 0
     - openclaw_tailscale_backend_state == "Running"
     - openclaw_tailscale_status.Self is defined
     - openclaw_tailscale_status.Self.TailscaleIPs is defined
-    - openclaw_tailscale_status.Self.TailscaleIPs | length > 0
+    - openclaw_tailscale_status.Self.TailscaleIPs | select('match', '^[0-9]+\\.') | list | length > 0
   changed_when: false
 
 - name: Set gateway bind address

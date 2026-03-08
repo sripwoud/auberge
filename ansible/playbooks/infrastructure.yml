@@ -12,6 +12,8 @@
       tags: [infrastructure, shell, bash]
     - role: caddy
       tags: [infrastructure, web, proxy, caddy]
+    - role: tailscale
+      tags: [infrastructure, network, vpn, tailscale]
 
   handlers:
     - name: Reload systemd

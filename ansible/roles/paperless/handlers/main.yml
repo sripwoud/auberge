@@ -1,0 +1,35 @@
+---
+- name: Restart paperless-webserver
+  ansible.builtin.systemd_service:
+    name: paperless-webserver
+    state: restarted
+    daemon_reload: true
+
+- name: Restart paperless-consumer
+  ansible.builtin.systemd_service:
+    name: paperless-consumer
+    state: restarted
+    daemon_reload: true
+
+- name: Restart paperless-task-queue
+  ansible.builtin.systemd_service:
+    name: paperless-task-queue
+    state: restarted
+    daemon_reload: true
+
+- name: Restart paperless-scheduler
+  ansible.builtin.systemd_service:
+    name: paperless-scheduler
+    state: restarted
+    daemon_reload: true
+
+- name: Restart all paperless services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: restarted
+    daemon_reload: true
+  loop:
+    - paperless-webserver
+    - paperless-consumer
+    - paperless-task-queue
+    - paperless-scheduler
