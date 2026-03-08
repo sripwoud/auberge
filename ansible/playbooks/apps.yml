@@ -15,6 +15,8 @@
       tags: [apps, web, rss, freshrss]
     - role: navidrome
       tags: [apps, storage, media, music, navidrome]
+    - role: paperless
+      tags: [apps, storage, documents, paperless]
     - role: openclaw
       tags: [apps, ai, openclaw]
     - role: syncthing
