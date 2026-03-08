@@ -6,7 +6,7 @@
         state: present
         update_cache: true
 
-    - name: Add Debian Testing repository (for specific packages like dasel)
+    - name: Add Debian Testing repository (for specific packages like dasel and bind9)
       when: ansible_distribution == "Debian"
       ansible.builtin.copy:
         content: |
@@ -35,6 +35,7 @@
         group: root
         mode: "0644"
     - name: Remove obsolete golang-1.24 APT pinning (trixie is now stable)
+      when: ansible_distribution == "Debian"
       ansible.builtin.file:
         path: /etc/apt/preferences.d/golang-1.24.pref
         state: absent
