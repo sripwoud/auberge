@@ -24,6 +24,7 @@
       ansible.builtin.set_fact:
         paperless_tailscale_status: "{{ paperless_tailscale_status_raw.stdout | from_json }}"
       when: paperless_tailscale_status_raw.rc == 0
+      changed_when: false
 
     - name: Set Tailscale IP fact
       ansible.builtin.set_fact:
@@ -35,10 +36,12 @@
         - paperless_tailscale_status.Self is defined
         - paperless_tailscale_status.Self.TailscaleIPs is defined
         - paperless_tailscale_status.Self.TailscaleIPs | length > 0
+      changed_when: false
 
     - name: Set bind address
       ansible.builtin.set_fact:
         paperless_bind_addr: "{{ paperless_tailscale_ip | default('127.0.0.1') }}"
+      changed_when: false
 
     - name: Display bind address
       ansible.builtin.debug:
@@ -167,7 +170,7 @@
         state: directory
         owner: "{{ paperless_sys_user }}"
         group: "{{ paperless_sys_group }}"
-        mode: "0755"
+        mode: "0750"
       loop:
         - "{{ paperless_install_path }}"
         - "{{ paperless_data_dir }}"
@@ -216,7 +219,7 @@
       ansible.builtin.lineinfile:
         path: /etc/ImageMagick-6/policy.xml
         regexp: 'pattern="PDF"'
-        line: '  <policy domain="coder" rights="read|write" pattern="PDF" />'
+        line: '  <policy domain="coder" rights="read" pattern="PDF" />'
 
     - name: Deploy paperless.conf
       ansible.builtin.template:

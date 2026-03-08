@@ -1,7 +1,7 @@
 [Unit]
 Description=Paperless-ngx celery beat scheduler
 After=network.target redis-server.service postgresql.service
-Requires=redis-server.service
+Requires=redis-server.service postgresql.service
 
 [Service]
 Type=simple

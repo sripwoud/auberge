@@ -1,7 +1,7 @@
 [Unit]
 Description=Paperless-ngx document consumer
 After=network.target redis-server.service postgresql.service
-Requires=redis-server.service
+Requires=redis-server.service postgresql.service
 
 [Service]
 Type=simple
