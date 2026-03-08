@@ -12,7 +12,7 @@ Detailed breakdown of each infrastructure layer, their components, dependencies,
                   │ depends on
 ┌─────────────────▼───────────────────────┐
 │  Layer 3: Infrastructure                │
-│  - Caddy, APT, Bash                     │
+│  - APT, Bash, Caddy, Tailscale           │
 └─────────────────┬───────────────────────┘
                   │ depends on
 ┌─────────────────▼───────────────────────┐
@@ -186,24 +186,33 @@ Install and configure core services required by applications.
 
 #### APT (Package Management)
 
-Configures system package management:
+Configures system package management with a mixed stable/testing strategy.
 
 **Responsibilities:**
 
-- Enable unattended-upgrades for security patches
-- Configure apt sources
-- Install essential packages (curl, git, etc.)
+- Add Debian Testing repository for cherry-picked packages (`dasel`, `bind9`)
+- Apply APT pinning to control package source priority:
+  - Stable: priority 900 (default)
+  - Testing: priority 50 (deprioritized globally)
+  - `dasel`, `bind9`: priority 990 (forced from testing)
+- Install essential packages
+- Create `/usr/local/bin/go` symlink for `golang-1.24`
+- Enable unattended-upgrades for automatic security patches
+- Remove conflicting `apache2` packages (replaced by Caddy)
 
 **Key packages installed:**
 
+- `acl` - File permission management
 - `curl`, `wget` - Download utilities
+- `dasel` - Structured data editor (from testing)
+- `dnsutils` - DNS lookup tools
 - `git` - Version control
-- `vim` - Text editor
-- `htop` - Process viewer
+- `golang-1.24` - Go toolchain (required by xcaddy)
+- `lsof` - Open file inspection
 - `rsync` - Backup utility
-- Build essentials as needed
+- `vim` - Text editor
 
-**Why:** Ensures consistent base system across all VPS hosts.
+**Why:** Stable Debian ships outdated versions of `dasel` and `bind9`. Pinning pulls only those packages from testing, keeping the rest of the system on stable.
 
 #### Bash
 
@@ -264,12 +273,30 @@ Reverse proxy with automatic HTTPS via Let's Encrypt.
 - Cloudflare API token (for DNS-01 challenges)
 - Port 80/443 open in firewall
 
+#### Tailscale
+
+Mesh VPN for secure internal access to private services.
+
+**Responsibilities:**
+
+- Install Tailscale from official APT repository
+- Authenticate to Tailscale network via auth key
+- Configure UFW rules for Tailscale traffic
+- Provide Tailscale IP for services that bind internally (e.g., Paperless-ngx)
+
+**Why:**
+
+- Enables access to private services without public exposure
+- Services bind to Tailscale IP instead of public interface
+- No Caddy reverse proxy needed for Tailscale-only services
+
 ### Post-Infrastructure State
 
 - ✓ System packages up to date
 - ✓ Bash environment configured
 - ✓ Caddy running and serving HTTPS
 - ✓ SSL certificates provisioned
+- ✓ Tailscale connected to mesh network
 
 ## Layer 4: Applications
 
