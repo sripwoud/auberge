@@ -43,7 +43,7 @@ See [Environment Variables](../../configuration/environment-variables.md).
 
 ## Access
 
-Available only via the Tailscale network at `http://<tailscale-ip>:8000`. Not publicly accessible (no Caddy reverse proxy). Falls back to localhost binding if Tailscale is unavailable.
+Available only via the Tailscale network at `http://<tailscale-ip>:8000`. Not publicly accessible (no Caddy reverse proxy). Requires Tailscale — services will not start without `tailscaled.service`.
 
 ## Backup
 

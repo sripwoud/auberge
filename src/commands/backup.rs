@@ -977,12 +977,23 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
         Ok(())
     })();
 
+    let mut start_failures: Vec<String> = Vec::new();
     for service in &config.systemd_services {
         eprintln!("  Starting service: {}", service);
-        let _ = remote_systemctl(host, ssh_key, "start", service);
+        if let Err(e) = remote_systemctl(host, ssh_key, "start", service) {
+            start_failures.push(format!("{}: {}", service, e));
+        }
     }
 
     restore_result?;
+
+    if !start_failures.is_empty() {
+        eyre::bail!(
+            "Restore of {} succeeded but failed to restart services:\n  {}",
+            app_name,
+            start_failures.join("\n  ")
+        );
+    }
 
     eprintln!("✓ {} restore completed", app_name);
     Ok(())

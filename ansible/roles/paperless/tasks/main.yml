@@ -111,7 +111,7 @@
       become: true
       become_user: postgres
       ansible.builtin.command:
-        cmd: psql -c "CREATE USER {{ paperless_db_user | replace("'", "''") }} WITH PASSWORD '{{ paperless_db_password | replace("'", "''") }}'"
+        cmd: psql -c "CREATE USER \"{{ paperless_db_user | replace('\"', '\"\"') }}\" WITH PASSWORD '{{ paperless_db_password | replace("'", "''") }}'"
       when: paperless_pg_user_check.stdout | trim != "1"
       changed_when: true
       no_log: true
@@ -128,7 +128,7 @@
       become: true
       become_user: postgres
       ansible.builtin.command:
-        cmd: psql -c "CREATE DATABASE {{ paperless_db_name | replace("'", "''") }} OWNER {{ paperless_db_user | replace("'", "''") }}"
+        cmd: psql -c "CREATE DATABASE \"{{ paperless_db_name | replace('\"', '\"\"') }}\" OWNER \"{{ paperless_db_user | replace('\"', '\"\"') }}\""
       when: paperless_pg_db_check.stdout | trim != "1"
       changed_when: true
 
@@ -216,9 +216,15 @@
       become: true
       become_user: "{{ paperless_sys_user }}"
 
+    - name: Detect ImageMagick policy path
+      ansible.builtin.command: find /etc -maxdepth 2 -name policy.xml -path "*/ImageMagick-*" -print -quit
+      register: paperless_imagemagick_policy
+      changed_when: false
+      failed_when: paperless_imagemagick_policy.stdout | length == 0
+
     - name: Configure ImageMagick PDF policy
       ansible.builtin.lineinfile:
-        path: /etc/ImageMagick-7/policy.xml
+        path: "{{ paperless_imagemagick_policy.stdout }}"
         regexp: 'pattern="PDF"'
         line: '  <policy domain="coder" rights="read" pattern="PDF" />'
 
