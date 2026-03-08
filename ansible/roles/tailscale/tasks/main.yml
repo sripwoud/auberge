@@ -3,7 +3,7 @@
   block:
     - name: Download and add Tailscale GPG key
       ansible.builtin.get_url:
-        url: https://pkgs.tailscale.com/stable/debian/{{ ansible_distribution_release }}.noarmor.gpg
+        url: https://pkgs.tailscale.com/stable/debian/{{ ansible_facts['distribution_release'] }}.noarmor.gpg
         dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
         mode: "0644"
 
@@ -11,7 +11,7 @@
       ansible.builtin.apt_repository:
         repo: >-
           deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
-          https://pkgs.tailscale.com/stable/debian {{ ansible_distribution_release }} main
+          https://pkgs.tailscale.com/stable/debian {{ ansible_facts['distribution_release'] }} main
         state: present
         filename: tailscale
 
