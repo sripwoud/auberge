@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/sripwoud/auberge/compare/v0.4.0...v0.4.1) - 2026-03-08
+
+### Added
+
+- `paperless-ngx` role with tailscale-only access ([#91](https://github.com/sripwoud/auberge/pull/91))
+
+### Fixed
+
+- *(cli)* generate ansible inventory from hosts.toml ([#104](https://github.com/sripwoud/auberge/pull/104))
+- *(apt)* remove obsolete golang-1.24 apt pin ([#96](https://github.com/sripwoud/auberge/pull/96))
+
+### Other
+
+- add paperless-ngx to landing page and sort apps table
+- *(ansible)* migrate deprecated facts to `ansible_facts` dict ([#98](https://github.com/sripwoud/auberge/pull/98))
+- remove env section from mise.toml ([#102](https://github.com/sripwoud/auberge/pull/102))
+- *(tailscale)* replace interactive prompt with fail-fast assertion ([#94](https://github.com/sripwoud/auberge/pull/94))
+
 ## [0.4.0](https://github.com/sripwoud/auberge/compare/v0.3.13...v0.4.0) - 2026-03-02
 
 ### Added
