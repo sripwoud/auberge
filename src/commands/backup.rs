@@ -897,11 +897,16 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         eprintln!("\n=== Post-Restore Actions Required ===");
         eprintln!("  Cross-host restore completed. Manual verification needed:\n");
         eprintln!("  1. Verify services are running:");
+        let all_services: Vec<&str> = app_names
+            .iter()
+            .filter_map(|name| AppBackupConfig::by_name(name, false))
+            .flat_map(|cfg| cfg.systemd_services)
+            .collect();
         eprintln!(
             "     ssh {}@{} 'systemctl status {}'",
             host.user,
             host.address,
-            app_names.join(" ")
+            all_services.join(" ")
         );
         eprintln!("\n  2. Check service logs for errors:");
         for app_name in &app_names {
@@ -1192,16 +1197,21 @@ fn backup_app(
     }
 
     spinner.set_message(format!("Backing up {} (copying files)", config.name));
-    for path in &config.paths {
-        rsync_from_remote(host, ssh_key, path, &app_backup_dir)?;
-    }
+    let rsync_result = (|| -> Result<()> {
+        for path in &config.paths {
+            rsync_from_remote(host, ssh_key, path, &app_backup_dir)?;
+        }
+        Ok(())
+    })();
 
     if !config.systemd_services.is_empty() {
         spinner.set_message(format!("Backing up {} (starting services)", config.name));
         for service in &config.systemd_services {
-            remote_systemctl(host, ssh_key, "start", service)?;
+            let _ = remote_systemctl(host, ssh_key, "start", service);
         }
     }
+
+    rsync_result?;
 
     let backup_size = calculate_dir_size(&app_backup_dir)?;
 
