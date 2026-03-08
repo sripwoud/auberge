@@ -1227,10 +1227,17 @@ fn backup_app(
         )
     })?;
 
+    let mut stopped_services: Vec<&str> = Vec::new();
     if !config.systemd_services.is_empty() {
         spinner.set_message(format!("Backing up {} (stopping services)", config.name));
         for service in &config.systemd_services {
-            remote_systemctl(host, ssh_key, "stop", service)?;
+            if let Err(e) = remote_systemctl(host, ssh_key, "stop", service) {
+                for previously_stopped in &stopped_services {
+                    let _ = remote_systemctl(host, ssh_key, "start", previously_stopped);
+                }
+                return Err(e).wrap_err_with(|| format!("Failed to stop service {}", service));
+            }
+            stopped_services.push(service);
         }
     }
 

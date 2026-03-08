@@ -282,7 +282,7 @@ Mesh VPN for secure internal access to private services.
 - Install Tailscale from official APT repository
 - Authenticate to Tailscale network via auth key
 - Configure UFW rules for Tailscale traffic
-- Provide Tailscale IP for services that bind internally (e.g., Paperless-ngx)
+- Ensure Tailscale connectivity for services that bind internally (e.g., Paperless-ngx)
 
 **Why:**
 

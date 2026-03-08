@@ -301,6 +301,7 @@
         owner: "{{ paperless_sys_user }}"
         group: "{{ paperless_sys_group }}"
         mode: "0644"
+      notify: Restart all paperless services
 
     - name: Display deployment summary
       ansible.builtin.debug:
