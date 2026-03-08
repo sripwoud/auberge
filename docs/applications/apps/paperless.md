@@ -47,7 +47,7 @@ Available only via the Tailscale network at `http://<tailscale-ip>:8000`. Not pu
 
 ## Backup
 
-Supported via `auberge backup create --apps paperless`. Backs up data and media directories.
+Supported via `auberge backup create --apps paperless`. Backs up data and media directories only. The PostgreSQL database is **not** included and must be backed up separately (see [#105](https://github.com/sripwoud/auberge/issues/105)).
 
 See [Backup & Restore](../../backup-restore/overview.md).
 
