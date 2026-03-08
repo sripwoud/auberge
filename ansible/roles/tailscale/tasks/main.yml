@@ -1,18 +1,10 @@
 ---
-- name: Prompt for Tailscale configuration
-  block:
-    - name: Prompt for Tailscale auth key if not provided
-      when: tailscale_authkey | default('') | length == 0
-      ansible.builtin.pause:
-        prompt: "Enter Tailscale auth key (optional, press enter to skip)"
-      register: tailscale_authkey_prompt_result
-      no_log: true
-
-    - name: Set Tailscale auth key variable from prompt
-      when: tailscale_authkey | default('') | length == 0
-      ansible.builtin.set_fact:
-        tailscale_authkey: "{{ tailscale_authkey_prompt_result.user_input | default('', true) }}"
-      no_log: true
+- name: Validate required credentials
+  ansible.builtin.assert:
+    that:
+      - tailscale_authkey is defined
+      - tailscale_authkey | length > 0
+    fail_msg: "tailscale_authkey must be set in config.toml"
 
 - name: Tailscale Installation and Configuration
   block:
@@ -64,11 +56,10 @@
         {% if tailscale_advertise_exit_node %}--advertise-exit-node{% endif %}
         {% if not tailscale_accept_dns %}--accept-dns=false{% endif %}
         {% if tailscale_advertise_tags | length > 0 %}--advertise-tags={{ tailscale_advertise_tags | join(',') }}{% endif %}
-        {% if tailscale_authkey %}--authkey={{ tailscale_authkey }}{% endif %}
+        --authkey={{ tailscale_authkey }}
         {{ tailscale_extra_args }}
       when:
         - not tailscale_is_authenticated
-        - tailscale_authkey | length > 0
       register: tailscale_connect_result
       changed_when: tailscale_connect_result.rc == 0
 
