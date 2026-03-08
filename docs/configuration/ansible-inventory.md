@@ -2,7 +2,7 @@
 
 Location: `ansible/inventory.yml`
 
-Defines deployment targets and connection parameters.
+Defines group-level variables for Ansible playbook execution. Host-specific data (IPs, ports) is sourced from `~/.config/auberge/hosts.toml` and injected as a dynamic inventory at runtime.
 
 ## Structure
 
@@ -10,88 +10,57 @@ Defines deployment targets and connection parameters.
 all:
   children:
     vps:
-      hosts:
-        auberge:
-          ansible_host: "{{ lookup('env', 'AUBERGE_HOST') }}"
-          ansible_port: "{{ lookup('env', 'SSH_PORT') }}"
-          bootstrap_user: root
       vars:
         ansible_user: ansible
-        ansible_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }}"
+        ansible_ssh_private_key_file: "~/.ssh/identities/ansible_{{ inventory_hostname }}"
         ansible_python_interpreter: /usr/bin/python3
+        ansible_ssh_pipelining: true
 ```
 
-## Key Variables
+## How It Works
 
-**Per-host:**
+When running `auberge ansible run`, the CLI:
 
-- `ansible_host` - IP/hostname (from env var)
-- `ansible_port` - SSH port (from env var)
-- `bootstrap_user` - Initial user (usually `root`)
+1. Reads hosts.toml for the target host's IP, port, and user
+2. Generates a temporary inventory YAML with the host entry
+3. Passes both inventories to Ansible: `-i inventory.yml -i <generated>`
+4. Ansible merges them: group vars from static file + host data from generated file
 
-**Group vars (vps):**
+## Group Variables
 
 - `ansible_user` - SSH user after bootstrap (`ansible`)
-- `ansible_ssh_private_key_file` - Path to SSH key
+- `ansible_ssh_private_key_file` - Path to SSH key (pattern-based per host)
+- `admin_ssh_private_key_file` - Admin user's SSH key path
 - `ansible_python_interpreter` - Python 3 path
-
-## Environment Variables
-
-Uses `lookup('env', 'VAR')` for sensitive data:
-
-```bash
-mise set --age-encrypt --prompt AUBERGE_HOST
-mise set --age-encrypt --prompt SSH_PORT
-```
-
-Benefits:
-
-- Inventory file can be version controlled
-- Actual values encrypted in `mise.toml`
-- Per-environment/per-user configurations
+- `ansible_ssh_pipelining` - Enable SSH pipelining
+- `ansible_ssh_common_args` - SSH connection tuning options
 
 ## Adding a Host
 
-1. Edit `ansible/inventory.yml`:
-
-```yaml
-my-host:
-  ansible_host: "{{ lookup('env', 'MY_HOST') }}"
-  ansible_port: "{{ lookup('env', 'SSH_PORT') }}"
-  bootstrap_user: root
-```
-
-2. Set env var and generate keys:
+Hosts are managed via `hosts.toml`, not the inventory file:
 
 ```bash
-mise set --age-encrypt --prompt MY_HOST
+auberge host add my-host 203.0.113.10 --user root --port 22
 auberge ssh keygen --host my-host --user ansible
-```
-
-3. Bootstrap:
-
-```bash
-auberge ansible bootstrap my-host --ip 10.0.0.1
-```
-
-## Validation
-
-```bash
-ansible-inventory -i ansible/inventory.yml --list
-ansible-inventory -i ansible/inventory.yml --host auberge
+auberge ansible bootstrap my-host --ip 203.0.113.10
 ```
 
 ## Troubleshooting
 
-**"environment variable not set"**
+**"Host not found"**
 
 ```bash
-mise env | grep AUBERGE_HOST
-mise set --age-encrypt --prompt AUBERGE_HOST  # If missing
+auberge host list
+auberge host add my-host 203.0.113.10
 ```
 
 **"SSH key not found"**
 
 ```bash
-auberge ssh keygen --host auberge --user ansible
+auberge ssh keygen --host my-host --user ansible
 ```
+
+## Related
+
+- [Hosts Configuration](configuration/hosts.md) - hosts.toml management
+- [SSH Keys](configuration/ssh-keys.md) - SSH key configuration

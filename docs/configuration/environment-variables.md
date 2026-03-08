@@ -1,51 +1,51 @@
-# Environment Variables
+# Configuration
 
-All configuration is managed via `mise.toml` environment variables.
+All configuration is managed via `~/.config/auberge/config.toml` and `~/.config/auberge/hosts.toml`.
 
-## Secrets (encrypted with age)
-
-Set encrypted secrets using mise:
+## Config Management
 
 ```bash
-mise set --age-encrypt --prompt ADMIN_USER_NAME
-mise set --age-encrypt --prompt ADMIN_USER_EMAIL
-mise set --age-encrypt --prompt PRIMARY_DOMAIN
-mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
-mise set --age-encrypt --prompt BAIKAL_ADMIN_PASSWORD
-mise set --age-encrypt --prompt COLPORTEUR_FEEDS_PASSWORD
-mise set --age-encrypt --prompt WEBDAV_PASSWORD
-mise set --age-encrypt --prompt TAILSCALE_AUTHKEY
-mise set --age-encrypt --prompt SSH_PORT
-mise set --age-encrypt --prompt AUBERGE_HOST
-mise set --age-encrypt --prompt VIBECODER_HOST
-mise set --age-encrypt --prompt OPENCLAW_GATEWAY_TOKEN
-mise set --age-encrypt --prompt CLAUDE_AI_SESSION_KEY
-mise set --age-encrypt --prompt CLAUDE_WEB_SESSION_KEY
-mise set --age-encrypt --prompt CLAUDE_WEB_COOKIE
+auberge config init
+auberge config show
+auberge config set <key> <value>
 ```
 
-## Public Configuration
-
-Already defined in `mise.toml` [env] section:
-
-- `DNS_DEFAULT_TTL` - DNS record TTL in seconds (default: 300)
-- `BAIKAL_SUBDOMAIN` - Subdomain for Baikal (default: calendrier)
-- `BLOCKY_SUBDOMAIN` - Subdomain for Blocky DNS (default: dns)
-- `CALIBRE_SUBDOMAIN` - Subdomain for Calibre (default: lire)
-- `COLPORTEUR_SUBDOMAIN` - Subdomain for Colporteur (default: feeds)
-- `FRESHRSS_SUBDOMAIN` - Subdomain for FreshRSS (default: rss)
-- `NAVIDROME_SUBDOMAIN` - Subdomain for Navidrome (default: musique)
-- `WEBDAV_SUBDOMAIN` - Subdomain for WebDAV (default: webdav)
-- `YOURLS_SUBDOMAIN` - Subdomain for YOURLS (default: url)
-
-## Viewing Configuration
+## Host Management
 
 ```bash
-# View all environment variables
-mise env
+auberge host add <name> <ip> --user <user> --port <port>
+auberge host list
+auberge host show <name>
+```
 
-# View specific variable
-mise env | grep SSH_PORT
+## Key Configuration Values
+
+### Identity (config.toml)
+
+```bash
+auberge config set identity.admin_user_name <username>
+auberge config set identity.admin_user_email <email>
+auberge config set identity.primary_domain <domain>
+auberge config set identity.ssh_port <port>
+```
+
+### API Tokens (config.toml)
+
+```bash
+auberge config set api_tokens.cloudflare_dns_api_token <token>
+auberge config set api_tokens.tailscale_authkey <key>
+```
+
+### Application Settings (config.toml)
+
+Subdomain configuration for each service:
+
+```bash
+auberge config set baikal.baikal_subdomain calendrier
+auberge config set blocky.blocky_subdomain dns
+auberge config set freshrss.freshrss_subdomain rss
+auberge config set navidrome.navidrome_subdomain musique
+auberge config set webdav.webdav_subdomain webdav
 ```
 
 ## API Keys and Tokens
@@ -61,12 +61,10 @@ Required for DNS-01 ACME challenges via Lego certificate automation:
    - Zone → DNS → Edit
    - Zone → Zone → Read
 5. Set zone resources to your domain
-6. Copy the token and add to mise:
+6. Store the token:
    ```bash
-   mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
+   auberge config set api_tokens.cloudflare_dns_api_token <TOKEN>
    ```
-
-IP whitelisting is optional (all IPs are allowed by default).
 
 ### Tailscale
 
@@ -76,10 +74,11 @@ Required for VPN mesh networking:
 2. Set reusable and ephemeral flags as needed
 3. Store the key:
    ```bash
-   mise set --age-encrypt --prompt TAILSCALE_AUTHKEY
+   auberge config set api_tokens.tailscale_authkey <KEY>
    ```
 
 ## Related Documentation
 
-- [Secrets Management](secrets.md) - age encryption
+- [Secrets Management](secrets.md) - config.toml security
+- [Hosts Configuration](hosts.md) - hosts.toml management
 - [Development Setup](../development/setup.md) - Local development
