@@ -22,7 +22,7 @@
     - name: Wait for SSH to be available on new port
       ansible.builtin.wait_for:
         port: "{{ ssh_port }}"
-        host: "{{ ansible_default_ipv4.address | default(ansible_all_ipv4_addresses[0]) }}"
+        host: "{{ ansible_facts['default_ipv4']['address'] | default(ansible_facts['all_ipv4_addresses'][0]) }}"
         delay: 2
         timeout: 30
         state: started
