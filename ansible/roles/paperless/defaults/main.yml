@@ -7,6 +7,7 @@ paperless_port: 8000
 paperless_data_dir: /opt/paperless/data
 paperless_media_root: /opt/paperless/media
 paperless_consumption_dir: /opt/paperless/consume
+paperless_scratch_dir: /opt/paperless/scratch
 
 paperless_db_name: paperless
 paperless_db_user: paperless

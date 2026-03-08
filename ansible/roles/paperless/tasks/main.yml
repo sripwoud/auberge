@@ -177,6 +177,7 @@
         - "{{ paperless_data_dir }}"
         - "{{ paperless_media_root }}"
         - "{{ paperless_consumption_dir }}"
+        - "{{ paperless_scratch_dir }}"
 
     - name: Download and extract Paperless-ngx release
       when: paperless_installed_version != paperless_version
