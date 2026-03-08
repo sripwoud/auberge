@@ -242,6 +242,23 @@
       register: paperless_migrate_result
       changed_when: "'No migrations to apply' not in paperless_migrate_result.stdout"
 
+    - name: Create admin superuser
+      ansible.builtin.command:
+        cmd: "{{ paperless_install_path }}/venv/bin/python3 manage.py createsuperuser --noinput"
+        chdir: "{{ paperless_install_path }}/src"
+      become: true
+      become_user: "{{ paperless_sys_user }}"
+      environment:
+        PAPERLESS_CONFIGURATION_PATH: "{{ paperless_install_path }}/paperless.conf"
+        DJANGO_SUPERUSER_USERNAME: "{{ paperless_admin_user }}"
+        DJANGO_SUPERUSER_PASSWORD: "{{ paperless_admin_password }}"
+      register: paperless_createsuperuser_result
+      changed_when: "'Superuser created' in paperless_createsuperuser_result.stdout"
+      failed_when:
+        - paperless_createsuperuser_result.rc != 0
+        - "'already taken' not in paperless_createsuperuser_result.stderr"
+      no_log: true
+
     - name: Deploy systemd services
       ansible.builtin.template:
         src: "{{ item }}.j2"
