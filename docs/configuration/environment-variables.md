@@ -6,8 +6,9 @@ All configuration is managed via `~/.config/auberge/config.toml` and `~/.config/
 
 ```bash
 auberge config init
-auberge config show
+auberge config list
 auberge config set <key> <value>
+auberge config get <key>
 ```
 
 ## Host Management
@@ -23,17 +24,17 @@ auberge host show <name>
 ### Identity (config.toml)
 
 ```bash
-auberge config set identity.admin_user_name <username>
-auberge config set identity.admin_user_email <email>
-auberge config set identity.primary_domain <domain>
-auberge config set identity.ssh_port <port>
+auberge config set admin_user_name <username>
+auberge config set admin_user_email <email>
+auberge config set primary_domain <domain>
+auberge config set ssh_port <port>
 ```
 
 ### API Tokens (config.toml)
 
 ```bash
-auberge config set api_tokens.cloudflare_dns_api_token <token>
-auberge config set api_tokens.tailscale_authkey <key>
+auberge config set cloudflare_dns_api_token <token>
+auberge config set tailscale_authkey <key>
 ```
 
 ### Application Settings (config.toml)
@@ -41,11 +42,11 @@ auberge config set api_tokens.tailscale_authkey <key>
 Subdomain configuration for each service:
 
 ```bash
-auberge config set baikal.baikal_subdomain calendrier
-auberge config set blocky.blocky_subdomain dns
-auberge config set freshrss.freshrss_subdomain rss
-auberge config set navidrome.navidrome_subdomain musique
-auberge config set webdav.webdav_subdomain webdav
+auberge config set baikal_subdomain calendrier
+auberge config set blocky_subdomain dns
+auberge config set freshrss_subdomain rss
+auberge config set navidrome_subdomain musique
+auberge config set webdav_subdomain webdav
 ```
 
 ## API Keys and Tokens
@@ -63,7 +64,7 @@ Required for DNS-01 ACME challenges via Lego certificate automation:
 5. Set zone resources to your domain
 6. Store the token:
    ```bash
-   auberge config set api_tokens.cloudflare_dns_api_token <TOKEN>
+   auberge config set cloudflare_dns_api_token <TOKEN>
    ```
 
 ### Tailscale
@@ -74,11 +75,11 @@ Required for VPN mesh networking:
 2. Set reusable and ephemeral flags as needed
 3. Store the key:
    ```bash
-   auberge config set api_tokens.tailscale_authkey <KEY>
+   auberge config set tailscale_authkey <KEY>
    ```
 
 ## Related Documentation
 
-- [Secrets Management](secrets.md) - config.toml security
-- [Hosts Configuration](hosts.md) - hosts.toml management
+- [Secrets Management](./secrets.md) - config.toml security
+- [Hosts Configuration](./hosts.md) - hosts.toml management
 - [Development Setup](../development/setup.md) - Local development

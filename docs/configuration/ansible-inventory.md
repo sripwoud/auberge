@@ -12,7 +12,8 @@ all:
     vps:
       vars:
         ansible_user: ansible
-        ansible_ssh_private_key_file: "~/.ssh/identities/ansible_{{ inventory_hostname }}"
+        ansible_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }}"
+        admin_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/{{ admin_user_name }}_{{ inventory_hostname }}"
         ansible_python_interpreter: /usr/bin/python3
         ansible_ssh_pipelining: true
 ```
@@ -62,5 +63,5 @@ auberge ssh keygen --host my-host --user ansible
 
 ## Related
 
-- [Hosts Configuration](configuration/hosts.md) - hosts.toml management
-- [SSH Keys](configuration/ssh-keys.md) - SSH key configuration
+- [Hosts Configuration](./hosts.md) - hosts.toml management
+- [SSH Keys](./ssh-keys.md) - SSH key configuration

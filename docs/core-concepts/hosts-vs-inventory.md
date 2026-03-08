@@ -54,7 +54,7 @@ all:
     vps:
       vars:
         ansible_user: ansible
-        ansible_ssh_private_key_file: "~/.ssh/identities/ansible_{{ inventory_hostname }}"
+        ansible_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }}"
         ansible_python_interpreter: /usr/bin/python3
 ```
 
@@ -95,6 +95,6 @@ auberge host add
 
 ## Related
 
-- [Hosts Configuration](configuration/hosts.md) - hosts.toml details
-- [Ansible Inventory](configuration/ansible-inventory.md) - inventory.yml structure
-- [SSH Keys](configuration/ssh-keys.md) - SSH key configuration
+- [Hosts Configuration](../configuration/hosts.md) - hosts.toml details
+- [Ansible Inventory](../configuration/ansible-inventory.md) - inventory.yml structure
+- [SSH Keys](../configuration/ssh-keys.md) - SSH key configuration
