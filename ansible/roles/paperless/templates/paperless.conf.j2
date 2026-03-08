@@ -1,0 +1,24 @@
+PAPERLESS_REDIS=redis://localhost:6379
+PAPERLESS_DBENGINE=postgresql
+PAPERLESS_DBHOST=localhost
+PAPERLESS_DBPORT=5432
+PAPERLESS_DBNAME={{ paperless_db_name }}
+PAPERLESS_DBUSER={{ paperless_db_user }}
+PAPERLESS_DBPASS={{ paperless_db_password }}
+
+PAPERLESS_CONSUMPTION_DIR={{ paperless_consumption_dir }}
+PAPERLESS_DATA_DIR={{ paperless_data_dir }}
+PAPERLESS_MEDIA_ROOT={{ paperless_media_root }}
+
+PAPERLESS_SECRET_KEY={{ paperless_secret_key }}
+PAPERLESS_BIND_ADDR={{ paperless_bind_addr }}
+PAPERLESS_PORT={{ paperless_port }}
+
+PAPERLESS_OCR_LANGUAGE={{ paperless_ocr_language }}
+PAPERLESS_TIME_ZONE={{ paperless_time_zone }}
+
+PAPERLESS_ADMIN_USER={{ paperless_admin_user }}
+PAPERLESS_ADMIN_PASSWORD={{ paperless_admin_password }}
+PAPERLESS_ADMIN_MAIL={{ paperless_admin_mail | default(admin_user_email) }}
+
+PAPERLESS_URL=http://{{ paperless_bind_addr }}:{{ paperless_port }}

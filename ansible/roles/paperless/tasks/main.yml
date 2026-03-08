@@ -1,0 +1,280 @@
+---
+- name: Install and configure Paperless-ngx
+  block:
+    - name: Validate required credentials
+      ansible.builtin.assert:
+        that:
+          - paperless_secret_key is defined
+          - paperless_secret_key | length > 0
+          - paperless_admin_user is defined
+          - paperless_admin_user | length > 0
+          - paperless_admin_password is defined
+          - paperless_admin_password | length > 0
+          - paperless_db_password is defined
+          - paperless_db_password | length > 0
+        fail_msg: "paperless_secret_key, paperless_admin_user, paperless_admin_password, and paperless_db_password must be defined"
+
+    - name: Get Tailscale status
+      ansible.builtin.command: tailscale status --json
+      register: paperless_tailscale_status_raw
+      changed_when: false
+      failed_when: false
+
+    - name: Parse Tailscale status
+      ansible.builtin.set_fact:
+        paperless_tailscale_status: "{{ paperless_tailscale_status_raw.stdout | from_json }}"
+      when: paperless_tailscale_status_raw.rc == 0
+
+    - name: Set Tailscale IP fact
+      ansible.builtin.set_fact:
+        paperless_tailscale_ip: "{{ paperless_tailscale_status.Self.TailscaleIPs[0] }}"
+      when:
+        - paperless_tailscale_status_raw.rc == 0
+        - paperless_tailscale_status is defined
+        - paperless_tailscale_status.BackendState | default('') == "Running"
+        - paperless_tailscale_status.Self is defined
+        - paperless_tailscale_status.Self.TailscaleIPs is defined
+        - paperless_tailscale_status.Self.TailscaleIPs | length > 0
+
+    - name: Set bind address
+      ansible.builtin.set_fact:
+        paperless_bind_addr: "{{ paperless_tailscale_ip | default('127.0.0.1') }}"
+
+    - name: Display bind address
+      ansible.builtin.debug:
+        msg: "Paperless-ngx will bind to: {{ paperless_bind_addr }}"
+
+    - name: Warn if Tailscale not available
+      ansible.builtin.debug:
+        msg: "WARNING: Tailscale not running. Paperless-ngx will bind to localhost only."
+      when: paperless_tailscale_ip is not defined
+
+    - name: Install system dependencies
+      ansible.builtin.apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-dev
+          - python3-venv
+          - build-essential
+          - imagemagick
+          - gnupg
+          - libpq-dev
+          - pkg-config
+          - fonts-liberation
+          - libmagic-dev
+          - poppler-utils
+          - unpaper
+          - ghostscript
+          - icc-profiles-free
+          - qpdf
+          - liblept5
+          - libxml2
+          - pngquant
+          - zlib1g
+          - tesseract-ocr
+          - tesseract-ocr-deu
+          - tesseract-ocr-fra
+          - tesseract-ocr-spa
+          - tesseract-ocr-eng
+          - redis-server
+          - postgresql
+          - postgresql-client
+          - python3-psycopg2
+        state: present
+        update_cache: true
+
+    - name: Ensure Redis is running
+      ansible.builtin.systemd_service:
+        name: redis-server
+        enabled: true
+        state: started
+
+    - name: Ensure PostgreSQL is running
+      ansible.builtin.systemd_service:
+        name: postgresql
+        enabled: true
+        state: started
+
+    - name: Create PostgreSQL database user
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_user:
+        name: "{{ paperless_db_user }}"
+        password: "{{ paperless_db_password }}"
+        state: present
+      no_log: true
+
+    - name: Create PostgreSQL database
+      become: true
+      become_user: postgres
+      community.postgresql.postgresql_db:
+        name: "{{ paperless_db_name }}"
+        owner: "{{ paperless_db_user }}"
+        state: present
+
+    - name: Create Paperless system group
+      ansible.builtin.group:
+        name: "{{ paperless_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create Paperless system user
+      ansible.builtin.user:
+        name: "{{ paperless_sys_user }}"
+        group: "{{ paperless_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ paperless_install_path }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Check installed version
+      ansible.builtin.stat:
+        path: "{{ paperless_install_path }}/version"
+      register: paperless_version_file
+
+    - name: Read installed version
+      when: paperless_version_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ paperless_install_path }}/version"
+      register: paperless_installed_version_raw
+
+    - name: Set installed version fact
+      ansible.builtin.set_fact:
+        paperless_installed_version: >-
+          {{ paperless_installed_version_raw.content | b64decode | trim
+             if paperless_version_file.stat.exists else '' }}
+
+    - name: Create directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ paperless_sys_user }}"
+        group: "{{ paperless_sys_group }}"
+        mode: "0755"
+      loop:
+        - "{{ paperless_install_path }}"
+        - "{{ paperless_data_dir }}"
+        - "{{ paperless_media_root }}"
+        - "{{ paperless_consumption_dir }}"
+
+    - name: Download and extract Paperless-ngx release
+      when: paperless_installed_version != paperless_version
+      block:
+        - name: Download release tarball
+          ansible.builtin.get_url:
+            url: "{{ paperless_release_url }}"
+            dest: /tmp/paperless-ngx.tar.xz
+            mode: "0644"
+
+        - name: Extract release tarball
+          ansible.builtin.unarchive:
+            src: /tmp/paperless-ngx.tar.xz
+            dest: "{{ paperless_install_path }}"
+            remote_src: true
+            extra_opts:
+              - --strip-components=1
+            owner: "{{ paperless_sys_user }}"
+            group: "{{ paperless_sys_group }}"
+
+        - name: Remove tarball
+          ansible.builtin.file:
+            path: /tmp/paperless-ngx.tar.xz
+            state: absent
+
+    - name: Create Python virtual environment
+      ansible.builtin.command:
+        cmd: python3 -m venv {{ paperless_install_path }}/venv
+        creates: "{{ paperless_install_path }}/venv/bin/python3"
+      become: true
+      become_user: "{{ paperless_sys_user }}"
+
+    - name: Install Python dependencies
+      ansible.builtin.pip:
+        requirements: "{{ paperless_install_path }}/requirements.txt"
+        virtualenv: "{{ paperless_install_path }}/venv"
+      become: true
+      become_user: "{{ paperless_sys_user }}"
+
+    - name: Configure ImageMagick PDF policy
+      ansible.builtin.lineinfile:
+        path: /etc/ImageMagick-6/policy.xml
+        regexp: 'pattern="PDF"'
+        line: '  <policy domain="coder" rights="read|write" pattern="PDF" />'
+
+    - name: Deploy paperless.conf
+      ansible.builtin.template:
+        src: paperless.conf.j2
+        dest: "{{ paperless_install_path }}/paperless.conf"
+        owner: "{{ paperless_sys_user }}"
+        group: "{{ paperless_sys_group }}"
+        mode: "0600"
+      notify: Restart all paperless services
+
+    - name: Run database migrations
+      ansible.builtin.command:
+        cmd: "{{ paperless_install_path }}/venv/bin/python3 manage.py migrate --no-input"
+        chdir: "{{ paperless_install_path }}/src"
+      become: true
+      become_user: "{{ paperless_sys_user }}"
+      environment:
+        PAPERLESS_CONFIGURATION_PATH: "{{ paperless_install_path }}/paperless.conf"
+      register: paperless_migrate_result
+      changed_when: "'No migrations to apply' not in paperless_migrate_result.stdout"
+
+    - name: Deploy systemd services
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - paperless-webserver.service
+        - paperless-consumer.service
+        - paperless-task-queue.service
+        - paperless-scheduler.service
+      notify: Restart all paperless services
+
+    - name: Enable and start all Paperless services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      loop:
+        - paperless-webserver
+        - paperless-consumer
+        - paperless-task-queue
+        - paperless-scheduler
+
+    - name: Write installed version
+      when: paperless_installed_version != paperless_version
+      ansible.builtin.copy:
+        content: "{{ paperless_version }}"
+        dest: "{{ paperless_install_path }}/version"
+        owner: "{{ paperless_sys_user }}"
+        group: "{{ paperless_sys_group }}"
+        mode: "0644"
+
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg:
+          - "==================================="
+          - "Paperless-ngx Deployment Complete!"
+          - "==================================="
+          - "Version: {{ paperless_version }}"
+          - "Bind: {{ paperless_bind_addr }}:{{ paperless_port }}"
+          - "Data: {{ paperless_data_dir }}"
+          - "Media: {{ paperless_media_root }}"
+          - "Consume: {{ paperless_consumption_dir }}"
+          - ""
+          - "Access: http://{{ paperless_bind_addr }}:{{ paperless_port }}"
+          - "Admin: {{ paperless_admin_user }}"
+          - ""
+          - "Services:"
+          - "  systemctl status paperless-webserver"
+          - "  systemctl status paperless-consumer"
+          - "  systemctl status paperless-task-queue"
+          - "  systemctl status paperless-scheduler"
