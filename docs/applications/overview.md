@@ -23,15 +23,15 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | Application                        | Description                             |
 | ---------------------------------- | --------------------------------------- |
 | [Baikal](apps/baikal.md)           | CalDAV/CardDAV server                   |
+| [Booklore](apps/booklore.md)       | Multi-user digital library              |
+| [Calibre](apps/calibre.md)         | Ebook library (alternative to Booklore) |
 | [Colporteur](apps/colporteur.md)   | Newsletter-to-feed converter            |
 | [FreshRSS](apps/freshrss.md)       | RSS feed aggregator                     |
 | [Navidrome](apps/navidrome.md)     | Music streaming server                  |
-| [Booklore](apps/booklore.md)       | Multi-user digital library              |
-| [WebDAV](apps/webdav.md)           | File sharing and synchronization        |
-| [Syncthing](apps/syncthing.md)     | Continuous file synchronization         |
-| [YOURLS](apps/yourls.md)           | URL shortener                           |
-| [Calibre](apps/calibre.md)         | Ebook library (alternative to Booklore) |
 | [Paperless-ngx](apps/paperless.md) | Document management system              |
+| [Syncthing](apps/syncthing.md)     | Continuous file synchronization         |
+| [WebDAV](apps/webdav.md)           | File sharing and synchronization        |
+| [YOURLS](apps/yourls.md)           | URL shortener                           |
 
 ## Deployment
 
