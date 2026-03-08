@@ -29,10 +29,36 @@ fn write_extra_vars_file() -> Result<tempfile::NamedTempFile> {
 }
 
 fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile> {
-    let yaml = format!(
-        "all:\n  children:\n    vps:\n      hosts:\n        {}:\n          ansible_host: \"{}\"\n          ansible_port: {}\n",
-        host.name, host.address, host.port
+    use serde_yaml::{Mapping, Value};
+
+    let mut host_vars = Mapping::new();
+    host_vars.insert(
+        Value::String("ansible_host".into()),
+        Value::String(host.address.clone()),
     );
+    host_vars.insert(
+        Value::String("ansible_port".into()),
+        Value::Number(host.port.into()),
+    );
+
+    let mut hosts = Mapping::new();
+    hosts.insert(Value::String(host.name.clone()), Value::Mapping(host_vars));
+
+    let mut vps = Mapping::new();
+    vps.insert(Value::String("hosts".into()), Value::Mapping(hosts));
+
+    let mut children = Mapping::new();
+    children.insert(Value::String("vps".into()), Value::Mapping(vps));
+
+    let mut all = Mapping::new();
+    all.insert(Value::String("children".into()), Value::Mapping(children));
+
+    let mut root = Mapping::new();
+    root.insert(Value::String("all".into()), Value::Mapping(all));
+
+    let yaml =
+        serde_yaml::to_string(&Value::Mapping(root)).wrap_err("Failed to serialize inventory")?;
+
     let mut tmpfile = tempfile::NamedTempFile::new().wrap_err("Failed to create temp file")?;
     tmpfile
         .write_all(yaml.as_bytes())
@@ -80,6 +106,7 @@ pub fn run_playbook(
     if is_fresh_bootstrap {
         cmd.arg("--ask-pass");
         cmd.arg("-e").arg(format!("ansible_port={}", host.port));
+        cmd.arg("-e").arg(format!("ansible_user={}", host.user));
         cmd.arg("-e").arg(
             "ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'",
         );
@@ -128,6 +155,8 @@ pub fn run_bootstrap(playbook: &Path, host: &InventoryHost) -> Result<AnsibleRes
         .arg(format!("@{}", vars_file.path().display()))
         .arg("-e")
         .arg(format!("ansible_user={}", host.user))
+        .arg("-e")
+        .arg(format!("ansible_port={}", host.port))
         .arg("--ask-pass")
         .status()
         .wrap_err("Failed to execute ansible-playbook")?;
@@ -174,5 +203,22 @@ mod tests {
 
         let parsed: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();
         assert!(parsed["all"]["children"]["vps"]["hosts"]["myserver"].is_mapping());
+    }
+
+    #[test]
+    fn test_write_inventory_file_escapes_special_chars() {
+        let host = InventoryHost {
+            name: "host:with#special".to_string(),
+            address: "198.51.100.1".to_string(),
+            port: 22,
+            user: "root".to_string(),
+        };
+
+        let tmpfile = write_inventory_file(&host).unwrap();
+        let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
+
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();
+        let host_entry = &parsed["all"]["children"]["vps"]["hosts"]["host:with#special"];
+        assert_eq!(host_entry["ansible_host"].as_str().unwrap(), "198.51.100.1");
     }
 }

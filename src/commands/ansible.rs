@@ -176,7 +176,7 @@ pub fn run_ansible_run(
         output::info("     - Zone → DNS → Edit");
         output::info("  5. Set zone resources to your domain");
         output::info(
-            "  6. Copy token and add: auberge config set api_tokens.cloudflare_dns_api_token <TOKEN>",
+            "  6. Copy token and add: auberge config set cloudflare_dns_api_token <TOKEN>",
         );
         eprintln!();
         output::info("Note: IP whitelisting is optional (all IPs allowed by default)");
