@@ -218,7 +218,7 @@
 
     - name: Configure ImageMagick PDF policy
       ansible.builtin.lineinfile:
-        path: /etc/ImageMagick-6/policy.xml
+        path: /etc/ImageMagick-7/policy.xml
         regexp: 'pattern="PDF"'
         line: '  <policy domain="coder" rights="read" pattern="PDF" />'
 
