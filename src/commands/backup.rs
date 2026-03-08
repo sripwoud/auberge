@@ -827,9 +827,16 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         } else {
             let tags: Vec<String> = app_names.iter().map(|s| s.to_string()).collect();
 
+            let inventory_host = crate::services::ansible_runner::InventoryHost {
+                name: host.name.clone(),
+                address: host.address.clone(),
+                port: host.port,
+                user: host.user.clone(),
+            };
+
             match crate::services::ansible_runner::run_playbook(
                 &apps_playbook,
-                &host.name,
+                &inventory_host,
                 false,
                 Some(&tags),
                 None,

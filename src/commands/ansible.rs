@@ -2,7 +2,7 @@ use crate::models::inventory::Host;
 use crate::models::playbook::Playbook;
 use crate::output;
 use crate::selector::select_item;
-use crate::services::ansible_runner::{run_bootstrap, run_playbook};
+use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::inventory::{get_host, get_hosts, get_playbooks};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
@@ -132,9 +132,12 @@ pub fn run_ansible_run(
         output::info("allows your custom SSH port (separate from UFW on the VPS)");
         eprintln!();
         output::info("Required steps:");
-        output::info("  1. Get your SSH_PORT: mise env | grep SSH_PORT");
+        output::info(&format!(
+            "  1. Your SSH port for {}: {}",
+            selected_host.name, selected_host.vars.ansible_port
+        ));
         output::info("  2. Log into your VPS provider dashboard (IONOS, etc.)");
-        output::info("  3. Add firewall rule: Allow TCP on your SSH_PORT");
+        output::info("  3. Add firewall rule: Allow TCP on your SSH port");
         output::info("  4. Save and confirm the rule is active");
         eprintln!();
         output::info("Without this, you'll be locked out after SSH port change!");
@@ -173,7 +176,7 @@ pub fn run_ansible_run(
         output::info("     - Zone → DNS → Edit");
         output::info("  5. Set zone resources to your domain");
         output::info(
-            "  6. Copy token and add: mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN",
+            "  6. Copy token and add: auberge config set api_tokens.cloudflare_dns_api_token <TOKEN>",
         );
         eprintln!();
         output::info("Note: IP whitelisting is optional (all IPs allowed by default)");
@@ -229,11 +232,18 @@ pub fn run_ansible_run(
         selected_playbook.name, selected_host.name
     ));
 
+    let inventory_host = InventoryHost {
+        name: selected_host.name,
+        address: selected_host.vars.ansible_host,
+        port: selected_host.vars.ansible_port,
+        user: selected_host.vars.bootstrap_user,
+    };
+
     let extra_vars = user.as_ref().map(|u| vec![("ansible_user", u.as_str())]);
 
     let result = run_playbook(
         &selected_playbook.path,
-        &selected_host.name,
+        &inventory_host,
         check,
         tags.as_deref(),
         extra_vars.as_deref(),
@@ -315,20 +325,24 @@ pub fn run_ansible_bootstrap(
         (None, false) => prompt_for_ip(&host_name)?,
     };
 
-    let bootstrap_user = user.as_deref().unwrap_or(&host.vars.bootstrap_user);
+    let bootstrap_user = user
+        .as_deref()
+        .unwrap_or(&host.vars.bootstrap_user)
+        .to_string();
 
     output::info(&format!(
         "Bootstrapping {} ({}) as {}",
         host_name, host_ip, bootstrap_user
     ));
 
-    let result = run_bootstrap(
-        &bootstrap_playbook,
-        &host_name,
-        &host_ip,
-        bootstrap_user,
+    let inventory_host = InventoryHost {
+        name: host_name,
+        address: host_ip,
         port,
-    )?;
+        user: bootstrap_user,
+    };
+
+    let result = run_bootstrap(&bootstrap_playbook, &inventory_host)?;
 
     if result.success {
         output::success("Bootstrap completed successfully");
