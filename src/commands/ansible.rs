@@ -131,11 +131,12 @@ pub fn run_ansible_run(
         output::info("Before running bootstrap, ensure your VPS provider's firewall");
         output::info("allows your custom SSH port (separate from UFW on the VPS)");
         eprintln!();
+        let config = crate::user_config::UserConfig::load()?;
+        let ssh_port = config
+            .get("ssh_port")
+            .unwrap_or_else(|| "not configured".to_string());
         output::info("Required steps:");
-        output::info(&format!(
-            "  1. Your SSH port for {}: {}",
-            selected_host.name, selected_host.vars.ansible_port
-        ));
+        output::info(&format!("  1. Your target SSH port: {}", ssh_port));
         output::info("  2. Log into your VPS provider dashboard (IONOS, etc.)");
         output::info("  3. Add firewall rule: Allow TCP on your SSH port");
         output::info("  4. Save and confirm the rule is active");
