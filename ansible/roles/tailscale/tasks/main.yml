@@ -1,11 +1,4 @@
 ---
-- name: Validate required credentials
-  ansible.builtin.assert:
-    that:
-      - tailscale_authkey is defined
-      - tailscale_authkey | length > 0
-    fail_msg: "tailscale_authkey must be set in config.toml"
-
 - name: Tailscale Installation and Configuration
   block:
     - name: Download and add Tailscale GPG key
@@ -48,6 +41,14 @@
             ((tailscale_status_check.stdout | from_json).BackendState in ["Running", "Starting"])
           }}
 
+    - name: Validate auth key for initial connection
+      ansible.builtin.assert:
+        that:
+          - tailscale_authkey is defined
+          - tailscale_authkey | length > 0
+        fail_msg: "tailscale_authkey must be set in config.toml for initial Tailscale authentication"
+      when: not tailscale_is_authenticated
+
     - name: Connect to Tailscale network
       ansible.builtin.command: >-
         tailscale up
@@ -58,10 +59,10 @@
         {% if tailscale_advertise_tags | length > 0 %}--advertise-tags={{ tailscale_advertise_tags | join(',') }}{% endif %}
         --authkey={{ tailscale_authkey }}
         {{ tailscale_extra_args }}
-      when:
-        - not tailscale_is_authenticated
+      when: not tailscale_is_authenticated
       register: tailscale_connect_result
       changed_when: tailscale_connect_result.rc == 0
+      no_log: true
 
     - name: Configure UFW firewall for Tailscale
       when: ansible_facts.services['ufw'] is defined and ansible_facts.services['ufw'].state == 'running'
