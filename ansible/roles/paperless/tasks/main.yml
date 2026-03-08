@@ -38,19 +38,19 @@
         - paperless_tailscale_status.Self.TailscaleIPs | length > 0
       changed_when: false
 
+    - name: Fail if Tailscale not available
+      ansible.builtin.fail:
+        msg: "Tailscale is not running or no Tailscale IP available. Paperless-ngx requires Tailscale."
+      when: paperless_tailscale_ip is not defined
+
     - name: Set bind address
       ansible.builtin.set_fact:
-        paperless_bind_addr: "{{ paperless_tailscale_ip | default('127.0.0.1') }}"
+        paperless_bind_addr: "{{ paperless_tailscale_ip }}"
       changed_when: false
 
     - name: Display bind address
       ansible.builtin.debug:
         msg: "Paperless-ngx will bind to: {{ paperless_bind_addr }}"
-
-    - name: Warn if Tailscale not available
-      ansible.builtin.debug:
-        msg: "WARNING: Tailscale not running. Paperless-ngx will bind to localhost only."
-      when: paperless_tailscale_ip is not defined
 
     - name: Install system dependencies
       ansible.builtin.apt:

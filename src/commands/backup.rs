@@ -985,14 +985,27 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
         }
     }
 
-    restore_result?;
-
-    if !start_failures.is_empty() {
-        eyre::bail!(
-            "Restore of {} succeeded but failed to restart services:\n  {}",
-            app_name,
-            start_failures.join("\n  ")
-        );
+    match restore_result {
+        Ok(()) => {
+            if !start_failures.is_empty() {
+                eyre::bail!(
+                    "Restore of {} succeeded but failed to restart services:\n  {}",
+                    app_name,
+                    start_failures.join("\n  ")
+                );
+            }
+        }
+        Err(e) => {
+            if !start_failures.is_empty() {
+                eyre::bail!(
+                    "Restore of {} failed: {}\nAdditionally, failed to restart services:\n  {}",
+                    app_name,
+                    e,
+                    start_failures.join("\n  ")
+                );
+            }
+            return Err(e);
+        }
     }
 
     eprintln!("✓ {} restore completed", app_name);
@@ -1239,14 +1252,27 @@ fn backup_app(
         }
     }
 
-    rsync_result?;
-
-    if !start_failures.is_empty() {
-        eyre::bail!(
-            "Backup of {} succeeded but failed to restart services:\n  {}",
-            config.name,
-            start_failures.join("\n  ")
-        );
+    match rsync_result {
+        Ok(()) => {
+            if !start_failures.is_empty() {
+                eyre::bail!(
+                    "Backup of {} succeeded but failed to restart services:\n  {}",
+                    config.name,
+                    start_failures.join("\n  ")
+                );
+            }
+        }
+        Err(e) => {
+            if !start_failures.is_empty() {
+                eyre::bail!(
+                    "Backup of {} failed during file copy: {}\nAdditionally, failed to restart services:\n  {}",
+                    config.name,
+                    e,
+                    start_failures.join("\n  ")
+                );
+            }
+            return Err(e);
+        }
     }
 
     let backup_size = calculate_dir_size(&app_backup_dir)?;
