@@ -950,27 +950,39 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
     let config = AppBackupConfig::by_name(app_name, false)
         .ok_or_else(|| eyre::eyre!("Unknown app: {}", app_name))?;
 
+    let mut stopped_services: Vec<&str> = Vec::new();
     for service in &config.systemd_services {
         eprintln!("  Stopping service: {}", service);
-        remote_systemctl(host, ssh_key, "stop", service)?;
-    }
-
-    for remote_path in &config.paths {
-        eprintln!("  Restoring to: {}", remote_path);
-        rsync_to_remote(host, ssh_key, backup_path, remote_path)?;
-    }
-
-    if let Some((user, group)) = config.owner {
-        eprintln!("  Setting ownership to {}:{}", user, group);
-        for remote_path in &config.paths {
-            set_remote_ownership(host, ssh_key, remote_path, user, group)?;
+        if let Err(e) = remote_systemctl(host, ssh_key, "stop", service) {
+            for previously_stopped in &stopped_services {
+                let _ = remote_systemctl(host, ssh_key, "start", previously_stopped);
+            }
+            return Err(e).wrap_err_with(|| format!("Failed to stop service {}", service));
         }
+        stopped_services.push(service);
     }
+
+    let restore_result = (|| -> Result<()> {
+        for remote_path in &config.paths {
+            eprintln!("  Restoring to: {}", remote_path);
+            rsync_to_remote(host, ssh_key, backup_path, remote_path)?;
+        }
+
+        if let Some((user, group)) = config.owner {
+            eprintln!("  Setting ownership to {}:{}", user, group);
+            for remote_path in &config.paths {
+                set_remote_ownership(host, ssh_key, remote_path, user, group)?;
+            }
+        }
+        Ok(())
+    })();
 
     for service in &config.systemd_services {
         eprintln!("  Starting service: {}", service);
-        remote_systemctl(host, ssh_key, "start", service)?;
+        let _ = remote_systemctl(host, ssh_key, "start", service);
     }
+
+    restore_result?;
 
     eprintln!("✓ {} restore completed", app_name);
     Ok(())

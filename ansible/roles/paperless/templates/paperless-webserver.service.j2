@@ -1,7 +1,7 @@
 [Unit]
 Description=Paperless-ngx webserver
-After=network.target redis-server.service postgresql.service
-Requires=redis-server.service postgresql.service
+After=network.target tailscaled.service redis-server.service postgresql.service
+Requires=redis-server.service postgresql.service tailscaled.service
 
 [Service]
 Type=simple

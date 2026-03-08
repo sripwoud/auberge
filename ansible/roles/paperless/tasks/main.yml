@@ -63,6 +63,7 @@
           - imagemagick
           - gnupg
           - libpq-dev
+          - libmariadb-dev
           - pkg-config
           - fonts-liberation
           - libmagic-dev
@@ -111,7 +112,7 @@
       become_user: postgres
       ansible.builtin.command:
         cmd: psql -c "CREATE USER {{ paperless_db_user | replace("'", "''") }} WITH PASSWORD '{{ paperless_db_password | replace("'", "''") }}'"
-      when: paperless_pg_user_check.stdout != "1"
+      when: paperless_pg_user_check.stdout | trim != "1"
       changed_when: true
       no_log: true
 
@@ -128,7 +129,7 @@
       become_user: postgres
       ansible.builtin.command:
         cmd: psql -c "CREATE DATABASE {{ paperless_db_name | replace("'", "''") }} OWNER {{ paperless_db_user | replace("'", "''") }}"
-      when: paperless_pg_db_check.stdout != "1"
+      when: paperless_pg_db_check.stdout | trim != "1"
       changed_when: true
 
     - name: Create Paperless system group
