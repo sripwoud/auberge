@@ -1723,15 +1723,15 @@ fn remote_pg_restore(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result
     let output = remote_ssh_command_raw(host, ssh_key, &cmd)?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stdout);
-        let warnings_only = stderr.lines().all(|line| {
+        let combined_output = String::from_utf8_lossy(&output.stdout);
+        let warnings_only = combined_output.lines().all(|line| {
             let trimmed = line.trim().to_lowercase();
             trimmed.is_empty()
                 || trimmed.contains("warning")
                 || trimmed.starts_with("pg_restore: warning")
         });
         if !warnings_only {
-            eyre::bail!("pg_restore failed: {}", stderr.trim());
+            eyre::bail!("pg_restore failed: {}", combined_output.trim());
         }
     }
 
