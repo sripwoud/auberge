@@ -86,7 +86,7 @@ fn select_or_use_host(host_arg: Option<String>) -> Result<Host> {
     }
 }
 
-fn validate_config_for_playbook(playbook_name: &str) -> Result<()> {
+fn validate_config_for_playbook(playbook_name: &str) -> Result<crate::user_config::UserConfig> {
     let config = crate::user_config::UserConfig::load()?;
     let required_keys = required_config_keys(playbook_name);
     let missing = config.validate_required(&required_keys);
@@ -103,7 +103,7 @@ fn validate_config_for_playbook(playbook_name: &str) -> Result<()> {
             missing.len()
         );
     }
-    Ok(())
+    Ok(config)
 }
 
 fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<Playbook> {
@@ -145,9 +145,7 @@ pub fn run_ansible_run(
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    validate_config_for_playbook(playbook_name)?;
-
-    let config = crate::user_config::UserConfig::load()?;
+    let config = validate_config_for_playbook(playbook_name)?;
     let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
 
     if is_fresh_bootstrap {

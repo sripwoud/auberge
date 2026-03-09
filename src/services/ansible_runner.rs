@@ -67,7 +67,7 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
 }
 
 pub fn required_config_keys(playbook_name: &str) -> Vec<&'static str> {
-    let mut keys: Vec<&str> = Vec::new();
+    let mut keys: Vec<&'static str> = Vec::new();
 
     match playbook_name {
         "bootstrap.yml" => {
