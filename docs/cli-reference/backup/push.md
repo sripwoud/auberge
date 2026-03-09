@@ -20,7 +20,7 @@ Set restic configuration before first use:
 
 ```bash
 auberge config set restic_repository "rclone:filen:auberge-backup"
-auberge config set restic_password_secret "your-encryption-passphrase"
+auberge config set restic_password "your-encryption-passphrase"
 ```
 
 Requires `restic` and `rclone` installed locally.

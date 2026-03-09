@@ -20,7 +20,7 @@ auberge backup prune [OPTIONS]
 
 ## Prerequisites
 
-Same as [backup push](push.md) — requires `restic_repository` and `restic_password_secret` config values.
+Same as [backup push](push.md) — requires `restic_repository` and `restic_password` config values.
 
 ## Examples
 
