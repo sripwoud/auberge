@@ -55,13 +55,13 @@ Specifying `--playbook` explicitly **bypasses** auto-resolution — only the nam
 
 ## Options
 
-| Option              | Description                                                                           | Default               |
-| ------------------- | ------------------------------------------------------------------------------------- | --------------------- |
-| -H, --host HOST     | Target host                                                                           | Interactive selection |
-| -p, --playbook PATH | Playbook path (bypasses auto-resolution when combined with `--tags`)                  | Interactive selection |
-| -C, --check         | Run in check mode (dry run)                                                           | false                 |
-| -t, --tags TAGS     | Only run tasks with these tags (auto-resolves playbooks when `--playbook` is omitted) | All tasks             |
-| -f, --force         | Skip confirmation prompts (for CI/CD)                                                 | false                 |
+| Option              | Description                                                                        | Default               |
+| ------------------- | ---------------------------------------------------------------------------------- | --------------------- |
+| -H, --host HOST     | Target host                                                                        | Interactive selection |
+| -p, --playbook PATH | Playbook path (bypasses auto-resolution when combined with `--tags`)               | Interactive selection |
+| -C, --check         | Run in check mode (dry run)                                                        | false                 |
+| -t, --tags TAGS     | Comma-separated tags to run (auto-resolves playbooks when `--playbook` is omitted) | All tasks             |
+| -f, --force         | Skip confirmation prompts (for CI/CD)                                              | false                 |
 
 ## Examples
 

@@ -9,7 +9,7 @@ Tags allow selective execution of specific parts of playbooks without running ev
 **Syntax:**
 
 ```bash
-auberge ansible run --tags tag1,tag2,tag3
+auberge ansible run --tags tag1,tag2,tag3     # Comma-separated
 auberge ansible run --skip-tags tag1,tag2
 ```
 

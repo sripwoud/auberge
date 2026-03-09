@@ -31,7 +31,7 @@ pub enum AnsibleCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Only run tasks with these tags (auto-deploys infra dependencies)"
+            help = "Comma-separated tags to run (auto-deploys infra dependencies)"
         )]
         tags: Option<Vec<String>>,
         #[arg(long, help = "Bootstrap user (overrides inventory setting)")]
