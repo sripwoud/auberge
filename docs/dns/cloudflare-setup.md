@@ -298,13 +298,8 @@ vim config.toml
 ```
 
 ```toml
-[dns]
 domain = "example.com"
-default_ttl = 300
-
-[cloudflare]
-# Optional: speeds up API calls by skipping zone discovery
-# zone_id = "your-zone-id-here"
+zone_id = "your-zone-id-here"
 ```
 
 **Note:** This is optional - DNS commands work without it by using environment variables.
