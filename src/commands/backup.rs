@@ -1,6 +1,7 @@
 use crate::hosts::{Host, HostManager};
 use crate::output;
 use crate::selector::select_item;
+use crate::user_config::UserConfig;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
@@ -122,6 +123,13 @@ pub enum BackupCommands {
         ssh_key: Option<PathBuf>,
         #[arg(long, default_value = "admin", help = "FreshRSS username")]
         user: String,
+    },
+    #[command(alias = "p", about = "Push backups to offsite restic repository")]
+    Push {
+        #[arg(short = 'H', long, help = "Filter backups by host")]
+        host: Option<String>,
+        #[arg(short, long, help = "Specific backup timestamp (default: latest)")]
+        backup_id: Option<String>,
     },
     #[command(alias = "io", about = "Import OPML file to FreshRSS")]
     ImportOpml {
@@ -1233,6 +1241,152 @@ pub fn run_import_opml(
     eprintln!("✓ OPML imported successfully");
 
     Ok(())
+}
+
+pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -> Result<()> {
+    let config = UserConfig::load()?;
+    let missing = config.validate_required(&["restic_repository", "restic_password_secret"]);
+    if !missing.is_empty() {
+        eyre::bail!(
+            "Missing restic config: {}. Set with `auberge config set <key> <value>`",
+            missing.join(", ")
+        );
+    }
+
+    let restic_repo = config.get("restic_repository").unwrap();
+    let restic_password = config.get("restic_password_secret").unwrap();
+
+    let backup_root = default_backup_dir();
+    if !backup_root.exists() {
+        eyre::bail!("No backups found. Run `auberge backup create` first.");
+    }
+
+    let backup_dir =
+        resolve_backup_dir(&backup_root, host_filter.as_deref(), backup_id.as_deref())?;
+
+    output::info(&format!("Pushing {} to restic", backup_dir.display()));
+
+    let spinner = output::spinner("Checking restic repository");
+    let snapshots_check = Command::new("restic")
+        .arg("snapshots")
+        .arg("--json")
+        .env("RESTIC_REPOSITORY", &restic_repo)
+        .env("RESTIC_PASSWORD", &restic_password)
+        .output();
+
+    let needs_init = match snapshots_check {
+        Ok(output) => !output.status.success(),
+        Err(_) => eyre::bail!("restic not found. Install restic: https://restic.net"),
+    };
+
+    if needs_init {
+        spinner.set_message("Initializing restic repository".to_string());
+        let init_status = Command::new("restic")
+            .arg("init")
+            .env("RESTIC_REPOSITORY", &restic_repo)
+            .env("RESTIC_PASSWORD", &restic_password)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .wrap_err("Failed to initialize restic repository")?;
+
+        if !init_status.success() {
+            eyre::bail!("Failed to initialize restic repository");
+        }
+    }
+
+    spinner.set_message(format!("Backing up {}", backup_dir.display()));
+    let backup_output = Command::new("restic")
+        .arg("backup")
+        .arg(&backup_dir)
+        .env("RESTIC_REPOSITORY", &restic_repo)
+        .env("RESTIC_PASSWORD", &restic_password)
+        .output()
+        .wrap_err("Failed to run restic backup")?;
+
+    spinner.finish_and_clear();
+
+    if !backup_output.status.success() {
+        let stderr = String::from_utf8_lossy(&backup_output.stderr);
+        eyre::bail!("restic backup failed: {}", stderr.trim());
+    }
+
+    let stdout = String::from_utf8_lossy(&backup_output.stdout);
+    let snapshot_id = stdout
+        .lines()
+        .find(|line| line.contains("snapshot") && line.contains("saved"))
+        .unwrap_or("backup completed");
+
+    output::success(&format!("Push complete: {}", snapshot_id.trim()));
+
+    Ok(())
+}
+
+fn resolve_backup_dir(
+    backup_root: &Path,
+    host_filter: Option<&str>,
+    backup_id: Option<&str>,
+) -> Result<PathBuf> {
+    let host_dir = match host_filter {
+        Some(host) => {
+            let dir = backup_root.join(host);
+            if !dir.exists() {
+                eyre::bail!("No backups found for host: {}", host);
+            }
+            dir
+        }
+        None => {
+            let mut hosts: Vec<_> = fs::read_dir(backup_root)?
+                .filter_map(Result::ok)
+                .filter(|e| e.path().is_dir())
+                .collect();
+            if hosts.is_empty() {
+                eyre::bail!("No backups found");
+            }
+            if hosts.len() == 1 {
+                hosts.remove(0).path()
+            } else {
+                let host_names: Vec<String> = hosts
+                    .iter()
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect();
+                let selection = select_item(
+                    &host_names,
+                    |h: &String| h.clone(),
+                    "Select host backup to push",
+                )?
+                .ok_or_else(|| eyre::eyre!("No host selected"))?;
+                backup_root.join(&selection)
+            }
+        }
+    };
+
+    match backup_id {
+        Some(id) => {
+            let dir = host_dir.join(id);
+            if !dir.exists() {
+                eyre::bail!("Backup not found: {}", dir.display());
+            }
+            Ok(dir)
+        }
+        None => {
+            let mut timestamps: Vec<_> = fs::read_dir(&host_dir)?
+                .filter_map(Result::ok)
+                .filter(|e| e.path().is_dir() && !e.path().is_symlink())
+                .filter(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    name.contains('_') && name.starts_with("20")
+                })
+                .collect();
+
+            timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
+
+            timestamps
+                .first()
+                .map(|e| e.path())
+                .ok_or_else(|| eyre::eyre!("No backup timestamps found in {}", host_dir.display()))
+        }
+    }
 }
 
 fn get_host_or_select(host_arg: Option<String>) -> Result<Host> {
