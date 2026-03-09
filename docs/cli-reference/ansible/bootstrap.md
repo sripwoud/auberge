@@ -77,7 +77,14 @@ Before running bootstrap:
    # Allow TCP on your SSH_PORT
    ```
 
-4. **Have initial access**:
+4. **Required config values**:
+   The CLI validates `admin_user_name` and `ssh_port` in `config.toml` before running. Set missing values with:
+   ```bash
+   auberge config set admin_user_name <VALUE>
+   auberge config set ssh_port <VALUE>
+   ```
+
+5. **Have initial access**:
    - Password access to bootstrap user, OR
    - SSH key already authorized for bootstrap user
 

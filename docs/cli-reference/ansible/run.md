@@ -21,6 +21,28 @@ Executes Ansible playbooks on target hosts. Supports check mode (dry run), tag f
 - bootstrap.yml: Provider firewall configuration required
 - apps.yml/auberge.yml: Cloudflare API token and port 853 configuration
 
+## Config Validation
+
+Before executing any playbook, the CLI validates required config values from `config.toml` and exits with an error if any are missing or empty.
+
+| Playbook           | Required config keys                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| bootstrap.yml      | `admin_user_name`, `ssh_port`                                                        |
+| hardening.yml      | `admin_user_name`, `ssh_port`                                                        |
+| infrastructure.yml | `admin_user_name`, `domain`, `primary_domain`, `tailscale_authkey`                   |
+| apps.yml           | `admin_user_name`, `domain`, `primary_domain`, `cloudflare_dns_api_token`, `zone_id` |
+| auberge.yml        | all of the above combined                                                            |
+| other playbooks    | `admin_user_name`, `domain`, `primary_domain`                                        |
+
+Example error output:
+
+```
+✗ Missing required config values:
+✗   'admin_user_name' is required. Run: auberge config set admin_user_name <VALUE>
+✗   'domain' is required. Run: auberge config set domain <VALUE>
+Error: 2 required config value(s) missing in config.toml
+```
+
 ## Options
 
 | Option              | Description                           | Default               |
