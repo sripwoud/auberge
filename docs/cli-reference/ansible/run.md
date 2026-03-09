@@ -43,15 +43,25 @@ Example error output:
 Error: 2 required config value(s) missing in config.toml
 ```
 
+## Automatic Dependency Resolution
+
+When `--tags` is provided **without** `--playbook`, the CLI auto-resolves which playbooks need to run based on the tags:
+
+- App tags (e.g., `paperless`, `baikal`) trigger `infrastructure.yml` first (full run, idempotent), then `apps.yml` with only the specified tags
+- Infrastructure tags (e.g., `tailscale`, `caddy`) run only `infrastructure.yml` with those tags
+- Mixed tags run both playbooks in order: infrastructure first, then apps
+
+Specifying `--playbook` explicitly **bypasses** auto-resolution — only the named playbook runs.
+
 ## Options
 
-| Option              | Description                           | Default               |
-| ------------------- | ------------------------------------- | --------------------- |
-| -H, --host HOST     | Target host                           | Interactive selection |
-| -p, --playbook PATH | Playbook path                         | Interactive selection |
-| -C, --check         | Run in check mode (dry run)           | false                 |
-| -t, --tags TAGS     | Only run tasks with these tags        | All tasks             |
-| -f, --force         | Skip confirmation prompts (for CI/CD) | false                 |
+| Option              | Description                                                                           | Default               |
+| ------------------- | ------------------------------------------------------------------------------------- | --------------------- |
+| -H, --host HOST     | Target host                                                                           | Interactive selection |
+| -p, --playbook PATH | Playbook path (bypasses auto-resolution when combined with `--tags`)                  | Interactive selection |
+| -C, --check         | Run in check mode (dry run)                                                           | false                 |
+| -t, --tags TAGS     | Only run tasks with these tags (auto-resolves playbooks when `--playbook` is omitted) | All tasks             |
+| -f, --force         | Skip confirmation prompts (for CI/CD)                                                 | false                 |
 
 ## Examples
 
@@ -67,6 +77,12 @@ auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --chec
 
 # Run with specific tags
 auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --tags freshrss,baikal
+
+# Auto-resolve: deploys full infrastructure first, then paperless from apps.yml
+auberge ansible run --host myserver --tags paperless
+
+# Explicit playbook: runs only apps.yml with the tag (no infra auto-deploy)
+auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --tags paperless
 
 # Skip confirmations (for automation)
 auberge ansible run --host myserver --playbook ansible/playbooks/bootstrap.yml --force
