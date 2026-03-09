@@ -2,7 +2,9 @@ use crate::models::inventory::Host;
 use crate::models::playbook::Playbook;
 use crate::output;
 use crate::selector::select_item;
-use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
+use crate::services::ansible_runner::{
+    InventoryHost, required_config_keys, run_bootstrap, run_playbook,
+};
 use crate::services::inventory::{get_host, get_hosts, get_playbooks};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
@@ -84,6 +86,26 @@ fn select_or_use_host(host_arg: Option<String>) -> Result<Host> {
     }
 }
 
+fn validate_config_for_playbook(playbook_name: &str) -> Result<crate::user_config::UserConfig> {
+    let config = crate::user_config::UserConfig::load()?;
+    let required_keys = required_config_keys(playbook_name);
+    let missing = config.validate_required(&required_keys);
+    if !missing.is_empty() {
+        output::error("Missing required config values:");
+        for key in &missing {
+            output::error(&format!(
+                "  '{}' is required. Run: auberge config set {} <VALUE>",
+                key, key
+            ));
+        }
+        eyre::bail!(
+            "{} required config value(s) missing in config.toml",
+            missing.len()
+        );
+    }
+    Ok(config)
+}
+
 fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<Playbook> {
     match playbook_arg {
         Some(path) => Ok(Playbook::from_path(path)),
@@ -117,12 +139,13 @@ pub fn run_ansible_run(
     let selected_host = select_or_use_host(host)?;
     let selected_playbook = select_or_use_playbook(playbook)?;
 
-    // Show warning for fresh bootstrap only (not for full auberge.yml deployments)
     let playbook_name = selected_playbook
         .path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("");
+
+    let config = validate_config_for_playbook(playbook_name)?;
     let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
 
     if is_fresh_bootstrap {
@@ -131,7 +154,6 @@ pub fn run_ansible_run(
         output::info("Before running bootstrap, ensure your VPS provider's firewall");
         output::info("allows your custom SSH port (separate from UFW on the VPS)");
         eprintln!();
-        let config = crate::user_config::UserConfig::load()?;
         let ssh_port = config
             .get("ssh_port")
             .unwrap_or_else(|| "not configured".to_string());
@@ -304,6 +326,8 @@ pub fn run_ansible_bootstrap(
     user: Option<String>,
     force: bool,
 ) -> Result<()> {
+    validate_config_for_playbook("bootstrap.yml")?;
+
     let host = get_host(&host_name, None)?;
     let bootstrap_playbook =
         crate::services::inventory::find_project_root().join("ansible/playbooks/bootstrap.yml");

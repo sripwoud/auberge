@@ -66,6 +66,48 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
     Ok(tmpfile)
 }
 
+pub fn required_config_keys(playbook_name: &str) -> Vec<&'static str> {
+    let mut keys: Vec<&'static str> = Vec::new();
+
+    match playbook_name {
+        "bootstrap.yml" => {
+            keys.extend(["admin_user_name", "ssh_port"]);
+        }
+        "hardening.yml" => {}
+        "infrastructure.yml" => {
+            keys.extend([
+                "admin_user_name",
+                "domain",
+                "primary_domain",
+                "tailscale_authkey",
+            ]);
+        }
+        "apps.yml" => {
+            keys.extend([
+                "admin_user_name",
+                "domain",
+                "primary_domain",
+                "cloudflare_dns_api_token",
+            ]);
+        }
+        "auberge.yml" => {
+            keys.extend([
+                "admin_user_name",
+                "domain",
+                "primary_domain",
+                "ssh_port",
+                "cloudflare_dns_api_token",
+                "tailscale_authkey",
+            ]);
+        }
+        _ => {
+            keys.extend(["admin_user_name", "domain", "primary_domain"]);
+        }
+    }
+
+    keys
+}
+
 pub fn run_playbook(
     playbook: &Path,
     host: &InventoryHost,
@@ -170,6 +212,54 @@ pub fn run_bootstrap(playbook: &Path, host: &InventoryHost) -> Result<AnsibleRes
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_required_config_keys_bootstrap() {
+        let keys = required_config_keys("bootstrap.yml");
+        assert!(keys.contains(&"admin_user_name"));
+        assert!(keys.contains(&"ssh_port"));
+    }
+
+    #[test]
+    fn test_required_config_keys_infrastructure() {
+        let keys = required_config_keys("infrastructure.yml");
+        assert!(keys.contains(&"admin_user_name"));
+        assert!(keys.contains(&"domain"));
+        assert!(keys.contains(&"primary_domain"));
+        assert!(keys.contains(&"tailscale_authkey"));
+    }
+
+    #[test]
+    fn test_required_config_keys_apps() {
+        let keys = required_config_keys("apps.yml");
+        assert!(keys.contains(&"cloudflare_dns_api_token"));
+        assert!(!keys.contains(&"zone_id"));
+    }
+
+    #[test]
+    fn test_required_config_keys_hardening_is_empty() {
+        let keys = required_config_keys("hardening.yml");
+        assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn test_required_config_keys_auberge_is_superset() {
+        let auberge = required_config_keys("auberge.yml");
+        let bootstrap = required_config_keys("bootstrap.yml");
+        let infra = required_config_keys("infrastructure.yml");
+        let apps = required_config_keys("apps.yml");
+        for key in bootstrap.iter().chain(infra.iter()).chain(apps.iter()) {
+            assert!(auberge.contains(key), "auberge.yml missing key: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_required_config_keys_unknown_playbook_returns_defaults() {
+        let keys = required_config_keys("custom.yml");
+        assert!(keys.contains(&"admin_user_name"));
+        assert!(keys.contains(&"domain"));
+        assert!(keys.contains(&"primary_domain"));
+    }
 
     #[test]
     fn test_write_inventory_file_generates_valid_yaml() {
