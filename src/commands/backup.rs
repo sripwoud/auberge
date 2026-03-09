@@ -12,8 +12,6 @@ use std::process::{Command, Output, Stdio};
 use std::time::Instant;
 use tabled::Tabled;
 
-/// Encapsulates SSH connection parameters and provides shared helpers that
-/// eliminate repeated `.arg()` boilerplate across all SSH/rsync/scp operations.
 struct SshSession<'a> {
     host: &'a Host,
     ssh_key: &'a Path,
@@ -24,10 +22,6 @@ impl<'a> SshSession<'a> {
         Self { host, ssh_key }
     }
 
-    /// Returns the common SSH option flags as individual [`OsString`] arguments:
-    /// ControlMaster/ControlPath/ControlPersist multiplexing, identity file,
-    /// port and `user@host`.  Pass them to a [`Command`] with `.args()` or
-    /// build the rsync `-e` string with [`SshSession::rsync_e_arg`].
     fn ssh_args(&self) -> Vec<OsString> {
         vec![
             "-o".into(),
@@ -44,9 +38,6 @@ impl<'a> SshSession<'a> {
         ]
     }
 
-    /// Runs `command` (a single shell string) on the remote host and captures
-    /// its full output.  The exit status is **not** inspected; callers decide
-    /// how to handle it.
     fn run(&self, command: &str) -> Result<Output> {
         Command::new("ssh")
             .args(self.ssh_args())
@@ -55,9 +46,6 @@ impl<'a> SshSession<'a> {
             .wrap_err("Failed to execute SSH command")
     }
 
-    /// Like [`Self::run`] but accepts a slice of pre-split arguments instead of a
-    /// single shell string, avoiding remote-shell re-parsing.  Captures the
-    /// full output; the exit status is **not** inspected.
     fn run_raw(&self, args: &[&str]) -> Result<Output> {
         let mut cmd = Command::new("ssh");
         cmd.args(self.ssh_args());
@@ -67,8 +55,6 @@ impl<'a> SshSession<'a> {
         cmd.output().wrap_err("Failed to execute SSH command")
     }
 
-    /// Returns the value for rsync's `-e` flag that routes the transfer
-    /// through the same SSH options as [`Self::ssh_args`].
     fn rsync_e_arg(&self) -> String {
         format!(
             "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
@@ -128,8 +114,6 @@ impl<'a> SshSession<'a> {
         Ok(())
     }
 
-    /// Runs `sudo systemctl <action> <service>` on the remote host, inheriting
-    /// stdio so the user sees real-time output.
     fn systemctl(&self, action: &str, service: &str) -> Result<()> {
         let status = Command::new("ssh")
             .args(self.ssh_args())
