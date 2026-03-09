@@ -86,37 +86,50 @@ impl<'a> SshSession<'a> {
     }
 
     fn scp_to(&self, local: &Path, remote: &str) -> Result<()> {
-        let status = Command::new("scp")
+        let output = Command::new("scp")
             .args(self.scp_args())
             .arg(local)
             .arg(format!(
                 "{}@{}:{}",
                 self.host.user, self.host.address, remote
             ))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .output()
             .wrap_err("Failed to upload file via scp")?;
-        if !status.success() {
-            eyre::bail!("scp to {}:{} failed", self.host.address, remote);
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = stderr.trim();
+            if stderr.is_empty() {
+                eyre::bail!("scp to {}:{} failed", self.host.address, remote);
+            } else {
+                eyre::bail!("scp to {}:{} failed: {}", self.host.address, remote, stderr);
+            }
         }
         Ok(())
     }
 
     fn scp_from(&self, remote: &str, local: &Path) -> Result<()> {
-        let status = Command::new("scp")
+        let output = Command::new("scp")
             .args(self.scp_args())
             .arg(format!(
                 "{}@{}:{}",
                 self.host.user, self.host.address, remote
             ))
             .arg(local)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .output()
             .wrap_err("Failed to download file via scp")?;
-        if !status.success() {
-            eyre::bail!("scp from {}:{} failed", self.host.address, remote);
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = stderr.trim();
+            if stderr.is_empty() {
+                eyre::bail!("scp from {}:{} failed", self.host.address, remote);
+            } else {
+                eyre::bail!(
+                    "scp from {}:{} failed: {}",
+                    self.host.address,
+                    remote,
+                    stderr
+                );
+            }
         }
         Ok(())
     }
