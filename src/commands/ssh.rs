@@ -22,7 +22,7 @@ pub enum SshCommands {
         #[arg(short, long, help = "Force overwrite existing key")]
         force: bool,
     },
-    #[command(about = "Add/authorize SSH public key on remote host")]
+    #[command(alias = "ak", about = "Add/authorize SSH public key on remote host")]
     AddKey {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
