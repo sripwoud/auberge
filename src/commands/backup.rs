@@ -148,11 +148,17 @@ pub enum OutputFormat {
 }
 
 #[derive(Debug)]
+pub struct DbBackupConfig {
+    pub db_name: &'static str,
+    pub remote_dump_path: &'static str,
+}
+
 pub struct AppBackupConfig {
     pub name: &'static str,
     pub systemd_services: Vec<&'static str>,
     pub paths: Vec<&'static str>,
     pub owner: Option<(&'static str, &'static str)>,
+    pub db: Option<DbBackupConfig>,
 }
 
 pub struct RestoreOptions {
@@ -198,6 +204,7 @@ impl AppBackupConfig {
             systemd_services: vec![],
             paths: vec!["/opt/baikal/Specific"],
             owner: Some(("baikal", "baikal")),
+            db: None,
         }
     }
 
@@ -207,6 +214,7 @@ impl AppBackupConfig {
             systemd_services: vec!["freshrss"],
             paths: vec!["/var/lib/freshrss", "/opt/freshrss/data"],
             owner: Some(("freshrss", "freshrss")),
+            db: None,
         }
     }
 
@@ -222,6 +230,7 @@ impl AppBackupConfig {
             systemd_services: vec!["navidrome"],
             paths,
             owner: Some(("navidrome", "navidrome")),
+            db: None,
         }
     }
 
@@ -231,6 +240,7 @@ impl AppBackupConfig {
             systemd_services: vec!["calibre"],
             paths: vec!["/srv/calibre", "/opt/calibre", "/home/calibre"],
             owner: Some(("calibre", "calibre")),
+            db: None,
         }
     }
 
@@ -240,6 +250,7 @@ impl AppBackupConfig {
             systemd_services: vec![],
             paths: vec!["/var/www/webdav-files"],
             owner: None,
+            db: None,
         }
     }
 
@@ -249,6 +260,7 @@ impl AppBackupConfig {
             systemd_services: vec![],
             paths: vec!["/var/www/yourls"],
             owner: Some(("www-data", "www-data")),
+            db: None,
         }
     }
 
@@ -263,6 +275,10 @@ impl AppBackupConfig {
             ],
             paths: vec!["/opt/paperless/data", "/opt/paperless/media"],
             owner: Some(("paperless", "paperless")),
+            db: Some(DbBackupConfig {
+                db_name: "paperless",
+                remote_dump_path: "/tmp/paperless_db.dump",
+            }),
         }
     }
 }
@@ -974,6 +990,40 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
                 set_remote_ownership(host, ssh_key, remote_path, user, group)?;
             }
         }
+
+        if let Some(db) = &config.db {
+            let local_dump = backup_path.join(app_name).join("db.dump");
+            if local_dump.exists() {
+                eprintln!("  Restoring database: {}", db.db_name);
+                scp_to_remote(host, ssh_key, &local_dump, db.remote_dump_path)?;
+                let pg_result = remote_pg_restore(host, ssh_key, db);
+                remote_pg_dump_cleanup(host, ssh_key, db);
+                pg_result?;
+
+                eprintln!("  Running database migrations");
+                let migrate_cmd = format!(
+                    "sudo -u {} {}/venv/bin/python3 manage.py migrate --no-input",
+                    "paperless", "/opt/paperless/src"
+                );
+                let migrate_result = remote_ssh_command(
+                    host,
+                    ssh_key,
+                    &format!(
+                        "cd /opt/paperless/src && PAPERLESS_CONFIGURATION_PATH=/opt/paperless/paperless.conf {}",
+                        migrate_cmd
+                    ),
+                );
+                if let Err(e) = migrate_result {
+                    output::warn(&format!("Migration warning: {}", e));
+                }
+            } else {
+                output::warn(&format!(
+                    "No database dump found at {}, skipping db restore",
+                    local_dump.display()
+                ));
+            }
+        }
+
         Ok(())
     })();
 
@@ -1241,10 +1291,30 @@ fn backup_app(
         }
     }
 
+    if let Some(db) = &config.db {
+        spinner.set_message(format!("Backing up {} (dumping database)", config.name));
+        if let Err(e) = remote_pg_dump(host, ssh_key, db) {
+            remote_pg_dump_cleanup(host, ssh_key, db);
+            for service in &stopped_services {
+                let _ = remote_systemctl(host, ssh_key, "start", service);
+            }
+            return Err(e).wrap_err("pg_dump failed");
+        }
+    }
+
     spinner.set_message(format!("Backing up {} (copying files)", config.name));
     let rsync_result = (|| -> Result<()> {
         for path in &config.paths {
             rsync_from_remote(host, ssh_key, path, &app_backup_dir)?;
+        }
+        if let Some(db) = &config.db {
+            scp_from_remote(
+                host,
+                ssh_key,
+                db.remote_dump_path,
+                &app_backup_dir.join("db.dump"),
+            )?;
+            remote_pg_dump_cleanup(host, ssh_key, db);
         }
         Ok(())
     })();
@@ -1360,6 +1430,124 @@ fn validate_key_file(key_path: &Path) -> Result<()> {
             );
             eprintln!("  Consider running: chmod 600 {}", key_path.display());
         }
+    }
+
+    Ok(())
+}
+
+fn remote_ssh_command(host: &Host, ssh_key: &Path, command: &str) -> Result<std::process::Output> {
+    let output = Command::new("ssh")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg(command)
+        .output()
+        .wrap_err("Failed to execute SSH command")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eyre::bail!("Remote command failed: {}", stderr.trim());
+    }
+
+    Ok(output)
+}
+
+fn remote_pg_dump(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result<()> {
+    let cmd = format!(
+        "sudo -u postgres pg_dump -Fc {} > {}",
+        db.db_name, db.remote_dump_path
+    );
+    remote_ssh_command(host, ssh_key, &cmd)?;
+    Ok(())
+}
+
+fn remote_pg_dump_cleanup(host: &Host, ssh_key: &Path, db: &DbBackupConfig) {
+    let cmd = format!("rm -f {}", db.remote_dump_path);
+    let _ = remote_ssh_command(host, ssh_key, &cmd);
+}
+
+fn remote_pg_restore(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result<()> {
+    let cmd = format!(
+        "sudo -u postgres pg_restore --clean --if-exists -d {} {}",
+        db.db_name, db.remote_dump_path
+    );
+    let output = Command::new("ssh")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg(&cmd)
+        .output()
+        .wrap_err("Failed to execute pg_restore")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let warnings_only = stderr.lines().all(|line| {
+            line.trim().is_empty() || line.contains("WARNING") || line.contains("pg_restore")
+        });
+        if !warnings_only {
+            eyre::bail!("pg_restore failed: {}", stderr.trim());
+        }
+    }
+
+    Ok(())
+}
+
+fn scp_from_remote(
+    host: &Host,
+    ssh_key: &Path,
+    remote_path: &str,
+    local_path: &Path,
+) -> Result<()> {
+    let status = Command::new("scp")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-P")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
+        .arg(local_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .wrap_err("Failed to execute scp")?;
+
+    if !status.success() {
+        eyre::bail!("scp failed for {}", remote_path);
+    }
+
+    Ok(())
+}
+
+fn scp_to_remote(host: &Host, ssh_key: &Path, local_path: &Path, remote_path: &str) -> Result<()> {
+    let status = Command::new("scp")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-P")
+        .arg(host.port.to_string())
+        .arg(local_path)
+        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .wrap_err("Failed to execute scp")?;
+
+    if !status.success() {
+        eyre::bail!("scp failed for {}", remote_path);
     }
 
     Ok(())
