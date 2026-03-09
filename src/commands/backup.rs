@@ -77,22 +77,53 @@ impl<'a> SshSession<'a> {
         )
     }
 
-    /// Uploads `local` to `remote` on the remote host via `scp`.
+    fn scp_args(&self) -> Vec<OsString> {
+        vec![
+            "-o".into(),
+            "ControlMaster=auto".into(),
+            "-o".into(),
+            "ControlPath=/tmp/ssh-%r@%h:%p".into(),
+            "-o".into(),
+            "ControlPersist=60s".into(),
+            "-i".into(),
+            self.ssh_key.into(),
+            "-P".into(),
+            self.host.port.to_string().into(),
+        ]
+    }
+
     fn scp_to(&self, local: &Path, remote: &str) -> Result<()> {
         let status = Command::new("scp")
-            .arg("-i")
-            .arg(self.ssh_key)
-            .arg("-P")
-            .arg(self.host.port.to_string())
+            .args(self.scp_args())
             .arg(local)
             .arg(format!(
                 "{}@{}:{}",
                 self.host.user, self.host.address, remote
             ))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()
             .wrap_err("Failed to upload file via scp")?;
         if !status.success() {
             eyre::bail!("scp to {}:{} failed", self.host.address, remote);
+        }
+        Ok(())
+    }
+
+    fn scp_from(&self, remote: &str, local: &Path) -> Result<()> {
+        let status = Command::new("scp")
+            .args(self.scp_args())
+            .arg(format!(
+                "{}@{}:{}",
+                self.host.user, self.host.address, remote
+            ))
+            .arg(local)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .wrap_err("Failed to download file via scp")?;
+        if !status.success() {
+            eyre::bail!("scp from {}:{} failed", self.host.address, remote);
         }
         Ok(())
     }
@@ -1219,10 +1250,7 @@ fn rsync_to_remote(
     cmd.arg("-e")
         .arg(session.rsync_e_arg())
         .arg(format!("{}/", local_source.display()))
-        .arg(format!(
-            "{}@{}:{}",
-            host.user, host.address, remote_path
-        ));
+        .arg(format!("{}@{}:{}", host.user, host.address, remote_path));
 
     let status = cmd.status().wrap_err("Failed to execute rsync")?;
 
@@ -1830,55 +1858,11 @@ fn scp_from_remote(
     remote_path: &str,
     local_path: &Path,
 ) -> Result<()> {
-    let status = Command::new("scp")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-P")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
-        .arg(local_path)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .wrap_err("Failed to execute scp")?;
-
-    if !status.success() {
-        eyre::bail!("scp failed for {}", remote_path);
-    }
-
-    Ok(())
+    SshSession::new(host, ssh_key).scp_from(remote_path, local_path)
 }
 
 fn scp_to_remote(host: &Host, ssh_key: &Path, local_path: &Path, remote_path: &str) -> Result<()> {
-    let status = Command::new("scp")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-P")
-        .arg(host.port.to_string())
-        .arg(local_path)
-        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .wrap_err("Failed to execute scp")?;
-
-    if !status.success() {
-        eyre::bail!("scp failed for {}", remote_path);
-    }
-
-    Ok(())
+    SshSession::new(host, ssh_key).scp_to(local_path, remote_path)
 }
 
 fn remote_systemctl(host: &Host, ssh_key: &Path, action: &str, service: &str) -> Result<()> {
@@ -1935,10 +1919,7 @@ fn rsync_from_remote(
 
     cmd.arg("-e")
         .arg(session.rsync_e_arg())
-        .arg(format!(
-            "{}@{}:{}",
-            host.user, host.address, remote_path
-        ))
+        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
         .arg(local_dest);
 
     let status = cmd.status().wrap_err("Failed to execute rsync")?;
