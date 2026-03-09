@@ -1247,7 +1247,7 @@ pub fn run_import_opml(
     Ok(())
 }
 
-pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -> Result<()> {
+fn load_restic_config() -> Result<(String, String)> {
     let config = UserConfig::load()?;
     let missing = config.validate_required(&["restic_repository", "restic_password"]);
     if !missing.is_empty() {
@@ -1256,9 +1256,14 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
             missing.join(", ")
         );
     }
+    Ok((
+        config.get("restic_repository").unwrap(),
+        config.get("restic_password").unwrap(),
+    ))
+}
 
-    let restic_repo = config.get("restic_repository").unwrap();
-    let restic_password = config.get("restic_password").unwrap();
+pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -> Result<()> {
+    let (restic_repo, restic_password) = load_restic_config()?;
 
     let backup_root = default_backup_dir();
     if !backup_root.exists() {
@@ -1337,17 +1342,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
 }
 
 pub fn run_backup_prune(dry_run: bool) -> Result<()> {
-    let config = UserConfig::load()?;
-    let missing = config.validate_required(&["restic_repository", "restic_password"]);
-    if !missing.is_empty() {
-        eyre::bail!(
-            "Missing restic config: {}. Set with `auberge config set <key> <value>`",
-            missing.join(", ")
-        );
-    }
-
-    let restic_repo = config.get("restic_repository").unwrap();
-    let restic_password = config.get("restic_password").unwrap();
+    let (restic_repo, restic_password) = load_restic_config()?;
 
     let spinner = output::spinner("Pruning restic snapshots");
 
