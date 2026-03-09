@@ -25,6 +25,10 @@ blocking:
   clientGroupsBlock:
     default: [ads, fakenews, gambling, porn]
 ports:
-  dns: 5353 # systemd-resolved uses port 53 already
+  dns:
+    - 5353
+{% if blocky_tailscale_ipv4 is defined and blocky_tailscale_ipv4 | length > 0 %}
+    - {{ blocky_tailscale_ipv4 }}:53
+{% endif %}
   tls: {{ blocky_dot_port }}
 bootstrapDns: 1.1.1.1

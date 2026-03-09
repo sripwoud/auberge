@@ -35,6 +35,7 @@ auberge config set ssh_port <port>
 ```bash
 auberge config set cloudflare_dns_api_token <token>
 auberge config set tailscale_authkey <key>
+auberge config set tailscale_api_key <key>
 ```
 
 ### Application Settings (config.toml)
@@ -67,7 +68,7 @@ Required for DNS-01 ACME challenges via Lego certificate automation:
    auberge config set cloudflare_dns_api_token <TOKEN>
    ```
 
-### Tailscale
+### Tailscale Auth Key
 
 Required for VPN mesh networking:
 
@@ -77,6 +78,18 @@ Required for VPN mesh networking:
    ```bash
    auberge config set tailscale_authkey <KEY>
    ```
+
+### Tailscale API Key
+
+Optional. Required for automated DNS configuration (setting Blocky as the tailnet DNS nameserver):
+
+1. Generate API key at [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
+2. Store the key:
+   ```bash
+   auberge config set tailscale_api_key <KEY>
+   ```
+
+When set, the Blocky role uses this key to automatically configure Tailscale DNS nameservers via the Tailscale API, routing all tailnet DNS queries through Blocky for ad-blocking.
 
 ## Related Documentation
 

@@ -145,6 +145,19 @@
     mode: "0755"
   notify: Restart blocky
 
+- name: Get Tailscale status for DNS binding
+  ansible.builtin.command: tailscale status --json
+  register: blocky_tailscale_status_raw
+  changed_when: false
+  failed_when: false
+
+- name: Set Tailscale IPv4 fact for Blocky
+  ansible.builtin.set_fact:
+    blocky_tailscale_ipv4: "{{ (blocky_tailscale_status_raw.stdout | from_json).Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
+  when:
+    - blocky_tailscale_status_raw.rc == 0
+    - (blocky_tailscale_status_raw.stdout | from_json).BackendState == "Running"
+
 - name: Configure blocky
   ansible.builtin.template:
     src: config.yaml.j2
@@ -169,6 +182,44 @@
     state: started
     daemon_reload: true
     enabled: true
+
+- name: Wait for Blocky to listen on Tailscale interface
+  ansible.builtin.wait_for:
+    host: "{{ blocky_tailscale_ipv4 }}"
+    port: 53
+    timeout: 30
+  when: blocky_tailscale_ipv4 is defined and blocky_tailscale_ipv4 | length > 0
+
+- name: Configure Tailscale DNS to use Blocky
+  when:
+    - tailscale_api_key is defined and tailscale_api_key | length > 0
+    - blocky_tailscale_ipv4 is defined and blocky_tailscale_ipv4 | length > 0
+  no_log: true
+  block:
+    - name: Set Tailscale DNS nameservers to Blocky
+      ansible.builtin.uri:
+        url: https://api.tailscale.com/api/v2/tailnet/-/dns/nameservers
+        method: POST
+        url_username: "{{ tailscale_api_key }}"
+        url_password: ""
+        force_basic_auth: true
+        body_format: json
+        body:
+          dns:
+            - "{{ blocky_tailscale_ipv4 }}"
+        status_code: 200
+
+    - name: Enable DNS override in Tailscale
+      ansible.builtin.uri:
+        url: https://api.tailscale.com/api/v2/tailnet/-/dns/preferences
+        method: POST
+        url_username: "{{ tailscale_api_key }}"
+        url_password: ""
+        force_basic_auth: true
+        body_format: json
+        body:
+          magicDNS: true
+        status_code: 200
 
 - name: Allow incoming connections to Blocky DoT port
   community.general.ufw:

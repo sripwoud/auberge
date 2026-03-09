@@ -281,6 +281,7 @@ Mesh VPN for secure internal access to private services.
 
 - Install Tailscale from official APT repository
 - Authenticate to Tailscale network via auth key
+- Enforce `accept-dns=false` on the server to prevent DNS breakage during redeployments
 - Configure UFW rules for Tailscale traffic
 - Ensure Tailscale connectivity for services that bind internally (e.g., Paperless-ngx)
 
@@ -296,7 +297,7 @@ Mesh VPN for secure internal access to private services.
 - ✓ Bash environment configured
 - ✓ Caddy running and serving HTTPS
 - ✓ SSL certificates provisioned
-- ✓ Tailscale connected to mesh network
+- ✓ Tailscale connected to mesh network (with `accept-dns=false` on server)
 
 ## Layer 4: Applications
 
@@ -310,10 +311,11 @@ Deploy self-hosted applications on top of infrastructure.
 
 **Blocky (DNS + Ad-blocking):**
 
-- Port: 853 (DNS over TLS)
+- Ports: 853 (DNS over TLS), 5353 (DNS), 53 on Tailscale IP (tailnet DNS)
 - Subdomain: `dns.{domain}`
 - Data: `/etc/blocky/`
 - Purpose: Private DNS with ad/tracking blocking
+- Tailscale integration: Registers itself as tailnet DNS nameserver via Tailscale API (requires `tailscale_api_key`)
 
 **WireGuard (VPN):**
 
