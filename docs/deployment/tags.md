@@ -9,11 +9,29 @@ Tags allow selective execution of specific parts of playbooks without running ev
 **Syntax:**
 
 ```bash
-auberge ansible run --tags tag1,tag2,tag3
+auberge ansible run --tags tag1,tag2,tag3     # Comma-separated
 auberge ansible run --skip-tags tag1,tag2
 ```
 
 **Benefit:** Faster deployments, targeted updates
+
+## Automatic Infrastructure Dependencies
+
+When `--tags` is used **without** `--playbook`, the CLI auto-resolves playbook dependencies:
+
+- **App tags** (e.g., `baikal`, `paperless`) trigger a full `infrastructure.yml` run (idempotent) before running `apps.yml` with the specified tags
+- **Infrastructure tags** (e.g., `caddy`, `tailscale`) run only `infrastructure.yml` with those tags
+- **Mixed tags** run both playbooks in order
+
+To run **only** the app playbook without infrastructure, specify `--playbook` explicitly:
+
+```bash
+# Auto-resolves: runs infrastructure.yml (full) + apps.yml --tags baikal
+auberge ansible run --tags baikal
+
+# Explicit: runs only apps.yml --tags baikal (no infrastructure)
+auberge ansible run --playbook playbooks/apps.yml --tags baikal
+```
 
 ## Tag Categories
 
@@ -152,23 +170,27 @@ auberge ansible run --tags apps --skip-tags calibre
 ### Update Single Application
 
 ```bash
-# Update only Baikal
+# Auto-resolves: runs full infrastructure first, then Baikal from apps.yml
 auberge ansible run --host auberge --tags baikal
+
+# Explicit: runs only Baikal tasks from apps.yml (no infrastructure)
+auberge ansible run --host auberge --playbook playbooks/apps.yml --tags baikal
 ```
 
-**What runs:**
+**Without `--playbook` (auto-resolve), what runs:**
 
-- Baikal installation
-- Baikal configuration
-- Baikal PHP-FPM pool and Caddy
-- Baikal data directory setup
+- Full `infrastructure.yml` (idempotent — skips unchanged)
+- Baikal installation, configuration, PHP-FPM pool, Caddy, data directory setup
 - Service restart (if config changed)
 
-**What doesn't run:**
+**With `--playbook apps.yml` (explicit), what runs:**
+
+- Baikal tasks only (no infrastructure)
+
+**What never runs in either case:**
 
 - Other applications
-- Infrastructure layer
-- Security layer
+- Bootstrap/hardening layers
 
 ### Update Multiple Related Apps
 
@@ -344,13 +366,14 @@ Entire plays can be tagged:
 ### Use Tags for Incremental Updates
 
 ```bash
-# Changed Baikal config → update only Baikal
+# Changed Baikal config → auto-resolves infra + Baikal
 auberge ansible run --tags baikal
 
-# Not necessary to run entire apps.yml
+# App-only (skip infrastructure): specify --playbook explicitly
+auberge ansible run --playbook playbooks/apps.yml --tags baikal
 ```
 
-**Benefit:** Faster feedback loop during development.
+**Benefit:** Faster feedback loop during development. Use `--playbook` to skip infra when you know only app config changed.
 
 ### Always Skip Bootstrap in Production
 

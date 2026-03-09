@@ -5,6 +5,7 @@ use crate::selector::select_item;
 use crate::services::ansible_runner::{
     InventoryHost, required_config_keys, run_bootstrap, run_playbook,
 };
+use crate::services::dependency_resolver::resolve_tags_to_playbook_runs;
 use crate::services::inventory::{get_host, get_hosts, get_playbooks};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
@@ -18,11 +19,20 @@ pub enum AnsibleCommands {
     Run {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
-        #[arg(short, long, help = "Playbook path")]
+        #[arg(
+            short,
+            long,
+            help = "Playbook path (auto-resolved from tags if omitted)"
+        )]
         playbook: Option<PathBuf>,
         #[arg(short = 'C', long, help = "Run in check mode (dry run)")]
         check: bool,
-        #[arg(short, long, help = "Only run tasks with these tags")]
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            help = "Comma-separated tags to run (auto-deploys infra dependencies)"
+        )]
         tags: Option<Vec<String>>,
         #[arg(long, help = "Bootstrap user (overrides inventory setting)")]
         user: Option<String>,
@@ -137,9 +147,135 @@ pub fn run_ansible_run(
     force: bool,
 ) -> Result<()> {
     let selected_host = select_or_use_host(host)?;
-    let selected_playbook = select_or_use_playbook(playbook)?;
 
-    let playbook_name = selected_playbook
+    if let (None, Some(tag_list)) = (&playbook, &tags) {
+        return run_auto_resolved(
+            &selected_host,
+            check,
+            tag_list,
+            user.as_deref(),
+            ask_pass,
+            force,
+        );
+    }
+
+    let selected_playbook = select_or_use_playbook(playbook)?;
+    run_single_playbook(
+        &selected_host,
+        &selected_playbook,
+        check,
+        tags.as_deref(),
+        user.as_deref(),
+        ask_pass,
+        force,
+    )
+}
+
+fn run_auto_resolved(
+    host: &Host,
+    check: bool,
+    tags: &[String],
+    user: Option<&str>,
+    ask_pass: bool,
+    force: bool,
+) -> Result<()> {
+    let (runs, unknown_tags) = resolve_tags_to_playbook_runs(tags)?;
+
+    if !unknown_tags.is_empty() {
+        output::warn(&format!(
+            "Unknown tags (not in infrastructure.yml or apps.yml): {}",
+            unknown_tags.join(", ")
+        ));
+    }
+
+    if runs.is_empty() {
+        output::info("No auto-resolvable playbooks found, falling back to playbook selection");
+        let selected_playbook = select_or_use_playbook(None)?;
+        return run_single_playbook(
+            host,
+            &selected_playbook,
+            check,
+            Some(tags),
+            user,
+            ask_pass,
+            force,
+        );
+    }
+
+    output::info(&format!(
+        "Resolved {} playbook run(s) for tags: {}",
+        runs.len(),
+        tags.join(", ")
+    ));
+
+    for run in &runs {
+        let playbook = Playbook::from_path(run.path.clone());
+        let playbook_name = playbook
+            .path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+
+        validate_config_for_playbook(playbook_name)?;
+        show_playbook_warnings(playbook_name, force)?;
+
+        let run_tags = if run.tags.is_empty() {
+            None
+        } else {
+            Some(run.tags.as_slice())
+        };
+
+        output::info(&format!(
+            "Running {} on {}{}",
+            playbook.name,
+            host.name,
+            run_tags.map_or(String::new(), |t| format!(" (tags: {})", t.join(", ")))
+        ));
+
+        let inventory_host = InventoryHost {
+            name: host.name.clone(),
+            address: host.vars.ansible_host.clone(),
+            port: host.vars.ansible_port,
+            user: host.vars.bootstrap_user.clone(),
+        };
+
+        let extra_vars = user.map(|u| vec![("ansible_user", u)]);
+
+        let result = run_playbook(
+            &playbook.path,
+            &inventory_host,
+            check,
+            run_tags,
+            extra_vars.as_deref(),
+            false,
+            ask_pass,
+        )?;
+
+        if !result.success {
+            eyre::bail!(
+                "{} failed with exit code {}",
+                playbook.name,
+                result.exit_code
+            );
+        }
+
+        output::success(&format!("{} completed successfully", playbook.name));
+    }
+
+    output::success("All playbook runs completed successfully");
+    Ok(())
+}
+
+fn run_single_playbook(
+    host: &Host,
+    playbook: &Playbook,
+    check: bool,
+    tags: Option<&[String]>,
+    user: Option<&str>,
+    ask_pass: bool,
+    force: bool,
+) -> Result<()> {
+    let playbook_name = playbook
         .path
         .file_name()
         .and_then(|n| n.to_str())
@@ -181,7 +317,38 @@ pub fn run_ansible_run(
         }
     }
 
-    // Show Cloudflare API configuration warning for apps playbook
+    show_playbook_warnings(playbook_name, force)?;
+
+    output::info(&format!("Running {} on {}", playbook.name, host.name));
+
+    let inventory_host = InventoryHost {
+        name: host.name.clone(),
+        address: host.vars.ansible_host.clone(),
+        port: host.vars.ansible_port,
+        user: host.vars.bootstrap_user.clone(),
+    };
+
+    let extra_vars = user.map(|u| vec![("ansible_user", u)]);
+
+    let result = run_playbook(
+        &playbook.path,
+        &inventory_host,
+        check,
+        tags,
+        extra_vars.as_deref(),
+        false,
+        ask_pass,
+    )?;
+
+    if result.success {
+        output::success("Playbook completed successfully");
+        Ok(())
+    } else {
+        eyre::bail!("Playbook failed with exit code {}", result.exit_code)
+    }
+}
+
+fn show_playbook_warnings(playbook_name: &str, force: bool) -> Result<()> {
     let needs_cloudflare_warning = playbook_name == "apps.yml" || playbook_name == "auberge.yml";
 
     if needs_cloudflare_warning {
@@ -250,36 +417,7 @@ pub fn run_ansible_run(
         }
     }
 
-    output::info(&format!(
-        "Running {} on {}",
-        selected_playbook.name, selected_host.name
-    ));
-
-    let inventory_host = InventoryHost {
-        name: selected_host.name,
-        address: selected_host.vars.ansible_host,
-        port: selected_host.vars.ansible_port,
-        user: selected_host.vars.bootstrap_user,
-    };
-
-    let extra_vars = user.as_ref().map(|u| vec![("ansible_user", u.as_str())]);
-
-    let result = run_playbook(
-        &selected_playbook.path,
-        &inventory_host,
-        check,
-        tags.as_deref(),
-        extra_vars.as_deref(),
-        false,
-        ask_pass,
-    )?;
-
-    if result.success {
-        output::success("Playbook completed successfully");
-        Ok(())
-    } else {
-        eyre::bail!("Playbook failed with exit code {}", result.exit_code)
-    }
+    Ok(())
 }
 
 pub fn run_ansible_check(

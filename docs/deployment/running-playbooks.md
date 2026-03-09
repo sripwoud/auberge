@@ -5,7 +5,8 @@
 ```bash
 auberge ansible run                           # Interactive
 auberge ansible run --host H --playbook P    # Explicit
-auberge ansible run --tags TAG               # By tags
+auberge ansible run --tags TAG               # Auto-resolves playbook dependencies
+auberge ansible run --playbook P --tags TAG  # Explicit playbook, no auto-resolve
 ```
 
 ## Examples
@@ -33,7 +34,7 @@ auberge ansible bootstrap auberge --ip IP
 auberge ansible run --playbook playbooks/auberge.yml --skip-tags bootstrap
 ```
 
-**Update single app:**
+**Update single app (auto-resolves infrastructure first):**
 
 ```bash
 auberge ansible run --tags baikal
