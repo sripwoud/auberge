@@ -5,30 +5,33 @@ use eyre::Result;
 
 #[derive(Subcommand)]
 pub enum ConfigCommands {
-    #[command(about = "Create template config.toml with all known keys")]
+    #[command(alias = "i", about = "Create template config.toml with all known keys")]
     Init,
-    #[command(about = "Set a config value")]
+    #[command(alias = "s", about = "Set a config value")]
     Set {
         #[arg(help = "Key name (e.g. admin_user_name)")]
         key: String,
         #[arg(help = "Value to set")]
         value: String,
     },
-    #[command(about = "Get a config value")]
+    #[command(alias = "g", about = "Get a config value")]
     Get {
         #[arg(help = "Key name")]
         key: String,
     },
-    #[command(about = "List all config keys (sensitive values redacted)")]
+    #[command(
+        alias = "l",
+        about = "List all config keys (sensitive values redacted)"
+    )]
     List,
-    #[command(about = "Remove a key from config")]
+    #[command(alias = "rm", about = "Remove a key from config")]
     Remove {
         #[arg(help = "Key name")]
         key: String,
     },
-    #[command(about = "Open config in $EDITOR")]
+    #[command(alias = "e", about = "Open config in $EDITOR")]
     Edit,
-    #[command(about = "Print config file path")]
+    #[command(alias = "p", about = "Print config file path")]
     Path,
 }
 

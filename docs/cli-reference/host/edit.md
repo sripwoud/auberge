@@ -6,6 +6,7 @@ Edit host configuration interactively
 
 ```bash
 auberge host edit <NAME>
+# Alias: auberge h e
 ```
 
 ## Description

@@ -108,7 +108,7 @@ pub enum BackupCommands {
         )]
         skip_playbook_unsafe: bool,
     },
-    #[command(about = "Export FreshRSS feeds to OPML file")]
+    #[command(alias = "eo", about = "Export FreshRSS feeds to OPML file")]
     ExportOpml {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
@@ -123,7 +123,7 @@ pub enum BackupCommands {
         #[arg(long, default_value = "admin", help = "FreshRSS username")]
         user: String,
     },
-    #[command(about = "Import OPML file to FreshRSS")]
+    #[command(alias = "io", about = "Import OPML file to FreshRSS")]
     ImportOpml {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,

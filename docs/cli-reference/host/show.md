@@ -6,6 +6,7 @@ Show detailed host information
 
 ```bash
 auberge host show [OPTIONS] <NAME>
+# Alias: auberge h s
 ```
 
 ## Description

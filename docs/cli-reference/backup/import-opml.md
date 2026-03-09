@@ -6,6 +6,7 @@ Import OPML file to FreshRSS
 
 ```bash
 auberge backup import-opml [OPTIONS] --input <FILE>
+# Alias: auberge b io
 ```
 
 ## Description

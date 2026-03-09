@@ -23,15 +23,16 @@ Auberge is a comprehensive command-line tool for managing self-hosted infrastruc
 
 ## Commands
 
-| Command                    | Alias | Description                             |
-| -------------------------- | ----- | --------------------------------------- |
-| [select](select/host.md)   | se    | Select hosts or playbooks interactively |
-| [ansible](ansible/run.md)  | a     | Run ansible playbooks                   |
-| [backup](backup/create.md) | b     | Backup and restore application data     |
-| [host](host/add.md)        | h     | Manage VPS hosts                        |
-| [ssh](ssh/keygen.md)       | ss    | SSH key management                      |
-| [sync](sync/music.md)      | sy    | Sync files to remote hosts              |
-| [dns](dns/list.md)         | d     | DNS management via Cloudflare           |
+| Command                      | Alias | Description                             |
+| ---------------------------- | ----- | --------------------------------------- |
+| [select](select/host.md)     | se    | Select hosts or playbooks interactively |
+| [ansible](ansible/run.md)    | a     | Run ansible playbooks                   |
+| [backup](backup/create.md)   | b     | Backup and restore application data     |
+| [host](host/add.md)          | h     | Manage VPS hosts                        |
+| [ssh](ssh/keygen.md)         | ss    | SSH key management                      |
+| [sync](sync/music.md)        | sy    | Sync files to remote hosts              |
+| [dns](dns/list.md)           | d     | DNS management via Cloudflare           |
+| [config](config/overview.md) | c     | Manage user configuration               |
 
 ## Configuration
 

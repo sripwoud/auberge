@@ -46,7 +46,7 @@ impl From<&Host> for HostDisplay {
 
 #[derive(Subcommand)]
 pub enum HostCommands {
-    #[command(about = "Add a new host")]
+    #[command(alias = "a", about = "Add a new host")]
     Add {
         #[arg(help = "Host name")]
         name: Option<String>,
@@ -65,28 +65,28 @@ pub enum HostCommands {
         #[arg(long, help = "Disable interactive prompts")]
         no_input: bool,
     },
-    #[command(about = "List all hosts")]
+    #[command(alias = "l", about = "List all hosts")]
     List {
         #[arg(short, long, help = "Filter by tags (comma-separated)")]
         tags: Option<String>,
         #[arg(short, long, help = "Output format: table, json, yaml")]
         output: Option<String>,
     },
-    #[command(about = "Remove a host")]
+    #[command(alias = "rm", about = "Remove a host")]
     Remove {
         #[arg(help = "Host name")]
         name: String,
         #[arg(short, long, help = "Skip confirmation")]
         yes: bool,
     },
-    #[command(about = "Show host details")]
+    #[command(alias = "s", about = "Show host details")]
     Show {
         #[arg(help = "Host name")]
         name: String,
         #[arg(short, long, help = "Output format: yaml, json")]
         output: Option<String>,
     },
-    #[command(about = "Edit a host")]
+    #[command(alias = "e", about = "Edit a host")]
     Edit {
         #[arg(help = "Host name")]
         name: String,
