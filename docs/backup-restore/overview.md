@@ -2,6 +2,27 @@
 
 Auberge provides built-in backup and restore functionality for all self-hosted applications. Backups are stored locally and can be restored to the same host or migrated to a different host using the cross-host restore feature.
 
+## Architecture
+
+```mermaid
+graph TD
+    Local["Local Machine<br/>auberge CLI + SSH keys"]
+    Remote["Remote VPS<br/>App Services + PostgreSQL"]
+    Offsite["Backup Server<br/>Restic Repository"]
+
+    Local -- "backup create: rsync + scp over SSH" --> Remote
+    Remote -- "app data + pg_dump -Fc" --> Local
+    Local -- "backup push: restic + rclone" --> Offsite
+
+    style Local fill:#d4e6f1,stroke:#2471a3
+    style Remote fill:#d5f5e3,stroke:#1e8449
+    style Offsite fill:#fdebd0,stroke:#ca6f1e
+```
+
+- **Local Machine**: Where `auberge` CLI is installed, holds SSH keys, stores backups in `~/.local/share/auberge/backups/`
+- **Remote VPS**: Runs all apps deployed by `auberge`, source of backup data
+- **Backup Server**: Offsite destination for encrypted restic snapshots (e.g. Filen via rclone)
+
 ## Supported Applications
 
 - **Baikal**: Calendar and contact data, configuration files
