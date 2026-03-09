@@ -149,10 +149,14 @@
   ansible.builtin.command: tailscale status --json
   register: blocky_tailscale_status_raw
   changed_when: false
+  failed_when: false
 
 - name: Set Tailscale IPv4 fact for Blocky
   ansible.builtin.set_fact:
     blocky_tailscale_ipv4: "{{ (blocky_tailscale_status_raw.stdout | from_json).Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
+  when:
+    - blocky_tailscale_status_raw.rc == 0
+    - (blocky_tailscale_status_raw.stdout | from_json).BackendState == "Running"
 
 - name: Configure blocky
   ansible.builtin.template:
@@ -184,10 +188,12 @@
     host: "{{ blocky_tailscale_ipv4 }}"
     port: 53
     timeout: 30
-  when: blocky_tailscale_ipv4 is defined
+  when: blocky_tailscale_ipv4 is defined and blocky_tailscale_ipv4 | length > 0
 
 - name: Configure Tailscale DNS to use Blocky
-  when: tailscale_api_key is defined and tailscale_api_key | length > 0
+  when:
+    - tailscale_api_key is defined and tailscale_api_key | length > 0
+    - blocky_tailscale_ipv4 is defined and blocky_tailscale_ipv4 | length > 0
   no_log: true
   block:
     - name: Set Tailscale DNS nameservers to Blocky
@@ -203,7 +209,7 @@
             - "{{ blocky_tailscale_ipv4 }}"
         status_code: 200
 
-    - name: Enable MagicDNS in Tailscale
+    - name: Enable DNS override in Tailscale
       ansible.builtin.uri:
         url: https://api.tailscale.com/api/v2/tailnet/-/dns/preferences
         method: POST
