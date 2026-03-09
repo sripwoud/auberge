@@ -36,6 +36,31 @@ auberge backup create --host my-vps --dry-run
 auberge backup create --host my-vps --dest /mnt/external/backups
 ```
 
+## Database Backups (Paperless-ngx)
+
+Paperless-ngx uses PostgreSQL for metadata (tags, correspondents, document types, users, permissions). The backup process automatically runs `pg_dump -Fc` to create a compressed database dump alongside the file backup.
+
+The dump is stored as `db.dump` within the app's backup directory:
+
+```
+backups/{host}/{timestamp}/paperless/
+├── opt/paperless/data/...
+├── opt/paperless/media/...
+└── db.dump
+```
+
+No additional flags are needed — database backup is automatic when backing up Paperless-ngx.
+
+## Offsite Push
+
+After creating a local backup, push it to an offsite restic repository:
+
+```bash
+auberge backup push --host my-vps
+```
+
+See [CLI Reference: backup push](../cli-reference/backup/push.md) for details.
+
 ## Related Commands
 
 - [backup list](listing-backups.md) - List available backups
