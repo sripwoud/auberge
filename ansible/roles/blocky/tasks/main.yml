@@ -179,6 +179,35 @@
     daemon_reload: true
     enabled: true
 
+- name: Configure Tailscale DNS to use Blocky
+  when: tailscale_api_key is defined and tailscale_api_key | length > 0
+  no_log: true
+  block:
+    - name: Set Tailscale DNS nameservers to Blocky
+      ansible.builtin.uri:
+        url: https://api.tailscale.com/api/v2/tailnet/-/dns/nameservers
+        method: POST
+        url_username: "{{ tailscale_api_key }}"
+        url_password: ""
+        force_basic_auth: true
+        body_format: json
+        body:
+          dns:
+            - "{{ blocky_tailscale_ipv4 }}"
+        status_code: 200
+
+    - name: Enable MagicDNS in Tailscale
+      ansible.builtin.uri:
+        url: https://api.tailscale.com/api/v2/tailnet/-/dns/preferences
+        method: POST
+        url_username: "{{ tailscale_api_key }}"
+        url_password: ""
+        force_basic_auth: true
+        body_format: json
+        body:
+          magicDNS: true
+        status_code: 200
+
 - name: Allow incoming connections to Blocky DoT port
   community.general.ufw:
     rule: allow
