@@ -5,11 +5,115 @@ use crate::user_config::UserConfig;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::time::Instant;
 use tabled::Tabled;
+
+/// Encapsulates SSH connection parameters and provides shared helpers that
+/// eliminate repeated `.arg()` boilerplate across all SSH/rsync/scp operations.
+struct SshSession<'a> {
+    host: &'a Host,
+    ssh_key: &'a Path,
+}
+
+impl<'a> SshSession<'a> {
+    fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
+        Self { host, ssh_key }
+    }
+
+    /// Returns the common SSH option flags as individual [`OsString`] arguments:
+    /// ControlMaster/ControlPath/ControlPersist multiplexing, identity file,
+    /// port and `user@host`.  Pass them to a [`Command`] with `.args()` or
+    /// build the rsync `-e` string with [`SshSession::rsync_e_arg`].
+    fn ssh_args(&self) -> Vec<OsString> {
+        vec![
+            "-o".into(),
+            "ControlMaster=auto".into(),
+            "-o".into(),
+            "ControlPath=/tmp/ssh-%r@%h:%p".into(),
+            "-o".into(),
+            "ControlPersist=60s".into(),
+            "-i".into(),
+            self.ssh_key.into(),
+            "-p".into(),
+            self.host.port.to_string().into(),
+            format!("{}@{}", self.host.user, self.host.address).into(),
+        ]
+    }
+
+    /// Runs `command` (a single shell string) on the remote host and captures
+    /// its full output.  The exit status is **not** inspected; callers decide
+    /// how to handle it.
+    fn run(&self, command: &str) -> Result<Output> {
+        Command::new("ssh")
+            .args(self.ssh_args())
+            .arg(command)
+            .output()
+            .wrap_err("Failed to execute SSH command")
+    }
+
+    /// Like [`Self::run`] but accepts a slice of pre-split arguments instead of a
+    /// single shell string, avoiding remote-shell re-parsing.  Captures the
+    /// full output; the exit status is **not** inspected.
+    fn run_raw(&self, args: &[&str]) -> Result<Output> {
+        let mut cmd = Command::new("ssh");
+        cmd.args(self.ssh_args());
+        for arg in args {
+            cmd.arg(arg);
+        }
+        cmd.output().wrap_err("Failed to execute SSH command")
+    }
+
+    /// Returns the value for rsync's `-e` flag that routes the transfer
+    /// through the same SSH options as [`Self::ssh_args`].
+    fn rsync_e_arg(&self) -> String {
+        format!(
+            "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
+            self.ssh_key.display(),
+            self.host.port
+        )
+    }
+
+    /// Uploads `local` to `remote` on the remote host via `scp`.
+    fn scp_to(&self, local: &Path, remote: &str) -> Result<()> {
+        let status = Command::new("scp")
+            .arg("-i")
+            .arg(self.ssh_key)
+            .arg("-P")
+            .arg(self.host.port.to_string())
+            .arg(local)
+            .arg(format!(
+                "{}@{}:{}",
+                self.host.user, self.host.address, remote
+            ))
+            .status()
+            .wrap_err("Failed to upload file via scp")?;
+        if !status.success() {
+            eyre::bail!("scp to {}:{} failed", self.host.address, remote);
+        }
+        Ok(())
+    }
+
+    /// Runs `sudo systemctl <action> <service>` on the remote host, inheriting
+    /// stdio so the user sees real-time output.
+    fn systemctl(&self, action: &str, service: &str) -> Result<()> {
+        let status = Command::new("ssh")
+            .args(self.ssh_args())
+            .arg("sudo")
+            .arg("systemctl")
+            .arg(action)
+            .arg(service)
+            .status()
+            .wrap_err_with(|| format!("Failed to {} service {}", action, service))?;
+        if !status.success() {
+            eyre::bail!("systemctl {} {} failed", action, service);
+        }
+        Ok(())
+    }
+}
 
 const RSYNC_EXCLUDES: &[&str] = &[
     ".git",
@@ -1092,12 +1196,9 @@ fn rsync_to_remote(
         .parent()
         .ok_or_else(|| eyre::eyre!("Invalid remote path: {}", remote_path))?;
 
+    let session = SshSession::new(host, ssh_key);
     let _ = Command::new("ssh")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
+        .args(session.ssh_args())
         .arg("sudo")
         .arg("mkdir")
         .arg("-p")
@@ -1116,11 +1217,7 @@ fn rsync_to_remote(
     }
 
     cmd.arg("-e")
-        .arg(format!(
-            "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
-            ssh_key.display(),
-            host.port
-        ))
+        .arg(session.rsync_e_arg())
         .arg(format!("{}/", local_source.display()))
         .arg(format!(
             "{}@{}:{}",
@@ -1156,15 +1253,8 @@ pub fn run_export_opml(
         user
     );
 
-    let opml_output = Command::new("ssh")
-        .arg("-i")
-        .arg(&ssh_key_path)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(remote_cmd)
-        .output()
-        .wrap_err("Failed to execute SSH command")?;
+    let session = SshSession::new(&host, &ssh_key_path);
+    let opml_output = session.run(&remote_cmd)?;
 
     if !opml_output.status.success() {
         let stderr = String::from_utf8_lossy(&opml_output.stderr);
@@ -1202,22 +1292,10 @@ pub fn run_import_opml(
     let remote_opml_path = format!("/tmp/freshrss_import_{}.opml", user);
 
     eprintln!("  Uploading OPML file...");
-    let scp_status = Command::new("scp")
-        .arg("-i")
-        .arg(&ssh_key_path)
-        .arg("-P")
-        .arg(host.port.to_string())
-        .arg(&input)
-        .arg(format!(
-            "{}@{}:{}",
-            host.user, host.address, remote_opml_path
-        ))
-        .status()
+    let session = SshSession::new(&host, &ssh_key_path);
+    session
+        .scp_to(&input, &remote_opml_path)
         .wrap_err("Failed to upload OPML file")?;
-
-    if !scp_status.success() {
-        eyre::bail!("Failed to upload OPML file");
-    }
 
     eprintln!("  Importing feeds...");
     let import_cmd = format!(
@@ -1225,14 +1303,8 @@ pub fn run_import_opml(
         user, remote_opml_path, remote_opml_path
     );
 
-    let import_output = Command::new("ssh")
-        .arg("-i")
-        .arg(&ssh_key_path)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(import_cmd)
-        .output()
+    let import_output = session
+        .run(&import_cmd)
         .wrap_err("Failed to execute import command")?;
 
     if !import_output.status.success() {
@@ -1810,30 +1882,7 @@ fn scp_to_remote(host: &Host, ssh_key: &Path, local_path: &Path, remote_path: &s
 }
 
 fn remote_systemctl(host: &Host, ssh_key: &Path, action: &str, service: &str) -> Result<()> {
-    let status = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg("sudo")
-        .arg("systemctl")
-        .arg(action)
-        .arg(service)
-        .status()
-        .wrap_err_with(|| format!("Failed to {} service {}", action, service))?;
-
-    if !status.success() {
-        eyre::bail!("systemctl {} {} failed", action, service);
-    }
-
-    Ok(())
+    SshSession::new(host, ssh_key).systemctl(action, service)
 }
 
 fn set_remote_ownership(
@@ -1843,18 +1892,9 @@ fn set_remote_ownership(
     user: &str,
     group: &str,
 ) -> Result<()> {
+    let session = SshSession::new(host, ssh_key);
     let status = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
+        .args(session.ssh_args())
         .arg("sudo")
         .arg("chown")
         .arg("-R")
@@ -1881,6 +1921,7 @@ fn rsync_from_remote(
     remote_path: &str,
     local_dest: &Path,
 ) -> Result<()> {
+    let session = SshSession::new(host, ssh_key);
     let mut cmd = Command::new("rsync");
     cmd.arg("-az")
         .arg("--relative")
@@ -1893,11 +1934,7 @@ fn rsync_from_remote(
     }
 
     cmd.arg("-e")
-        .arg(format!(
-            "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
-            ssh_key.display(),
-            host.port
-        ))
+        .arg(session.rsync_e_arg())
         .arg(format!(
             "{}@{}:{}",
             host.user, host.address, remote_path
@@ -1914,43 +1951,18 @@ fn rsync_from_remote(
 }
 
 fn check_remote_service_exists(host: &Host, ssh_key: &Path, service: &str) -> Result<bool> {
-    let output = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg("systemctl")
-        .arg("list-unit-files")
-        .arg(format!("{}.service", service))
-        .output()
-        .wrap_err("Failed to check service existence")?;
-
+    let output = SshSession::new(host, ssh_key).run_raw(&[
+        "systemctl",
+        "list-unit-files",
+        &format!("{}.service", service),
+    ])?;
     Ok(output.status.success()
         && String::from_utf8_lossy(&output.stdout).contains(&format!("{}.service", service)))
 }
 
 fn check_remote_disk_space(host: &Host, ssh_key: &Path, path: &str) -> Result<u64> {
-    let output = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(format!("df --output=avail {} | tail -1", path))
-        .output()
+    let output = SshSession::new(host, ssh_key)
+        .run(&format!("df --output=avail {} | tail -1", path))
         .wrap_err("Failed to check disk space")?;
 
     if !output.status.success() {
