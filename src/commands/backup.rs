@@ -1300,17 +1300,16 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
 
     if needs_init {
         spinner.set_message("Initializing restic repository".to_string());
-        let init_status = Command::new("restic")
+        let init_output = Command::new("restic")
             .arg("init")
             .env("RESTIC_REPOSITORY", &restic_repo)
             .env("RESTIC_PASSWORD", &restic_password)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .output()
             .wrap_err("Failed to initialize restic repository")?;
 
-        if !init_status.success() {
-            eyre::bail!("Failed to initialize restic repository");
+        if !init_output.status.success() {
+            let stderr = String::from_utf8_lossy(&init_output.stderr);
+            eyre::bail!("Failed to initialize restic repository: {}", stderr.trim());
         }
     }
 
