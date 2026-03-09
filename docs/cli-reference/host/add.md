@@ -6,6 +6,7 @@ Add host to configuration
 
 ```bash
 auberge host add [NAME] [ADDRESS] [OPTIONS]
+# Alias: auberge h a
 ```
 
 ## Options

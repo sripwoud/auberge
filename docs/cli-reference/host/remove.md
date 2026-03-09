@@ -6,6 +6,7 @@ Remove a host from configuration
 
 ```bash
 auberge host remove [OPTIONS] <NAME>
+# Alias: auberge h rm
 ```
 
 ## Description

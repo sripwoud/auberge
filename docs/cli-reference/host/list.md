@@ -6,6 +6,7 @@ List all configured hosts
 
 ```bash
 auberge host list [OPTIONS]
+# Alias: auberge h l
 ```
 
 ## Description

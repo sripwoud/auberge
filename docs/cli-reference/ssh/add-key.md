@@ -6,6 +6,7 @@ Authorize SSH public key on remote host
 
 ```bash
 auberge ssh add-key [OPTIONS]
+# Alias: auberge ss ak
 ```
 
 ## Description

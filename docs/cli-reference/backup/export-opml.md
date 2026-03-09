@@ -6,6 +6,7 @@ Export FreshRSS feeds to OPML file
 
 ```bash
 auberge backup export-opml [OPTIONS] --output <FILE>
+# Alias: auberge b eo
 ```
 
 ## Description

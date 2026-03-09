@@ -32,6 +32,7 @@ Auberge is a comprehensive command-line tool for managing self-hosted infrastruc
 | [ssh](ssh/keygen.md)       | ss    | SSH key management                      |
 | [sync](sync/music.md)      | sy    | Sync files to remote hosts              |
 | [dns](dns/list.md)         | d     | DNS management via Cloudflare           |
+| [config](config/init.md)   | c     | Manage auberge configuration            |
 
 ## Configuration
 
