@@ -83,6 +83,7 @@
 
     - name: Configure Tailscale DNS via API
       when: tailscale_api_key | length > 0
+      no_log: true
       block:
         - name: Get Tailscale status for DNS config
           ansible.builtin.command: tailscale status --json
@@ -110,7 +111,7 @@
                 - "{{ tailscale_ipv4 }}"
             status_code: 200
 
-        - name: Enable override local DNS in Tailscale
+        - name: Enable MagicDNS in Tailscale
           ansible.builtin.uri:
             url: https://api.tailscale.com/api/v2/tailnet/-/dns/preferences
             method: POST
