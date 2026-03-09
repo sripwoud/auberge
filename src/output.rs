@@ -16,6 +16,7 @@ fn should_use_colors() -> bool {
 }
 
 const RED: &str = "\x1b[31m";
+const YELLOW: &str = "\x1b[33m";
 const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
 const RESET: &str = "\x1b[0m";
@@ -33,6 +34,14 @@ pub fn error(msg: &str) {
         eprintln!("{}✗{} {}", RED, RESET, msg);
     } else {
         eprintln!("✗ {}", msg);
+    }
+}
+
+pub fn warn(msg: &str) {
+    if should_use_colors() {
+        eprintln!("{}⚠{} {}", YELLOW, RESET, msg);
+    } else {
+        eprintln!("⚠ {}", msg);
     }
 }
 

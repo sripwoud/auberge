@@ -178,10 +178,27 @@ fn run_auto_resolved(
     ask_pass: bool,
     force: bool,
 ) -> Result<()> {
-    let runs = resolve_tags_to_playbook_runs(tags)?;
+    let (runs, unknown_tags) = resolve_tags_to_playbook_runs(tags)?;
+
+    if !unknown_tags.is_empty() {
+        output::warn(&format!(
+            "Unknown tags (not in infrastructure.yml or apps.yml): {}",
+            unknown_tags.join(", ")
+        ));
+    }
 
     if runs.is_empty() {
-        eyre::bail!("No playbooks found matching tags: {}", tags.join(", "));
+        output::info("No auto-resolvable playbooks found, falling back to playbook selection");
+        let selected_playbook = select_or_use_playbook(None)?;
+        return run_single_playbook(
+            host,
+            &selected_playbook,
+            check,
+            Some(tags),
+            user,
+            ask_pass,
+            force,
+        );
     }
 
     output::info(&format!(

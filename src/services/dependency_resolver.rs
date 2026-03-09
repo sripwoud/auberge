@@ -46,9 +46,9 @@ fn parse_playbook_roles(playbook_path: &PathBuf) -> Result<Vec<(String, Vec<Stri
     Ok(roles)
 }
 
-fn build_tag_playbook_map() -> Result<HashMap<String, PathBuf>> {
+fn build_tag_playbook_map() -> Result<HashMap<String, Vec<PathBuf>>> {
     let playbooks_dir = PlaybookManager::get_playbooks_dir()?;
-    let mut tag_map: HashMap<String, PathBuf> = HashMap::new();
+    let mut tag_map: HashMap<String, Vec<PathBuf>> = HashMap::new();
 
     let target_playbooks = ["infrastructure.yml", "apps.yml"];
     for filename in &target_playbooks {
@@ -62,9 +62,15 @@ fn build_tag_playbook_map() -> Result<HashMap<String, PathBuf>> {
 
         let roles = parse_playbook_roles(&canonical)?;
         for (role_name, tags) in roles {
-            tag_map.insert(role_name, canonical.clone());
+            tag_map
+                .entry(role_name)
+                .or_default()
+                .push(canonical.clone());
             for tag in tags {
-                tag_map.entry(tag).or_insert_with(|| canonical.clone());
+                let entry = tag_map.entry(tag).or_default();
+                if !entry.contains(&canonical) {
+                    entry.push(canonical.clone());
+                }
             }
         }
     }
@@ -74,31 +80,36 @@ fn build_tag_playbook_map() -> Result<HashMap<String, PathBuf>> {
 
 const PLAYBOOK_ORDER: &[&str] = &["infrastructure.yml", "apps.yml"];
 
-pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<Vec<PlaybookRun>> {
+pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun>, Vec<String>)> {
     let tag_map = build_tag_playbook_map()?;
 
     let mut playbook_tags: HashMap<PathBuf, Vec<String>> = HashMap::new();
     let mut has_apps = false;
     let mut has_infra = false;
+    let mut unknown_tags: Vec<String> = Vec::new();
 
     for tag in tags {
-        if let Some(playbook_path) = tag_map.get(tag) {
-            let filename = playbook_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+        if let Some(playbook_paths) = tag_map.get(tag) {
+            for playbook_path in playbook_paths {
+                let filename = playbook_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
 
-            if filename == "apps.yml" {
-                has_apps = true;
-            }
-            if filename == "infrastructure.yml" {
-                has_infra = true;
-            }
+                if filename == "apps.yml" {
+                    has_apps = true;
+                }
+                if filename == "infrastructure.yml" {
+                    has_infra = true;
+                }
 
-            playbook_tags
-                .entry(playbook_path.clone())
-                .or_default()
-                .push(tag.clone());
+                playbook_tags
+                    .entry(playbook_path.clone())
+                    .or_default()
+                    .push(tag.clone());
+            }
+        } else {
+            unknown_tags.push(tag.clone());
         }
     }
 
@@ -124,7 +135,7 @@ pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<Vec<PlaybookRun>
         }
     }
 
-    Ok(runs)
+    Ok((runs, unknown_tags))
 }
 
 #[cfg(test)]
@@ -158,17 +169,53 @@ mod tests {
     fn test_build_tag_playbook_map() {
         let map = build_tag_playbook_map().unwrap();
 
-        let paperless_playbook = map.get("paperless").unwrap();
-        assert!(paperless_playbook.file_name().unwrap().to_str().unwrap() == "apps.yml");
+        let paperless_playbooks = map.get("paperless").unwrap();
+        assert_eq!(paperless_playbooks.len(), 1);
+        assert_eq!(
+            paperless_playbooks[0]
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "apps.yml"
+        );
 
-        let caddy_playbook = map.get("caddy").unwrap();
-        assert!(caddy_playbook.file_name().unwrap().to_str().unwrap() == "infrastructure.yml");
+        let caddy_playbooks = map.get("caddy").unwrap();
+        assert_eq!(caddy_playbooks.len(), 1);
+        assert_eq!(
+            caddy_playbooks[0].file_name().unwrap().to_str().unwrap(),
+            "infrastructure.yml"
+        );
+    }
+
+    #[test]
+    fn test_build_tag_playbook_map_overlapping_tags() {
+        let map = build_tag_playbook_map().unwrap();
+
+        let network_playbooks = map.get("network").unwrap();
+        assert_eq!(network_playbooks.len(), 2);
+        let filenames: Vec<&str> = network_playbooks
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap())
+            .collect();
+        assert!(filenames.contains(&"infrastructure.yml"));
+        assert!(filenames.contains(&"apps.yml"));
+
+        let web_playbooks = map.get("web").unwrap();
+        assert_eq!(web_playbooks.len(), 2);
+        let filenames: Vec<&str> = web_playbooks
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap())
+            .collect();
+        assert!(filenames.contains(&"infrastructure.yml"));
+        assert!(filenames.contains(&"apps.yml"));
     }
 
     #[test]
     fn test_resolve_app_tag_includes_infrastructure() {
-        let runs = resolve_tags_to_playbook_runs(&["paperless".to_string()]).unwrap();
+        let (runs, unknown) = resolve_tags_to_playbook_runs(&["paperless".to_string()]).unwrap();
 
+        assert!(unknown.is_empty());
         assert_eq!(runs.len(), 2);
         assert_eq!(
             runs[0].path.file_name().unwrap().to_str().unwrap(),
@@ -184,8 +231,9 @@ mod tests {
 
     #[test]
     fn test_resolve_infra_tag_no_apps() {
-        let runs = resolve_tags_to_playbook_runs(&["tailscale".to_string()]).unwrap();
+        let (runs, unknown) = resolve_tags_to_playbook_runs(&["tailscale".to_string()]).unwrap();
 
+        assert!(unknown.is_empty());
         assert_eq!(runs.len(), 1);
         assert_eq!(
             runs[0].path.file_name().unwrap().to_str().unwrap(),
@@ -196,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_resolve_mixed_tags_ordered() {
-        let runs =
+        let (runs, _) =
             resolve_tags_to_playbook_runs(&["tailscale".to_string(), "paperless".to_string()])
                 .unwrap();
 
@@ -209,5 +257,31 @@ mod tests {
             runs[1].path.file_name().unwrap().to_str().unwrap(),
             "apps.yml"
         );
+    }
+
+    #[test]
+    fn test_resolve_overlapping_tag_hits_both_playbooks() {
+        let (runs, unknown) = resolve_tags_to_playbook_runs(&["network".to_string()]).unwrap();
+
+        assert!(unknown.is_empty());
+        assert_eq!(runs.len(), 2);
+        assert_eq!(
+            runs[0].path.file_name().unwrap().to_str().unwrap(),
+            "infrastructure.yml"
+        );
+        assert!(runs[0].tags.contains(&"network".to_string()));
+        assert_eq!(
+            runs[1].path.file_name().unwrap().to_str().unwrap(),
+            "apps.yml"
+        );
+        assert!(runs[1].tags.contains(&"network".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_unknown_tags_reported() {
+        let (runs, unknown) = resolve_tags_to_playbook_runs(&["paperles".to_string()]).unwrap();
+
+        assert!(runs.is_empty());
+        assert_eq!(unknown, vec!["paperles"]);
     }
 }
