@@ -1,6 +1,7 @@
 use crate::hosts::{Host, HostManager};
 use crate::output;
 use crate::selector::select_item;
+use crate::user_config::UserConfig;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
@@ -123,6 +124,18 @@ pub enum BackupCommands {
         #[arg(long, default_value = "admin", help = "FreshRSS username")]
         user: String,
     },
+    #[command(alias = "p", about = "Push backups to offsite restic repository")]
+    Push {
+        #[arg(short = 'H', long, help = "Filter backups by host")]
+        host: Option<String>,
+        #[arg(short, long, help = "Specific backup timestamp (default: latest)")]
+        backup_id: Option<String>,
+    },
+    #[command(about = "Prune old snapshots from offsite restic repository")]
+    Prune {
+        #[arg(short = 'n', long, help = "Show what would be pruned without removing")]
+        dry_run: bool,
+    },
     #[command(alias = "io", about = "Import OPML file to FreshRSS")]
     ImportOpml {
         #[arg(short = 'H', long, help = "Target host")]
@@ -148,11 +161,17 @@ pub enum OutputFormat {
 }
 
 #[derive(Debug)]
+pub struct DbBackupConfig {
+    pub db_name: &'static str,
+    pub remote_dump_path: &'static str,
+}
+
 pub struct AppBackupConfig {
     pub name: &'static str,
     pub systemd_services: Vec<&'static str>,
     pub paths: Vec<&'static str>,
     pub owner: Option<(&'static str, &'static str)>,
+    pub db: Option<DbBackupConfig>,
 }
 
 pub struct RestoreOptions {
@@ -198,6 +217,7 @@ impl AppBackupConfig {
             systemd_services: vec![],
             paths: vec!["/opt/baikal/Specific"],
             owner: Some(("baikal", "baikal")),
+            db: None,
         }
     }
 
@@ -207,6 +227,7 @@ impl AppBackupConfig {
             systemd_services: vec!["freshrss"],
             paths: vec!["/var/lib/freshrss", "/opt/freshrss/data"],
             owner: Some(("freshrss", "freshrss")),
+            db: None,
         }
     }
 
@@ -222,6 +243,7 @@ impl AppBackupConfig {
             systemd_services: vec!["navidrome"],
             paths,
             owner: Some(("navidrome", "navidrome")),
+            db: None,
         }
     }
 
@@ -231,6 +253,7 @@ impl AppBackupConfig {
             systemd_services: vec!["calibre"],
             paths: vec!["/srv/calibre", "/opt/calibre", "/home/calibre"],
             owner: Some(("calibre", "calibre")),
+            db: None,
         }
     }
 
@@ -240,6 +263,7 @@ impl AppBackupConfig {
             systemd_services: vec![],
             paths: vec!["/var/www/webdav-files"],
             owner: None,
+            db: None,
         }
     }
 
@@ -249,6 +273,7 @@ impl AppBackupConfig {
             systemd_services: vec![],
             paths: vec!["/var/www/yourls"],
             owner: Some(("www-data", "www-data")),
+            db: None,
         }
     }
 
@@ -263,6 +288,10 @@ impl AppBackupConfig {
             ],
             paths: vec!["/opt/paperless/data", "/opt/paperless/media"],
             owner: Some(("paperless", "paperless")),
+            db: Some(DbBackupConfig {
+                db_name: "paperless",
+                remote_dump_path: "/tmp/paperless_db.dump",
+            }),
         }
     }
 }
@@ -974,6 +1003,40 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
                 set_remote_ownership(host, ssh_key, remote_path, user, group)?;
             }
         }
+
+        if let Some(db) = &config.db {
+            let local_dump = backup_path.join("db.dump");
+            if local_dump.exists() {
+                eprintln!("  Restoring database: {}", db.db_name);
+                scp_to_remote(host, ssh_key, &local_dump, db.remote_dump_path)?;
+                remote_ssh_command(host, ssh_key, &format!("chmod 644 {}", db.remote_dump_path))?;
+                let pg_result = remote_pg_restore(host, ssh_key, db);
+                remote_pg_dump_cleanup(host, ssh_key, db);
+                pg_result?;
+
+                if config.name == "paperless" {
+                    eprintln!("  Running database migrations");
+                    let migrate_cmd = "sudo -u paperless /opt/paperless/src/venv/bin/python3 manage.py migrate --no-input";
+                    let migrate_result = remote_ssh_command(
+                        host,
+                        ssh_key,
+                        &format!(
+                            "cd /opt/paperless/src && PAPERLESS_CONFIGURATION_PATH=/opt/paperless/paperless.conf {}",
+                            migrate_cmd
+                        ),
+                    );
+                    if let Err(e) = migrate_result {
+                        output::warn(&format!("Migration warning: {}", e));
+                    }
+                }
+            } else {
+                output::warn(&format!(
+                    "No database dump found at {}, skipping db restore",
+                    local_dump.display()
+                ));
+            }
+        }
+
         Ok(())
     })();
 
@@ -1185,6 +1248,210 @@ pub fn run_import_opml(
     Ok(())
 }
 
+fn load_restic_config() -> Result<(String, String)> {
+    let config = UserConfig::load()?;
+    let missing = config.validate_required(&["restic_repository", "restic_password"]);
+    if !missing.is_empty() {
+        eyre::bail!(
+            "Missing restic config: {}. Set with `auberge config set <key> <value>`",
+            missing.join(", ")
+        );
+    }
+    Ok((
+        config.get("restic_repository").unwrap(),
+        config.get("restic_password").unwrap(),
+    ))
+}
+
+pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -> Result<()> {
+    let (restic_repo, restic_password) = load_restic_config()?;
+
+    let backup_root = default_backup_dir();
+    if !backup_root.exists() {
+        eyre::bail!("No backups found. Run `auberge backup create` first.");
+    }
+
+    let backup_dir =
+        resolve_backup_dir(&backup_root, host_filter.as_deref(), backup_id.as_deref())?;
+
+    output::info(&format!("Pushing {} to restic", backup_dir.display()));
+
+    let spinner = output::spinner("Checking restic repository");
+    let snapshots_check = Command::new("restic")
+        .arg("snapshots")
+        .arg("--json")
+        .env("RESTIC_REPOSITORY", &restic_repo)
+        .env("RESTIC_PASSWORD", &restic_password)
+        .output();
+
+    let needs_init = match snapshots_check {
+        Ok(output) if output.status.success() => false,
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("Is there a repository at the following location")
+                || stderr.contains("unable to open config file")
+            {
+                true
+            } else {
+                eyre::bail!("restic snapshots failed: {}", stderr.trim());
+            }
+        }
+        Err(_) => eyre::bail!("restic not found. Install restic: https://restic.net"),
+    };
+
+    if needs_init {
+        spinner.set_message("Initializing restic repository".to_string());
+        let init_output = Command::new("restic")
+            .arg("init")
+            .env("RESTIC_REPOSITORY", &restic_repo)
+            .env("RESTIC_PASSWORD", &restic_password)
+            .output()
+            .wrap_err("Failed to initialize restic repository")?;
+
+        if !init_output.status.success() {
+            let stderr = String::from_utf8_lossy(&init_output.stderr);
+            eyre::bail!("Failed to initialize restic repository: {}", stderr.trim());
+        }
+    }
+
+    spinner.set_message(format!("Backing up {}", backup_dir.display()));
+    let backup_output = Command::new("restic")
+        .arg("backup")
+        .arg(&backup_dir)
+        .env("RESTIC_REPOSITORY", &restic_repo)
+        .env("RESTIC_PASSWORD", &restic_password)
+        .output()
+        .wrap_err("Failed to run restic backup")?;
+
+    spinner.finish_and_clear();
+
+    if !backup_output.status.success() {
+        let stderr = String::from_utf8_lossy(&backup_output.stderr);
+        eyre::bail!("restic backup failed: {}", stderr.trim());
+    }
+
+    let stdout = String::from_utf8_lossy(&backup_output.stdout);
+    let snapshot_id = stdout
+        .lines()
+        .find(|line| line.contains("snapshot") && line.contains("saved"))
+        .unwrap_or("backup completed");
+
+    output::success(&format!("Push complete: {}", snapshot_id.trim()));
+
+    Ok(())
+}
+
+pub fn run_backup_prune(dry_run: bool) -> Result<()> {
+    let (restic_repo, restic_password) = load_restic_config()?;
+
+    let spinner = output::spinner("Pruning restic snapshots");
+
+    let mut cmd = Command::new("restic");
+    cmd.arg("forget")
+        .arg("--keep-daily")
+        .arg("7")
+        .arg("--keep-weekly")
+        .arg("4")
+        .arg("--keep-monthly")
+        .arg("12")
+        .arg("--prune")
+        .env("RESTIC_REPOSITORY", &restic_repo)
+        .env("RESTIC_PASSWORD", &restic_password);
+
+    if dry_run {
+        cmd.arg("--dry-run");
+    }
+
+    let output = cmd.output().wrap_err("Failed to run restic forget")?;
+
+    spinner.finish_and_clear();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eyre::bail!("restic prune failed: {}", stderr.trim());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.is_empty() {
+        eprintln!("{}", stdout.trim());
+    }
+
+    if dry_run {
+        output::info("Dry run completed (no changes made)");
+    } else {
+        output::success("Prune complete");
+    }
+
+    Ok(())
+}
+
+fn resolve_backup_dir(
+    backup_root: &Path,
+    host_filter: Option<&str>,
+    backup_id: Option<&str>,
+) -> Result<PathBuf> {
+    let host_dir = match host_filter {
+        Some(host) => {
+            let dir = backup_root.join(host);
+            if !dir.exists() {
+                eyre::bail!("No backups found for host: {}", host);
+            }
+            dir
+        }
+        None => {
+            let mut hosts: Vec<_> = fs::read_dir(backup_root)?
+                .filter_map(Result::ok)
+                .filter(|e| e.path().is_dir())
+                .collect();
+            if hosts.is_empty() {
+                eyre::bail!("No backups found");
+            }
+            if hosts.len() == 1 {
+                hosts.remove(0).path()
+            } else {
+                let host_names: Vec<String> = hosts
+                    .iter()
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect();
+                let selection = select_item(
+                    &host_names,
+                    |h: &String| h.clone(),
+                    "Select host backup to push",
+                )?
+                .ok_or_else(|| eyre::eyre!("No host selected"))?;
+                backup_root.join(&selection)
+            }
+        }
+    };
+
+    match backup_id {
+        Some(id) => {
+            let dir = host_dir.join(id);
+            if !dir.exists() {
+                eyre::bail!("Backup not found: {}", dir.display());
+            }
+            Ok(dir)
+        }
+        None => {
+            let mut timestamps: Vec<_> = fs::read_dir(&host_dir)?
+                .filter_map(Result::ok)
+                .filter(|e| e.path().is_dir() && !e.path().is_symlink())
+                .filter(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    name.contains('_') && name.starts_with("20")
+                })
+                .collect();
+
+            timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
+
+            timestamps
+                .first()
+                .map(|e| e.path())
+                .ok_or_else(|| eyre::eyre!("No backup timestamps found in {}", host_dir.display()))
+        }
+    }
+}
+
 fn get_host_or_select(host_arg: Option<String>) -> Result<Host> {
     match host_arg {
         Some(name) => HostManager::get_host(&name),
@@ -1241,13 +1508,36 @@ fn backup_app(
         }
     }
 
+    if let Some(db) = &config.db {
+        spinner.set_message(format!("Backing up {} (dumping database)", config.name));
+        if let Err(e) = remote_pg_dump(host, ssh_key, db) {
+            remote_pg_dump_cleanup(host, ssh_key, db);
+            for service in &stopped_services {
+                let _ = remote_systemctl(host, ssh_key, "start", service);
+            }
+            return Err(e).wrap_err("pg_dump failed");
+        }
+    }
+
     spinner.set_message(format!("Backing up {} (copying files)", config.name));
     let rsync_result = (|| -> Result<()> {
         for path in &config.paths {
             rsync_from_remote(host, ssh_key, path, &app_backup_dir)?;
         }
+        if let Some(db) = &config.db {
+            scp_from_remote(
+                host,
+                ssh_key,
+                db.remote_dump_path,
+                &app_backup_dir.join("db.dump"),
+            )?;
+        }
         Ok(())
     })();
+
+    if let Some(db) = &config.db {
+        remote_pg_dump_cleanup(host, ssh_key, db);
+    }
 
     let mut start_failures: Vec<String> = Vec::new();
     if !config.systemd_services.is_empty() {
@@ -1360,6 +1650,160 @@ fn validate_key_file(key_path: &Path) -> Result<()> {
             );
             eprintln!("  Consider running: chmod 600 {}", key_path.display());
         }
+    }
+
+    Ok(())
+}
+
+fn remote_ssh_command(host: &Host, ssh_key: &Path, command: &str) -> Result<std::process::Output> {
+    let output = Command::new("ssh")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg(command)
+        .output()
+        .wrap_err("Failed to execute SSH command")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eyre::bail!("Remote command failed: {}", stderr.trim());
+    }
+
+    Ok(output)
+}
+
+fn remote_ssh_command_raw(
+    host: &Host,
+    ssh_key: &Path,
+    command: &str,
+) -> Result<std::process::Output> {
+    Command::new("ssh")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg(command)
+        .output()
+        .wrap_err("Failed to execute SSH command")
+}
+
+fn remote_pg_dump(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result<()> {
+    let cmd = format!(
+        "sudo -u postgres pg_dump -Fc {} > {}",
+        db.db_name, db.remote_dump_path
+    );
+    remote_ssh_command(host, ssh_key, &cmd)?;
+    Ok(())
+}
+
+fn remote_pg_dump_cleanup(host: &Host, ssh_key: &Path, db: &DbBackupConfig) {
+    let cmd = format!("rm -f {}", db.remote_dump_path);
+    let _ = remote_ssh_command(host, ssh_key, &cmd);
+}
+
+fn remote_pg_restore(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result<()> {
+    let cmd = format!(
+        "sudo -u postgres pg_restore --clean --if-exists -d {} {} 2>&1",
+        db.db_name, db.remote_dump_path
+    );
+    let output = remote_ssh_command_raw(host, ssh_key, &cmd)?;
+
+    if !output.status.success() {
+        let combined_output = String::from_utf8_lossy(&output.stdout);
+        let ssh_stderr = String::from_utf8_lossy(&output.stderr);
+
+        if !ssh_stderr.trim().is_empty() {
+            eyre::bail!("pg_restore SSH error: {}", ssh_stderr.trim());
+        }
+
+        if combined_output.trim().is_empty() {
+            eyre::bail!(
+                "pg_restore failed with exit code {}",
+                output.status.code().unwrap_or(-1)
+            );
+        }
+
+        let warnings_only = combined_output.lines().all(|line| {
+            let trimmed = line.trim().to_lowercase();
+            trimmed.is_empty()
+                || trimmed.contains("warning")
+                || trimmed.starts_with("pg_restore: warning")
+        });
+        if !warnings_only {
+            eyre::bail!("pg_restore failed: {}", combined_output.trim());
+        }
+    }
+
+    Ok(())
+}
+
+fn scp_from_remote(
+    host: &Host,
+    ssh_key: &Path,
+    remote_path: &str,
+    local_path: &Path,
+) -> Result<()> {
+    let status = Command::new("scp")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-P")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
+        .arg(local_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .wrap_err("Failed to execute scp")?;
+
+    if !status.success() {
+        eyre::bail!("scp failed for {}", remote_path);
+    }
+
+    Ok(())
+}
+
+fn scp_to_remote(host: &Host, ssh_key: &Path, local_path: &Path, remote_path: &str) -> Result<()> {
+    let status = Command::new("scp")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-P")
+        .arg(host.port.to_string())
+        .arg(local_path)
+        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .wrap_err("Failed to execute scp")?;
+
+    if !status.success() {
+        eyre::bail!("scp failed for {}", remote_path);
     }
 
     Ok(())
@@ -1609,4 +2053,166 @@ fn validate_cross_host_restore(
 
     eprintln!("✓ Pre-flight validation completed\n");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_paperless_has_db_config() {
+        let config = AppBackupConfig::paperless();
+        assert!(config.db.is_some());
+    }
+
+    #[test]
+    fn test_other_apps_have_no_db_config() {
+        assert!(AppBackupConfig::baikal().db.is_none());
+        assert!(AppBackupConfig::freshrss().db.is_none());
+        assert!(AppBackupConfig::navidrome(false).db.is_none());
+        assert!(AppBackupConfig::navidrome(true).db.is_none());
+        assert!(AppBackupConfig::calibre().db.is_none());
+        assert!(AppBackupConfig::webdav().db.is_none());
+        assert!(AppBackupConfig::yourls().db.is_none());
+    }
+
+    #[test]
+    fn test_db_backup_config_fields() {
+        let config = AppBackupConfig::paperless();
+        let db = config.db.unwrap();
+        assert_eq!(db.db_name, "paperless");
+        assert_eq!(db.remote_dump_path, "/tmp/paperless_db.dump");
+    }
+
+    #[test]
+    fn test_push_variant_exists() {
+        let _push = BackupCommands::Push {
+            host: None,
+            backup_id: None,
+        };
+    }
+
+    #[test]
+    fn test_prune_variant_exists() {
+        let _prune = BackupCommands::Prune { dry_run: true };
+    }
+
+    #[test]
+    fn test_all_apps_returns_seven() {
+        let all = AppBackupConfig::all();
+        assert_eq!(all.len(), 7);
+    }
+
+    #[test]
+    fn test_by_name_unknown_returns_none() {
+        assert!(AppBackupConfig::by_name("nonexistent", false).is_none());
+    }
+
+    #[test]
+    fn test_navidrome_music_paths() {
+        let without = AppBackupConfig::navidrome(false);
+        assert!(!without.paths.contains(&"/srv/music"));
+
+        let with = AppBackupConfig::navidrome(true);
+        assert!(with.paths.contains(&"/srv/music"));
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_empty_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = resolve_backup_dir(tmp.path(), None, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No backups found"));
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_single_host_auto_selects() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+        let ts_dir = host_dir.join("2026-03-09_14-30-00");
+        fs::create_dir(&ts_dir).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), None, None).unwrap();
+        assert_eq!(result, ts_dir);
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_with_host_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_a = tmp.path().join("server-a");
+        let host_b = tmp.path().join("server-b");
+        fs::create_dir(&host_a).unwrap();
+        fs::create_dir(&host_b).unwrap();
+        let ts = host_b.join("2026-03-09_14-30-00");
+        fs::create_dir(&ts).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), Some("server-b"), None).unwrap();
+        assert_eq!(result, ts);
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_host_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = resolve_backup_dir(tmp.path(), Some("nonexistent"), None);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No backups found for host")
+        );
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_picks_latest_timestamp() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+        fs::create_dir(host_dir.join("2026-03-01_10-00-00")).unwrap();
+        fs::create_dir(host_dir.join("2026-03-09_14-30-00")).unwrap();
+        fs::create_dir(host_dir.join("2026-03-05_12-00-00")).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), Some("myserver"), None).unwrap();
+        assert_eq!(result, host_dir.join("2026-03-09_14-30-00"));
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_excludes_symlinks_and_non_timestamp_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+        let ts_dir = host_dir.join("2026-03-09_14-30-00");
+        fs::create_dir(&ts_dir).unwrap();
+        fs::create_dir(host_dir.join("not-a-timestamp")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&ts_dir, host_dir.join("latest")).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), Some("myserver"), None).unwrap();
+        assert_eq!(result, ts_dir);
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_specific_backup_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+        let ts = host_dir.join("2026-03-09_14-30-00");
+        fs::create_dir(&ts).unwrap();
+
+        let result =
+            resolve_backup_dir(tmp.path(), Some("myserver"), Some("2026-03-09_14-30-00")).unwrap();
+        assert_eq!(result, ts);
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_specific_backup_id_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), Some("myserver"), Some("2026-01-01_00-00-00"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Backup not found"));
+    }
 }

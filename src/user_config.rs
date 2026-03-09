@@ -45,6 +45,9 @@ paperless_secret_key = ""
 
 primary_domain = ""
 
+restic_password = ""
+restic_repository = ""
+
 ssh_port = 22022
 
 tailscale_api_key = ""

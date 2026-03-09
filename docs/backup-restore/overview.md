@@ -2,6 +2,27 @@
 
 Auberge provides built-in backup and restore functionality for all self-hosted applications. Backups are stored locally and can be restored to the same host or migrated to a different host using the cross-host restore feature.
 
+## Architecture
+
+```mermaid
+graph TD
+    Local["Local Machine<br/>auberge CLI + SSH keys"]
+    Remote["Remote VPS<br/>App Services + PostgreSQL"]
+    Offsite["Backup Server<br/>Restic Repository"]
+
+    Local -- "backup create: rsync + scp over SSH" --> Remote
+    Remote -- "app data + pg_dump -Fc" --> Local
+    Local -- "backup push: restic + rclone" --> Offsite
+
+    style Local fill:#d4e6f1,stroke:#2471a3
+    style Remote fill:#d5f5e3,stroke:#1e8449
+    style Offsite fill:#fdebd0,stroke:#ca6f1e
+```
+
+- **Local Machine**: Where `auberge` CLI is installed, holds SSH keys, stores backups in `~/.local/share/auberge/backups/`
+- **Remote VPS**: Runs all apps deployed by `auberge`, source of backup data
+- **Backup Server**: Offsite destination for encrypted restic snapshots (e.g. [Filen](https://filen.io) via rclone)
+
 ## Supported Applications
 
 - **Baikal**: Calendar and contact data, configuration files
@@ -9,6 +30,8 @@ Auberge provides built-in backup and restore functionality for all self-hosted a
 - **Navidrome**: Database and configuration (music files excluded by default)
 - **Calibre**: Book library, metadata database, user database (login credentials)
 - **WebDAV**: All shared files
+- **Paperless-ngx**: Documents, media, PostgreSQL database (tags, correspondents, document types, users)
+- **YOURLS**: URL shortener data and configuration
 
 ## Backup Storage
 
@@ -34,9 +57,11 @@ Each app has a `latest` symlink pointing to the most recent backup for easy acce
 ### Backup Process
 
 1. Services are stopped via `systemctl stop {service}`
-2. Data is synced from remote using `rsync` with SSH
-3. Services are restarted via `systemctl start {service}`
-4. `latest` symlink is updated to point to new backup
+2. For apps with databases (Paperless-ngx): `pg_dump -Fc` creates a compressed database dump on the remote host
+3. Data is synced from remote using `rsync` with SSH
+4. Database dumps are downloaded via `scp` and cleaned up on remote
+5. Services are restarted via `systemctl start {service}`
+6. `latest` symlink is updated to point to new backup
 
 ### Restore Process
 
@@ -45,9 +70,20 @@ Each app has a `latest` symlink pointing to the most recent backup for easy acce
 3. User confirmation (hostname typing for cross-host, Y/N for same-host)
 4. Services are stopped on target
 5. Data is synced to remote using `rsync` with SSH
-6. File ownership is set to service user (e.g., `chown -R calibre:calibre /home/calibre`)
-7. Services are restarted on target
-8. Post-restore guidance displayed (cross-host only)
+6. For apps with databases: dump is uploaded via `scp`, restored with `pg_restore --clean --if-exists`, then Django migrations are run
+7. File ownership is set to service user (e.g., `chown -R calibre:calibre /home/calibre`)
+8. Services are restarted on target
+9. Post-restore guidance displayed (cross-host only)
+
+### Offsite Backup
+
+Local backups can be pushed to an offsite restic repository for disaster recovery. The workflow is:
+
+1. Create a local backup with `auberge backup create`
+2. Push it offsite with `auberge backup push`
+3. Apply retention policies with `auberge backup prune` (7 daily, 4 weekly, 12 monthly)
+
+For the full end-to-end setup guide (installing dependencies, configuring rclone, setting auberge config), see [backup push](../cli-reference/backup/push.md#setup).
 
 ### Excluded Files
 
@@ -77,3 +113,5 @@ This significantly speeds up operations that require multiple SSH commands.
 - [Cross-Host Migration](cross-host-migration.md)
 - [OPML Management](opml-management.md)
 - [Best Practices](best-practices.md)
+- [CLI Reference: backup push](../cli-reference/backup/push.md)
+- [CLI Reference: backup prune](../cli-reference/backup/prune.md)

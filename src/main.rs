@@ -14,8 +14,8 @@ use commands::ansible::{
     AnsibleCommands, run_ansible_bootstrap, run_ansible_check, run_ansible_run,
 };
 use commands::backup::{
-    BackupCommands, RestoreOptions, run_backup_create, run_backup_list, run_backup_restore,
-    run_export_opml, run_import_opml,
+    BackupCommands, RestoreOptions, run_backup_create, run_backup_list, run_backup_prune,
+    run_backup_push, run_backup_restore, run_export_opml, run_import_opml,
 };
 use commands::config_cmd::{
     ConfigCommands, run_config_edit, run_config_get, run_config_init, run_config_list,
@@ -160,6 +160,8 @@ async fn main() -> Result<()> {
                 yes,
                 skip_playbook_unsafe,
             }),
+            BackupCommands::Push { host, backup_id } => run_backup_push(host, backup_id),
+            BackupCommands::Prune { dry_run } => run_backup_prune(dry_run),
             BackupCommands::ExportOpml {
                 host,
                 output,
