@@ -19,11 +19,19 @@ pub enum AnsibleCommands {
     Run {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
-        #[arg(short, long, help = "Playbook path")]
+        #[arg(
+            short,
+            long,
+            help = "Playbook path (auto-resolved from tags if omitted)"
+        )]
         playbook: Option<PathBuf>,
         #[arg(short = 'C', long, help = "Run in check mode (dry run)")]
         check: bool,
-        #[arg(short, long, help = "Only run tasks with these tags")]
+        #[arg(
+            short,
+            long,
+            help = "Only run tasks with these tags (auto-deploys infra dependencies)"
+        )]
         tags: Option<Vec<String>>,
         #[arg(long, help = "Bootstrap user (overrides inventory setting)")]
         user: Option<String>,
