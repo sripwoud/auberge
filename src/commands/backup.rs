@@ -1724,6 +1724,19 @@ fn remote_pg_restore(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result
 
     if !output.status.success() {
         let combined_output = String::from_utf8_lossy(&output.stdout);
+        let ssh_stderr = String::from_utf8_lossy(&output.stderr);
+
+        if !ssh_stderr.trim().is_empty() {
+            eyre::bail!("pg_restore SSH error: {}", ssh_stderr.trim());
+        }
+
+        if combined_output.trim().is_empty() {
+            eyre::bail!(
+                "pg_restore failed with exit code {}",
+                output.status.code().unwrap_or(-1)
+            );
+        }
+
         let warnings_only = combined_output.lines().all(|line| {
             let trimmed = line.trim().to_lowercase();
             trimmed.is_empty()
