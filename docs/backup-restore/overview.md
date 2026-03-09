@@ -56,11 +56,13 @@ Each app has a `latest` symlink pointing to the most recent backup for easy acce
 
 ### Offsite Backup
 
-Local backups can be pushed to an offsite restic repository for disaster recovery:
+Local backups can be pushed to an offsite restic repository for disaster recovery. The workflow is:
 
-1. Configure `restic_repository` and `restic_password` via `auberge config set`
-2. Run `auberge backup push` to push the latest backup to the restic repository
-3. Run `auberge backup prune` to apply retention policies (7 daily, 4 weekly, 12 monthly)
+1. Create a local backup with `auberge backup create`
+2. Push it offsite with `auberge backup push`
+3. Apply retention policies with `auberge backup prune` (7 daily, 4 weekly, 12 monthly)
+
+For the full end-to-end setup guide (installing dependencies, configuring rclone, setting auberge config), see [backup push](../cli-reference/backup/push.md#setup).
 
 ### Excluded Files
 
