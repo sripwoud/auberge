@@ -8,17 +8,17 @@ domain = ""
 
 [cloudflare]
 # zone_id = ""
+cloudflare_dns_api_token = ""
+
+[tailscale]
+tailscale_authkey = ""
+tailscale_api_key = ""
 
 [identity]
 admin_user_name = ""
 admin_user_email = ""
 primary_domain = ""
 ssh_port = 22022
-
-[api_tokens]
-cloudflare_dns_api_token = ""
-tailscale_authkey = ""
-tailscale_api_key = ""
 
 [baikal]
 baikal_subdomain = ""

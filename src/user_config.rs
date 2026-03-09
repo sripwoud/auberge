@@ -14,17 +14,17 @@ domain = ""
 
 [cloudflare]
 # zone_id = ""
+cloudflare_dns_api_token = ""
+
+[tailscale]
+tailscale_authkey = ""
+tailscale_api_key = ""
 
 [identity]
 admin_user_name = ""
 admin_user_email = ""
 primary_domain = ""
 ssh_port = 22022
-
-[api_tokens]
-cloudflare_dns_api_token = ""
-tailscale_authkey = ""
-tailscale_api_key = ""
 
 [baikal]
 baikal_subdomain = ""
@@ -75,7 +75,8 @@ openclaw_claude_web_cookie = ""
 "#;
 
 const SENSITIVE_SECTIONS: &[&str] = &[
-    "api_tokens",
+    "cloudflare",
+    "tailscale",
     "baikal",
     "colporteur",
     "booklore",
@@ -288,7 +289,8 @@ mod tests {
         let table: toml::Table = toml::from_str(TEMPLATE).unwrap();
         assert!(table.contains_key("dns"));
         assert!(table.contains_key("identity"));
-        assert!(table.contains_key("api_tokens"));
+        assert!(table.contains_key("cloudflare"));
+        assert!(table.contains_key("tailscale"));
     }
 
     #[test]
@@ -324,7 +326,7 @@ mod tests {
             [identity]
             admin_user_name = "alice"
 
-            [api_tokens]
+            [cloudflare]
             cloudflare_dns_api_token = "secret123"
 
             [baikal]
