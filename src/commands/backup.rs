@@ -1009,6 +1009,7 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
             if local_dump.exists() {
                 eprintln!("  Restoring database: {}", db.db_name);
                 scp_to_remote(host, ssh_key, &local_dump, db.remote_dump_path)?;
+                remote_ssh_command(host, ssh_key, &format!("chmod 644 {}", db.remote_dump_path))?;
                 let pg_result = remote_pg_restore(host, ssh_key, db);
                 remote_pg_dump_cleanup(host, ssh_key, db);
                 pg_result?;
@@ -2114,5 +2115,104 @@ mod tests {
 
         let with = AppBackupConfig::navidrome(true);
         assert!(with.paths.contains(&"/srv/music"));
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_empty_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = resolve_backup_dir(tmp.path(), None, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No backups found"));
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_single_host_auto_selects() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+        let ts_dir = host_dir.join("2026-03-09_14-30-00");
+        fs::create_dir(&ts_dir).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), None, None).unwrap();
+        assert_eq!(result, ts_dir);
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_with_host_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_a = tmp.path().join("server-a");
+        let host_b = tmp.path().join("server-b");
+        fs::create_dir(&host_a).unwrap();
+        fs::create_dir(&host_b).unwrap();
+        let ts = host_b.join("2026-03-09_14-30-00");
+        fs::create_dir(&ts).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), Some("server-b"), None).unwrap();
+        assert_eq!(result, ts);
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_host_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = resolve_backup_dir(tmp.path(), Some("nonexistent"), None);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No backups found for host")
+        );
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_picks_latest_timestamp() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+        fs::create_dir(host_dir.join("2026-03-01_10-00-00")).unwrap();
+        fs::create_dir(host_dir.join("2026-03-09_14-30-00")).unwrap();
+        fs::create_dir(host_dir.join("2026-03-05_12-00-00")).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), Some("myserver"), None).unwrap();
+        assert_eq!(result, host_dir.join("2026-03-09_14-30-00"));
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_excludes_symlinks_and_non_timestamp_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+        let ts_dir = host_dir.join("2026-03-09_14-30-00");
+        fs::create_dir(&ts_dir).unwrap();
+        fs::create_dir(host_dir.join("not-a-timestamp")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&ts_dir, host_dir.join("latest")).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), Some("myserver"), None).unwrap();
+        assert_eq!(result, ts_dir);
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_specific_backup_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+        let ts = host_dir.join("2026-03-09_14-30-00");
+        fs::create_dir(&ts).unwrap();
+
+        let result =
+            resolve_backup_dir(tmp.path(), Some("myserver"), Some("2026-03-09_14-30-00")).unwrap();
+        assert_eq!(result, ts);
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_specific_backup_id_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), Some("myserver"), Some("2026-01-01_00-00-00"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Backup not found"));
     }
 }
