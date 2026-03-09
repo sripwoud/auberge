@@ -131,6 +131,11 @@ pub enum BackupCommands {
         #[arg(short, long, help = "Specific backup timestamp (default: latest)")]
         backup_id: Option<String>,
     },
+    #[command(about = "Prune old snapshots from offsite restic repository")]
+    Prune {
+        #[arg(short = 'n', long, help = "Show what would be pruned without removing")]
+        dry_run: bool,
+    },
     #[command(alias = "io", about = "Import OPML file to FreshRSS")]
     ImportOpml {
         #[arg(short = 'H', long, help = "Target host")]
@@ -1318,6 +1323,60 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         .unwrap_or("backup completed");
 
     output::success(&format!("Push complete: {}", snapshot_id.trim()));
+
+    Ok(())
+}
+
+pub fn run_backup_prune(dry_run: bool) -> Result<()> {
+    let config = UserConfig::load()?;
+    let missing = config.validate_required(&["restic_repository", "restic_password_secret"]);
+    if !missing.is_empty() {
+        eyre::bail!(
+            "Missing restic config: {}. Set with `auberge config set <key> <value>`",
+            missing.join(", ")
+        );
+    }
+
+    let restic_repo = config.get("restic_repository").unwrap();
+    let restic_password = config.get("restic_password_secret").unwrap();
+
+    let spinner = output::spinner("Pruning restic snapshots");
+
+    let mut cmd = Command::new("restic");
+    cmd.arg("forget")
+        .arg("--keep-daily")
+        .arg("7")
+        .arg("--keep-weekly")
+        .arg("4")
+        .arg("--keep-monthly")
+        .arg("12")
+        .arg("--prune")
+        .env("RESTIC_REPOSITORY", &restic_repo)
+        .env("RESTIC_PASSWORD", &restic_password);
+
+    if dry_run {
+        cmd.arg("--dry-run");
+    }
+
+    let output = cmd.output().wrap_err("Failed to run restic forget")?;
+
+    spinner.finish_and_clear();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eyre::bail!("restic prune failed: {}", stderr.trim());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.is_empty() {
+        eprintln!("{}", stdout.trim());
+    }
+
+    if dry_run {
+        output::info("Dry run completed (no changes made)");
+    } else {
+        output::success("Prune complete");
+    }
 
     Ok(())
 }
