@@ -141,6 +141,17 @@ impl UserConfig {
         result
     }
 
+    pub fn validate_required(&self, keys: &[&str]) -> Vec<String> {
+        keys.iter()
+            .filter(|&&key| match self.table.get(key) {
+                None => true,
+                Some(toml::Value::String(s)) => s.is_empty(),
+                _ => false,
+            })
+            .map(|&k| k.to_string())
+            .collect()
+    }
+
     pub fn flatten_for_ansible(&self) -> BTreeMap<String, String> {
         flatten_toml(&self.table)
     }
@@ -293,6 +304,51 @@ mod tests {
         assert_eq!(map.get("admin_user_name").unwrap(), "alice");
         assert_eq!(map.get("cloudflare_dns_api_token").unwrap(), "****");
         assert_eq!(map.get("baikal_admin_password").unwrap(), "(empty)");
+    }
+
+    #[test]
+    fn test_validate_required_catches_empty_strings() {
+        let toml_str = r#"
+            domain = "example.com"
+            admin_user_name = ""
+            ssh_port = 22022
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let missing = config.validate_required(&["domain", "admin_user_name", "ssh_port"]);
+        assert_eq!(missing, vec!["admin_user_name"]);
+    }
+
+    #[test]
+    fn test_validate_required_catches_missing_keys() {
+        let toml_str = r#"
+            domain = "example.com"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let missing = config.validate_required(&["domain", "admin_user_name"]);
+        assert_eq!(missing, vec!["admin_user_name"]);
+    }
+
+    #[test]
+    fn test_validate_required_returns_empty_when_all_set() {
+        let toml_str = r#"
+            domain = "example.com"
+            admin_user_name = "alice"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let missing = config.validate_required(&["domain", "admin_user_name"]);
+        assert!(missing.is_empty());
     }
 
     #[test]
