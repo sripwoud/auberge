@@ -152,7 +152,7 @@
 
 - name: Set Tailscale IPv4 fact for Blocky
   ansible.builtin.set_fact:
-    blocky_tailscale_ipv4: "{{ (blocky_tailscale_status_raw.stdout | from_json).TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
+    blocky_tailscale_ipv4: "{{ (blocky_tailscale_status_raw.stdout | from_json).Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
 
 - name: Configure blocky
   ansible.builtin.template:
