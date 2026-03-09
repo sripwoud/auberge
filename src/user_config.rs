@@ -45,7 +45,7 @@ paperless_secret_key = ""
 
 primary_domain = ""
 
-restic_password_secret = ""
+restic_password = ""
 restic_repository = ""
 
 ssh_port = 22022
