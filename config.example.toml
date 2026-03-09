@@ -1,68 +1,52 @@
-# Auberge unified configuration
-# Location: ~/.config/auberge/config.toml (mode 600)
-# Create with: auberge config init
-# All keys are passed as Ansible extra-vars at runtime
-
-[dns]
-domain = ""
-
-[cloudflare]
-# zone_id = ""
-cloudflare_dns_api_token = ""
-
-[tailscale]
-tailscale_authkey = ""
-tailscale_api_key = ""
-
-[identity]
-admin_user_name = ""
 admin_user_email = ""
-primary_domain = ""
-ssh_port = 22022
+admin_user_name = ""
 
-[baikal]
-baikal_subdomain = ""
 baikal_admin_password = ""
+baikal_subdomain = ""
 
-[colporteur]
-colporteur_subdomain = ""
-colporteur_feeds_password = ""
-
-[blocky]
 blocky_subdomain = ""
 
-[booklore]
-booklore_subdomain = ""
-booklore_db_password = ""
-booklore_admin_user = ""
 booklore_admin_password = ""
+booklore_admin_user = ""
+booklore_db_password = ""
+booklore_subdomain = ""
 
-[freshrss]
+cloudflare_dns_api_token = ""
+
+colporteur_feeds_password = ""
+colporteur_subdomain = ""
+
+domain = ""
+
 freshrss_subdomain = ""
 
-[navidrome]
 navidrome_subdomain = ""
 
-[webdav]
-webdav_subdomain = ""
-webdav_password = ""
-
-[yourls]
-yourls_subdomain = ""
-yourls_db_password = ""
-yourls_admin_user = ""
-yourls_admin_password = ""
-yourls_cookiekey = ""
-yourls_api_signature = ""
-
-[paperless]
-paperless_secret_key = ""
-paperless_admin_user = ""
-paperless_admin_password = ""
-paperless_db_password = ""
-
-[openclaw]
-openclaw_gateway_token = ""
 openclaw_claude_ai_session_key = ""
-openclaw_claude_web_session_key = ""
 openclaw_claude_web_cookie = ""
+openclaw_claude_web_session_key = ""
+openclaw_gateway_token = ""
+
+paperless_admin_password = ""
+paperless_admin_user = ""
+paperless_db_password = ""
+paperless_secret_key = ""
+
+primary_domain = ""
+
+ssh_port = 22022
+
+tailscale_api_key = ""
+tailscale_authkey = ""
+
+webdav_password = ""
+webdav_subdomain = ""
+
+yourls_admin_password = ""
+yourls_admin_user = ""
+yourls_api_signature = ""
+yourls_cookiekey = ""
+yourls_db_password = ""
+yourls_subdomain = ""
+
+zone_id = ""
