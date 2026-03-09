@@ -12,6 +12,12 @@ use std::process::{Command, Output, Stdio};
 use std::time::Instant;
 use tabled::Tabled;
 
+const SSH_MUX_OPTIONS: &[(&str, &str)] = &[
+    ("ControlMaster", "auto"),
+    ("ControlPath", "/tmp/ssh-%r@%h:%p"),
+    ("ControlPersist", "60s"),
+];
+
 struct SshSession<'a> {
     host: &'a Host,
     ssh_key: &'a Path,
@@ -22,20 +28,23 @@ impl<'a> SshSession<'a> {
         Self { host, ssh_key }
     }
 
+    fn mux_args() -> Vec<OsString> {
+        SSH_MUX_OPTIONS
+            .iter()
+            .flat_map(|(k, v)| [OsString::from("-o"), format!("{}={}", k, v).into()])
+            .collect()
+    }
+
     fn ssh_args(&self) -> Vec<OsString> {
-        vec![
-            "-o".into(),
-            "ControlMaster=auto".into(),
-            "-o".into(),
-            "ControlPath=/tmp/ssh-%r@%h:%p".into(),
-            "-o".into(),
-            "ControlPersist=60s".into(),
+        let mut args = Self::mux_args();
+        args.extend([
             "-i".into(),
             self.ssh_key.into(),
             "-p".into(),
             self.host.port.to_string().into(),
             format!("{}@{}", self.host.user, self.host.address).into(),
-        ]
+        ]);
+        args
     }
 
     fn run(&self, command: &str) -> Result<Output> {
@@ -56,26 +65,24 @@ impl<'a> SshSession<'a> {
     }
 
     fn rsync_e_arg(&self) -> String {
-        format!(
-            "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
-            self.ssh_key.display(),
-            self.host.port
-        )
+        let mux = SSH_MUX_OPTIONS
+            .iter()
+            .map(|(k, v)| format!("-o {}={}", k, v))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let key = shell_escape::escape(self.ssh_key.display().to_string().into());
+        format!("ssh {} -i {} -p {}", mux, key, self.host.port)
     }
 
     fn scp_args(&self) -> Vec<OsString> {
-        vec![
-            "-o".into(),
-            "ControlMaster=auto".into(),
-            "-o".into(),
-            "ControlPath=/tmp/ssh-%r@%h:%p".into(),
-            "-o".into(),
-            "ControlPersist=60s".into(),
+        let mut args = Self::mux_args();
+        args.extend([
             "-i".into(),
             self.ssh_key.into(),
             "-P".into(),
             self.host.port.to_string().into(),
-        ]
+        ]);
+        args
     }
 
     fn scp_to(&self, local: &Path, remote: &str) -> Result<()> {

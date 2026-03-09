@@ -29,5 +29,6 @@ shellexpand = "3.1"
 tabled = "0.16"
 indicatif = "0.17"
 openssl = { version = "0.10", features = ["vendored"] }
+shell-escape = "0.1.5"
 
 [dev-dependencies]
