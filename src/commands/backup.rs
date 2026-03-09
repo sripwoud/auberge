@@ -1770,7 +1770,7 @@ fn remote_ssh_command(host: &Host, ssh_key: &Path, command: &str) -> Result<std:
     Ok(output)
 }
 
-fn remote_ssh_command_raw(
+fn remote_ssh_command_unchecked(
     host: &Host,
     ssh_key: &Path,
     command: &str,
@@ -1797,7 +1797,7 @@ fn remote_pg_restore(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result
         "sudo -u postgres pg_restore --clean --if-exists -d {} {} 2>&1",
         db.db_name, db.remote_dump_path
     );
-    let output = remote_ssh_command_raw(host, ssh_key, &cmd)?;
+    let output = remote_ssh_command_unchecked(host, ssh_key, &cmd)?;
 
     if !output.status.success() {
         let combined_output = String::from_utf8_lossy(&output.stdout);
