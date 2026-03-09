@@ -64,7 +64,7 @@
       changed_when: tailscale_connect_result.rc == 0
       no_log: true
 
-    - name: Enforce accept-dns setting on server
+    - name: Ensure accept-dns matches configuration
       ansible.builtin.command: tailscale set --accept-dns={{ tailscale_accept_dns | bool | lower }}
       when: tailscale_is_authenticated
       changed_when: false
