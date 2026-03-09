@@ -35,7 +35,7 @@ restic version
 rclone version  # must be >= 1.73
 ```
 
-### Step 2: Configure rclone remote for Filen
+### Step 2: Configure rclone remote for [Filen](https://filen.io)
 
 Run the interactive config wizard:
 

@@ -21,7 +21,7 @@ graph TD
 
 - **Local Machine**: Where `auberge` CLI is installed, holds SSH keys, stores backups in `~/.local/share/auberge/backups/`
 - **Remote VPS**: Runs all apps deployed by `auberge`, source of backup data
-- **Backup Server**: Offsite destination for encrypted restic snapshots (e.g. Filen via rclone)
+- **Backup Server**: Offsite destination for encrypted restic snapshots (e.g. [Filen](https://filen.io) via rclone)
 
 ## Supported Applications
 
