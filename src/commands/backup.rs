@@ -1756,21 +1756,7 @@ fn validate_key_file(key_path: &Path) -> Result<()> {
 }
 
 fn remote_ssh_command(host: &Host, ssh_key: &Path, command: &str) -> Result<std::process::Output> {
-    let output = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(command)
-        .output()
-        .wrap_err("Failed to execute SSH command")?;
+    let output = SshSession::new(host, ssh_key).run(command)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1785,21 +1771,7 @@ fn remote_ssh_command_raw(
     ssh_key: &Path,
     command: &str,
 ) -> Result<std::process::Output> {
-    Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(command)
-        .output()
-        .wrap_err("Failed to execute SSH command")
+    SshSession::new(host, ssh_key).run(command)
 }
 
 fn remote_pg_dump(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result<()> {
