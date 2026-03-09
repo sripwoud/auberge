@@ -64,6 +64,11 @@
       changed_when: tailscale_connect_result.rc == 0
       no_log: true
 
+    - name: Ensure accept-dns is disabled on server
+      ansible.builtin.command: tailscale set --accept-dns=false
+      when: tailscale_is_authenticated
+      changed_when: false
+
     - name: Configure UFW firewall for Tailscale
       when: ansible_facts.services['ufw'] is defined and ansible_facts.services['ufw'].state == 'running'
       block:

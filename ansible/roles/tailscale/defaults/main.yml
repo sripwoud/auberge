@@ -4,6 +4,6 @@ tailscale_authkey: "" # Required for initial auth — set in config.toml
 tailscale_hostname: "{{ ansible_facts['hostname'] }}" # Hostname to use in tailnet
 tailscale_accept_routes: false # Accept subnet routes advertised by other nodes
 tailscale_advertise_exit_node: false # Advertise as exit node
-tailscale_accept_dns: true # Accept DNS configuration from admin console
+tailscale_accept_dns: false
 tailscale_advertise_tags: [] # List of ACL tags (e.g., ["tag:server", "tag:prod"])
 tailscale_extra_args: "" # Additional arguments for tailscale up command
