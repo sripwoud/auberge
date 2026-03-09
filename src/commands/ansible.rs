@@ -86,6 +86,26 @@ fn select_or_use_host(host_arg: Option<String>) -> Result<Host> {
     }
 }
 
+fn validate_config_for_playbook(playbook_name: &str) -> Result<()> {
+    let config = crate::user_config::UserConfig::load()?;
+    let required_keys = required_config_keys(playbook_name);
+    let missing = config.validate_required(&required_keys);
+    if !missing.is_empty() {
+        output::error("Missing required config values:");
+        for key in &missing {
+            output::error(&format!(
+                "  '{}' is required. Run: auberge config set {} <VALUE>",
+                key, key
+            ));
+        }
+        eyre::bail!(
+            "{} required config value(s) missing in config.toml",
+            missing.len()
+        );
+    }
+    Ok(())
+}
+
 fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<Playbook> {
     match playbook_arg {
         Some(path) => Ok(Playbook::from_path(path)),
@@ -125,23 +145,9 @@ pub fn run_ansible_run(
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    let config = crate::user_config::UserConfig::load()?;
-    let required_keys = required_config_keys(playbook_name);
-    let missing = config.validate_required(&required_keys);
-    if !missing.is_empty() {
-        output::error("Missing required config values:");
-        for key in &missing {
-            output::error(&format!(
-                "  '{}' is required. Run: auberge config set {} <VALUE>",
-                key, key
-            ));
-        }
-        eyre::bail!(
-            "{} required config value(s) missing in config.toml",
-            missing.len()
-        );
-    }
+    validate_config_for_playbook(playbook_name)?;
 
+    let config = crate::user_config::UserConfig::load()?;
     let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
 
     if is_fresh_bootstrap {
@@ -322,22 +328,7 @@ pub fn run_ansible_bootstrap(
     user: Option<String>,
     force: bool,
 ) -> Result<()> {
-    let config = crate::user_config::UserConfig::load()?;
-    let required_keys = required_config_keys("bootstrap.yml");
-    let missing = config.validate_required(&required_keys);
-    if !missing.is_empty() {
-        output::error("Missing required config values:");
-        for key in &missing {
-            output::error(&format!(
-                "  '{}' is required. Run: auberge config set {} <VALUE>",
-                key, key
-            ));
-        }
-        eyre::bail!(
-            "{} required config value(s) missing in config.toml",
-            missing.len()
-        );
-    }
+    validate_config_for_playbook("bootstrap.yml")?;
 
     let host = get_host(&host_name, None)?;
     let bootstrap_playbook =

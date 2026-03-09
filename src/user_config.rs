@@ -145,7 +145,7 @@ impl UserConfig {
         keys.iter()
             .filter(|&&key| match self.table.get(key) {
                 None => true,
-                Some(toml::Value::String(s)) => s.is_empty(),
+                Some(toml::Value::String(s)) => s.trim().is_empty(),
                 _ => false,
             })
             .map(|&k| k.to_string())
@@ -334,6 +334,22 @@ mod tests {
         };
         let missing = config.validate_required(&["domain", "admin_user_name"]);
         assert_eq!(missing, vec!["admin_user_name"]);
+    }
+
+    #[test]
+    fn test_validate_required_catches_whitespace_only_values() {
+        let toml_str = r#"
+            domain = "  "
+            admin_user_name = "	"
+            ssh_port = 22022
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let missing = config.validate_required(&["domain", "admin_user_name", "ssh_port"]);
+        assert_eq!(missing, vec!["domain", "admin_user_name"]);
     }
 
     #[test]

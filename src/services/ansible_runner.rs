@@ -73,9 +73,7 @@ pub fn required_config_keys(playbook_name: &str) -> Vec<&'static str> {
         "bootstrap.yml" => {
             keys.extend(["admin_user_name", "ssh_port"]);
         }
-        "hardening.yml" => {
-            keys.extend(["admin_user_name", "ssh_port"]);
-        }
+        "hardening.yml" => {}
         "infrastructure.yml" => {
             keys.extend([
                 "admin_user_name",
@@ -90,7 +88,6 @@ pub fn required_config_keys(playbook_name: &str) -> Vec<&'static str> {
                 "domain",
                 "primary_domain",
                 "cloudflare_dns_api_token",
-                "zone_id",
             ]);
         }
         "auberge.yml" => {
@@ -101,7 +98,6 @@ pub fn required_config_keys(playbook_name: &str) -> Vec<&'static str> {
                 "ssh_port",
                 "cloudflare_dns_api_token",
                 "tailscale_authkey",
-                "zone_id",
             ]);
         }
         _ => {
@@ -237,7 +233,13 @@ mod tests {
     fn test_required_config_keys_apps() {
         let keys = required_config_keys("apps.yml");
         assert!(keys.contains(&"cloudflare_dns_api_token"));
-        assert!(keys.contains(&"zone_id"));
+        assert!(!keys.contains(&"zone_id"));
+    }
+
+    #[test]
+    fn test_required_config_keys_hardening_is_empty() {
+        let keys = required_config_keys("hardening.yml");
+        assert!(keys.is_empty());
     }
 
     #[test]

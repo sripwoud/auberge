@@ -25,14 +25,14 @@ Executes Ansible playbooks on target hosts. Supports check mode (dry run), tag f
 
 Before executing any playbook, the CLI validates required config values from `config.toml` and exits with an error if any are missing or empty.
 
-| Playbook           | Required config keys                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------ |
-| bootstrap.yml      | `admin_user_name`, `ssh_port`                                                        |
-| hardening.yml      | `admin_user_name`, `ssh_port`                                                        |
-| infrastructure.yml | `admin_user_name`, `domain`, `primary_domain`, `tailscale_authkey`                   |
-| apps.yml           | `admin_user_name`, `domain`, `primary_domain`, `cloudflare_dns_api_token`, `zone_id` |
-| auberge.yml        | all of the above combined                                                            |
-| other playbooks    | `admin_user_name`, `domain`, `primary_domain`                                        |
+| Playbook           | Required config keys                                                      |
+| ------------------ | ------------------------------------------------------------------------- |
+| bootstrap.yml      | `admin_user_name`, `ssh_port`                                             |
+| hardening.yml      | (none)                                                                    |
+| infrastructure.yml | `admin_user_name`, `domain`, `primary_domain`, `tailscale_authkey`        |
+| apps.yml           | `admin_user_name`, `domain`, `primary_domain`, `cloudflare_dns_api_token` |
+| auberge.yml        | all of the above combined                                                 |
+| other playbooks    | `admin_user_name`, `domain`, `primary_domain`                             |
 
 Example error output:
 
