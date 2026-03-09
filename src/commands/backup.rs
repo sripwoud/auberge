@@ -2011,3 +2011,66 @@ fn validate_cross_host_restore(
     eprintln!("✓ Pre-flight validation completed\n");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_paperless_has_db_config() {
+        let config = AppBackupConfig::paperless();
+        assert!(config.db.is_some());
+    }
+
+    #[test]
+    fn test_other_apps_have_no_db_config() {
+        assert!(AppBackupConfig::baikal().db.is_none());
+        assert!(AppBackupConfig::freshrss().db.is_none());
+        assert!(AppBackupConfig::navidrome(false).db.is_none());
+        assert!(AppBackupConfig::navidrome(true).db.is_none());
+        assert!(AppBackupConfig::calibre().db.is_none());
+        assert!(AppBackupConfig::webdav().db.is_none());
+        assert!(AppBackupConfig::yourls().db.is_none());
+    }
+
+    #[test]
+    fn test_db_backup_config_fields() {
+        let config = AppBackupConfig::paperless();
+        let db = config.db.unwrap();
+        assert_eq!(db.db_name, "paperless");
+        assert_eq!(db.remote_dump_path, "/tmp/paperless_db.dump");
+    }
+
+    #[test]
+    fn test_push_variant_exists() {
+        let _push = BackupCommands::Push {
+            host: None,
+            backup_id: None,
+        };
+    }
+
+    #[test]
+    fn test_prune_variant_exists() {
+        let _prune = BackupCommands::Prune { dry_run: true };
+    }
+
+    #[test]
+    fn test_all_apps_returns_seven() {
+        let all = AppBackupConfig::all();
+        assert_eq!(all.len(), 7);
+    }
+
+    #[test]
+    fn test_by_name_unknown_returns_none() {
+        assert!(AppBackupConfig::by_name("nonexistent", false).is_none());
+    }
+
+    #[test]
+    fn test_navidrome_music_paths() {
+        let without = AppBackupConfig::navidrome(false);
+        assert!(!without.paths.contains(&"/srv/music"));
+
+        let with = AppBackupConfig::navidrome(true);
+        assert!(with.paths.contains(&"/srv/music"));
+    }
+}
