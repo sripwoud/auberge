@@ -21,28 +21,14 @@ auberge host show <name>
 
 ## Key Configuration Values
 
-### Identity (config.toml)
-
 ```bash
 auberge config set admin_user_name <username>
 auberge config set admin_user_email <email>
 auberge config set primary_domain <domain>
 auberge config set ssh_port <port>
-```
-
-### API Tokens (config.toml)
-
-```bash
 auberge config set cloudflare_dns_api_token <token>
 auberge config set tailscale_authkey <key>
 auberge config set tailscale_api_key <key>
-```
-
-### Application Settings (config.toml)
-
-Subdomain configuration for each service:
-
-```bash
 auberge config set baikal_subdomain calendrier
 auberge config set blocky_subdomain dns
 auberge config set freshrss_subdomain rss

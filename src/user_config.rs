@@ -9,84 +9,61 @@ pub struct UserConfig {
     table: toml::Table,
 }
 
-const TEMPLATE: &str = r#"[dns]
-domain = ""
-
-[cloudflare]
-# zone_id = ""
-
-[identity]
+const TEMPLATE: &str = r#"admin_user_email = ""
 admin_user_name = ""
-admin_user_email = ""
-primary_domain = ""
-ssh_port = 22022
 
-[api_tokens]
-cloudflare_dns_api_token = ""
-tailscale_authkey = ""
-tailscale_api_key = ""
-namecheap_api_key = ""
-namecheap_api_user = ""
-namecheap_client_ip = ""
-
-[baikal]
-baikal_subdomain = ""
 baikal_admin_password = ""
+baikal_subdomain = ""
 
-[colporteur]
-colporteur_subdomain = ""
-colporteur_feeds_password = ""
-
-[blocky]
 blocky_subdomain = ""
 
-[booklore]
-booklore_subdomain = ""
-booklore_db_password = ""
-booklore_admin_user = ""
 booklore_admin_password = ""
+booklore_admin_user = ""
+booklore_db_password = ""
+booklore_subdomain = ""
 
-[freshrss]
+cloudflare_dns_api_token = ""
+
+colporteur_feeds_password = ""
+colporteur_subdomain = ""
+
+domain = ""
+
 freshrss_subdomain = ""
 
-[navidrome]
 navidrome_subdomain = ""
 
-[webdav]
-webdav_subdomain = ""
-webdav_password = ""
-
-[yourls]
-yourls_subdomain = ""
-yourls_db_password = ""
-yourls_admin_user = ""
-yourls_admin_password = ""
-yourls_cookiekey = ""
-yourls_api_signature = ""
-
-[paperless]
-paperless_secret_key = ""
-paperless_admin_user = ""
-paperless_admin_password = ""
-paperless_db_password = ""
-
-[openclaw]
-openclaw_gateway_token = ""
 openclaw_claude_ai_session_key = ""
-openclaw_claude_web_session_key = ""
 openclaw_claude_web_cookie = ""
+openclaw_claude_web_session_key = ""
+openclaw_gateway_token = ""
+
+paperless_admin_password = ""
+paperless_admin_user = ""
+paperless_db_password = ""
+paperless_secret_key = ""
+
+primary_domain = ""
+
+ssh_port = 22022
+
+tailscale_api_key = ""
+tailscale_authkey = ""
+
+webdav_password = ""
+webdav_subdomain = ""
+
+yourls_admin_password = ""
+yourls_admin_user = ""
+yourls_api_signature = ""
+yourls_cookiekey = ""
+yourls_db_password = ""
+yourls_subdomain = ""
+
+zone_id = ""
 "#;
 
-const SENSITIVE_SECTIONS: &[&str] = &[
-    "api_tokens",
-    "baikal",
-    "colporteur",
-    "booklore",
-    "webdav",
-    "yourls",
-    "openclaw",
-    "paperless",
-];
+const SENSITIVE_SUFFIXES: &[&str] = &["password", "key", "token", "secret", "cookie", "signature"];
 
 impl UserConfig {
     pub fn path() -> Result<PathBuf> {
@@ -125,59 +102,41 @@ impl UserConfig {
     }
 
     pub fn get(&self, key: &str) -> Option<String> {
-        for (_section, value) in &self.table {
-            if let toml::Value::Table(inner) = value
-                && let Some(v) = inner.get(key)
-            {
-                return value_to_string(v);
-            }
-        }
         self.table.get(key).and_then(value_to_string)
     }
 
     pub fn set(&mut self, key: &str, value: &str) -> Result<bool> {
-        for (_section, section_value) in self.table.iter_mut() {
-            if let toml::Value::Table(inner) = section_value
-                && inner.contains_key(key)
-            {
-                inner.insert(key.to_string(), toml::Value::String(value.to_string()));
-                self.save()?;
-                return Ok(true);
-            }
+        if !self.table.contains_key(key) {
+            return Ok(false);
         }
-        Ok(false)
+        self.table
+            .insert(key.to_string(), toml::Value::String(value.to_string()));
+        self.save()?;
+        Ok(true)
     }
 
     pub fn remove(&mut self, key: &str) -> Result<bool> {
-        for (_section, section_value) in self.table.iter_mut() {
-            if let toml::Value::Table(inner) = section_value
-                && inner.remove(key).is_some()
-            {
-                self.save()?;
-                return Ok(true);
-            }
+        if self.table.remove(key).is_none() {
+            return Ok(false);
         }
-        Ok(false)
+        self.save()?;
+        Ok(true)
     }
 
     pub fn keys_redacted(&self) -> Vec<(String, String)> {
         let mut result = Vec::new();
-        for (section, value) in &self.table {
-            if let toml::Value::Table(inner) = value {
-                let is_sensitive = SENSITIVE_SECTIONS.contains(&section.as_str());
-                for (key, val) in inner {
-                    let display = if is_sensitive {
-                        match val {
-                            toml::Value::String(s) if s.is_empty() => "(empty)".to_string(),
-                            toml::Value::String(_) => "****".to_string(),
-                            other => value_to_string(other).unwrap_or_default(),
-                        }
-                    } else {
-                        value_to_string(val).unwrap_or_default()
-                    };
-                    result.push((key.clone(), display));
+        for (key, val) in &self.table {
+            let is_sensitive = SENSITIVE_SUFFIXES.iter().any(|s| key.contains(s));
+            let display = if is_sensitive {
+                match val {
+                    toml::Value::String(s) if s.is_empty() => "(empty)".to_string(),
+                    toml::Value::String(_) => "****".to_string(),
+                    other => value_to_string(other).unwrap_or_default(),
                 }
-            }
+            } else {
+                value_to_string(val).unwrap_or_default()
+            };
+            result.push((key.clone(), display));
         }
         result
     }
@@ -233,10 +192,7 @@ mod tests {
     #[test]
     fn test_flatten_toml() {
         let toml_str = r#"
-            [dns]
             domain = "example.com"
-
-            [identity]
             ssh_port = 22022
             admin_user_name = "alice"
         "#;
@@ -245,8 +201,6 @@ mod tests {
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
         assert_eq!(flat.get("admin_user_name").unwrap(), "alice");
-        assert!(!flat.contains_key("dns"));
-        assert!(!flat.contains_key("identity"));
     }
 
     #[test]
@@ -289,9 +243,10 @@ mod tests {
     #[test]
     fn test_template_parses() {
         let table: toml::Table = toml::from_str(TEMPLATE).unwrap();
-        assert!(table.contains_key("dns"));
-        assert!(table.contains_key("identity"));
-        assert!(table.contains_key("api_tokens"));
+        assert!(table.contains_key("domain"));
+        assert!(table.contains_key("admin_user_name"));
+        assert!(table.contains_key("cloudflare_dns_api_token"));
+        assert!(table.contains_key("tailscale_authkey"));
     }
 
     #[test]
@@ -324,13 +279,8 @@ mod tests {
     #[test]
     fn test_keys_redacted() {
         let toml_str = r#"
-            [identity]
             admin_user_name = "alice"
-
-            [api_tokens]
             cloudflare_dns_api_token = "secret123"
-
-            [baikal]
             baikal_admin_password = ""
         "#;
         let table: toml::Table = toml::from_str(toml_str).unwrap();
@@ -348,13 +298,8 @@ mod tests {
     #[test]
     fn test_flatten_for_ansible() {
         let toml_str = r#"
-            [dns]
             domain = "example.com"
-
-            [identity]
             ssh_port = 22022
-
-            [baikal]
             baikal_admin_password = "secret"
         "#;
         let table: toml::Table = toml::from_str(toml_str).unwrap();
