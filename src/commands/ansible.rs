@@ -30,6 +30,7 @@ pub enum AnsibleCommands {
         #[arg(
             short,
             long,
+            value_delimiter = ',',
             help = "Only run tasks with these tags (auto-deploys infra dependencies)"
         )]
         tags: Option<Vec<String>>,
