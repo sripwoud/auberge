@@ -25,9 +25,6 @@ ssh_port = 22022
 cloudflare_dns_api_token = ""
 tailscale_authkey = ""
 tailscale_api_key = ""
-namecheap_api_key = ""
-namecheap_api_user = ""
-namecheap_client_ip = ""
 
 [baikal]
 baikal_subdomain = ""
