@@ -179,6 +179,13 @@
     daemon_reload: true
     enabled: true
 
+- name: Wait for Blocky to listen on Tailscale interface
+  ansible.builtin.wait_for:
+    host: "{{ blocky_tailscale_ipv4 }}"
+    port: 53
+    timeout: 30
+  when: blocky_tailscale_ipv4 is defined
+
 - name: Configure Tailscale DNS to use Blocky
   when: tailscale_api_key is defined and tailscale_api_key | length > 0
   no_log: true

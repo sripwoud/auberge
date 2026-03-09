@@ -65,7 +65,7 @@
       no_log: true
 
     - name: Ensure accept-dns is disabled on server
-      ansible.builtin.command: tailscale set --accept-dns=false
+      ansible.builtin.command: tailscale set --accept-dns={{ tailscale_accept_dns | bool | lower }}
       when: tailscale_is_authenticated
       changed_when: false
 
