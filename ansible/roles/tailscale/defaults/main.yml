@@ -7,3 +7,4 @@ tailscale_advertise_exit_node: false # Advertise as exit node
 tailscale_accept_dns: true # Accept DNS configuration from admin console
 tailscale_advertise_tags: [] # List of ACL tags (e.g., ["tag:server", "tag:prod"])
 tailscale_extra_args: "" # Additional arguments for tailscale up command
+tailscale_api_key: ""
