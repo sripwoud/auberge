@@ -5,11 +5,150 @@ use crate::user_config::UserConfig;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::time::Instant;
 use tabled::Tabled;
+
+const SSH_MUX_OPTIONS: &[(&str, &str)] = &[
+    ("ControlMaster", "auto"),
+    ("ControlPath", "/tmp/ssh-%r@%h:%p"),
+    ("ControlPersist", "60s"),
+];
+
+struct SshSession<'a> {
+    host: &'a Host,
+    ssh_key: &'a Path,
+}
+
+impl<'a> SshSession<'a> {
+    fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
+        Self { host, ssh_key }
+    }
+
+    fn mux_args() -> Vec<OsString> {
+        SSH_MUX_OPTIONS
+            .iter()
+            .flat_map(|(k, v)| [OsString::from("-o"), format!("{}={}", k, v).into()])
+            .collect()
+    }
+
+    fn ssh_args(&self) -> Vec<OsString> {
+        let mut args = Self::mux_args();
+        args.extend([
+            "-i".into(),
+            self.ssh_key.into(),
+            "-p".into(),
+            self.host.port.to_string().into(),
+            format!("{}@{}", self.host.user, self.host.address).into(),
+        ]);
+        args
+    }
+
+    fn run(&self, command: &str) -> Result<Output> {
+        Command::new("ssh")
+            .args(self.ssh_args())
+            .arg(command)
+            .output()
+            .wrap_err("Failed to execute SSH command")
+    }
+
+    fn run_raw(&self, args: &[&str]) -> Result<Output> {
+        let mut cmd = Command::new("ssh");
+        cmd.args(self.ssh_args());
+        for arg in args {
+            cmd.arg(arg);
+        }
+        cmd.output().wrap_err("Failed to execute SSH command")
+    }
+
+    fn rsync_e_arg(&self) -> String {
+        let mux = SSH_MUX_OPTIONS
+            .iter()
+            .map(|(k, v)| format!("-o {}={}", k, v))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let key = shell_escape::escape(self.ssh_key.display().to_string().into());
+        format!("ssh {} -i {} -p {}", mux, key, self.host.port)
+    }
+
+    fn scp_args(&self) -> Vec<OsString> {
+        let mut args = Self::mux_args();
+        args.extend([
+            "-i".into(),
+            self.ssh_key.into(),
+            "-P".into(),
+            self.host.port.to_string().into(),
+        ]);
+        args
+    }
+
+    fn scp_to(&self, local: &Path, remote: &str) -> Result<()> {
+        let output = Command::new("scp")
+            .args(self.scp_args())
+            .arg(local)
+            .arg(format!(
+                "{}@{}:{}",
+                self.host.user, self.host.address, remote
+            ))
+            .output()
+            .wrap_err("Failed to upload file via scp")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = stderr.trim();
+            if stderr.is_empty() {
+                eyre::bail!("scp to {}:{} failed", self.host.address, remote);
+            } else {
+                eyre::bail!("scp to {}:{} failed: {}", self.host.address, remote, stderr);
+            }
+        }
+        Ok(())
+    }
+
+    fn scp_from(&self, remote: &str, local: &Path) -> Result<()> {
+        let output = Command::new("scp")
+            .args(self.scp_args())
+            .arg(format!(
+                "{}@{}:{}",
+                self.host.user, self.host.address, remote
+            ))
+            .arg(local)
+            .output()
+            .wrap_err("Failed to download file via scp")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = stderr.trim();
+            if stderr.is_empty() {
+                eyre::bail!("scp from {}:{} failed", self.host.address, remote);
+            } else {
+                eyre::bail!(
+                    "scp from {}:{} failed: {}",
+                    self.host.address,
+                    remote,
+                    stderr
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn systemctl(&self, action: &str, service: &str) -> Result<()> {
+        let status = Command::new("ssh")
+            .args(self.ssh_args())
+            .arg("sudo")
+            .arg("systemctl")
+            .arg(action)
+            .arg(service)
+            .status()
+            .wrap_err_with(|| format!("Failed to {} service {}", action, service))?;
+        if !status.success() {
+            eyre::bail!("systemctl {} {} failed", action, service);
+        }
+        Ok(())
+    }
+}
 
 const RSYNC_EXCLUDES: &[&str] = &[
     ".git",
@@ -1092,12 +1231,9 @@ fn rsync_to_remote(
         .parent()
         .ok_or_else(|| eyre::eyre!("Invalid remote path: {}", remote_path))?;
 
+    let session = SshSession::new(host, ssh_key);
     let _ = Command::new("ssh")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
+        .args(session.ssh_args())
         .arg("sudo")
         .arg("mkdir")
         .arg("-p")
@@ -1116,16 +1252,9 @@ fn rsync_to_remote(
     }
 
     cmd.arg("-e")
-        .arg(format!(
-            "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
-            ssh_key.display(),
-            host.port
-        ))
+        .arg(session.rsync_e_arg())
         .arg(format!("{}/", local_source.display()))
-        .arg(format!(
-            "{}@{}:{}",
-            host.user, host.address, remote_path
-        ));
+        .arg(format!("{}@{}:{}", host.user, host.address, remote_path));
 
     let status = cmd.status().wrap_err("Failed to execute rsync")?;
 
@@ -1156,15 +1285,8 @@ pub fn run_export_opml(
         user
     );
 
-    let opml_output = Command::new("ssh")
-        .arg("-i")
-        .arg(&ssh_key_path)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(remote_cmd)
-        .output()
-        .wrap_err("Failed to execute SSH command")?;
+    let session = SshSession::new(&host, &ssh_key_path);
+    let opml_output = session.run(&remote_cmd)?;
 
     if !opml_output.status.success() {
         let stderr = String::from_utf8_lossy(&opml_output.stderr);
@@ -1202,22 +1324,10 @@ pub fn run_import_opml(
     let remote_opml_path = format!("/tmp/freshrss_import_{}.opml", user);
 
     eprintln!("  Uploading OPML file...");
-    let scp_status = Command::new("scp")
-        .arg("-i")
-        .arg(&ssh_key_path)
-        .arg("-P")
-        .arg(host.port.to_string())
-        .arg(&input)
-        .arg(format!(
-            "{}@{}:{}",
-            host.user, host.address, remote_opml_path
-        ))
-        .status()
+    let session = SshSession::new(&host, &ssh_key_path);
+    session
+        .scp_to(&input, &remote_opml_path)
         .wrap_err("Failed to upload OPML file")?;
-
-    if !scp_status.success() {
-        eyre::bail!("Failed to upload OPML file");
-    }
 
     eprintln!("  Importing feeds...");
     let import_cmd = format!(
@@ -1225,14 +1335,8 @@ pub fn run_import_opml(
         user, remote_opml_path, remote_opml_path
     );
 
-    let import_output = Command::new("ssh")
-        .arg("-i")
-        .arg(&ssh_key_path)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(import_cmd)
-        .output()
+    let import_output = session
+        .run(&import_cmd)
         .wrap_err("Failed to execute import command")?;
 
     if !import_output.status.success() {
@@ -1656,21 +1760,7 @@ fn validate_key_file(key_path: &Path) -> Result<()> {
 }
 
 fn remote_ssh_command(host: &Host, ssh_key: &Path, command: &str) -> Result<std::process::Output> {
-    let output = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(command)
-        .output()
-        .wrap_err("Failed to execute SSH command")?;
+    let output = SshSession::new(host, ssh_key).run(command)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1680,26 +1770,12 @@ fn remote_ssh_command(host: &Host, ssh_key: &Path, command: &str) -> Result<std:
     Ok(output)
 }
 
-fn remote_ssh_command_raw(
+fn remote_ssh_command_unchecked(
     host: &Host,
     ssh_key: &Path,
     command: &str,
 ) -> Result<std::process::Output> {
-    Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(command)
-        .output()
-        .wrap_err("Failed to execute SSH command")
+    SshSession::new(host, ssh_key).run(command)
 }
 
 fn remote_pg_dump(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result<()> {
@@ -1721,7 +1797,7 @@ fn remote_pg_restore(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result
         "sudo -u postgres pg_restore --clean --if-exists -d {} {} 2>&1",
         db.db_name, db.remote_dump_path
     );
-    let output = remote_ssh_command_raw(host, ssh_key, &cmd)?;
+    let output = remote_ssh_command_unchecked(host, ssh_key, &cmd)?;
 
     if !output.status.success() {
         let combined_output = String::from_utf8_lossy(&output.stdout);
@@ -1758,82 +1834,15 @@ fn scp_from_remote(
     remote_path: &str,
     local_path: &Path,
 ) -> Result<()> {
-    let status = Command::new("scp")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-P")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
-        .arg(local_path)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .wrap_err("Failed to execute scp")?;
-
-    if !status.success() {
-        eyre::bail!("scp failed for {}", remote_path);
-    }
-
-    Ok(())
+    SshSession::new(host, ssh_key).scp_from(remote_path, local_path)
 }
 
 fn scp_to_remote(host: &Host, ssh_key: &Path, local_path: &Path, remote_path: &str) -> Result<()> {
-    let status = Command::new("scp")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-P")
-        .arg(host.port.to_string())
-        .arg(local_path)
-        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .wrap_err("Failed to execute scp")?;
-
-    if !status.success() {
-        eyre::bail!("scp failed for {}", remote_path);
-    }
-
-    Ok(())
+    SshSession::new(host, ssh_key).scp_to(local_path, remote_path)
 }
 
 fn remote_systemctl(host: &Host, ssh_key: &Path, action: &str, service: &str) -> Result<()> {
-    let status = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg("sudo")
-        .arg("systemctl")
-        .arg(action)
-        .arg(service)
-        .status()
-        .wrap_err_with(|| format!("Failed to {} service {}", action, service))?;
-
-    if !status.success() {
-        eyre::bail!("systemctl {} {} failed", action, service);
-    }
-
-    Ok(())
+    SshSession::new(host, ssh_key).systemctl(action, service)
 }
 
 fn set_remote_ownership(
@@ -1843,18 +1852,9 @@ fn set_remote_ownership(
     user: &str,
     group: &str,
 ) -> Result<()> {
+    let session = SshSession::new(host, ssh_key);
     let status = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
+        .args(session.ssh_args())
         .arg("sudo")
         .arg("chown")
         .arg("-R")
@@ -1881,6 +1881,7 @@ fn rsync_from_remote(
     remote_path: &str,
     local_dest: &Path,
 ) -> Result<()> {
+    let session = SshSession::new(host, ssh_key);
     let mut cmd = Command::new("rsync");
     cmd.arg("-az")
         .arg("--relative")
@@ -1893,15 +1894,8 @@ fn rsync_from_remote(
     }
 
     cmd.arg("-e")
-        .arg(format!(
-            "ssh -o ControlMaster=auto -o ControlPath=/tmp/ssh-%r@%h:%p -o ControlPersist=60s -i {} -p {}",
-            ssh_key.display(),
-            host.port
-        ))
-        .arg(format!(
-            "{}@{}:{}",
-            host.user, host.address, remote_path
-        ))
+        .arg(session.rsync_e_arg())
+        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
         .arg(local_dest);
 
     let status = cmd.status().wrap_err("Failed to execute rsync")?;
@@ -1914,43 +1908,18 @@ fn rsync_from_remote(
 }
 
 fn check_remote_service_exists(host: &Host, ssh_key: &Path, service: &str) -> Result<bool> {
-    let output = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg("systemctl")
-        .arg("list-unit-files")
-        .arg(format!("{}.service", service))
-        .output()
-        .wrap_err("Failed to check service existence")?;
-
+    let output = SshSession::new(host, ssh_key).run_raw(&[
+        "systemctl",
+        "list-unit-files",
+        &format!("{}.service", service),
+    ])?;
     Ok(output.status.success()
         && String::from_utf8_lossy(&output.stdout).contains(&format!("{}.service", service)))
 }
 
 fn check_remote_disk_space(host: &Host, ssh_key: &Path, path: &str) -> Result<u64> {
-    let output = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(format!("df --output=avail {} | tail -1", path))
-        .output()
+    let output = SshSession::new(host, ssh_key)
+        .run(&format!("df --output=avail {} | tail -1", path))
         .wrap_err("Failed to check disk space")?;
 
     if !output.status.success() {
@@ -2214,5 +2183,104 @@ mod tests {
         let result = resolve_backup_dir(tmp.path(), Some("myserver"), Some("2026-01-01_00-00-00"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Backup not found"));
+    }
+
+    fn test_host() -> Host {
+        Host {
+            name: "test".to_string(),
+            address: "192.0.2.1".to_string(),
+            user: "deploy".to_string(),
+            port: 2222,
+            ssh_key: None,
+            tags: vec![],
+            description: None,
+            python_interpreter: None,
+            become_method: "sudo".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_ssh_args_contains_mux_options() {
+        let host = test_host();
+        let key = Path::new("/home/user/.ssh/id_ed25519");
+        let session = SshSession::new(&host, key);
+        let args = session.ssh_args();
+        let strs: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(strs.contains(&"ControlMaster=auto".to_string()));
+        assert!(strs.contains(&"ControlPath=/tmp/ssh-%r@%h:%p".to_string()));
+        assert!(strs.contains(&"ControlPersist=60s".to_string()));
+    }
+
+    #[test]
+    fn test_ssh_args_includes_key_port_user_host() {
+        let host = test_host();
+        let key = Path::new("/home/user/.ssh/id_ed25519");
+        let session = SshSession::new(&host, key);
+        let args = session.ssh_args();
+        let strs: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(strs.contains(&"/home/user/.ssh/id_ed25519".to_string()));
+        assert!(strs.contains(&"2222".to_string()));
+        assert!(strs.contains(&"deploy@192.0.2.1".to_string()));
+    }
+
+    #[test]
+    fn test_scp_args_uses_uppercase_p_for_port() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshSession::new(&host, key);
+        let args = session.scp_args();
+        let strs: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert!(strs.contains(&"-P".to_string()));
+        assert!(!strs.contains(&"-p".to_string()));
+    }
+
+    #[test]
+    fn test_rsync_e_arg_contains_mux_and_key() {
+        let host = test_host();
+        let key = Path::new("/home/user/.ssh/id_ed25519");
+        let session = SshSession::new(&host, key);
+        let e_arg = session.rsync_e_arg();
+        assert!(e_arg.starts_with("ssh "));
+        assert!(e_arg.contains("ControlMaster=auto"));
+        assert!(e_arg.contains("ControlPath=/tmp/ssh-%r@%h:%p"));
+        assert!(e_arg.contains("ControlPersist=60s"));
+        assert!(e_arg.contains("-i /home/user/.ssh/id_ed25519"));
+        assert!(e_arg.contains("-p 2222"));
+    }
+
+    #[test]
+    fn test_rsync_e_arg_escapes_spaces_in_key_path() {
+        let host = test_host();
+        let key = Path::new("/home/user/my keys/id_ed25519");
+        let session = SshSession::new(&host, key);
+        let e_arg = session.rsync_e_arg();
+        assert!(!e_arg.contains("-i /home/user/my keys/id_ed25519"));
+        assert!(e_arg.contains("'/home/user/my keys/id_ed25519'"));
+    }
+
+    #[test]
+    fn test_mux_args_pairs_options_correctly() {
+        let args = SshSession::mux_args();
+        let strs: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        for (i, s) in strs.iter().enumerate() {
+            if s == "-o" {
+                assert!(
+                    strs[i + 1].contains('='),
+                    "option after -o should be key=value"
+                );
+            }
+        }
     }
 }
