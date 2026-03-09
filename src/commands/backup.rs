@@ -1005,7 +1005,7 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
         }
 
         if let Some(db) = &config.db {
-            let local_dump = backup_path.join(app_name).join("db.dump");
+            let local_dump = backup_path.join("db.dump");
             if local_dump.exists() {
                 eprintln!("  Restoring database: {}", db.db_name);
                 scp_to_remote(host, ssh_key, &local_dump, db.remote_dump_path)?;
