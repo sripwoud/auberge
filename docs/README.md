@@ -52,7 +52,6 @@ After deployment, your VPS will be running:
 
 ## Requirements
 
-- Rust/Cargo for installation
 - A VPS with root/sudo access
 - SSH connectivity to your VPS
 - (Optional) Cloudflare account for DNS management
