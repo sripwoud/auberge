@@ -1013,21 +1013,20 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
                 remote_pg_dump_cleanup(host, ssh_key, db);
                 pg_result?;
 
-                eprintln!("  Running database migrations");
-                let migrate_cmd = format!(
-                    "sudo -u {} {}/venv/bin/python3 manage.py migrate --no-input",
-                    "paperless", "/opt/paperless/src"
-                );
-                let migrate_result = remote_ssh_command(
-                    host,
-                    ssh_key,
-                    &format!(
-                        "cd /opt/paperless/src && PAPERLESS_CONFIGURATION_PATH=/opt/paperless/paperless.conf {}",
-                        migrate_cmd
-                    ),
-                );
-                if let Err(e) = migrate_result {
-                    output::warn(&format!("Migration warning: {}", e));
+                if config.name == "paperless" {
+                    eprintln!("  Running database migrations");
+                    let migrate_cmd = "sudo -u paperless /opt/paperless/src/venv/bin/python3 manage.py migrate --no-input";
+                    let migrate_result = remote_ssh_command(
+                        host,
+                        ssh_key,
+                        &format!(
+                            "cd /opt/paperless/src && PAPERLESS_CONFIGURATION_PATH=/opt/paperless/paperless.conf {}",
+                            migrate_cmd
+                        ),
+                    );
+                    if let Err(e) = migrate_result {
+                        output::warn(&format!("Migration warning: {}", e));
+                    }
                 }
             } else {
                 output::warn(&format!(
@@ -1280,7 +1279,17 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         .output();
 
     let needs_init = match snapshots_check {
-        Ok(output) => !output.status.success(),
+        Ok(output) if output.status.success() => false,
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("Is there a repository at the following location")
+                || stderr.contains("unable to open config file")
+            {
+                true
+            } else {
+                eyre::bail!("restic snapshots failed: {}", stderr.trim());
+            }
+        }
         Err(_) => eyre::bail!("restic not found. Install restic: https://restic.net"),
     };
 
@@ -1527,10 +1536,13 @@ fn backup_app(
                 db.remote_dump_path,
                 &app_backup_dir.join("db.dump"),
             )?;
-            remote_pg_dump_cleanup(host, ssh_key, db);
         }
         Ok(())
     })();
+
+    if let Some(db) = &config.db {
+        remote_pg_dump_cleanup(host, ssh_key, db);
+    }
 
     let mut start_failures: Vec<String> = Vec::new();
     if !config.systemd_services.is_empty() {
@@ -1673,6 +1685,28 @@ fn remote_ssh_command(host: &Host, ssh_key: &Path, command: &str) -> Result<std:
     Ok(output)
 }
 
+fn remote_ssh_command_raw(
+    host: &Host,
+    ssh_key: &Path,
+    command: &str,
+) -> Result<std::process::Output> {
+    Command::new("ssh")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
+        .arg("-i")
+        .arg(ssh_key)
+        .arg("-p")
+        .arg(host.port.to_string())
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg(command)
+        .output()
+        .wrap_err("Failed to execute SSH command")
+}
+
 fn remote_pg_dump(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result<()> {
     let cmd = format!(
         "sudo -u postgres pg_dump -Fc {} > {}",
@@ -1689,29 +1723,18 @@ fn remote_pg_dump_cleanup(host: &Host, ssh_key: &Path, db: &DbBackupConfig) {
 
 fn remote_pg_restore(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result<()> {
     let cmd = format!(
-        "sudo -u postgres pg_restore --clean --if-exists -d {} {}",
+        "sudo -u postgres pg_restore --clean --if-exists -d {} {} 2>&1",
         db.db_name, db.remote_dump_path
     );
-    let output = Command::new("ssh")
-        .arg("-o")
-        .arg("ControlMaster=auto")
-        .arg("-o")
-        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
-        .arg("-o")
-        .arg("ControlPersist=60s")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg(&cmd)
-        .output()
-        .wrap_err("Failed to execute pg_restore")?;
+    let output = remote_ssh_command_raw(host, ssh_key, &cmd)?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = String::from_utf8_lossy(&output.stdout);
         let warnings_only = stderr.lines().all(|line| {
-            line.trim().is_empty() || line.contains("WARNING") || line.contains("pg_restore")
+            let trimmed = line.trim().to_lowercase();
+            trimmed.is_empty()
+                || trimmed.contains("warning")
+                || trimmed.starts_with("pg_restore: warning")
         });
         if !warnings_only {
             eyre::bail!("pg_restore failed: {}", stderr.trim());
@@ -1728,6 +1751,12 @@ fn scp_from_remote(
     local_path: &Path,
 ) -> Result<()> {
     let status = Command::new("scp")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
         .arg("-i")
         .arg(ssh_key)
         .arg("-P")
@@ -1748,6 +1777,12 @@ fn scp_from_remote(
 
 fn scp_to_remote(host: &Host, ssh_key: &Path, local_path: &Path, remote_path: &str) -> Result<()> {
     let status = Command::new("scp")
+        .arg("-o")
+        .arg("ControlMaster=auto")
+        .arg("-o")
+        .arg("ControlPath=/tmp/ssh-%r@%h:%p")
+        .arg("-o")
+        .arg("ControlPersist=60s")
         .arg("-i")
         .arg(ssh_key)
         .arg("-P")
