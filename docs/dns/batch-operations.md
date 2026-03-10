@@ -46,6 +46,38 @@ Uses the provided IP address.
 
 5. **Create/update A records** in Cloudflare
 
+## Tailnet-only Subdomains
+
+Some services should be reachable only by Tailscale network members while still having a real subdomain with valid HTTPS. The tailnet-only pattern achieves this without any firewall rules.
+
+### How it works
+
+1. A Cloudflare DNS A record points `<app>.<domain>` to the server's Tailscale IP (`100.x.y.z`).
+2. Caddy provisions a Let's Encrypt certificate via DNS-01 challenge (Cloudflare API), so the subdomain gets valid HTTPS.
+3. The Tailscale IP is in the CGNAT range (`100.64.0.0/10`), which is not routable from the public internet.
+4. Only Tailscale network members can reach the IP, providing access restriction purely through network topology.
+
+### Configuration
+
+In `~/.config/auberge/config.toml`, set both a subdomain and a Tailscale IP for the app:
+
+```toml
+paperless_subdomain = "paperless"
+paperless_tailscale_ip = "100.x.y.z"
+```
+
+When `<app>_tailscale_ip` is present, `dns set-all` automatically uses that IP for the app's A record instead of the server's public IP.
+
+### Prerequisites
+
+- Tailscale running on the server (`tailscaled.service`)
+- Cloudflare API token configured (for DNS-01 challenge and DNS record management)
+- Caddy built with `caddy-dns/cloudflare` module (required for DNS-01 challenge)
+
+### dns migrate behavior
+
+`dns migrate` skips any A record whose current IP is in the CGNAT range (`100.64.0.0/10`). This prevents tailnet-only subdomains from being accidentally migrated to a new public IP during a VPS migration.
+
 ## Example
 
 ```bash
