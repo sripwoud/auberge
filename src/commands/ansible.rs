@@ -34,6 +34,8 @@ pub enum AnsibleCommands {
             help = "Comma-separated tags to run (auto-deploys infra dependencies)"
         )]
         tags: Option<Vec<String>>,
+        #[arg(long, value_delimiter = ',', help = "Skip tasks with these tags")]
+        skip_tags: Option<Vec<String>>,
         #[arg(long, help = "Bootstrap user (overrides inventory setting)")]
         user: Option<String>,
         #[arg(long, help = "Prompt for SSH password (needed for initial bootstrap)")]
@@ -51,6 +53,8 @@ pub enum AnsibleCommands {
         host: Option<String>,
         #[arg(short, long, help = "Playbook path")]
         playbook: Option<PathBuf>,
+        #[arg(long, value_delimiter = ',', help = "Skip tasks with these tags")]
+        skip_tags: Option<Vec<String>>,
         #[arg(
             short = 'f',
             long,
@@ -142,6 +146,7 @@ pub fn run_ansible_run(
     playbook: Option<PathBuf>,
     check: bool,
     tags: Option<Vec<String>>,
+    skip_tags: Option<Vec<String>>,
     user: Option<String>,
     ask_pass: bool,
     force: bool,
@@ -153,6 +158,7 @@ pub fn run_ansible_run(
             &selected_host,
             check,
             tag_list,
+            skip_tags.as_deref(),
             user.as_deref(),
             ask_pass,
             force,
@@ -165,6 +171,7 @@ pub fn run_ansible_run(
         &selected_playbook,
         check,
         tags.as_deref(),
+        skip_tags.as_deref(),
         user.as_deref(),
         ask_pass,
         force,
@@ -175,6 +182,7 @@ fn run_auto_resolved(
     host: &Host,
     check: bool,
     tags: &[String],
+    skip_tags: Option<&[String]>,
     user: Option<&str>,
     ask_pass: bool,
     force: bool,
@@ -196,6 +204,7 @@ fn run_auto_resolved(
             &selected_playbook,
             check,
             Some(tags),
+            skip_tags,
             user,
             ask_pass,
             force,
@@ -246,6 +255,7 @@ fn run_auto_resolved(
             &inventory_host,
             check,
             run_tags,
+            skip_tags,
             extra_vars.as_deref(),
             false,
             ask_pass,
@@ -271,6 +281,7 @@ fn run_single_playbook(
     playbook: &Playbook,
     check: bool,
     tags: Option<&[String]>,
+    skip_tags: Option<&[String]>,
     user: Option<&str>,
     ask_pass: bool,
     force: bool,
@@ -335,6 +346,7 @@ fn run_single_playbook(
         &inventory_host,
         check,
         tags,
+        skip_tags,
         extra_vars.as_deref(),
         false,
         ask_pass,
@@ -423,9 +435,10 @@ fn show_playbook_warnings(playbook_name: &str, force: bool) -> Result<()> {
 pub fn run_ansible_check(
     host: Option<String>,
     playbook: Option<PathBuf>,
+    skip_tags: Option<Vec<String>>,
     force: bool,
 ) -> Result<()> {
-    run_ansible_run(host, playbook, true, None, None, false, force)
+    run_ansible_run(host, playbook, true, None, skip_tags, None, false, force)
 }
 
 fn validate_ip(ip: &str) -> Result<()> {

@@ -1024,6 +1024,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                 false,
                 Some(&tags),
                 None,
+                None,
                 false,
                 false,
             ) {

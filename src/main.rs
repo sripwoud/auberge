@@ -113,15 +113,19 @@ async fn main() -> Result<()> {
                 playbook,
                 check,
                 tags,
+                skip_tags,
                 user,
                 ask_pass,
                 force,
-            } => run_ansible_run(host, playbook, check, tags, user, ask_pass, force),
+            } => run_ansible_run(
+                host, playbook, check, tags, skip_tags, user, ask_pass, force,
+            ),
             AnsibleCommands::Check {
                 host,
                 playbook,
+                skip_tags,
                 force,
-            } => run_ansible_check(host, playbook, force),
+            } => run_ansible_check(host, playbook, skip_tags, force),
             AnsibleCommands::Bootstrap {
                 host,
                 port,
