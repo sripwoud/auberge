@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 User={{ headscale_sys_user }}
 Group={{ headscale_sys_group }}
-ExecStart=/usr/local/bin/headscale serve
+ExecStart=/usr/local/bin/headscale serve -c {{ headscale_config_dir }}/config.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5

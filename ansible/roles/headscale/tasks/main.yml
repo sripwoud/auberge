@@ -53,6 +53,7 @@
         url: "{{ headscale_release_url }}"
         dest: /tmp/headscale
         mode: "0755"
+        checksum: "{{ headscale_release_checksum }}"
       when: headscale_installed_version != headscale_version
 
     - name: Install headscale binary

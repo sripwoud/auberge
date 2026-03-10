@@ -20,3 +20,4 @@ headscale_derp_region_id: 999
 headscale_derp_region_name: "self-hosted"
 headscale_log_level: info
 headscale_release_url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/headscale_{{ headscale_version }}_linux_amd64"
+headscale_release_checksum: "sha256:d2cda0a5d748587f77c920a76cd1bf1ab429e5299ba5bc6b3dda90712721b45b"

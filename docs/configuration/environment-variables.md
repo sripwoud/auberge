@@ -76,11 +76,16 @@ Required for DNS-01 ACME challenges via Lego certificate automation:
 
 ### Tailscale Auth Key
 
-Required for VPN mesh networking. When using Headscale, generate this key via `headscale preauthkeys create` instead of the Tailscale admin console.
+Required for VPN mesh networking:
 
-```bash
-auberge config set tailscale_authkey <KEY>
-```
+1. Generate auth key at [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
+2. Set reusable and ephemeral flags as needed
+3. Store the key:
+   ```bash
+   auberge config set tailscale_authkey <KEY>
+   ```
+
+When using [Headscale](../applications/networking/headscale.md), generate this key via `headscale preauthkeys create --user default --reusable` instead of the Tailscale admin console.
 
 ### Tailscale Login Server
 
