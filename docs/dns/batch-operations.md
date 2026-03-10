@@ -48,14 +48,14 @@ Uses the provided IP address.
 
 ## Tailnet-only Subdomains
 
-Some services should be reachable only by Tailscale network members while still having a real subdomain with valid HTTPS. The tailnet-only pattern achieves this without any firewall rules.
+Some services should be reachable only by Tailscale network members while still having a real subdomain with valid HTTPS.
 
 ### How it works
 
 1. A Cloudflare DNS A record points `<app>.<domain>` to the server's Tailscale IP (`100.x.y.z`).
 2. Caddy provisions a Let's Encrypt certificate via DNS-01 challenge (Cloudflare API), so the subdomain gets valid HTTPS.
-3. The Tailscale IP is in the CGNAT range (`100.64.0.0/10`), which is not routable from the public internet.
-4. Only Tailscale network members can reach the IP, providing access restriction purely through network topology.
+3. Caddy binds the vhost to the Tailscale interface only (`bind <tailscale-ip>`), so it is not reachable via the server's public IP even with correct SNI.
+4. The Tailscale IP is in the CGNAT range (`100.64.0.0/10`), which is not routable from the public internet. Only Tailscale network members can reach it.
 
 ### Configuration
 

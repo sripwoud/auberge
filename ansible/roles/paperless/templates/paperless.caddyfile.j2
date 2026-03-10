@@ -1,4 +1,5 @@
 {{ paperless_domain }} {
+	bind {{ paperless_tailscale_ip }}
 	tls {
 		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
 	}
