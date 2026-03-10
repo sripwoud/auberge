@@ -113,6 +113,7 @@ pub fn run_playbook(
     host: &InventoryHost,
     check: bool,
     tags: Option<&[String]>,
+    skip_tags: Option<&[String]>,
     extra_vars: Option<&[(&str, &str)]>,
     ask_vault_pass: bool,
     ask_pass: bool,
@@ -160,6 +161,10 @@ pub fn run_playbook(
 
     if let Some(tags) = tags {
         cmd.arg("--tags").arg(tags.join(","));
+    }
+
+    if let Some(skip_tags) = skip_tags {
+        cmd.arg("--skip-tags").arg(skip_tags.join(","));
     }
 
     if let Some(vars) = extra_vars {
