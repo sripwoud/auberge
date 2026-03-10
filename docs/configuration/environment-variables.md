@@ -32,6 +32,7 @@ auberge config set tailscale_api_key <key>
 auberge config set baikal_subdomain calendrier
 auberge config set bichon_subdomain bichon
 auberge config set blocky_subdomain dns
+auberge config set headscale_subdomain hs
 auberge config set freshrss_subdomain rss
 auberge config set navidrome_subdomain musique
 auberge config set webdav_subdomain webdav
@@ -75,14 +76,21 @@ Required for DNS-01 ACME challenges via Lego certificate automation:
 
 ### Tailscale Auth Key
 
-Required for VPN mesh networking:
+Required for VPN mesh networking. When using Headscale, generate this key via `headscale preauthkeys create` instead of the Tailscale admin console.
 
-1. Generate auth key at [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
-2. Set reusable and ephemeral flags as needed
-3. Store the key:
-   ```bash
-   auberge config set tailscale_authkey <KEY>
-   ```
+```bash
+auberge config set tailscale_authkey <KEY>
+```
+
+### Tailscale Login Server
+
+Optional. Set this to your Headscale URL to connect nodes to your self-hosted control server instead of Tailscale SaaS:
+
+```bash
+auberge config set tailscale_login_server https://hs.<domain>
+```
+
+See [Headscale](../applications/networking/headscale.md) for the full migration guide.
 
 ### Tailscale API Key
 

@@ -15,6 +15,7 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | Application                          | Description                          |
 | ------------------------------------ | ------------------------------------ |
 | [Blocky](networking/blocky.md)       | DNS server with ad/tracking blocking |
+| [Headscale](networking/headscale.md) | Self-hosted Tailscale control server |
 | [WireGuard](networking/wireguard.md) | Fast, modern VPN                     |
 | [Tailscale](networking/tailscale.md) | Mesh VPN for secure remote access    |
 
