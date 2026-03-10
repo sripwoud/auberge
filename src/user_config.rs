@@ -15,6 +15,10 @@ admin_user_name = ""
 baikal_admin_password = ""
 baikal_subdomain = ""
 
+bichon_encryption_password = ""
+bichon_subdomain = ""
+bichon_tailscale_ip = ""
+
 blocky_subdomain = ""
 
 booklore_admin_password = ""
