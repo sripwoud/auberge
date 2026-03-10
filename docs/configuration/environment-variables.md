@@ -30,11 +30,11 @@ auberge config set cloudflare_dns_api_token <token>
 auberge config set tailscale_authkey <key>
 auberge config set tailscale_api_key <key>
 auberge config set baikal_subdomain calendrier
+auberge config set bichon_subdomain bichon
 auberge config set blocky_subdomain dns
 auberge config set freshrss_subdomain rss
 auberge config set navidrome_subdomain musique
 auberge config set webdav_subdomain webdav
-auberge config set bichon_subdomain bichon
 ```
 
 ## Tailnet-only Subdomains

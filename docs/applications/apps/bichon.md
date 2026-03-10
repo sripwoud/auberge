@@ -14,11 +14,14 @@ Bare-metal deployment (no Docker). Requires the [Tailscale](../networking/tailsc
 
 ## Configuration
 
-Requires the following variables in `config.toml`:
+Required variables in `config.toml`:
 
 - `bichon_encryption_password` - Encryption password for at-rest email encryption
 - `bichon_subdomain` - Subdomain for HTTPS access (e.g. `bichon`)
-- `bichon_tailscale_ip` - Tailscale IP of the server (e.g. `100.x.y.z`); signals `dns set-all` to use the Tailscale IP instead of the public IP
+
+Optional:
+
+- `bichon_tailscale_ip` - Override auto-detected Tailscale IP (e.g. `100.x.y.z`); signals `dns set-all` to use this IP instead of the public IP
 
 See [Environment Variables](../../configuration/environment-variables.md).
 

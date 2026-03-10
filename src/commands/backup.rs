@@ -2050,6 +2050,7 @@ mod tests {
     #[test]
     fn test_other_apps_have_no_db_config() {
         assert!(AppBackupConfig::baikal().db.is_none());
+        assert!(AppBackupConfig::bichon().db.is_none());
         assert!(AppBackupConfig::freshrss().db.is_none());
         assert!(AppBackupConfig::navidrome(false).db.is_none());
         assert!(AppBackupConfig::navidrome(true).db.is_none());
