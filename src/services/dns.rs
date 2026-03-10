@@ -32,6 +32,11 @@ pub struct DnsService {
     zone_id: String,
 }
 
+pub struct SubdomainEntry {
+    pub subdomain: String,
+    pub ip_override: Option<String>,
+}
+
 const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
     "baikal_subdomain",
     "blocky_subdomain",
@@ -39,11 +44,12 @@ const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
     "colporteur_subdomain",
     "freshrss_subdomain",
     "navidrome_subdomain",
+    "paperless_subdomain",
     "webdav_subdomain",
     "yourls_subdomain",
 ];
 
-pub fn discover_subdomains() -> HashMap<String, String> {
+pub fn discover_subdomains() -> HashMap<String, SubdomainEntry> {
     let config = match UserConfig::load() {
         Ok(c) => c,
         Err(_) => return HashMap::new(),
@@ -53,10 +59,26 @@ pub fn discover_subdomains() -> HashMap<String, String> {
         .filter_map(|key| {
             config.get(key).filter(|v| !v.is_empty()).map(|value| {
                 let app = key.strip_suffix("_subdomain").unwrap_or(key);
-                (app.to_string(), value)
+                let tailscale_key = format!("{}_tailscale_ip", app);
+                let ip_override = config.get(&tailscale_key).filter(|v| !v.is_empty());
+                (
+                    app.to_string(),
+                    SubdomainEntry {
+                        subdomain: value,
+                        ip_override,
+                    },
+                )
             })
         })
         .collect()
+}
+
+fn is_tailscale_ip(ip: &str) -> bool {
+    let Ok(addr) = ip.parse::<std::net::Ipv4Addr>() else {
+        return false;
+    };
+    let octets = addr.octets();
+    octets[0] == 100 && (64..=127).contains(&octets[1])
 }
 
 impl DnsService {
@@ -178,18 +200,24 @@ impl DnsService {
         let existing = self.list_records().await?;
         let mut results = Vec::new();
 
+        let domain_suffix = format!(".{}", self.config.domain);
         let a_records: Vec<&DnsRecord> = existing
             .iter()
             .filter(|r| matches!(r.content, DnsContent::A { .. }))
+            .filter(|r| r.name.ends_with(&domain_suffix) && r.name != self.config.domain)
             .collect();
 
         if dry_run {
             for record in a_records {
                 if let DnsContent::A { content: old_ip } = record.content {
+                    if is_tailscale_ip(&old_ip.to_string()) {
+                        eprintln!("Skipping tailnet-only record: {}", record.name);
+                        continue;
+                    }
                     let subdomain = record
                         .name
-                        .strip_suffix(&format!(".{}", self.config.domain))
-                        .unwrap_or(&record.name)
+                        .strip_suffix(&domain_suffix)
+                        .expect("pre-filtered to end with domain suffix")
                         .to_string();
 
                     results.push(MigrationResult {
@@ -205,10 +233,14 @@ impl DnsService {
 
         for record in a_records {
             if let DnsContent::A { content: old_ip } = record.content {
+                if is_tailscale_ip(&old_ip.to_string()) {
+                    eprintln!("Skipping tailnet-only record: {}", record.name);
+                    continue;
+                }
                 let subdomain = record
                     .name
-                    .strip_suffix(&format!(".{}", self.config.domain))
-                    .unwrap_or(&record.name);
+                    .strip_suffix(&domain_suffix)
+                    .expect("pre-filtered to end with domain suffix");
 
                 let success = self.set_a_record(subdomain, new_ip).await.is_ok();
 
@@ -228,7 +260,8 @@ impl DnsService {
         let active_records = self.list_records().await?;
 
         let discovered = discover_subdomains();
-        let configured_subdomains: Vec<String> = discovered.values().cloned().collect();
+        let configured_subdomains: Vec<String> =
+            discovered.values().map(|e| e.subdomain.clone()).collect();
 
         let active_names: std::collections::HashSet<String> = active_records
             .iter()

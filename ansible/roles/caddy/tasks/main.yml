@@ -37,6 +37,7 @@
         xcaddy build \
           --with github.com/mholt/caddy-l4 \
           --with github.com/mholt/caddy-webdav \
+          --with github.com/caddy-dns/cloudflare \
           --output /usr/local/bin/caddy
       args:
         creates: /usr/local/bin/caddy
@@ -86,6 +87,23 @@
         owner: root
         group: root
         mode: "0644"
+
+    - name: Create Caddy systemd drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/caddy.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy Caddy environment drop-in
+      ansible.builtin.template:
+        src: caddy-env.conf.j2
+        dest: /etc/systemd/system/caddy.service.d/caddy-env.conf
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart caddy
 
     - name: Copy Caddyfile from local path to /etc/caddy/Caddyfile
       ansible.builtin.copy:

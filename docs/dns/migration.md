@@ -112,8 +112,7 @@ auberge dns migrate --ip 194.164.53.99
 
 **Included:**
 
-- All A records for subdomains
-- Records pointing to any IP
+- All A records for subdomains except tailnet-only (CGNAT) records
 
 **Excluded:**
 
@@ -121,6 +120,7 @@ auberge dns migrate --ip 194.164.53.99
 - www subdomain - often a CNAME, not an A record
 - AAAA records (IPv6)
 - CNAME, MX, TXT, NS records
+- A records whose current IP is in the CGNAT range (`100.64.0.0/10`) - these are tailnet-only subdomains pointing to Tailscale IPs and should not be migrated to a new public IP
 
 **Example:**
 

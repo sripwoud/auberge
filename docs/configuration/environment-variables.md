@@ -36,6 +36,21 @@ auberge config set navidrome_subdomain musique
 auberge config set webdav_subdomain webdav
 ```
 
+## Tailnet-only Subdomains
+
+Some services are intentionally restricted to Tailscale network members only. For these, set both a subdomain and a Tailscale IP in `config.toml`:
+
+```toml
+paperless_subdomain = "paperless"
+paperless_tailscale_ip = "100.x.y.z"
+```
+
+The presence of `<app>_tailscale_ip` tells `dns set-all` to point that subdomain's A record at the Tailscale IP instead of the server's public IP. Because Tailscale IPs are in the CGNAT range (`100.64.0.0/10`) and are not routable from the public internet, only Tailscale network members can reach the service — no firewall rules needed.
+
+`dns migrate` skips records whose current IP is in the CGNAT range, so tailnet-only subdomains are not accidentally migrated to a new public IP during a VPS migration.
+
+See [Tailnet-only subdomains](../dns/batch-operations.md#tailnet-only-subdomains) for the full pattern.
+
 ## API Keys and Tokens
 
 ### Cloudflare API Token

@@ -20,6 +20,8 @@ Requires the following variables in `config.toml`:
 - `paperless_admin_user` - Admin username
 - `paperless_admin_password` - Admin password
 - `paperless_db_password` - PostgreSQL password
+- `paperless_subdomain` - Subdomain for HTTPS access (e.g. `paperless`)
+- `paperless_tailscale_ip` - Tailscale IP of the server (e.g. `100.x.y.z`); signals `dns set-all` to use the Tailscale IP instead of the public IP
 
 See [Environment Variables](../../configuration/environment-variables.md).
 
@@ -43,7 +45,13 @@ See [Environment Variables](../../configuration/environment-variables.md).
 
 ## Access
 
-Available only via the Tailscale network at `http://<tailscale-ip>:8000`. Not publicly accessible (no Caddy reverse proxy). Requires Tailscale — services will not start without `tailscaled.service`.
+Accessible at `https://paperless.<domain>` (or whichever subdomain you configured) — but only from Tailscale network members. The DNS A record points to the server's Tailscale IP (a CGNAT address in `100.64.0.0/10`), which is not routable from the public internet. Caddy binds this vhost exclusively to the Tailscale interface, so it cannot be reached via the server's public IP.
+
+Caddy obtains a valid Let's Encrypt certificate via DNS-01 challenge (Cloudflare API), so the connection uses real HTTPS even though the subdomain resolves to a private Tailscale IP.
+
+Requires Tailscale — services will not start without `tailscaled.service`.
+
+See [Tailnet-only subdomains](../../dns/batch-operations.md#tailnet-only-subdomains) for the generic pattern.
 
 ## Backup
 
@@ -55,5 +63,6 @@ See [Backup & Restore](../../backup-restore/overview.md).
 
 - [Environment Variables](../../configuration/environment-variables.md)
 - [Tailscale](../networking/tailscale.md)
+- [Tailnet-only subdomains](../../dns/batch-operations.md#tailnet-only-subdomains)
 - [Backup & Restore](../../backup-restore/overview.md)
 - [Applications Overview](../overview.md)

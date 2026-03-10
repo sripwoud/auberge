@@ -42,6 +42,8 @@ paperless_admin_password = ""
 paperless_admin_user = ""
 paperless_db_password = ""
 paperless_secret_key = ""
+paperless_subdomain = ""
+paperless_tailscale_ip = ""
 
 primary_domain = ""
 
