@@ -45,7 +45,7 @@
 
     - name: Set bind address
       ansible.builtin.set_fact:
-        paperless_bind_addr: "{{ paperless_tailscale_ip }}"
+        paperless_bind_addr: "127.0.0.1"
       changed_when: false
 
     - name: Display bind address
@@ -238,6 +238,15 @@
         mode: "0600"
       notify: Restart all paperless services
 
+    - name: Deploy Caddy site configuration
+      ansible.builtin.template:
+        src: paperless.caddyfile.j2
+        dest: "/etc/caddy/sites/{{ paperless_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
     - name: Run database migrations
       ansible.builtin.command:
         cmd: "{{ paperless_install_path }}/venv/bin/python3 manage.py migrate --no-input"
@@ -315,7 +324,7 @@
           - "Media: {{ paperless_media_root }}"
           - "Consume: {{ paperless_consumption_dir }}"
           - ""
-          - "Access: http://{{ paperless_bind_addr }}:{{ paperless_port }}"
+          - "Access: https://{{ paperless_domain }}"
           - "Admin: {{ paperless_admin_user }}"
           - ""
           - "Services:"

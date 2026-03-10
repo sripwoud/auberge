@@ -1,4 +1,10 @@
 ---
+- name: Restart caddy
+  ansible.builtin.systemd_service:
+    name: caddy
+    state: restarted
+    daemon_reload: true
+
 - name: Restart paperless-webserver
   ansible.builtin.systemd_service:
     name: paperless-webserver
