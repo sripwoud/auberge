@@ -7,6 +7,7 @@ bichon_install_dir: /opt/bichon
 bichon_root_dir: /opt/bichon/data
 bichon_index_dir: /opt/bichon/data/index
 bichon_data_dir: /opt/bichon/data/store
+bichon_bind_addr: 127.0.0.1
 bichon_log_level: info
 
 bichon_subdomain: bichon

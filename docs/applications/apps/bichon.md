@@ -59,11 +59,7 @@ See [Backup & Restore](../../backup-restore/overview.md).
 
 ## MBOX Import
 
-Existing Thunderbird archives can be imported using the `bichonctl` CLI tool on the server:
-
-1. Copy `.mbox` files to the server: `scp archive.mbox user@host:/tmp/`
-2. Run the import on the server (as the bichon user or via sudo)
-3. Verify imported emails via the web UI search
+Bichon supports importing EML, MBOX, and PST archives. Refer to the [upstream documentation](https://github.com/rustmailer/bichon) for current import commands and usage, as the tooling may change between versions.
 
 ## Related
 
