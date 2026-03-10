@@ -51,6 +51,7 @@
         port: 3478
         proto: udp
         comment: "Headscale STUN"
+      when: headscale_derp_enabled | default(false)
 
     - name: Set UFW logging level
       community.general.ufw:

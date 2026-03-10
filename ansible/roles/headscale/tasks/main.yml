@@ -17,20 +17,21 @@
         shell: /usr/sbin/nologin
         state: present
 
-    - name: Create headscale directories
+    - name: Create headscale config directory
       ansible.builtin.file:
-        path: "{{ item.path }}"
+        path: "{{ headscale_config_dir }}"
         state: directory
-        owner: "{{ item.owner }}"
+        owner: root
         group: "{{ headscale_sys_group }}"
-        mode: "{{ item.mode }}"
-      loop:
-        - { path: "{{ headscale_config_dir }}", owner: root, mode: "0755" }
-        - {
-            path: "{{ headscale_data_dir }}",
-            owner: "{{ headscale_sys_user }}",
-            mode: "0750",
-          }
+        mode: "0755"
+
+    - name: Create headscale data directory
+      ansible.builtin.file:
+        path: "{{ headscale_data_dir }}"
+        state: directory
+        owner: "{{ headscale_sys_user }}"
+        group: "{{ headscale_sys_group }}"
+        mode: "0750"
 
     - name: Check installed headscale version
       ansible.builtin.stat:
