@@ -30,6 +30,7 @@ auberge config set cloudflare_dns_api_token <token>
 auberge config set tailscale_authkey <key>
 auberge config set tailscale_api_key <key>
 auberge config set baikal_subdomain calendrier
+auberge config set bichon_subdomain bichon
 auberge config set blocky_subdomain dns
 auberge config set freshrss_subdomain rss
 auberge config set navidrome_subdomain musique
@@ -43,6 +44,9 @@ Some services are intentionally restricted to Tailscale network members only. Fo
 ```toml
 paperless_subdomain = "paperless"
 paperless_tailscale_ip = "100.x.y.z"
+
+bichon_subdomain = "bichon"
+bichon_tailscale_ip = "100.x.y.z"
 ```
 
 The presence of `<app>_tailscale_ip` tells `dns set-all` to point that subdomain's A record at the Tailscale IP instead of the server's public IP. Because Tailscale IPs are in the CGNAT range (`100.64.0.0/10`) and are not routable from the public internet, only Tailscale network members can reach the service — no firewall rules needed.

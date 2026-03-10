@@ -39,6 +39,7 @@ pub struct SubdomainEntry {
 
 const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
     "baikal_subdomain",
+    "bichon_subdomain",
     "blocky_subdomain",
     "booklore_subdomain",
     "colporteur_subdomain",

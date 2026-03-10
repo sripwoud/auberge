@@ -84,6 +84,7 @@
     - [Tailscale](applications/networking/tailscale.md)
   - Apps
     - [Baikal](applications/apps/baikal.md)
+    - [Bichon](applications/apps/bichon.md)
     - [Colporteur](applications/apps/colporteur.md)
     - [FreshRSS](applications/apps/freshrss.md)
     - [Navidrome](applications/apps/navidrome.md)
