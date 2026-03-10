@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3](https://github.com/sripwoud/auberge/compare/v0.4.2...v0.4.3) - 2026-03-10
+
+### Added
+
+- add `--skip-tags` flag to `ansible` `run` and `check` subcommands ([#120](https://github.com/sripwoud/auberge/pull/120))
+- assign subdomain to `paperless` via Tailscale-only DNS ([#118](https://github.com/sripwoud/auberge/pull/118))
+
+### Other
+
+- update README.md
+
 ## [0.4.2](https://github.com/sripwoud/auberge/compare/v0.4.1...v0.4.2) - 2026-03-09
 
 ### Added
