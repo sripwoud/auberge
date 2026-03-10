@@ -32,6 +32,11 @@ pub struct DnsService {
     zone_id: String,
 }
 
+pub struct SubdomainEntry {
+    pub subdomain: String,
+    pub ip_override: Option<String>,
+}
+
 const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
     "baikal_subdomain",
     "blocky_subdomain",
@@ -39,11 +44,12 @@ const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
     "colporteur_subdomain",
     "freshrss_subdomain",
     "navidrome_subdomain",
+    "paperless_subdomain",
     "webdav_subdomain",
     "yourls_subdomain",
 ];
 
-pub fn discover_subdomains() -> HashMap<String, String> {
+pub fn discover_subdomains() -> HashMap<String, SubdomainEntry> {
     let config = match UserConfig::load() {
         Ok(c) => c,
         Err(_) => return HashMap::new(),
@@ -53,10 +59,32 @@ pub fn discover_subdomains() -> HashMap<String, String> {
         .filter_map(|key| {
             config.get(key).filter(|v| !v.is_empty()).map(|value| {
                 let app = key.strip_suffix("_subdomain").unwrap_or(key);
-                (app.to_string(), value)
+                let tailscale_key = format!("{}_tailscale_ip", app);
+                let ip_override = config.get(&tailscale_key).filter(|v| !v.is_empty());
+                (
+                    app.to_string(),
+                    SubdomainEntry {
+                        subdomain: value,
+                        ip_override,
+                    },
+                )
             })
         })
         .collect()
+}
+
+fn is_tailscale_ip(ip: &str) -> bool {
+    let parts: Vec<&str> = ip.split('.').collect();
+    if parts.len() != 4 {
+        return false;
+    }
+    let Ok(first) = parts[0].parse::<u8>() else {
+        return false;
+    };
+    let Ok(second) = parts[1].parse::<u8>() else {
+        return false;
+    };
+    first == 100 && (64..=127).contains(&second)
 }
 
 impl DnsService {
@@ -186,6 +214,10 @@ impl DnsService {
         if dry_run {
             for record in a_records {
                 if let DnsContent::A { content: old_ip } = record.content {
+                    if is_tailscale_ip(&old_ip.to_string()) {
+                        eprintln!("Skipping tailnet-only record: {}", record.name);
+                        continue;
+                    }
                     let subdomain = record
                         .name
                         .strip_suffix(&format!(".{}", self.config.domain))
@@ -205,6 +237,10 @@ impl DnsService {
 
         for record in a_records {
             if let DnsContent::A { content: old_ip } = record.content {
+                if is_tailscale_ip(&old_ip.to_string()) {
+                    eprintln!("Skipping tailnet-only record: {}", record.name);
+                    continue;
+                }
                 let subdomain = record
                     .name
                     .strip_suffix(&format!(".{}", self.config.domain))
@@ -228,7 +264,8 @@ impl DnsService {
         let active_records = self.list_records().await?;
 
         let discovered = discover_subdomains();
-        let configured_subdomains: Vec<String> = discovered.values().cloned().collect();
+        let configured_subdomains: Vec<String> =
+            discovered.values().map(|e| e.subdomain.clone()).collect();
 
         let active_names: std::collections::HashSet<String> = active_records
             .iter()

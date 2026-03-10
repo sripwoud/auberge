@@ -266,7 +266,7 @@ pub async fn run_dns_set_all(
     continue_on_error: bool,
     production: bool,
 ) -> Result<()> {
-    use crate::services::dns::discover_subdomains;
+    use crate::services::dns::{SubdomainEntry, discover_subdomains};
     use crate::services::inventory::discover_hosts_with_ips;
     use std::collections::HashSet;
 
@@ -306,11 +306,11 @@ pub async fn run_dns_set_all(
 
     let skip_set: HashSet<_> = skip.iter().cloned().collect();
 
-    let subdomains_to_process: Vec<_> = if !subdomains.is_empty() {
+    let subdomains_to_process: Vec<(String, SubdomainEntry)> = if !subdomains.is_empty() {
         subdomains
             .into_iter()
             .filter(|s| !skip_set.contains(s))
-            .filter_map(|s| discovered.remove(&s).map(|v| (s, v)))
+            .filter_map(|s| discovered.remove(&s).map(|entry| (s, entry)))
             .collect()
     } else {
         discovered
@@ -330,13 +330,23 @@ pub async fn run_dns_set_all(
         output::info("Creating the following A records:");
     }
 
-    for (_, subdomain_value) in &subdomains_to_process {
-        eprintln!(
-            "  • {}.{} → {}",
-            subdomain_value,
-            service.config().domain,
-            target_ip
-        );
+    for (_, entry) in &subdomains_to_process {
+        let effective_ip = entry.ip_override.as_deref().unwrap_or(&target_ip);
+        if entry.ip_override.is_some() {
+            eprintln!(
+                "  • {}.{} → {} (tailnet)",
+                entry.subdomain,
+                service.config().domain,
+                effective_ip
+            );
+        } else {
+            eprintln!(
+                "  • {}.{} → {}",
+                entry.subdomain,
+                service.config().domain,
+                effective_ip
+            );
+        }
     }
 
     if !yes && !dry_run {
@@ -359,12 +369,13 @@ pub async fn run_dns_set_all(
     let mut succeeded = 0;
     let mut failed = 0;
 
-    for (idx, (_app_name, subdomain_value)) in subdomains_to_process.iter().enumerate() {
-        match service.set_a_record(subdomain_value, &target_ip).await {
+    for (idx, (_app_name, entry)) in subdomains_to_process.iter().enumerate() {
+        let effective_ip = entry.ip_override.as_deref().unwrap_or(&target_ip);
+        match service.set_a_record(&entry.subdomain, effective_ip).await {
             Ok(_) => {
                 output::success(&format!(
                     "Created {}.{}",
-                    subdomain_value,
+                    entry.subdomain,
                     service.config().domain
                 ));
                 succeeded += 1;
@@ -372,7 +383,7 @@ pub async fn run_dns_set_all(
             Err(e) => {
                 eprintln!(
                     "Failed {}.{}: {}",
-                    subdomain_value,
+                    entry.subdomain,
                     service.config().domain,
                     e
                 );
