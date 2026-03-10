@@ -399,12 +399,23 @@ pub async fn run_dns_set_all(
         }
     }
 
-    output::success(&format!(
-        "Successfully created {}/{} A records pointing to {}",
-        succeeded,
-        subdomains_to_process.len(),
-        target_ip
-    ));
+    let has_overrides = subdomains_to_process
+        .iter()
+        .any(|(_, e)| e.ip_override.is_some());
+    if has_overrides {
+        output::success(&format!(
+            "Successfully created {}/{} A records (some with tailnet IP overrides)",
+            succeeded,
+            subdomains_to_process.len(),
+        ));
+    } else {
+        output::success(&format!(
+            "Successfully created {}/{} A records pointing to {}",
+            succeeded,
+            subdomains_to_process.len(),
+            target_ip
+        ));
+    }
 
     if failed > 0 {
         eprintln!("Failed to create {} records", failed);

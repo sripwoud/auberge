@@ -74,17 +74,11 @@ pub fn discover_subdomains() -> HashMap<String, SubdomainEntry> {
 }
 
 fn is_tailscale_ip(ip: &str) -> bool {
-    let parts: Vec<&str> = ip.split('.').collect();
-    if parts.len() != 4 {
-        return false;
-    }
-    let Ok(first) = parts[0].parse::<u8>() else {
+    let Ok(addr) = ip.parse::<std::net::Ipv4Addr>() else {
         return false;
     };
-    let Ok(second) = parts[1].parse::<u8>() else {
-        return false;
-    };
-    first == 100 && (64..=127).contains(&second)
+    let octets = addr.octets();
+    octets[0] == 100 && (64..=127).contains(&octets[1])
 }
 
 impl DnsService {

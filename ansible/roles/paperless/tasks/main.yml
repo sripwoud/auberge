@@ -238,6 +238,13 @@
         mode: "0600"
       notify: Restart all paperless services
 
+    - name: Validate Cloudflare API token for Caddy DNS-01 challenge
+      ansible.builtin.assert:
+        that:
+          - cloudflare_dns_api_token is defined
+          - cloudflare_dns_api_token | length > 0
+        fail_msg: "cloudflare_dns_api_token must be defined for Caddy DNS-01 TLS challenge"
+
     - name: Deploy Caddy site configuration
       ansible.builtin.template:
         src: paperless.caddyfile.j2
