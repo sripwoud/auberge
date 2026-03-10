@@ -61,6 +61,7 @@ Specifying `--playbook` explicitly **bypasses** auto-resolution — only the nam
 | -p, --playbook PATH | Playbook path (bypasses auto-resolution when combined with `--tags`)               | Interactive selection |
 | -C, --check         | Run in check mode (dry run)                                                        | false                 |
 | -t, --tags TAGS     | Comma-separated tags to run (auto-resolves playbooks when `--playbook` is omitted) | All tasks             |
+| --skip-tags TAGS    | Comma-separated tags to skip                                                       | None                  |
 | -f, --force         | Skip confirmation prompts (for CI/CD)                                              | false                 |
 
 ## Examples
@@ -83,6 +84,9 @@ auberge ansible run --host myserver --tags paperless
 
 # Explicit playbook: runs only apps.yml with the tag (no infra auto-deploy)
 auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --tags paperless
+
+# Run full playbook but skip bootstrap tasks
+auberge ansible run --host myserver --playbook ansible/playbooks/auberge.yml --skip-tags bootstrap
 
 # Skip confirmations (for automation)
 auberge ansible run --host myserver --playbook ansible/playbooks/bootstrap.yml --force

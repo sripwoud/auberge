@@ -20,11 +20,12 @@ Check mode shows what would change without making actual modifications to the ta
 
 ## Options
 
-| Option              | Description               | Default               |
-| ------------------- | ------------------------- | --------------------- |
-| -H, --host HOST     | Target host               | Interactive selection |
-| -p, --playbook PATH | Playbook path             | Interactive selection |
-| -f, --force         | Skip confirmation prompts | false                 |
+| Option              | Description                  | Default               |
+| ------------------- | ---------------------------- | --------------------- |
+| -H, --host HOST     | Target host                  | Interactive selection |
+| -p, --playbook PATH | Playbook path                | Interactive selection |
+| --skip-tags TAGS    | Comma-separated tags to skip | None                  |
+| -f, --force         | Skip confirmation prompts    | false                 |
 
 ## Examples
 
@@ -34,6 +35,9 @@ auberge ansible check
 
 # Check specific playbook
 auberge ansible check --host myserver --playbook ansible/playbooks/apps.yml
+
+# Check full playbook but skip bootstrap tasks
+auberge ansible check --host myserver --playbook ansible/playbooks/auberge.yml --skip-tags bootstrap
 
 # Skip confirmations
 auberge ansible check --host myserver --playbook ansible/playbooks/bootstrap.yml --force
