@@ -180,7 +180,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to backup (baikal,bichon,freshrss,navidrome,calibre,webdav,yourls,paperless). Default: all"
+            help = "Apps to backup (baikal,bichon,freshrss,headscale,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(short, long, help = "Backup destination directory")]
@@ -229,7 +229,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to restore (baikal,bichon,freshrss,navidrome,calibre,webdav,yourls,paperless). Default: all"
+            help = "Apps to restore (baikal,bichon,freshrss,headscale,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(
@@ -330,6 +330,7 @@ impl AppBackupConfig {
             Self::baikal(),
             Self::bichon(),
             Self::freshrss(),
+            Self::headscale(),
             Self::navidrome(false),
             Self::calibre(),
             Self::webdav(),
@@ -343,6 +344,7 @@ impl AppBackupConfig {
             "baikal" => Some(Self::baikal()),
             "bichon" => Some(Self::bichon()),
             "freshrss" => Some(Self::freshrss()),
+            "headscale" => Some(Self::headscale()),
             "navidrome" => Some(Self::navidrome(include_music)),
             "calibre" => Some(Self::calibre()),
             "webdav" => Some(Self::webdav()),
@@ -368,6 +370,16 @@ impl AppBackupConfig {
             systemd_services: vec!["bichon"],
             paths: vec!["/opt/bichon/data"],
             owner: Some(("bichon", "bichon")),
+            db: None,
+        }
+    }
+
+    fn headscale() -> Self {
+        Self {
+            name: "headscale",
+            systemd_services: vec!["headscale"],
+            paths: vec!["/var/lib/headscale"],
+            owner: Some(("headscale", "headscale")),
             db: None,
         }
     }
@@ -2052,6 +2064,7 @@ mod tests {
         assert!(AppBackupConfig::baikal().db.is_none());
         assert!(AppBackupConfig::bichon().db.is_none());
         assert!(AppBackupConfig::freshrss().db.is_none());
+        assert!(AppBackupConfig::headscale().db.is_none());
         assert!(AppBackupConfig::navidrome(false).db.is_none());
         assert!(AppBackupConfig::navidrome(true).db.is_none());
         assert!(AppBackupConfig::calibre().db.is_none());
@@ -2081,9 +2094,9 @@ mod tests {
     }
 
     #[test]
-    fn test_all_apps_returns_eight() {
+    fn test_all_apps_returns_nine() {
         let all = AppBackupConfig::all();
-        assert_eq!(all.len(), 8);
+        assert_eq!(all.len(), 9);
     }
 
     #[test]
