@@ -1,0 +1,176 @@
+---
+- name: Install and configure Bichon
+  block:
+    - name: Validate required credentials
+      ansible.builtin.assert:
+        that:
+          - bichon_encryption_password is defined
+          - bichon_encryption_password | length > 0
+        fail_msg: "bichon_encryption_password must be defined"
+
+    - name: Get Tailscale status
+      ansible.builtin.command: tailscale status --json
+      register: bichon_tailscale_status_raw
+      changed_when: false
+      failed_when: false
+
+    - name: Parse Tailscale status
+      ansible.builtin.set_fact:
+        bichon_tailscale_status: "{{ bichon_tailscale_status_raw.stdout | from_json }}"
+      when: bichon_tailscale_status_raw.rc == 0
+      changed_when: false
+
+    - name: Set Tailscale IPv4 fact
+      ansible.builtin.set_fact:
+        bichon_tailscale_ip: "{{ bichon_tailscale_status.Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
+      when:
+        - bichon_tailscale_status_raw.rc == 0
+        - bichon_tailscale_status is defined
+        - bichon_tailscale_status.BackendState | default('') == "Running"
+        - bichon_tailscale_status.Self is defined
+        - bichon_tailscale_status.Self.TailscaleIPs is defined
+        - bichon_tailscale_status.Self.TailscaleIPs | select('match', '^[0-9]+\\.') | list | length > 0
+      changed_when: false
+
+    - name: Fail if Tailscale not available
+      ansible.builtin.fail:
+        msg: "Tailscale is not running or no Tailscale IP available. Bichon requires Tailscale."
+      when: bichon_tailscale_ip is not defined
+
+    - name: Display Tailscale IP
+      ansible.builtin.debug:
+        msg: "Bichon will be accessible via Tailscale IP: {{ bichon_tailscale_ip }}"
+
+    - name: Create system group
+      ansible.builtin.group:
+        name: "{{ bichon_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create system user
+      ansible.builtin.user:
+        name: "{{ bichon_sys_user }}"
+        group: "{{ bichon_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ bichon_install_dir }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ bichon_sys_user }}"
+        group: "{{ bichon_sys_group }}"
+        mode: "0750"
+      loop:
+        - "{{ bichon_install_dir }}"
+        - "{{ bichon_root_dir }}"
+        - "{{ bichon_index_dir }}"
+        - "{{ bichon_data_dir }}"
+
+    - name: Check installed version
+      ansible.builtin.stat:
+        path: "{{ bichon_install_dir }}/version"
+      register: bichon_version_file
+
+    - name: Read installed version
+      when: bichon_version_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ bichon_install_dir }}/version"
+      register: bichon_installed_version_raw
+
+    - name: Set installed version fact
+      ansible.builtin.set_fact:
+        bichon_installed_version: >-
+          {{ bichon_installed_version_raw.content | b64decode | trim
+             if bichon_version_file.stat.exists else '' }}
+
+    - name: Download and install binary
+      when: bichon_installed_version != bichon_version
+      block:
+        - name: Download release tarball
+          ansible.builtin.get_url:
+            url: "{{ bichon_release_url }}"
+            dest: /tmp/bichon.tar.gz
+            mode: "0644"
+
+        - name: Extract binary from tarball
+          ansible.builtin.unarchive:
+            src: /tmp/bichon.tar.gz
+            dest: "{{ bichon_install_dir }}"
+            remote_src: true
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Remove tarball
+          ansible.builtin.file:
+            path: /tmp/bichon.tar.gz
+            state: absent
+
+    - name: Deploy environment file
+      ansible.builtin.template:
+        src: bichon.env.j2
+        dest: "{{ bichon_install_dir }}/bichon.env"
+        owner: "{{ bichon_sys_user }}"
+        group: "{{ bichon_sys_group }}"
+        mode: "0600"
+      no_log: true
+      notify: Restart bichon
+
+    - name: Validate Cloudflare API token for Caddy DNS-01 challenge
+      ansible.builtin.assert:
+        that:
+          - cloudflare_dns_api_token is defined
+          - cloudflare_dns_api_token | length > 0
+        fail_msg: "cloudflare_dns_api_token must be defined for Caddy DNS-01 TLS challenge"
+
+    - name: Deploy Caddy site configuration
+      ansible.builtin.template:
+        src: bichon.caddyfile.j2
+        dest: "/etc/caddy/sites/{{ bichon_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
+    - name: Deploy systemd service
+      ansible.builtin.template:
+        src: bichon.service.j2
+        dest: /etc/systemd/system/bichon.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart bichon
+
+    - name: Enable and start service
+      ansible.builtin.systemd_service:
+        name: bichon
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Write installed version
+      when: bichon_installed_version != bichon_version
+      ansible.builtin.copy:
+        content: "{{ bichon_version }}"
+        dest: "{{ bichon_install_dir }}/version"
+        owner: "{{ bichon_sys_user }}"
+        group: "{{ bichon_sys_group }}"
+        mode: "0644"
+
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg:
+          - "==================================="
+          - "Bichon Deployment Complete!"
+          - "==================================="
+          - "Version: {{ bichon_version }}"
+          - "Data: {{ bichon_root_dir }}"
+          - ""
+          - "Access: https://{{ bichon_domain }}"
+          - ""
+          - "Service:"
+          - "  systemctl status bichon"
