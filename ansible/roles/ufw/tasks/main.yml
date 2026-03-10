@@ -45,6 +45,13 @@
         proto: tcp
         comment: "HTTPS"
 
+    - name: Allow STUN traffic for Headscale DERP relay (port 3478)
+      community.general.ufw:
+        rule: allow
+        port: 3478
+        proto: udp
+        comment: "Headscale STUN"
+
     - name: Set UFW logging level
       community.general.ufw:
         logging: low
