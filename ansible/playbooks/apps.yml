@@ -5,6 +5,8 @@
   roles:
     - role: baikal
       tags: [apps, storage, caldav, baikal]
+    - role: bichon
+      tags: [apps, storage, email, bichon]
     - role: blocky
       tags: [apps, network, dns, blocky]
     - role: booklore
