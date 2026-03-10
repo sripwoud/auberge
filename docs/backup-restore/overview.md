@@ -26,6 +26,7 @@ graph TD
 ## Supported Applications
 
 - **Baikal**: Calendar and contact data, configuration files
+- **Bichon**: Email archives, search indices, configuration
 - **FreshRSS**: SQLite database, configuration, user data
 - **Navidrome**: Database and configuration (music files excluded by default)
 - **Calibre**: Book library, metadata database, user database (login credentials)
