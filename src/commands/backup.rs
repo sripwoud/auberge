@@ -180,7 +180,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to backup (baikal,freshrss,navidrome,calibre,webdav,yourls,paperless). Default: all"
+            help = "Apps to backup (baikal,bichon,freshrss,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(short, long, help = "Backup destination directory")]
@@ -229,7 +229,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to restore (baikal,freshrss,navidrome,calibre,webdav,yourls,paperless). Default: all"
+            help = "Apps to restore (baikal,bichon,freshrss,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(
@@ -328,6 +328,7 @@ impl AppBackupConfig {
     pub fn all() -> Vec<Self> {
         vec![
             Self::baikal(),
+            Self::bichon(),
             Self::freshrss(),
             Self::navidrome(false),
             Self::calibre(),
@@ -340,6 +341,7 @@ impl AppBackupConfig {
     pub fn by_name(name: &str, include_music: bool) -> Option<Self> {
         match name {
             "baikal" => Some(Self::baikal()),
+            "bichon" => Some(Self::bichon()),
             "freshrss" => Some(Self::freshrss()),
             "navidrome" => Some(Self::navidrome(include_music)),
             "calibre" => Some(Self::calibre()),
@@ -356,6 +358,16 @@ impl AppBackupConfig {
             systemd_services: vec![],
             paths: vec!["/opt/baikal/Specific"],
             owner: Some(("baikal", "baikal")),
+            db: None,
+        }
+    }
+
+    fn bichon() -> Self {
+        Self {
+            name: "bichon",
+            systemd_services: vec!["bichon"],
+            paths: vec!["/opt/bichon/data"],
+            owner: Some(("bichon", "bichon")),
             db: None,
         }
     }
@@ -2068,9 +2080,9 @@ mod tests {
     }
 
     #[test]
-    fn test_all_apps_returns_seven() {
+    fn test_all_apps_returns_eight() {
         let all = AppBackupConfig::all();
-        assert_eq!(all.len(), 7);
+        assert_eq!(all.len(), 8);
     }
 
     #[test]
