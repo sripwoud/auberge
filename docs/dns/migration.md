@@ -112,7 +112,7 @@ auberge dns migrate --ip 194.164.53.99
 
 **Included:**
 
-- All A records for subdomains pointing to public IPs
+- All A records for subdomains except tailnet-only (CGNAT) records
 
 **Excluded:**
 
