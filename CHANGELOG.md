@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2](https://github.com/sripwoud/auberge/compare/v0.4.1...v0.4.2) - 2026-03-09
+
+### Added
+
+- add PostgreSQL dump/restore and offsite push via `restic` ([#114](https://github.com/sripwoud/auberge/pull/114))
+- auto-deploy infrastructure dependencies when deploying apps ([#113](https://github.com/sripwoud/auberge/pull/113))
+- validate required config before ansible execution ([#112](https://github.com/sripwoud/auberge/pull/112))
+- *(cli)* add shorthand aliases for all subcommands ([#111](https://github.com/sripwoud/auberge/pull/111))
+- configure Tailscale DNS to use Blocky ([#107](https://github.com/sripwoud/auberge/pull/107))
+
+### Other
+
+- extract `SshSession` struct to eliminate SSH arg duplication ([#116](https://github.com/sripwoud/auberge/pull/116))
+- remove unused namecheap config and restructure sections ([#109](https://github.com/sripwoud/auberge/pull/109))
+
 ## [0.4.1](https://github.com/sripwoud/auberge/compare/v0.4.0...v0.4.1) - 2026-03-08
 
 ### Added
