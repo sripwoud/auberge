@@ -1,0 +1,6 @@
+{{ paperless_domain }} {
+	tls {
+		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
+	}
+	reverse_proxy 127.0.0.1:{{ paperless_port }}
+}
