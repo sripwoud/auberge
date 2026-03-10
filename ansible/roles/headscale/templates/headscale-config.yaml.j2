@@ -1,0 +1,37 @@
+server_url: {{ headscale_server_url }}
+listen_addr: 127.0.0.1:{{ headscale_port }}
+metrics_listen_addr: 127.0.0.1:{{ headscale_metrics_port }}
+noise:
+  private_key_path: {{ headscale_data_dir }}/noise_private.key
+prefixes:
+  v4: {{ headscale_ip_prefix_v4 }}
+  v6: {{ headscale_ip_prefix_v6 }}
+  allocation: sequential
+derp:
+  server:
+    enabled: {{ headscale_derp_enabled | lower }}
+    region_id: {{ headscale_derp_region_id }}
+    region_code: self
+    region_name: {{ headscale_derp_region_name }}
+    stun_listen_addr: 0.0.0.0:{{ headscale_stun_port }}
+  urls: []
+  auto_update_enabled: false
+database:
+  type: sqlite
+  sqlite:
+    path: {{ headscale_db_path }}
+    write_ahead_log: true
+dns:
+  magic_dns: {{ headscale_magic_dns_enabled | lower }}
+  base_domain: {{ headscale_base_domain }}
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 1.0.0.1
+log:
+  level: {{ headscale_log_level }}
+logtail:
+  enabled: false
+policy:
+  mode: file
+  path: ""
