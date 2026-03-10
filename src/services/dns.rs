@@ -206,9 +206,11 @@ impl DnsService {
         let existing = self.list_records().await?;
         let mut results = Vec::new();
 
+        let domain_suffix = format!(".{}", self.config.domain);
         let a_records: Vec<&DnsRecord> = existing
             .iter()
             .filter(|r| matches!(r.content, DnsContent::A { .. }))
+            .filter(|r| r.name.ends_with(&domain_suffix) && r.name != self.config.domain)
             .collect();
 
         if dry_run {
@@ -220,8 +222,8 @@ impl DnsService {
                     }
                     let subdomain = record
                         .name
-                        .strip_suffix(&format!(".{}", self.config.domain))
-                        .unwrap_or(&record.name)
+                        .strip_suffix(&domain_suffix)
+                        .expect("pre-filtered to end with domain suffix")
                         .to_string();
 
                     results.push(MigrationResult {
@@ -243,8 +245,8 @@ impl DnsService {
                 }
                 let subdomain = record
                     .name
-                    .strip_suffix(&format!(".{}", self.config.domain))
-                    .unwrap_or(&record.name);
+                    .strip_suffix(&domain_suffix)
+                    .expect("pre-filtered to end with domain suffix");
 
                 let success = self.set_a_record(subdomain, new_ip).await.is_ok();
 
