@@ -52,8 +52,7 @@ mise set --age-encrypt --prompt PRIMARY_DOMAIN
 
 **Solution:**
 
-- Specify zone_id in config.toml
-- Or ensure token is scoped to specific zone
+- Ensure token is scoped to specific zone
 
 ## Record Errors
 

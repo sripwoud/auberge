@@ -226,7 +226,6 @@ mod tests {
     fn test_required_config_keys_apps() {
         let keys = required_config_keys("apps.yml");
         assert!(keys.contains(&"cloudflare_dns_api_token"));
-        assert!(!keys.contains(&"zone_id"));
     }
 
     #[test]

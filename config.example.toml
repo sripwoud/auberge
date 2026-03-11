@@ -46,5 +46,3 @@ yourls_api_signature = ""
 yourls_cookiekey = ""
 yourls_db_password = ""
 yourls_subdomain = ""
-
-zone_id = ""

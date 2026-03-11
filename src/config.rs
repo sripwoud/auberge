@@ -9,8 +9,6 @@ pub struct Config {
     pub domain: String,
     #[serde(default = "default_ttl")]
     pub default_ttl: u32,
-    #[serde(default)]
-    pub zone_id: Option<String>,
 }
 
 fn default_ttl() -> u32 {

@@ -102,10 +102,7 @@ impl DnsService {
             Environment::Production,
         )?;
 
-        let zone_id = match &app_config.zone_id {
-            Some(id) if !id.is_empty() => id.clone(),
-            _ => Self::discover_zone_id(&client, &app_config.domain).await?,
-        };
+        let zone_id = Self::discover_zone_id(&client, &app_config.domain).await?;
 
         Ok(Self {
             client,
@@ -126,12 +123,19 @@ impl DnsService {
             .await
             .map_err(|e| eyre::eyre!("Failed to list zones: {}", e))?;
 
-        zones
-            .result
-            .into_iter()
-            .next()
-            .map(|z| z.id)
-            .ok_or_else(|| eyre::eyre!("Zone not found: {}", zone_name))
+        let mut results = zones.result;
+        match results.len() {
+            0 => eyre::bail!("Zone not found: {}", zone_name),
+            1 => Ok(results.remove(0).id),
+            _ => {
+                let ids: Vec<String> = results.iter().map(|z| z.id.clone()).collect();
+                eyre::bail!(
+                    "Multiple zones found for '{}': {:?}. Scope your API token to a single zone.",
+                    zone_name,
+                    ids
+                )
+            }
+        }
     }
 
     pub fn domain(&self) -> &str {
