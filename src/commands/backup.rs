@@ -425,7 +425,7 @@ impl AppBackupConfig {
     fn vdirsyncer() -> Self {
         Self {
             name: "vdirsyncer",
-            systemd_services: vec!["vdirsyncer.timer"],
+            systemd_services: vec!["vdirsyncer.timer", "vdirsyncer.service"],
             paths: vec!["/var/lib/vdirsyncer"],
             owner: Some(("vdirsyncer", "vdirsyncer")),
             db: None,
