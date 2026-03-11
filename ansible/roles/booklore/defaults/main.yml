@@ -4,14 +4,14 @@ booklore_bookdrop_path: /srv/bookdrop
 booklore_sys_user: booklore
 booklore_sys_group: booklore
 booklore_port: 6060
-booklore_domain: "{{ booklore_subdomain }}.{{ primary_domain }}"
+booklore_domain: "{{ booklore_subdomain }}.{{ domain }}"
 
 booklore_db_host: "127.0.0.1"
 booklore_db_name: booklore
 booklore_db_user: booklore
 
 booklore_admin_name: "{{ booklore_admin_user }}"
-booklore_admin_email: "{{ booklore_admin_user }}@{{ primary_domain }}"
+booklore_admin_email: "{{ booklore_admin_user }}@{{ domain }}"
 
 booklore_github_repo: booklore-app/booklore
 booklore_version: "2.0.1"

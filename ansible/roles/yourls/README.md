@@ -63,7 +63,7 @@ yourls_db_host: localhost
     - role: yourls
       vars:
         yourls_subdomain: s
-        primary_domain: example.com
+        domain: example.com
 ```
 
 ### Environment Variables Example
@@ -86,7 +86,7 @@ ansible-playbook -i inventory playbook.yml
 - **Installation path**: `/var/www/yourls`
 - **Database**: MariaDB on `localhost` via Unix socket
 - **Web server**: Caddy with PHP-FPM via `/var/run/php/phpX.X-fpm.sock`
-- **Domain**: `{{ yourls_subdomain }}.{{ primary_domain }}`
+- **Domain**: `{{ yourls_subdomain }}.{{ domain }}`
 - **Admin interface**: `https://{{ yourls_domain }}/admin/`
 
 ## Idempotency

@@ -4,4 +4,4 @@ vdirsyncer_config_dir: /etc/vdirsyncer
 vdirsyncer_sys_user: vdirsyncer
 vdirsyncer_sys_group: vdirsyncer
 vdirsyncer_sync_interval: 2min
-vdirsyncer_baikal_calendar_url: "https://{{ baikal_subdomain }}.{{ primary_domain }}/cal.php/calendars/{{ admin_user_name }}/"
+vdirsyncer_baikal_calendar_url: "https://{{ baikal_subdomain }}.{{ domain }}/cal.php/calendars/{{ admin_user_name }}/"

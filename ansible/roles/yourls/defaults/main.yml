@@ -1,7 +1,7 @@
 yourls_install_path: /var/www/yourls
 yourls_sys_user: www-data
 yourls_sys_group: www-data
-yourls_domain: "{{ yourls_subdomain }}.{{ primary_domain }}"
+yourls_domain: "{{ yourls_subdomain }}.{{ domain }}"
 yourls_version: "1.10.2"
 
 yourls_db_name: yourls

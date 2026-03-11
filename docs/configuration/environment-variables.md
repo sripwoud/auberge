@@ -24,7 +24,7 @@ auberge host show <name>
 ```bash
 auberge config set admin_user_name <username>
 auberge config set admin_user_email <email>
-auberge config set primary_domain <domain>
+auberge config set domain <domain>
 auberge config set ssh_port <port>
 auberge config set cloudflare_dns_api_token <token>
 auberge config set tailscale_authkey <key>

@@ -24,7 +24,7 @@ Key variables:
 - `bichon_data_dir: /opt/bichon/data/store`
 - `bichon_log_level: info`
 - `bichon_subdomain: bichon`
-- `bichon_domain: "{{ bichon_subdomain }}.{{ primary_domain }}"`
+- `bichon_domain: "{{ bichon_subdomain }}.{{ domain }}"`
 - `bichon_release_url` — constructed from `bichon_version` pointing to the GitHub releases asset URL
 
 ### `ansible/roles/bichon/tasks/main.yml`
