@@ -51,8 +51,6 @@ paperless_secret_key = ""
 paperless_subdomain = ""
 paperless_tailscale_ip = ""
 
-primary_domain = ""
-
 restic_password = ""
 restic_repository = ""
 

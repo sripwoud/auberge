@@ -11,6 +11,6 @@ bichon_bind_addr: 127.0.0.1
 bichon_log_level: info
 
 bichon_subdomain: bichon
-bichon_domain: "{{ bichon_subdomain }}.{{ primary_domain }}"
+bichon_domain: "{{ bichon_subdomain }}.{{ domain }}"
 
 bichon_release_url: "https://github.com/rustmailer/bichon/releases/download/v{{ bichon_version }}/bichon-x86_64-unknown-linux-gnu.tar.gz"

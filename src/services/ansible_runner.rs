@@ -75,33 +75,22 @@ pub fn required_config_keys(playbook_name: &str) -> Vec<&'static str> {
         }
         "hardening.yml" => {}
         "infrastructure.yml" => {
-            keys.extend([
-                "admin_user_name",
-                "domain",
-                "primary_domain",
-                "tailscale_authkey",
-            ]);
+            keys.extend(["admin_user_name", "domain", "tailscale_authkey"]);
         }
         "apps.yml" => {
-            keys.extend([
-                "admin_user_name",
-                "domain",
-                "primary_domain",
-                "cloudflare_dns_api_token",
-            ]);
+            keys.extend(["admin_user_name", "domain", "cloudflare_dns_api_token"]);
         }
         "auberge.yml" => {
             keys.extend([
                 "admin_user_name",
                 "domain",
-                "primary_domain",
                 "ssh_port",
                 "cloudflare_dns_api_token",
                 "tailscale_authkey",
             ]);
         }
         _ => {
-            keys.extend(["admin_user_name", "domain", "primary_domain"]);
+            keys.extend(["admin_user_name", "domain"]);
         }
     }
 
@@ -230,7 +219,6 @@ mod tests {
         let keys = required_config_keys("infrastructure.yml");
         assert!(keys.contains(&"admin_user_name"));
         assert!(keys.contains(&"domain"));
-        assert!(keys.contains(&"primary_domain"));
         assert!(keys.contains(&"tailscale_authkey"));
     }
 
@@ -263,7 +251,6 @@ mod tests {
         let keys = required_config_keys("custom.yml");
         assert!(keys.contains(&"admin_user_name"));
         assert!(keys.contains(&"domain"));
-        assert!(keys.contains(&"primary_domain"));
     }
 
     #[test]
