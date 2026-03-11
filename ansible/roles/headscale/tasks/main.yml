@@ -23,7 +23,7 @@
         state: directory
         owner: root
         group: "{{ headscale_sys_group }}"
-        mode: "0755"
+        mode: "0750"
 
     - name: Create headscale data directory
       ansible.builtin.file:
@@ -77,7 +77,7 @@
       ansible.builtin.template:
         src: headscale-config.yaml.j2
         dest: "{{ headscale_config_dir }}/config.yaml"
-        owner: "{{ headscale_sys_user }}"
+        owner: root
         group: "{{ headscale_sys_group }}"
         mode: "0640"
       notify: Restart headscale
