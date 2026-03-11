@@ -425,7 +425,7 @@ impl AppBackupConfig {
     fn vdirsyncer() -> Self {
         Self {
             name: "vdirsyncer",
-            systemd_services: vec![],
+            systemd_services: vec!["vdirsyncer.timer"],
             paths: vec!["/var/lib/vdirsyncer"],
             owner: Some(("vdirsyncer", "vdirsyncer")),
             db: None,
@@ -2107,7 +2107,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_apps_returns_nine() {
+    fn test_all_apps_count() {
         let all = AppBackupConfig::all();
         assert_eq!(all.len(), 10);
     }

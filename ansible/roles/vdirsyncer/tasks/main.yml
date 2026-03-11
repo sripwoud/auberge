@@ -65,7 +65,7 @@
       become: true
       become_user: "{{ vdirsyncer_sys_user }}"
       ansible.builtin.pip:
-        name: vdirsyncer[google]
+        name: vdirsyncer
         virtualenv: "{{ vdirsyncer_install_dir }}/venv"
         state: present
 
@@ -88,8 +88,6 @@
       args:
         executable: /bin/bash
         creates: "{{ vdirsyncer_status_dir }}/icloud_to_baikal"
-      environment:
-        VDIRSYNCER_ICLOUD_PASSWORD: "{{ vdirsyncer_icloud_password }}"
 
     - name: Deploy vdirsyncer systemd service
       ansible.builtin.template:
