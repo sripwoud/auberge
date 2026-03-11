@@ -62,6 +62,12 @@ tailscale_api_key = ""
 tailscale_authkey = ""
 tailscale_login_server = ""
 
+vdirsyncer_baikal_calendar_name = ""
+vdirsyncer_icloud_calendar_id = ""
+vdirsyncer_icloud_password = ""
+vdirsyncer_icloud_url = ""
+vdirsyncer_icloud_username = ""
+
 webdav_password = ""
 webdav_subdomain = ""
 
