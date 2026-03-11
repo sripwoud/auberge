@@ -231,8 +231,8 @@ fn resolve_ip(ip: Option<String>) -> Result<String> {
                 .interact_text()?;
             let value = value.trim().to_string();
             value
-                .parse::<std::net::IpAddr>()
-                .map_err(|_| eyre::eyre!("Invalid IP address: {}", value))?;
+                .parse::<std::net::Ipv4Addr>()
+                .map_err(|_| eyre::eyre!("Invalid IPv4 address: {}", value))?;
             Ok(value)
         }
         None => eyre::bail!("IP argument required in non-interactive mode"),
