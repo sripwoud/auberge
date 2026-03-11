@@ -1,0 +1,115 @@
+- name: Install and configure vdirsyncer
+  when:
+    - vdirsyncer_icloud_password is defined
+    - vdirsyncer_icloud_password | length > 0
+  block:
+    - name: Validate vdirsyncer iCloud credentials are set
+      ansible.builtin.assert:
+        that:
+          - vdirsyncer_icloud_url is defined
+          - vdirsyncer_icloud_url | length > 0
+          - vdirsyncer_icloud_username is defined
+          - vdirsyncer_icloud_username | length > 0
+          - vdirsyncer_icloud_calendar_id is defined
+          - vdirsyncer_icloud_calendar_id | length > 0
+          - vdirsyncer_baikal_calendar_name is defined
+          - vdirsyncer_baikal_calendar_name | length > 0
+          - baikal_admin_password is defined
+          - baikal_admin_password | length > 0
+        fail_msg: |
+          vdirsyncer requires iCloud CalDAV credentials and a Baikal calendar name.
+          Set them via: auberge config set <key> <value>
+
+    - name: Create vdirsyncer system group
+      ansible.builtin.group:
+        name: "{{ vdirsyncer_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create vdirsyncer system user
+      ansible.builtin.user:
+        name: "{{ vdirsyncer_sys_user }}"
+        group: "{{ vdirsyncer_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ vdirsyncer_install_dir }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create vdirsyncer directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default(vdirsyncer_sys_user) }}"
+        group: "{{ item.group | default(vdirsyncer_sys_group) }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ vdirsyncer_install_dir }}", mode: "0755" }
+        - { path: "{{ vdirsyncer_status_dir }}", mode: "0700" }
+        - { path: "{{ vdirsyncer_config_dir }}", mode: "0750", owner: root }
+
+    - name: Install python3-venv
+      ansible.builtin.apt:
+        name: [python3-venv, python3-pip]
+        state: present
+        update_cache: true
+
+    - name: Create Python virtual environment
+      become: true
+      become_user: "{{ vdirsyncer_sys_user }}"
+      ansible.builtin.command:
+        cmd: python3 -m venv {{ vdirsyncer_install_dir }}/venv
+        creates: "{{ vdirsyncer_install_dir }}/venv/bin/activate"
+
+    - name: Install vdirsyncer in virtualenv
+      become: true
+      become_user: "{{ vdirsyncer_sys_user }}"
+      ansible.builtin.pip:
+        name: vdirsyncer
+        virtualenv: "{{ vdirsyncer_install_dir }}/venv"
+        state: present
+
+    - name: Deploy vdirsyncer configuration
+      ansible.builtin.template:
+        src: templates/vdirsyncer.config.j2
+        dest: "{{ vdirsyncer_config_dir }}/config"
+        owner: root
+        group: "{{ vdirsyncer_sys_group }}"
+        mode: "0640"
+      notify: Restart vdirsyncer timer
+      no_log: true
+
+    - name: Run vdirsyncer discover to initialize pair
+      become: true
+      become_user: "{{ vdirsyncer_sys_user }}"
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ vdirsyncer_install_dir }}/venv/bin/vdirsyncer -c {{ vdirsyncer_config_dir }}/config discover icloud_to_baikal
+      args:
+        executable: /bin/bash
+        creates: "{{ vdirsyncer_status_dir }}/icloud_to_baikal"
+
+    - name: Deploy vdirsyncer systemd service
+      ansible.builtin.template:
+        src: templates/vdirsyncer.service.j2
+        dest: /etc/systemd/system/vdirsyncer.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart vdirsyncer timer
+
+    - name: Deploy vdirsyncer systemd timer
+      ansible.builtin.template:
+        src: templates/vdirsyncer.timer.j2
+        dest: /etc/systemd/system/vdirsyncer.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart vdirsyncer timer
+
+    - name: Enable and start vdirsyncer timer
+      ansible.builtin.systemd_service:
+        name: vdirsyncer.timer
+        enabled: true
+        state: started
+        daemon_reload: true

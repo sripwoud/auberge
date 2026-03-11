@@ -1,0 +1,22 @@
+[Unit]
+Description=vdirsyncer iCloud-to-Baikal calendar sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ vdirsyncer_sys_user }}
+Group={{ vdirsyncer_sys_group }}
+ExecStart={{ vdirsyncer_install_dir }}/venv/bin/vdirsyncer -c {{ vdirsyncer_config_dir }}/config sync
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ReadWritePaths={{ vdirsyncer_status_dir }}
+UMask=0022
