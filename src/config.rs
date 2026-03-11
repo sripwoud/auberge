@@ -26,7 +26,11 @@ impl Config {
                 config_path.display()
             )
         })?;
-        let mut config: Self = toml::from_str(&contents).wrap_err("Failed to parse config.toml")?;
+        Self::parse(&contents)
+    }
+
+    fn parse(contents: &str) -> Result<Self> {
+        let mut config: Self = toml::from_str(contents).wrap_err("Failed to parse config.toml")?;
         if config.domain.trim().is_empty() {
             eyre::bail!("'domain' is required in config.toml but is missing or empty");
         }
@@ -53,10 +57,31 @@ mod tests {
 
     #[test]
     fn test_default_ttl() {
-        let toml_str = r#"
-            domain = "example.com"
-        "#;
-        let config: Config = toml::from_str(toml_str).unwrap();
+        let config = Config::parse(r#"domain = "example.com""#).unwrap();
         assert_eq!(config.default_ttl, 300);
+    }
+
+    #[test]
+    fn test_missing_domain_fails() {
+        let err = Config::parse("default_ttl = 600").unwrap_err();
+        assert!(err.to_string().contains("domain"));
+    }
+
+    #[test]
+    fn test_empty_domain_fails() {
+        let err = Config::parse(r#"domain = """#).unwrap_err();
+        assert!(err.to_string().contains("domain"));
+    }
+
+    #[test]
+    fn test_whitespace_domain_fails() {
+        let err = Config::parse(r#"domain = "  ""#).unwrap_err();
+        assert!(err.to_string().contains("domain"));
+    }
+
+    #[test]
+    fn test_domain_is_trimmed() {
+        let config = Config::parse(r#"domain = " example.com ""#).unwrap();
+        assert_eq!(config.domain, "example.com");
     }
 }
