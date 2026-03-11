@@ -72,7 +72,7 @@ Configures SSH for security:
 
 ```yaml
 # Key settings in sshd_config
-Port: {{ lookup('env', 'SSH_PORT') }}
+Port: { { ssh_port } }
 PermitRootLogin: no
 PasswordAuthentication: no
 PubkeyAuthentication: yes
@@ -107,7 +107,7 @@ Sets up firewall rules but doesn't enable until SSH is validated:
 ### Prerequisites
 
 - Root SSH access to VPS
-- `SSH_PORT` environment variable set
+- `ssh_port` set in `config.toml`
 - Provider firewall allows custom SSH port
 
 ### Post-Bootstrap State

@@ -22,39 +22,28 @@ This installs:
 - Ansible and ansible-lint
 - Other dev dependencies (dprint, dasel, pkl, etc.)
 
-## Environment Variables
+## Configuration
 
-All configuration is managed via `mise.toml` environment variables.
-
-### Secrets (encrypted with age)
-
-Set encrypted secrets using mise:
+All configuration is managed via `config.toml`. Copy `config.example.toml` and fill in values:
 
 ```bash
-mise set --age-encrypt --prompt ADMIN_USER_NAME
-mise set --age-encrypt --prompt ADMIN_USER_EMAIL
-mise set --age-encrypt --prompt PRIMARY_DOMAIN
-mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
-mise set --age-encrypt --prompt BAIKAL_ADMIN_PASSWORD
-mise set --age-encrypt --prompt WEBDAV_PASSWORD
-mise set --age-encrypt --prompt TAILSCALE_AUTHKEY
-mise set --age-encrypt --prompt SSH_PORT
-mise set --age-encrypt --prompt AUBERGE_HOST
-mise set --age-encrypt --prompt VIBECODER_HOST
+cp config.example.toml config.toml
 ```
 
-### Public Configuration
+Key values to set:
 
-Already defined in `mise.toml` [env] section:
+```bash
+auberge config set admin_user_name yourname
+auberge config set admin_user_email you@example.com
+auberge config set domain example.com
+auberge config set cloudflare_dns_api_token your-token
+auberge config set baikal_admin_password your-password
+auberge config set webdav_password your-password
+auberge config set tailscale_authkey your-authkey
+auberge config set ssh_port 22022
+```
 
-- `DNS_DEFAULT_TTL` - DNS record TTL in seconds (default: 300)
-- `BLOCKY_SUBDOMAIN` - Subdomain for Blocky DNS (default: dns)
-- `CALIBRE_SUBDOMAIN` - Subdomain for Calibre (default: lire)
-- `FRESHRSS_SUBDOMAIN` - Subdomain for FreshRSS (default: rss)
-- `NAVIDROME_SUBDOMAIN` - Subdomain for Navidrome (default: musique)
-- `BAIKAL_SUBDOMAIN` - Subdomain for Baikal (default: calendrier)
-- `WEBDAV_SUBDOMAIN` - Subdomain for WebDAV (default: webdav)
-- `YOURLS_SUBDOMAIN` - Subdomain for YOURLS (default: url)
+See `config.example.toml` for all available options including subdomain overrides.
 
 ## Host Management
 
@@ -117,7 +106,6 @@ The CLI checks hosts in this order:
 
 1. `~/.config/auberge/hosts.toml` (if exists and not empty)
 2. `ansible/inventory.yml` (fallback for developers)
-3. Environment variables (legacy support)
 
 ## API Keys and Tokens
 
@@ -132,9 +120,9 @@ Required for DNS-01 ACME challenges via Lego certificate automation:
    - Zone → DNS → Edit
    - Zone → Zone → Read
 5. Set zone resources to your domain
-6. Copy the token and add to mise:
+6. Copy the token and add to config:
    ```bash
-   mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
+   auberge config set cloudflare_dns_api_token your-token
    ```
 
 **Note**: IP whitelisting is optional (all IPs are allowed by default)
@@ -147,7 +135,7 @@ Required for VPN mesh networking:
 2. Set reusable and ephemeral flags as needed
 3. Store the key:
    ```bash
-   mise set --age-encrypt --prompt TAILSCALE_AUTHKEY
+   auberge config set tailscale_authkey your-authkey
    ```
 
 ## Building
@@ -179,9 +167,9 @@ ansible-lint
 
 Before running bootstrap playbook, configure your VPS provider's firewall to allow your custom SSH port:
 
-1. Decrypt your SSH_PORT: `mise env | grep SSH_PORT`
+1. Check your SSH port: `auberge config show`
 2. Log into your VPS provider control panel (IONOS, DigitalOcean, Hetzner, etc.)
-3. Add firewall rule to allow TCP traffic on your SSH_PORT
+3. Add firewall rule to allow TCP traffic on your `ssh_port`
 4. Save the rule
 
 This prevents lockout when Ansible changes SSH from port 22 to your custom port.

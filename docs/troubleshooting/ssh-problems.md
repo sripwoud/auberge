@@ -12,10 +12,10 @@ Troubleshooting SSH connectivity issues.
 
 ```bash
 # Check configured port
-mise env | grep SSH_PORT
+auberge config show
 
-# Try connecting with correct port
-ssh -p $SSH_PORT ansible@vps-ip
+# Try connecting with correct port (replace PORT with your configured ssh_port)
+ssh -p PORT ansible@vps-ip
 ```
 
 ### Firewall blocking port
@@ -103,8 +103,8 @@ ssh ansible@vps-ip
 # Verify IP
 ping vps-ip
 
-# Check inventory
-mise env | grep AUBERGE_HOST
+# Check host configuration
+auberge host list
 ```
 
 ### VPS offline

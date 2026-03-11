@@ -102,7 +102,7 @@ Before running bootstrap, ensure your VPS provider's firewall
 allows your custom SSH port (separate from UFW on the VPS)
 
 Required steps:
-  1. Get your SSH_PORT: mise env | grep SSH_PORT
+  1. Get your SSH_PORT: auberge config show
   2. Log into your VPS provider dashboard (IONOS, etc.)
   3. Add firewall rule: Allow TCP on your SSH_PORT
   4. Save and confirm the rule is active
@@ -118,7 +118,7 @@ When running apps.yml or auberge.yml:
 
 - Zone → Zone → Read
 - Zone → DNS → Edit
-- Set with: `mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN`
+- Set with: `auberge config set cloudflare_dns_api_token your-token`
 
 **Port 853 (DNS over TLS)**:
 

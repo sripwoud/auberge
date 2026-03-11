@@ -16,7 +16,7 @@ auberge dns set-all [OPTIONS]
 
 Interactively or automatically creates DNS A records for all configured app subdomains pointing to a host's IP address.
 
-Discovers subdomain names from environment variables (SUBDOMAIN_FRESHRSS, SUBDOMAIN_BAIKAL, etc.) and creates A records pointing to the selected host's IP.
+Discovers subdomain names from `config.toml` (e.g., `freshrss_subdomain`, `baikal_subdomain`) and creates A records pointing to the selected host's IP.
 
 ## Options
 
@@ -66,26 +66,24 @@ auberge dns set-all --host myserver --continue-on-error
 
 ## Subdomain Discovery
 
-Reads environment variables to discover subdomains:
+Reads `config.toml` to discover subdomains:
 
-- SUBDOMAIN_BLOCKY
-- SUBDOMAIN_CALIBRE
-- SUBDOMAIN_FRESHRSS
-- SUBDOMAIN_NAVIDROME
-- SUBDOMAIN_BAIKAL
-- SUBDOMAIN_WEBDAV
-- SUBDOMAIN_YOURLS
+- `blocky_subdomain`
+- `freshrss_subdomain`
+- `navidrome_subdomain`
+- `baikal_subdomain`
+- `webdav_subdomain`
+- `yourls_subdomain`
 
-Configure with mise:
+Configure with:
 
 ```bash
-mise set SUBDOMAIN_FRESHRSS="freshrss"
-mise set SUBDOMAIN_BAIKAL="baikal"
-mise set SUBDOMAIN_CALIBRE="calibre"
-mise set SUBDOMAIN_NAVIDROME="music"
-mise set SUBDOMAIN_WEBDAV="files"
-mise set SUBDOMAIN_YOURLS="s"
-mise set SUBDOMAIN_BLOCKY="dns"
+auberge config set freshrss_subdomain freshrss
+auberge config set baikal_subdomain baikal
+auberge config set navidrome_subdomain music
+auberge config set webdav_subdomain files
+auberge config set yourls_subdomain s
+auberge config set blocky_subdomain dns
 ```
 
 ## Output Example

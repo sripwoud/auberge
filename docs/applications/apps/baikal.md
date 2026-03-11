@@ -12,9 +12,9 @@ auberge ansible run --tags baikal
 
 ## Configuration
 
-Requires `BAIKAL_SUBDOMAIN` and `BAIKAL_ADMIN_PASSWORD` environment variables. See [Environment Variables](../../configuration/environment-variables.md).
+Requires `baikal_subdomain` and `baikal_admin_password` set in `config.toml`.
 
-Initial setup is done through the web interface at `https://{BAIKAL_SUBDOMAIN}.{PRIMARY_DOMAIN}/admin/`.
+Initial setup is done through the web interface at `https://{BAIKAL_SUBDOMAIN}.{domain}/admin/`.
 
 ## Features
 
@@ -28,9 +28,9 @@ Initial setup is done through the web interface at `https://{BAIKAL_SUBDOMAIN}.{
 
 ## Access
 
-- Admin Interface: `https://{BAIKAL_SUBDOMAIN}.{PRIMARY_DOMAIN}/admin/`
-- CalDAV Endpoint: `https://{BAIKAL_SUBDOMAIN}.{PRIMARY_DOMAIN}/dav.php`
-- CardDAV Endpoint: `https://{BAIKAL_SUBDOMAIN}.{PRIMARY_DOMAIN}/dav.php`
+- Admin Interface: `https://{BAIKAL_SUBDOMAIN}.{domain}/admin/`
+- CalDAV Endpoint: `https://{BAIKAL_SUBDOMAIN}.{domain}/dav.php`
+- CardDAV Endpoint: `https://{BAIKAL_SUBDOMAIN}.{domain}/dav.php`
 
 ## Backup
 

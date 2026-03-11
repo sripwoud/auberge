@@ -63,28 +63,16 @@ gJ4kX-yF8nP2wQ5vR7tH9mL3bK6cN1dA4sZ8xE0fY2
 
 ## Step 3: Store Token Securely
 
-### Via mise (Recommended)
+Add the token to `config.toml`:
 
 ```bash
-mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
-# Paste your token when prompted
+auberge config set cloudflare_dns_api_token your-token-here
 ```
 
-This encrypts the token with age and stores it in `mise.toml`.
-
-### Via Environment Variable (Testing)
+## Step 4: Set Domain
 
 ```bash
-export CLOUDFLARE_DNS_API_TOKEN="your-token-here"
-```
-
-**Warning:** Not persistent across sessions. Use mise for production.
-
-## Step 4: Set Primary Domain
-
-```bash
-mise set --age-encrypt --prompt PRIMARY_DOMAIN
-# Enter your domain (e.g., example.com)
+auberge config set domain example.com
 ```
 
 ## Step 5: Verify Configuration
@@ -116,23 +104,20 @@ If you see this, your API token is working correctly.
 
 ### Default Subdomains
 
-Auberge uses environment variables for subdomain names:
+Auberge uses `config.toml` for subdomain names:
 
 ```toml
-# mise.toml [env] section (not encrypted - public config)
-BLOCKY_SUBDOMAIN = "dns"
-CALIBRE_SUBDOMAIN = "lire"
-FRESHRSS_SUBDOMAIN = "rss"
-NAVIDROME_SUBDOMAIN = "musique"
-BAIKAL_SUBDOMAIN = "calendrier"
-WEBDAV_SUBDOMAIN = "webdav"
-YOURLS_SUBDOMAIN = "url"
+blocky_subdomain = "dns"
+freshrss_subdomain = "rss"
+navidrome_subdomain = "musique"
+baikal_subdomain = "calendrier"
+webdav_subdomain = "webdav"
+yourls_subdomain = "url"
 ```
 
 **Result:** Applications accessible at:
 
 - `dns.example.com` (Blocky)
-- `lire.example.com` (Calibre)
 - `rss.example.com` (FreshRSS)
 - `musique.example.com` (Navidrome)
 - `calendrier.example.com` (Baikal)
@@ -141,13 +126,12 @@ YOURLS_SUBDOMAIN = "url"
 
 ### Custom Subdomains
 
-Override defaults in `mise.toml`:
+Override defaults in `config.toml`:
 
 ```toml
-[env]
-BAIKAL_SUBDOMAIN = "cal"        # calendrier → cal
-NAVIDROME_SUBDOMAIN = "music"     # musique → music
-FRESHRSS_SUBDOMAIN = "feeds"      # rss → feeds
+baikal_subdomain = "cal"
+navidrome_subdomain = "music"
+freshrss_subdomain = "feeds"
 ```
 
 **Result:**
@@ -211,9 +195,8 @@ Change tokens periodically:
 
 ```bash
 # Create new token in Cloudflare Dashboard
-# Update mise
-mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
-# Paste new token
+# Update config.toml
+auberge config set cloudflare_dns_api_token your-new-token
 
 # Verify it works
 auberge dns status
@@ -237,23 +220,23 @@ Token is invalid or expired.
 **Fix:**
 
 1. Create new token in Cloudflare
-2. Update mise:
+2. Update config:
    ```bash
-   mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
+   auberge config set cloudflare_dns_api_token your-new-token
    ```
 
 ### "Zone not found"
 
-Domain not configured in Cloudflare or wrong domain in mise.
+Domain not configured in Cloudflare or wrong domain in `config.toml`.
 
 **Fix:**
 
 ```bash
-# Verify domain in mise
-mise env | grep PRIMARY_DOMAIN
+# Verify domain
+auberge config show
 
 # Update if wrong
-mise set --age-encrypt --prompt PRIMARY_DOMAIN
+auberge config set domain example.com
 ```
 
 ### "Insufficient permissions"

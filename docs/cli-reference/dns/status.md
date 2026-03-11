@@ -73,21 +73,20 @@ Missing subdomains: calibre, navidrome
 
 ## Subdomain Discovery
 
-Configured subdomains are discovered from environment variables:
+Configured subdomains are discovered from `config.toml`:
 
-- SUBDOMAIN_BLOCKY
-- SUBDOMAIN_CALIBRE
-- SUBDOMAIN_FRESHRSS
-- SUBDOMAIN_NAVIDROME
-- SUBDOMAIN_BAIKAL
-- SUBDOMAIN_WEBDAV
-- SUBDOMAIN_YOURLS
+- `blocky_subdomain`
+- `freshrss_subdomain`
+- `navidrome_subdomain`
+- `baikal_subdomain`
+- `webdav_subdomain`
+- `yourls_subdomain`
 
-Set with mise:
+Set with:
 
 ```bash
-mise set SUBDOMAIN_FRESHRSS="freshrss"
-mise set SUBDOMAIN_BAIKAL="baikal"
+auberge config set freshrss_subdomain freshrss
+auberge config set baikal_subdomain baikal
 ```
 
 ## Use Cases

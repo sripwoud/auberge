@@ -71,10 +71,10 @@ Before running bootstrap:
 3. **VPS provider firewall**:
    ```bash
    # Get your custom SSH port
-   mise env | grep SSH_PORT
+   auberge config show
 
    # Add firewall rule in provider dashboard
-   # Allow TCP on your SSH_PORT
+   # Allow TCP on your ssh_port value
    ```
 
 4. **Required config values**:

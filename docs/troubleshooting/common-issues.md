@@ -34,32 +34,18 @@ brew install mise  # macOS
 
 ## Configuration Issues
 
-### Environment variables not set
+### Config value not set
 
-**Problem:** Commands fail with "environment variable not set".
+**Problem:** Commands fail with "missing required config value".
 
 **Solution:**
 
 ```bash
-# Check environment
-mise env | grep VARIABLE_NAME
+# Check config
+auberge config show
 
 # Set if missing
-mise set --age-encrypt --prompt VARIABLE_NAME
-```
-
-### age encryption fails
-
-**Problem:** "age: error: no identity file".
-
-**Solution:**
-
-```bash
-# Generate age key
-age-keygen -o ~/.config/age/key.txt
-
-# Verify
-ls -l ~/.config/age/key.txt
+auberge config set KEY value
 ```
 
 ## Host Management Issues
@@ -166,8 +152,8 @@ auberge ansible bootstrap my-vps --ip 203.0.113.10
 
 ```bash
 # Regenerate token in Cloudflare Dashboard
-# Update mise
-mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
+# Update config
+auberge config set cloudflare_dns_api_token your-new-token
 ```
 
 ### DNS records not propagating

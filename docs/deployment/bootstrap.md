@@ -5,16 +5,15 @@ First-time VPS setup. Run once on fresh VPS.
 ## Prerequisites
 
 1. **Root SSH access**
-2. **Environment variables set:**
+2. **Config values set in `config.toml`:**
    ```bash
-   mise set --age-encrypt --prompt SSH_PORT
-   mise set --age-encrypt --prompt ADMIN_USER_NAME
-   mise set --age-encrypt --prompt ADMIN_USER_EMAIL
-   mise set --age-encrypt --prompt AUBERGE_HOST
+   auberge config set ssh_port 22022
+   auberge config set admin_user_name yourname
+   auberge config set admin_user_email you@example.com
    ```
 
 3. **Provider firewall configured** (critical):
-   - Custom SSH port (from `SSH_PORT`)
+   - Custom SSH port (from `ssh_port` in `config.toml`)
    - 80/tcp, 443/tcp, 853/tcp
 
    **Why**: Bootstrap changes SSH port. If provider firewall blocks it, you're locked out.
@@ -36,7 +35,7 @@ auberge ansible bootstrap auberge --ip 203.0.113.10
 1. Sets hostname to inventory name
 2. Creates dual-user system:
    - `ansible` - automation user (passwordless sudo)
-   - `{ADMIN_USER_NAME}` - personal admin (full sudo)
+   - `{admin_user_name}` - personal admin (full sudo)
 3. Configures UFW firewall rules (not enabled yet)
 4. Hardens SSH (custom port, disable root/password auth)
 5. Validates SSH on new port
@@ -45,8 +44,8 @@ auberge ansible bootstrap auberge --ip 203.0.113.10
 ## Post-Bootstrap
 
 ```bash
-# Test SSH access
-ssh -i ~/.ssh/identities/ansible_auberge -p $SSH_PORT ansible@$AUBERGE_HOST
+# Test SSH access (replace PORT and HOST with your configured values)
+ssh -i ~/.ssh/identities/ansible_auberge -p PORT ansible@HOST
 
 # Continue with next layer
 auberge ansible run --tags hardening
@@ -57,7 +56,7 @@ auberge ansible run --tags hardening
 **"SSH_PORT not set"**
 
 ```bash
-mise set --age-encrypt --prompt SSH_PORT
+auberge config set ssh_port 22022
 ```
 
 **"Connection refused"**

@@ -16,7 +16,7 @@ auberge dns list [OPTIONS]
 
 Lists DNS records for your domain from Cloudflare. Displays A, AAAA, CNAME, MX, TXT, NS, and SRV records.
 
-Requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID environment variables.
+Requires `cloudflare_dns_api_token` and `domain` set in `config.toml`.
 
 ## Options
 
@@ -25,18 +25,18 @@ Requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID environment variables.
 | -s, --subdomain NAME | Filter by subdomain name              | All records |
 | -P, --production     | Use production API (default: sandbox) | false       |
 
-## Environment Variables
+## Configuration
 
-Required:
+Required values in `config.toml`:
 
-- `CLOUDFLARE_API_TOKEN`: Cloudflare API token with DNS read permissions
-- `CLOUDFLARE_ZONE_ID`: Zone ID for your domain
+- `cloudflare_dns_api_token`: Cloudflare API token with DNS read permissions
+- `domain`: Your domain name
 
-Configure with mise:
+Configure with:
 
 ```bash
-mise set CLOUDFLARE_API_TOKEN="your-token-here"
-mise set CLOUDFLARE_ZONE_ID="your-zone-id"
+auberge config set cloudflare_dns_api_token your-token-here
+auberge config set domain example.com
 ```
 
 ## Examples

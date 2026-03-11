@@ -11,7 +11,7 @@ This is useful if you are a member of a shared iCloud calendar (with read/write 
 ## Prerequisites
 
 - [Baikal](baikal.md) deployed and accessible
-- A calendar created in the Baikal admin interface (`https://{BAIKAL_SUBDOMAIN}.{PRIMARY_DOMAIN}/admin/`)
+- A calendar created in the Baikal admin interface (`https://{BAIKAL_SUBDOMAIN}.{domain}/admin/`)
 - An iCloud app-specific password ([Apple instructions](https://support.apple.com/en-us/102654))
 - Your iCloud CalDAV URL and calendar ID
 
@@ -95,6 +95,5 @@ See [Backup & Restore](../../backup-restore/overview.md).
 ## Related
 
 - [Baikal](baikal.md)
-- [Environment Variables](../../configuration/environment-variables.md)
 - [Backup & Restore](../../backup-restore/overview.md)
 - [Applications Overview](../overview.md)

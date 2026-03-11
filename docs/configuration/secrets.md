@@ -1,67 +1,50 @@
 # Secrets Management
 
-Auberge uses [age](https://github.com/FiloSottile/age) encryption via mise for secrets (SSH ports, API tokens, passwords, IPs).
+Auberge stores all configuration, including sensitive values, in `config.toml`.
 
 ## Setup
 
-```bash
-# Install age
-brew install age  # macOS
-apt install age   # Debian/Ubuntu
-
-# Generate key
-age-keygen -o ~/.config/age/key.txt
-```
-
-**Back up `~/.config/age/key.txt` - losing this means losing access to secrets.**
-
-## Setting Secrets
+Copy the example config and fill in your values:
 
 ```bash
-mise set --age-encrypt --prompt SECRET_NAME
+cp config.example.toml config.toml
 ```
 
-**Required:**
+## Setting Config Values
 
 ```bash
-mise set --age-encrypt --prompt ADMIN_USER_NAME
-mise set --age-encrypt --prompt ADMIN_USER_EMAIL
-mise set --age-encrypt --prompt PRIMARY_DOMAIN
-mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
-mise set --age-encrypt --prompt SSH_PORT
-mise set --age-encrypt --prompt AUBERGE_HOST
+auberge config set SECRET_NAME value
 ```
 
-See [Environment Variables](configuration/environment-variables.md) for complete list.
-
-## Usage
+**Required values:**
 
 ```bash
-mise env                    # List all (decrypted)
-mise env | grep SSH_PORT    # View specific secret
+auberge config set admin_user_name yourname
+auberge config set admin_user_email you@example.com
+auberge config set domain example.com
+auberge config set cloudflare_dns_api_token your-token
+auberge config set ssh_port 22022
 ```
 
-Secrets are auto-decrypted by mise and accessed by Ansible via `lookup('env', 'VAR')`.
+See `config.example.toml` for the complete list.
+
+## Viewing Config
+
+```bash
+auberge config show
+```
 
 ## Security
 
-- Back up `~/.config/age/key.txt` securely
-- `chmod 600 ~/.config/age/key.txt`
-- Never commit plaintext secrets
-- Encrypted `mise.toml` is safe to commit
-- Each team member should use their own age key
+- Never commit `config.toml` to version control - it contains plaintext secrets
+- `config.toml` is listed in `.gitignore`
+- Use `config.example.toml` (committed) as a reference for required keys
 
 ## Troubleshooting
 
-**"Environment variable not set"**
+**"Missing required config value"**
 
 ```bash
-mise env | grep SECRET_NAME  # Check if exists
-mise set --age-encrypt --prompt SECRET_NAME  # Set if missing
-```
-
-**"no identity matched"**
-
-```bash
-ls -l ~/.config/age/key.txt  # Verify key exists
+auberge config show              # Check what is set
+auberge config set KEY value     # Set if missing
 ```

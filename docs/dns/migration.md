@@ -202,7 +202,6 @@ auberge backup create --host old-vps
 
 # 2. Bootstrap new VPS
 export NEW_VPS_IP="10.0.0.1"
-mise set --age-encrypt NEW_VPS_HOST
 auberge ansible bootstrap new-vps --ip $NEW_VPS_IP
 
 # 3. Deploy stack to new VPS
@@ -279,13 +278,13 @@ Don't decommission old VPS immediately:
 
 ## Comparison with set-all
 
-| Feature             | `dns migrate`                 | `dns set-all`                            |
-| ------------------- | ----------------------------- | ---------------------------------------- |
-| **Purpose**         | Update existing records       | Create/update all configured records     |
-| **Source**          | Cloudflare (existing records) | Environment vars (configured subdomains) |
-| **Missing records** | Ignores                       | Creates                                  |
-| **Extra records**   | Migrates                      | Ignores                                  |
-| **Use case**        | VPS migration                 | Initial DNS setup                        |
+| Feature             | `dns migrate`                 | `dns set-all`                        |
+| ------------------- | ----------------------------- | ------------------------------------ |
+| **Purpose**         | Update existing records       | Create/update all configured records |
+| **Source**          | Cloudflare (existing records) | config.toml (configured subdomains)  |
+| **Missing records** | Ignores                       | Creates                              |
+| **Extra records**   | Migrates                      | Ignores                              |
+| **Use case**        | VPS migration                 | Initial DNS setup                    |
 
 **Example difference:**
 
@@ -294,10 +293,10 @@ Don't decommission old VPS immediately:
 - cal.example.com → 203.0.113.10
 - old-app.example.com → 203.0.113.10
 
-**Environment vars have:**
+**config.toml has:**
 
-- BAIKAL_SUBDOMAIN=cal
-- FRESHRSS_SUBDOMAIN=rss
+- baikal_subdomain = "cal"
+- freshrss_subdomain = "rss"
 
 **After `dns migrate --ip 10.0.0.1`:**
 

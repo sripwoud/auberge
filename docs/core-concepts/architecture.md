@@ -40,6 +40,6 @@ Auberge: Rust CLI → Ansible → systemd services
 
 - Dual-user system (ansible automation + personal admin)
 - Custom SSH port, key-based auth only
-- age-encrypted secrets in `mise.toml`
+- Secrets in `config.toml` (not version controlled)
 - UFW firewall + fail2ban
 - Cloudflare proxy for HTTPS
