@@ -299,7 +299,6 @@ vim config.toml
 
 ```toml
 domain = "example.com"
-zone_id = "your-zone-id-here"
 ```
 
 **Note:** This is optional - DNS commands work without it by using environment variables.
