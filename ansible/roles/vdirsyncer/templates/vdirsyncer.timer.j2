@@ -1,0 +1,10 @@
+[Unit]
+Description=vdirsyncer iCloud-to-Baikal calendar sync timer
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec={{ vdirsyncer_sync_interval }}
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
