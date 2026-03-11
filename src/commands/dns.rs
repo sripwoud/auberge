@@ -207,11 +207,14 @@ fn resolve_subdomain(subdomain: Option<String>) -> Result<String> {
     match subdomain {
         Some(s) => Ok(s),
         None if selector::has_skim_support() => {
+            crate::user_config::UserConfig::load()?;
             let subdomains = crate::services::dns::discover_subdomains();
-            let items: Vec<String> = subdomains.values().map(|e| e.subdomain.clone()).collect();
+            let mut items: Vec<String> = subdomains.values().map(|e| e.subdomain.clone()).collect();
             if items.is_empty() {
-                eyre::bail!("No subdomains found in config");
+                eyre::bail!("No subdomains defined in config");
             }
+            items.sort();
+            items.dedup();
             selector::select(&items, "Select subdomain")
                 .ok_or_else(|| eyre::eyre!("No subdomain selected"))
         }
@@ -226,9 +229,10 @@ fn resolve_ip(ip: Option<String>) -> Result<String> {
             let value = Input::<String>::with_theme(&ColorfulTheme::default())
                 .with_prompt("IP address")
                 .interact_text()?;
-            if value.is_empty() {
-                eyre::bail!("IP address cannot be empty");
-            }
+            let value = value.trim().to_string();
+            value
+                .parse::<std::net::IpAddr>()
+                .map_err(|_| eyre::eyre!("Invalid IP address: {}", value))?;
             Ok(value)
         }
         None => eyre::bail!("IP argument required in non-interactive mode"),
