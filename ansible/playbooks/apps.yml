@@ -21,6 +21,8 @@
       tags: [apps, storage, documents, paperless]
     - role: openclaw
       tags: [apps, ai, openclaw]
+    - role: vdirsyncer
+      tags: [apps, sync, calendar, vdirsyncer]
     - role: syncthing
       tags: [apps, sync, syncthing]
     - role: webdav
