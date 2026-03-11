@@ -285,23 +285,14 @@ Too many API requests in short time.
 
 Use API tokens instead.
 
-## Configuration File (Optional)
+## Configuration
 
-For CLI DNS commands only (not needed for Ansible):
+Initialize and set your domain for CLI DNS commands:
 
 ```bash
-# Copy example config
-cp config.example.toml config.toml
-
-# Edit config
-vim config.toml
+auberge config init
+auberge config set domain example.com
 ```
-
-```toml
-domain = "example.com"
-```
-
-**Note:** This is optional - DNS commands work without it by using environment variables.
 
 ## Related Pages
 
