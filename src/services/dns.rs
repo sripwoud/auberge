@@ -44,6 +44,7 @@ const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
     "booklore_subdomain",
     "colporteur_subdomain",
     "freshrss_subdomain",
+    "headscale_subdomain",
     "navidrome_subdomain",
     "paperless_subdomain",
     "webdav_subdomain",

@@ -35,6 +35,8 @@ domain = ""
 
 freshrss_subdomain = ""
 
+headscale_subdomain = ""
+
 navidrome_subdomain = ""
 
 openclaw_claude_ai_session_key = ""
@@ -58,6 +60,7 @@ ssh_port = 22022
 
 tailscale_api_key = ""
 tailscale_authkey = ""
+tailscale_login_server = ""
 
 webdav_password = ""
 webdav_subdomain = ""

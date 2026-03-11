@@ -1,0 +1,23 @@
+---
+headscale_version: "0.25.1"
+headscale_port: 8080
+headscale_metrics_port: 9090
+headscale_stun_port: 3478
+headscale_sys_user: headscale
+headscale_sys_group: headscale
+headscale_config_dir: /etc/headscale
+headscale_data_dir: /var/lib/headscale
+headscale_db_path: /var/lib/headscale/db.sqlite
+headscale_subdomain: hs
+headscale_domain: "{{ headscale_subdomain }}.{{ primary_domain }}"
+headscale_server_url: "https://{{ headscale_domain }}"
+headscale_ip_prefix_v4: "100.64.0.0/10"
+headscale_ip_prefix_v6: "fd7a:115c:a1e0::/48"
+headscale_magic_dns_enabled: true
+headscale_base_domain: "{{ primary_domain }}"
+headscale_derp_enabled: true
+headscale_derp_region_id: 999
+headscale_derp_region_name: "self-hosted"
+headscale_log_level: info
+headscale_release_url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/headscale_{{ headscale_version }}_linux_amd64"
+headscale_release_checksum: "sha256:d2cda0a5d748587f77c920a76cd1bf1ab429e5299ba5bc6b3dda90712721b45b"

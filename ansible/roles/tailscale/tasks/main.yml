@@ -53,6 +53,7 @@
       ansible.builtin.command: >-
         tailscale up
         --hostname={{ tailscale_hostname }}
+        {% if tailscale_login_server | length > 0 %}--login-server={{ tailscale_login_server }}{% endif %}
         {% if tailscale_accept_routes %}--accept-routes{% endif %}
         {% if tailscale_advertise_exit_node %}--advertise-exit-node{% endif %}
         {% if not tailscale_accept_dns %}--accept-dns=false{% endif %}

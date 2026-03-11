@@ -80,6 +80,7 @@
     - [UFW](applications/infrastructure/ufw.md)
   - Networking
     - [Blocky](applications/networking/blocky.md)
+    - [Headscale](applications/networking/headscale.md)
     - [WireGuard](applications/networking/wireguard.md)
     - [Tailscale](applications/networking/tailscale.md)
   - Apps

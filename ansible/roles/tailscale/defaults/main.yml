@@ -6,4 +6,5 @@ tailscale_accept_routes: false # Accept subnet routes advertised by other nodes
 tailscale_advertise_exit_node: false # Advertise as exit node
 tailscale_accept_dns: false # Disabled on server to prevent DNS loop when Blocky manages tailnet DNS
 tailscale_advertise_tags: [] # List of ACL tags (e.g., ["tag:server", "tag:prod"])
+tailscale_login_server: "" # Headscale URL (empty = Tailscale SaaS)
 tailscale_extra_args: "" # Additional arguments for tailscale up command

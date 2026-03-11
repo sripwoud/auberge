@@ -1,0 +1,131 @@
+---
+- name: Headscale Control Server Deployment
+  block:
+    - name: Create headscale system group
+      ansible.builtin.group:
+        name: "{{ headscale_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create headscale system user
+      ansible.builtin.user:
+        name: "{{ headscale_sys_user }}"
+        group: "{{ headscale_sys_group }}"
+        system: true
+        create_home: false
+        home: "{{ headscale_data_dir }}"
+        shell: /usr/sbin/nologin
+        state: present
+
+    - name: Create headscale config directory
+      ansible.builtin.file:
+        path: "{{ headscale_config_dir }}"
+        state: directory
+        owner: root
+        group: "{{ headscale_sys_group }}"
+        mode: "0750"
+
+    - name: Create headscale data directory
+      ansible.builtin.file:
+        path: "{{ headscale_data_dir }}"
+        state: directory
+        owner: "{{ headscale_sys_user }}"
+        group: "{{ headscale_sys_group }}"
+        mode: "0750"
+
+    - name: Check installed headscale version
+      ansible.builtin.stat:
+        path: "{{ headscale_data_dir }}/version"
+      register: headscale_version_file
+
+    - name: Read installed headscale version
+      ansible.builtin.slurp:
+        src: "{{ headscale_data_dir }}/version"
+      register: headscale_version_content
+      when: headscale_version_file.stat.exists
+
+    - name: Set installed version fact
+      ansible.builtin.set_fact:
+        headscale_installed_version: "{{ (headscale_version_content.content | b64decode | trim) if headscale_version_file.stat.exists else '' }}"
+
+    - name: Download headscale binary
+      ansible.builtin.get_url:
+        url: "{{ headscale_release_url }}"
+        dest: /tmp/headscale
+        mode: "0755"
+        checksum: "{{ headscale_release_checksum }}"
+      when: headscale_installed_version != headscale_version
+
+    - name: Install headscale binary
+      ansible.builtin.copy:
+        src: /tmp/headscale
+        dest: /usr/local/bin/headscale
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+      when: headscale_installed_version != headscale_version
+      notify: Restart headscale
+
+    - name: Remove temporary download
+      ansible.builtin.file:
+        path: /tmp/headscale
+        state: absent
+      when: headscale_installed_version != headscale_version
+
+    - name: Deploy headscale configuration
+      ansible.builtin.template:
+        src: headscale-config.yaml.j2
+        dest: "{{ headscale_config_dir }}/config.yaml"
+        owner: root
+        group: "{{ headscale_sys_group }}"
+        mode: "0640"
+      notify: Restart headscale
+
+    - name: Deploy headscale systemd service
+      ansible.builtin.template:
+        src: headscale.service.j2
+        dest: /etc/systemd/system/headscale.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart headscale
+
+    - name: Deploy Caddy site configuration for headscale
+      ansible.builtin.template:
+        src: headscale.caddyfile.j2
+        dest: "/etc/caddy/sites/{{ headscale_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
+    - name: Enable and start headscale service
+      ansible.builtin.systemd_service:
+        name: headscale
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Write installed headscale version
+      ansible.builtin.copy:
+        content: "{{ headscale_version }}"
+        dest: "{{ headscale_data_dir }}/version"
+        owner: "{{ headscale_sys_user }}"
+        group: "{{ headscale_sys_group }}"
+        mode: "0644"
+      when: headscale_installed_version != headscale_version
+
+    - name: Display headscale deployment summary
+      ansible.builtin.debug:
+        msg: |
+          Headscale deployed:
+            URL: {{ headscale_server_url }}
+            Config: {{ headscale_config_dir }}/config.yaml
+            Data: {{ headscale_data_dir }}
+            DERP: {{ 'embedded (region ' ~ headscale_derp_region_id ~ ')' if headscale_derp_enabled else 'disabled' }}
+            Status: systemctl status headscale
+          Next steps:
+            1. headscale users create default
+            2. headscale preauthkeys create --user default --reusable --expiration 24h
+            3. Set tailscale_authkey and tailscale_login_server in config.toml
