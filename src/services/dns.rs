@@ -102,10 +102,7 @@ impl DnsService {
             Environment::Production,
         )?;
 
-        let zone_id = match &app_config.zone_id {
-            Some(id) if !id.is_empty() => id.clone(),
-            _ => Self::discover_zone_id(&client, &app_config.domain).await?,
-        };
+        let zone_id = Self::discover_zone_id(&client, &app_config.domain).await?;
 
         Ok(Self {
             client,

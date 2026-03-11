@@ -75,8 +75,6 @@ yourls_api_signature = ""
 yourls_cookiekey = ""
 yourls_db_password = ""
 yourls_subdomain = ""
-
-zone_id = ""
 "#;
 
 const SENSITIVE_SUFFIXES: &[&str] = &["password", "key", "token", "secret", "cookie", "signature"];
