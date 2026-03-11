@@ -43,11 +43,8 @@ pub fn run_config_init() -> Result<()> {
 
 pub fn run_config_set(key: String, value: String) -> Result<()> {
     let mut config = UserConfig::load()?;
-    if config.set(&key, &value)? {
-        output::success(&format!("{} = {}", key, value));
-    } else {
-        eyre::bail!("Key '{}' not found in any config section", key);
-    }
+    config.set(&key, &value)?;
+    output::success(&format!("{} = {}", key, value));
     Ok(())
 }
 

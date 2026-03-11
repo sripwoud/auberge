@@ -117,14 +117,10 @@ impl UserConfig {
         self.table.get(key).and_then(value_to_string)
     }
 
-    pub fn set(&mut self, key: &str, value: &str) -> Result<bool> {
-        if !self.table.contains_key(key) {
-            return Ok(false);
-        }
+    pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
         self.table
             .insert(key.to_string(), toml::Value::String(value.to_string()));
-        self.save()?;
-        Ok(true)
+        self.save()
     }
 
     pub fn remove(&mut self, key: &str) -> Result<bool> {
@@ -239,7 +235,7 @@ mod tests {
             table: toml::from_str(TEMPLATE).unwrap(),
         };
 
-        assert!(config.set("admin_user_name", "bob").unwrap());
+        config.set("admin_user_name", "bob").unwrap();
         assert_eq!(config.get("admin_user_name").unwrap(), "bob");
 
         let reloaded_contents = fs::read_to_string(&config_path).unwrap();
@@ -297,6 +293,24 @@ mod tests {
         config.set("admin_user_name", "test").unwrap();
         assert!(config.remove("admin_user_name").unwrap());
         assert!(config.get("admin_user_name").is_none());
+    }
+
+    #[test]
+    fn test_set_upserts_new_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("auberge/config.toml");
+        fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        fs::write(&config_path, TEMPLATE).unwrap();
+        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        let mut config = UserConfig {
+            path: config_path,
+            table: toml::from_str(TEMPLATE).unwrap(),
+        };
+
+        assert!(config.get("brand_new_key").is_none());
+        config.set("brand_new_key", "hello").unwrap();
+        assert_eq!(config.get("brand_new_key").unwrap(), "hello");
     }
 
     #[test]
