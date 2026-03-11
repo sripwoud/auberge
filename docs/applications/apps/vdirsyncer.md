@@ -82,7 +82,13 @@ journalctl -u vdirsyncer.service -n 50
 
 ## Backup
 
-Backed up by default. Backs up the `/var/lib/vdirsyncer` directory containing sync state. Both `vdirsyncer.timer` and `vdirsyncer.service` are stopped during backup to prevent race conditions.
+Not included in the default backup set since vdirsyncer is opt-in. To back up explicitly:
+
+```bash
+auberge backup create --app vdirsyncer
+```
+
+This backs up `/var/lib/vdirsyncer` (sync state). Both `vdirsyncer.timer` and `vdirsyncer.service` are stopped during backup to prevent race conditions.
 
 See [Backup & Restore](../../backup-restore/overview.md).
 

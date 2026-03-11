@@ -333,7 +333,6 @@ impl AppBackupConfig {
             Self::headscale(),
             Self::navidrome(false),
             Self::calibre(),
-            Self::vdirsyncer(),
             Self::webdav(),
             Self::yourls(),
             Self::paperless(),
@@ -2109,7 +2108,7 @@ mod tests {
     #[test]
     fn test_all_apps_count() {
         let all = AppBackupConfig::all();
-        assert_eq!(all.len(), 10);
+        assert_eq!(all.len(), 9);
     }
 
     #[test]
