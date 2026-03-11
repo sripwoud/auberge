@@ -26,10 +26,11 @@ impl Config {
                 config_path.display()
             )
         })?;
-        let config: Self = toml::from_str(&contents).wrap_err("Failed to parse config.toml")?;
+        let mut config: Self = toml::from_str(&contents).wrap_err("Failed to parse config.toml")?;
         if config.domain.trim().is_empty() {
             eyre::bail!("'domain' is required in config.toml but is missing or empty");
         }
+        config.domain = config.domain.trim().to_string();
         Ok(config)
     }
 
