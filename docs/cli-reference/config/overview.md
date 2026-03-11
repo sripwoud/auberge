@@ -25,7 +25,7 @@ auberge config <COMMAND>
 
 When `key` is omitted from `set`, `get`, or `remove`, an interactive fuzzy-search selector appears (requires a TTY). For `set`, the value is also prompted interactively if omitted.
 
-In non-interactive mode (pipes, scripts), both arguments are required.
+In non-interactive mode (pipes, scripts), a key argument is required for `get` and `remove`, and both key and value are required for `set`.
 
 ## Examples
 

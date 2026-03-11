@@ -4,7 +4,6 @@ use crate::user_config::UserConfig;
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::Result;
-use std::io::IsTerminal;
 
 #[derive(Subcommand)]
 pub enum ConfigCommands {
@@ -49,7 +48,7 @@ fn select_key(config: &UserConfig, prompt: &str) -> Result<String> {
 fn resolve_key(key: Option<String>, config: &UserConfig, prompt: &str) -> Result<String> {
     match key {
         Some(k) => Ok(k),
-        None if std::io::stdin().is_terminal() => select_key(config, prompt),
+        None if selector::has_skim_support() => select_key(config, prompt),
         None => eyre::bail!("Key argument required in non-interactive mode"),
     }
 }
@@ -65,7 +64,7 @@ pub fn run_config_set(key: Option<String>, value: Option<String>) -> Result<()> 
     let key = resolve_key(key, &config, "Select key to set")?;
     let value = match value {
         Some(v) => v,
-        None if std::io::stdin().is_terminal() => {
+        None if selector::has_skim_support() => {
             let current = config.get(&key).unwrap_or_default();
             Input::<String>::with_theme(&ColorfulTheme::default())
                 .with_prompt(format!("Value for '{}'", key))
