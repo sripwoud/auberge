@@ -6,21 +6,10 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     #[serde(default)]
-    pub dns: DnsConfig,
-    #[serde(default)]
-    pub cloudflare: CloudflareConfig,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct DnsConfig {
-    #[serde(default)]
     pub domain: String,
     #[serde(default = "default_ttl")]
     pub default_ttl: u32,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct CloudflareConfig {
+    #[serde(default)]
     pub zone_id: Option<String>,
 }
 
@@ -53,12 +42,6 @@ impl Config {
     }
 }
 
-impl DnsConfig {
-    pub fn zone_name(&self) -> &str {
-        &self.domain
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,7 +51,7 @@ mod tests {
         let toml_str = r#"
             domain = "example.com"
         "#;
-        let config: DnsConfig = toml::from_str(toml_str).unwrap();
+        let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.default_ttl, 300);
     }
 }

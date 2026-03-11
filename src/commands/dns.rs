@@ -125,7 +125,7 @@ pub async fn run_dns_list(subdomain: Option<String>, production: bool) -> Result
 
     eprintln!(
         "DNS Records for {}\n{:<40} {:<8} {:<24} {:>6}",
-        service.config().domain,
+        service.domain(),
         "NAME",
         "TYPE",
         "CONTENT",
@@ -253,7 +253,7 @@ pub async fn run_dns_set(
     output::info(&format!(
         "Setting A record: {}.{} -> {}",
         subdomain,
-        service.config().domain,
+        service.domain(),
         ip
     ));
 
@@ -381,14 +381,14 @@ pub async fn run_dns_set_all(
             eprintln!(
                 "  • {}.{} → {} (tailnet)",
                 entry.subdomain,
-                service.config().domain,
+                service.domain(),
                 effective_ip
             );
         } else {
             eprintln!(
                 "  • {}.{} → {}",
                 entry.subdomain,
-                service.config().domain,
+                service.domain(),
                 effective_ip
             );
         }
@@ -418,20 +418,11 @@ pub async fn run_dns_set_all(
         let effective_ip = entry.ip_override.as_deref().unwrap_or(&target_ip);
         match service.set_a_record(&entry.subdomain, effective_ip).await {
             Ok(_) => {
-                output::success(&format!(
-                    "Created {}.{}",
-                    entry.subdomain,
-                    service.config().domain
-                ));
+                output::success(&format!("Created {}.{}", entry.subdomain, service.domain()));
                 succeeded += 1;
             }
             Err(e) => {
-                eprintln!(
-                    "Failed {}.{}: {}",
-                    entry.subdomain,
-                    service.config().domain,
-                    e
-                );
+                eprintln!("Failed {}.{}: {}", entry.subdomain, service.domain(), e);
                 failed += 1;
                 if !continue_on_error {
                     return Err(e);
