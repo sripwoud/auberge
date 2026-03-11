@@ -23,20 +23,20 @@ Your Laptop (Web UI access via Tailscale)
 
 ## Configuration
 
-### Required Environment Variables
+### Required Config Values
 
-Set using age-encrypted secrets (see [Secrets Management](configuration/secrets.md)):
+Set in `config.toml` (see [Secrets Management](configuration/secrets.md)):
 
 ```bash
-mise set --age-encrypt --prompt OPENCLAW_GATEWAY_TOKEN
-mise set --age-encrypt --prompt CLAUDE_AI_SESSION_KEY
+auberge config set openclaw_gateway_token your-token
+auberge config set openclaw_claude_ai_session_key your-session-key
 ```
 
-Optional variables:
+Optional values:
 
 ```bash
-mise set --age-encrypt --prompt CLAUDE_WEB_SESSION_KEY
-mise set --age-encrypt --prompt CLAUDE_WEB_COOKIE
+auberge config set openclaw_claude_web_session_key your-web-session-key
+auberge config set openclaw_claude_web_cookie your-cookie
 ```
 
 ### Generate Gateway Token
@@ -225,8 +225,8 @@ openclaw doctor
 
 ### Secret Management
 
-- Environment variables via age-encrypted mise secrets
-- Never commit plaintext secrets
+- Sensitive values stored in `config.toml` (not version controlled)
+- Never commit `config.toml`
 - Rotate tokens regularly
 - Use strong gateway token (generate with `openssl rand -hex 32`)
 

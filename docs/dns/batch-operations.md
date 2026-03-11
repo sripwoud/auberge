@@ -461,10 +461,10 @@ No `*_SUBDOMAIN` env vars configured.
 **Fix:**
 
 ```bash
-# Check environment
-mise env | grep SUBDOMAIN
+# Check config for *_subdomain keys
+auberge config list
 
-# If empty, verify mise.toml has subdomain config
+# If empty, verify config.toml has subdomain values
 ```
 
 ### "Host not found in inventory"

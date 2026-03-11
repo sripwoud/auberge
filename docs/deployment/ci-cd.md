@@ -76,22 +76,16 @@ jobs:
       - name: Install Auberge
         run: cargo install auberge
 
-      - name: Set up mise
-        uses: jdx/mise-action@v2
-        with:
-          experimental: true
-
       - name: Configure secrets
         env:
-          AUBERGE_HOST: ${{ secrets.AUBERGE_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
           ADMIN_USER_NAME: ${{ secrets.ADMIN_USER_NAME }}
           CLOUDFLARE_DNS_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_API_TOKEN }}
         run: |
-          mise set AUBERGE_HOST="$AUBERGE_HOST"
-          mise set SSH_PORT="$SSH_PORT"
-          mise set ADMIN_USER_NAME="$ADMIN_USER_NAME"
-          mise set CLOUDFLARE_DNS_API_TOKEN="$CLOUDFLARE_DNS_API_TOKEN"
+          auberge config init
+          auberge config set ssh_port "$SSH_PORT"
+          auberge config set admin_user_name "$ADMIN_USER_NAME"
+          auberge config set cloudflare_dns_api_token "$CLOUDFLARE_DNS_API_TOKEN"
 
       - name: Set up SSH key
         env:
@@ -121,7 +115,6 @@ jobs:
 
 Set these in repository settings → Secrets and variables → Actions:
 
-- `AUBERGE_HOST` - VPS IP address
 - `SSH_PORT` - Custom SSH port
 - `SSH_PRIVATE_KEY` - ansible user's SSH private key (full content)
 - `ADMIN_USER_NAME` - Admin username
@@ -143,14 +136,12 @@ deploy_production:
     - main
   before_script:
     - cargo install auberge
-    - cargo install mise
     - mkdir -p ~/.ssh/identities
     - echo "$SSH_PRIVATE_KEY" > ~/.ssh/identities/ansible_production
     - chmod 600 ~/.ssh/identities/ansible_production
-    - mise set AUBERGE_HOST="$AUBERGE_HOST"
-    - mise set SSH_PORT="$SSH_PORT"
-    - mise set ADMIN_USER_NAME="$ADMIN_USER_NAME"
-    - mise set CLOUDFLARE_DNS_API_TOKEN="$CLOUDFLARE_DNS_API_TOKEN"
+    - auberge config set ssh_port "$SSH_PORT"
+    - auberge config set admin_user_name "$ADMIN_USER_NAME"
+    - auberge config set cloudflare_dns_api_token "$CLOUDFLARE_DNS_API_TOKEN"
   script:
     - auberge ansible run
       --host production
@@ -168,7 +159,6 @@ deploy_production:
 
 Set in Settings → CI/CD → Variables:
 
-- `AUBERGE_HOST`
 - `SSH_PORT`
 - `SSH_PRIVATE_KEY` (masked, file type)
 - `ADMIN_USER_NAME`
@@ -447,10 +437,15 @@ jobs:
           echo "$SSH_KEY" > ~/.ssh/identities/ansible_production
           chmod 600 ~/.ssh/identities/ansible_production
 
-      - name: Deploy
+      - name: Configure
         env:
-          AUBERGE_HOST: ${{ secrets.AUBERGE_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
+          CLOUDFLARE_DNS_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_API_TOKEN }}
+        run: |
+          auberge config set ssh_port "$SSH_PORT"
+          auberge config set cloudflare_dns_api_token "$CLOUDFLARE_DNS_API_TOKEN"
+
+      - name: Deploy
         run: |
           auberge ansible run \
             --host production \
@@ -471,15 +466,14 @@ Add host key to known_hosts:
     ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.AUBERGE_HOST }} >> ~/.ssh/known_hosts
 ```
 
-### Environment Variables Not Set
+### Config Values Not Set
 
-Ensure secrets are properly loaded:
+Ensure config is properly written:
 
 ```yaml
-- name: Debug environment
+- name: Debug config
   run: |
-    echo "AUBERGE_HOST: ${AUBERGE_HOST:+SET}"
-    echo "SSH_PORT: ${SSH_PORT:+SET}"
+    auberge config list
 ```
 
 ### Permission Denied (SSH)

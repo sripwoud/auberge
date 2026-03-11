@@ -45,23 +45,24 @@ This:
 
 - Creates an admin user
 - Disables root SSH login
-- Changes SSH port (from `SSH_PORT` env var)
+- Changes SSH port (from `ssh_port` in `config.toml`)
 - Configures basic security
 
 **Important**: Configure your VPS provider's firewall to allow your custom SSH port before running bootstrap.
 
-## Step 4: Configure Environment
+## Step 4: Configure
 
-Set required environment variables:
+Initialize config and set required values:
 
 ```bash
-mise set --age-encrypt --prompt PRIMARY_DOMAIN
-mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
-mise set --age-encrypt --prompt BAIKAL_ADMIN_PASSWORD
-mise set --age-encrypt --prompt WEBDAV_PASSWORD
+auberge config init
+auberge config set domain example.com
+auberge config set cloudflare_dns_api_token your-token
+auberge config set baikal_admin_password your-password
+auberge config set webdav_password your-password
 ```
 
-See [Environment Variables](../configuration/environment-variables.md) for all options.
+See `config.example.toml` for all available options.
 
 ## Step 5: Deploy Full Stack
 

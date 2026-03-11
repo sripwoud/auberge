@@ -12,8 +12,8 @@ Troubleshooting Cloudflare DNS problems.
 
 ```bash
 # Create new token in Cloudflare Dashboard
-# Update mise
-mise set --age-encrypt --prompt CLOUDFLARE_DNS_API_TOKEN
+# Update config.toml
+auberge config set cloudflare_dns_api_token your-new-token
 
 # Test
 auberge dns status
@@ -32,16 +32,16 @@ auberge dns status
 
 ### "Zone not found"
 
-**Problem:** PRIMARY_DOMAIN incorrect or domain not in Cloudflare.
+**Problem:** `domain` config value incorrect or domain not in Cloudflare.
 
 **Solution:**
 
 ```bash
 # Check domain
-mise env | grep PRIMARY_DOMAIN
+auberge config get domain
 
 # Update if wrong
-mise set --age-encrypt --prompt PRIMARY_DOMAIN
+auberge config set domain example.com
 
 # Verify domain in Cloudflare Dashboard
 ```
@@ -168,7 +168,7 @@ dig subdomain.example.com +short
 
 ```bash
 # Verify token is set
-mise env | grep CLOUDFLARE_DNS_API_TOKEN
+auberge config get cloudflare_dns_api_token
 
 # Test token works
 auberge dns status
@@ -231,16 +231,16 @@ auberge dns set-all --ip 10.0.0.1 --continue-on-error
 
 ### "No subdomain environment variables found"
 
-**Problem:** No `*_SUBDOMAIN` vars configured.
+**Problem:** No `*_subdomain` values configured.
 
 **Solution:**
 
 ```bash
-# Check environment
-mise env | grep SUBDOMAIN
+# Check config
+auberge config list
 
-# Verify mise.toml has subdomain config
-cat mise.toml | grep SUBDOMAIN
+# Verify subdomain values are set
+auberge config list | grep subdomain
 ```
 
 ### Records created but apps unreachable

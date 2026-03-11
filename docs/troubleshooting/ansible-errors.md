@@ -102,11 +102,11 @@ auberge ansible run --host vps --tags service-name
 **Solution:**
 
 ```bash
-# Check environment variables
-mise env | grep VARIABLE_NAME
+# Check config
+auberge config list
 
 # Set if missing
-mise set --age-encrypt --prompt VARIABLE_NAME
+auberge config set KEY value
 ```
 
 ### "template error"

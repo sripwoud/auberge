@@ -10,7 +10,7 @@ Official Documentation: [https://booklore.org](https://booklore.org)
 2. Set the database password:
 
 ```bash
-mise set --age-encrypt --prompt BOOKLORE_DB_PASSWORD
+auberge config set booklore_db_password your-password
 ```
 
 ## Deployment

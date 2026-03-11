@@ -158,8 +158,8 @@ See [Batch Operations](dns/batch-operations.md).
 After adding a new app:
 
 ```bash
-# Add subdomain to mise.toml
-echo 'MYAPP_SUBDOMAIN = "myapp"' >> mise.toml
+# Add subdomain to config.toml
+auberge config set myapp_subdomain myapp
 
 # Create DNS record
 auberge dns set --subdomain myapp --ip 203.0.113.10
@@ -342,13 +342,13 @@ Cloudflare API token invalid or expired.
 
 ### "Zone not found"
 
-PRIMARY_DOMAIN environment variable incorrect.
+`domain` config value incorrect.
 
 **Fix:**
 
 ```bash
-mise env | grep PRIMARY_DOMAIN
-mise set --age-encrypt --prompt PRIMARY_DOMAIN
+auberge config get domain
+auberge config set domain example.com
 ```
 
 ### "Invalid IP address"
@@ -418,13 +418,11 @@ auberge dns status | grep "All configured subdomains"
 
 ### Document Custom Subdomains
 
-If you override defaults:
+If you override defaults in `config.toml`:
 
 ```toml
-# mise.toml
-# Custom subdomains (document why)
-BAIKAL_SUBDOMAIN = "cal"      # Shorter URL
-NAVIDROME_SUBDOMAIN = "tunes"   # Branding
+baikal_subdomain = "cal"
+navidrome_subdomain = "tunes"
 ```
 
 ## Scripting with DNS Commands
