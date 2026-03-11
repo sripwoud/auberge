@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5](https://github.com/sripwoud/auberge/compare/v0.4.4...v0.4.5) - 2026-03-11
+
+### Added
+
+- add vdirsyncer role for iCloud-to-Baikal calendar sync ([#128](https://github.com/sripwoud/auberge/pull/128))
+- self-host Headscale as Tailscale control server ([#123](https://github.com/sripwoud/auberge/pull/123))
+
+### Fixed
+
+- exclude opt-in vdirsyncer from default backup set
+- upsert keys in config set instead of requiring existence ([#127](https://github.com/sripwoud/auberge/pull/127))
+
 ## [0.4.4](https://github.com/sripwoud/auberge/compare/v0.4.3...v0.4.4) - 2026-03-10
 
 ### Added
