@@ -117,6 +117,10 @@ impl UserConfig {
         Ok(path)
     }
 
+    pub fn keys(&self) -> Vec<String> {
+        self.table.keys().cloned().collect()
+    }
+
     pub fn get(&self, key: &str) -> Option<String> {
         self.table.get(key).and_then(value_to_string)
     }
@@ -211,6 +215,23 @@ fn flatten_toml(table: &toml::Table) -> BTreeMap<String, String> {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn test_keys_returns_all_key_names() {
+        let toml_str = r#"
+            domain = "example.com"
+            admin_user_name = "alice"
+            ssh_port = 22022
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let mut keys = config.keys();
+        keys.sort();
+        assert_eq!(keys, vec!["admin_user_name", "domain", "ssh_port"]);
+    }
 
     #[test]
     fn test_flatten_toml() {

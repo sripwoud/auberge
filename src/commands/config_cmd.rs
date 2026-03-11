@@ -1,6 +1,8 @@
 use crate::output;
+use crate::selector;
 use crate::user_config::UserConfig;
 use clap::Subcommand;
+use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::Result;
 
 #[derive(Subcommand)]
@@ -10,14 +12,14 @@ pub enum ConfigCommands {
     #[command(alias = "s", about = "Set a config value")]
     Set {
         #[arg(help = "Key name (e.g. admin_user_name)")]
-        key: String,
+        key: Option<String>,
         #[arg(help = "Value to set")]
-        value: String,
+        value: Option<String>,
     },
     #[command(alias = "g", about = "Get a config value")]
     Get {
         #[arg(help = "Key name")]
-        key: String,
+        key: Option<String>,
     },
     #[command(
         alias = "l",
@@ -27,12 +29,28 @@ pub enum ConfigCommands {
     #[command(alias = "rm", about = "Remove a key from config")]
     Remove {
         #[arg(help = "Key name")]
-        key: String,
+        key: Option<String>,
     },
     #[command(alias = "e", about = "Open config in $EDITOR")]
     Edit,
     #[command(alias = "p", about = "Print config file path")]
     Path,
+}
+
+fn select_key(config: &UserConfig, prompt: &str) -> Result<String> {
+    let keys = config.keys();
+    if keys.is_empty() {
+        eyre::bail!("No config keys found");
+    }
+    selector::select(&keys, prompt).ok_or_else(|| eyre::eyre!("No key selected"))
+}
+
+fn resolve_key(key: Option<String>, config: &UserConfig, prompt: &str) -> Result<String> {
+    match key {
+        Some(k) => Ok(k),
+        None if selector::has_skim_support() => select_key(config, prompt),
+        None => eyre::bail!("Key argument required in non-interactive mode"),
+    }
 }
 
 pub fn run_config_init() -> Result<()> {
@@ -41,15 +59,29 @@ pub fn run_config_init() -> Result<()> {
     Ok(())
 }
 
-pub fn run_config_set(key: String, value: String) -> Result<()> {
+pub fn run_config_set(key: Option<String>, value: Option<String>) -> Result<()> {
     let mut config = UserConfig::load()?;
+    let key = resolve_key(key, &config, "Select key to set")?;
+    let value = match value {
+        Some(v) => v,
+        None if selector::has_skim_support() => {
+            let current = config.get(&key).unwrap_or_default();
+            Input::<String>::with_theme(&ColorfulTheme::default())
+                .with_prompt(format!("Value for '{}'", key))
+                .default(current)
+                .allow_empty(true)
+                .interact_text()?
+        }
+        None => eyre::bail!("Value argument required in non-interactive mode"),
+    };
     config.set(&key, &value)?;
     output::success(&format!("{} = {}", key, value));
     Ok(())
 }
 
-pub fn run_config_get(key: String) -> Result<()> {
+pub fn run_config_get(key: Option<String>) -> Result<()> {
     let config = UserConfig::load()?;
+    let key = resolve_key(key, &config, "Select key to get")?;
     match config.get(&key) {
         Some(value) => println!("{}", value),
         None => eyre::bail!("Key '{}' not found", key),
@@ -65,8 +97,9 @@ pub fn run_config_list() -> Result<()> {
     Ok(())
 }
 
-pub fn run_config_remove(key: String) -> Result<()> {
+pub fn run_config_remove(key: Option<String>) -> Result<()> {
     let mut config = UserConfig::load()?;
+    let key = resolve_key(key, &config, "Select key to remove")?;
     if config.remove(&key)? {
         output::success(&format!("Removed '{}'", key));
     } else {
