@@ -1,6 +1,8 @@
 use crate::output;
+use crate::selector;
 use crate::services::dns::DnsService;
 use clap::{Subcommand, ValueEnum};
+use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::Result;
 
 #[derive(Clone, ValueEnum)]
@@ -27,9 +29,9 @@ pub enum DnsCommands {
     #[command(alias = "s", about = "Set an A record for a subdomain")]
     Set {
         #[arg(short, long, help = "Subdomain name")]
-        subdomain: String,
+        subdomain: Option<String>,
         #[arg(short, long, help = "IP address")]
-        ip: String,
+        ip: Option<String>,
         #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
         production: bool,
     },
@@ -201,7 +203,46 @@ pub async fn run_dns_status(production: bool) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_dns_set(subdomain: String, ip: String, production: bool) -> Result<()> {
+fn resolve_subdomain(subdomain: Option<String>) -> Result<String> {
+    match subdomain {
+        Some(s) => Ok(s),
+        None if selector::has_skim_support() => {
+            let subdomains = crate::services::dns::discover_subdomains();
+            let items: Vec<String> = subdomains.values().map(|e| e.subdomain.clone()).collect();
+            if items.is_empty() {
+                eyre::bail!("No subdomains found in config");
+            }
+            selector::select(&items, "Select subdomain")
+                .ok_or_else(|| eyre::eyre!("No subdomain selected"))
+        }
+        None => eyre::bail!("Subdomain argument required in non-interactive mode"),
+    }
+}
+
+fn resolve_ip(ip: Option<String>) -> Result<String> {
+    match ip {
+        Some(i) => Ok(i),
+        None if selector::has_skim_support() => {
+            let value = Input::<String>::with_theme(&ColorfulTheme::default())
+                .with_prompt("IP address")
+                .interact_text()?;
+            if value.is_empty() {
+                eyre::bail!("IP address cannot be empty");
+            }
+            Ok(value)
+        }
+        None => eyre::bail!("IP argument required in non-interactive mode"),
+    }
+}
+
+pub async fn run_dns_set(
+    subdomain: Option<String>,
+    ip: Option<String>,
+    production: bool,
+) -> Result<()> {
+    let subdomain = resolve_subdomain(subdomain)?;
+    let ip = resolve_ip(ip)?;
+
     let service = DnsService::new_with_production(Some(production)).await?;
     print_mode_banner();
 
