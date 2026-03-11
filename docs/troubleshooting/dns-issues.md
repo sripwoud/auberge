@@ -38,7 +38,7 @@ auberge dns status
 
 ```bash
 # Check domain
-auberge config show
+auberge config get domain
 
 # Update if wrong
 auberge config set domain example.com
@@ -168,7 +168,7 @@ dig subdomain.example.com +short
 
 ```bash
 # Verify token is set
-auberge config show
+auberge config get cloudflare_dns_api_token
 
 # Test token works
 auberge dns status
@@ -237,10 +237,10 @@ auberge dns set-all --ip 10.0.0.1 --continue-on-error
 
 ```bash
 # Check config
-auberge config show
+auberge config list
 
-# Verify config.toml has subdomain values
-cat config.toml | grep subdomain
+# Verify subdomain values are set
+auberge config list | grep subdomain
 ```
 
 ### Records created but apps unreachable

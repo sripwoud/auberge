@@ -4,10 +4,10 @@ Auberge stores all configuration, including sensitive values, in `config.toml`.
 
 ## Setup
 
-Copy the example config and fill in your values:
+Initialize the config file at the XDG config path:
 
 ```bash
-cp config.example.toml config.toml
+auberge config init
 ```
 
 ## Setting Config Values
@@ -31,7 +31,7 @@ See `config.example.toml` for the complete list.
 ## Viewing Config
 
 ```bash
-auberge config show
+auberge config list
 ```
 
 ## Security
@@ -45,6 +45,6 @@ auberge config show
 **"Missing required config value"**
 
 ```bash
-auberge config show              # Check what is set
+auberge config list              # Check what is set
 auberge config set KEY value     # Set if missing
 ```

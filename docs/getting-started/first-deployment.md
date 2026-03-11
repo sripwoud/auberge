@@ -52,9 +52,10 @@ This:
 
 ## Step 4: Configure
 
-Set required config values:
+Initialize config and set required values:
 
 ```bash
+auberge config init
 auberge config set domain example.com
 auberge config set cloudflare_dns_api_token your-token
 auberge config set baikal_admin_password your-password

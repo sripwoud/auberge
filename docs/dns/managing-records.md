@@ -347,7 +347,7 @@ Cloudflare API token invalid or expired.
 **Fix:**
 
 ```bash
-auberge config show
+auberge config get domain
 auberge config set domain example.com
 ```
 

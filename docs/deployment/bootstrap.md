@@ -7,6 +7,7 @@ First-time VPS setup. Run once on fresh VPS.
 1. **Root SSH access**
 2. **Config values set in `config.toml`:**
    ```bash
+   auberge config init
    auberge config set ssh_port 22022
    auberge config set admin_user_name yourname
    auberge config set admin_user_email you@example.com
@@ -53,9 +54,10 @@ auberge ansible run --tags hardening
 
 ## Troubleshooting
 
-**"SSH_PORT not set"**
+**"Missing config value: ssh_port"**
 
 ```bash
+auberge config init
 auberge config set ssh_port 22022
 ```
 

@@ -103,7 +103,7 @@ auberge ansible run --host vps --tags service-name
 
 ```bash
 # Check config
-auberge config show
+auberge config list
 
 # Set if missing
 auberge config set KEY value

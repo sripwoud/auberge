@@ -12,7 +12,7 @@ Troubleshooting SSH connectivity issues.
 
 ```bash
 # Check configured port
-auberge config show
+auberge config get ssh_port
 
 # Try connecting with correct port (replace PORT with your configured ssh_port)
 ssh -p PORT ansible@vps-ip

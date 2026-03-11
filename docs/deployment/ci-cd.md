@@ -82,6 +82,7 @@ jobs:
           ADMIN_USER_NAME: ${{ secrets.ADMIN_USER_NAME }}
           CLOUDFLARE_DNS_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_API_TOKEN }}
         run: |
+          auberge config init
           auberge config set ssh_port "$SSH_PORT"
           auberge config set admin_user_name "$ADMIN_USER_NAME"
           auberge config set cloudflare_dns_api_token "$CLOUDFLARE_DNS_API_TOKEN"
@@ -472,7 +473,7 @@ Ensure config is properly written:
 ```yaml
 - name: Debug config
   run: |
-    auberge config show
+    auberge config list
 ```
 
 ### Permission Denied (SSH)

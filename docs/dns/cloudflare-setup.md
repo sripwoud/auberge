@@ -63,9 +63,10 @@ gJ4kX-yF8nP2wQ5vR7tH9mL3bK6cN1dA4sZ8xE0fY2
 
 ## Step 3: Store Token Securely
 
-Add the token to `config.toml`:
+Initialize config (if not already done) and add the token:
 
 ```bash
+auberge config init
 auberge config set cloudflare_dns_api_token your-token-here
 ```
 
@@ -233,7 +234,7 @@ Domain not configured in Cloudflare or wrong domain in `config.toml`.
 
 ```bash
 # Verify domain
-auberge config show
+auberge config get domain
 
 # Update if wrong
 auberge config set domain example.com

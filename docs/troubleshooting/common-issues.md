@@ -42,7 +42,7 @@ brew install mise  # macOS
 
 ```bash
 # Check config
-auberge config show
+auberge config list
 
 # Set if missing
 auberge config set KEY value

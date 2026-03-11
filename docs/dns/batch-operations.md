@@ -461,8 +461,8 @@ No `*_SUBDOMAIN` env vars configured.
 **Fix:**
 
 ```bash
-# Check config
-auberge config show
+# Check config for *_subdomain keys
+auberge config list
 
 # If empty, verify config.toml has subdomain values
 ```

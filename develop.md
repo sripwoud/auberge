@@ -24,10 +24,10 @@ This installs:
 
 ## Configuration
 
-All configuration is managed via `config.toml`. Copy `config.example.toml` and fill in values:
+All configuration is managed via `config.toml`. Initialize the config file:
 
 ```bash
-cp config.example.toml config.toml
+auberge config init
 ```
 
 Key values to set:
@@ -167,7 +167,7 @@ ansible-lint
 
 Before running bootstrap playbook, configure your VPS provider's firewall to allow your custom SSH port:
 
-1. Check your SSH port: `auberge config show`
+1. Check your SSH port: `auberge config get ssh_port`
 2. Log into your VPS provider control panel (IONOS, DigitalOcean, Hetzner, etc.)
 3. Add firewall rule to allow TCP traffic on your `ssh_port`
 4. Save the rule
