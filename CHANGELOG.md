@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6](https://github.com/sripwoud/auberge/compare/v0.4.5...v0.4.6) - 2026-03-11
+
+### Added
+
+- select interactively config options ([#130](https://github.com/sripwoud/auberge/pull/130))
+
+### Other
+
+- replace `primary_domain` config key with `domain` ([#132](https://github.com/sripwoud/auberge/pull/132))
+
 ## [0.4.5](https://github.com/sripwoud/auberge/compare/v0.4.4...v0.4.5) - 2026-03-11
 
 ### Added
