@@ -267,12 +267,13 @@ impl DnsService {
         let configured_subdomains: Vec<String> =
             discovered.values().map(|e| e.subdomain.clone()).collect();
 
+        let domain_suffix = format!(".{}", self.domain);
         let active_names: std::collections::HashSet<String> = active_records
             .iter()
             .filter(|r| matches!(r.content, DnsContent::A { .. }))
             .map(|r| {
                 r.name
-                    .strip_suffix(&format!(".{}", self.domain))
+                    .strip_suffix(&domain_suffix)
                     .unwrap_or(&r.name)
                     .to_string()
             })
