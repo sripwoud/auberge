@@ -6,21 +6,10 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     #[serde(default)]
-    pub dns: DnsConfig,
-    #[serde(default)]
-    pub cloudflare: CloudflareConfig,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct DnsConfig {
-    #[serde(default)]
     pub domain: String,
     #[serde(default = "default_ttl")]
     pub default_ttl: u32,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct CloudflareConfig {
+    #[serde(default)]
     pub zone_id: Option<String>,
 }
 
@@ -37,7 +26,16 @@ impl Config {
                 config_path.display()
             )
         })?;
-        toml::from_str(&contents).wrap_err("Failed to parse config.toml")
+        Self::parse(&contents)
+    }
+
+    fn parse(contents: &str) -> Result<Self> {
+        let mut config: Self = toml::from_str(contents).wrap_err("Failed to parse config.toml")?;
+        if config.domain.trim().is_empty() {
+            eyre::bail!("'domain' is required in config.toml but is missing or empty");
+        }
+        config.domain = config.domain.trim().to_string();
+        Ok(config)
     }
 
     pub fn config_dir() -> Result<PathBuf> {
@@ -53,22 +51,37 @@ impl Config {
     }
 }
 
-impl DnsConfig {
-    pub fn zone_name(&self) -> &str {
-        &self.domain
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_default_ttl() {
-        let toml_str = r#"
-            domain = "example.com"
-        "#;
-        let config: DnsConfig = toml::from_str(toml_str).unwrap();
+        let config = Config::parse(r#"domain = "example.com""#).unwrap();
         assert_eq!(config.default_ttl, 300);
+    }
+
+    #[test]
+    fn test_missing_domain_fails() {
+        let err = Config::parse("default_ttl = 600").unwrap_err();
+        assert!(err.to_string().contains("domain"));
+    }
+
+    #[test]
+    fn test_empty_domain_fails() {
+        let err = Config::parse(r#"domain = """#).unwrap_err();
+        assert!(err.to_string().contains("domain"));
+    }
+
+    #[test]
+    fn test_whitespace_domain_fails() {
+        let err = Config::parse(r#"domain = "  ""#).unwrap_err();
+        assert!(err.to_string().contains("domain"));
+    }
+
+    #[test]
+    fn test_domain_is_trimmed() {
+        let config = Config::parse(r#"domain = " example.com ""#).unwrap();
+        assert_eq!(config.domain, "example.com");
     }
 }

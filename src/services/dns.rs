@@ -1,4 +1,4 @@
-use crate::config::{Config, DnsConfig};
+use crate::config::Config;
 use crate::user_config::UserConfig;
 use cloudflare::endpoints::dns::dns::{
     CreateDnsRecord, CreateDnsRecordParams, DnsContent, DnsRecord, ListDnsRecords, UpdateDnsRecord,
@@ -28,7 +28,8 @@ pub struct DnsStatus {
 
 pub struct DnsService {
     client: Client,
-    config: DnsConfig,
+    domain: String,
+    default_ttl: u32,
     zone_id: String,
 }
 
@@ -101,14 +102,15 @@ impl DnsService {
             Environment::Production,
         )?;
 
-        let zone_id = match &app_config.cloudflare.zone_id {
-            Some(id) => id.clone(),
-            None => Self::discover_zone_id(&client, app_config.dns.zone_name()).await?,
+        let zone_id = match &app_config.zone_id {
+            Some(id) if !id.is_empty() => id.clone(),
+            _ => Self::discover_zone_id(&client, &app_config.domain).await?,
         };
 
         Ok(Self {
             client,
-            config: app_config.dns,
+            domain: app_config.domain,
+            default_ttl: app_config.default_ttl,
             zone_id,
         })
     }
@@ -132,8 +134,8 @@ impl DnsService {
             .ok_or_else(|| eyre::eyre!("Zone not found: {}", zone_name))
     }
 
-    pub fn config(&self) -> &DnsConfig {
-        &self.config
+    pub fn domain(&self) -> &str {
+        &self.domain
     }
 
     pub async fn list_records(&self) -> Result<Vec<DnsRecord>> {
@@ -151,7 +153,7 @@ impl DnsService {
 
     async fn find_record(&self, subdomain: &str) -> Result<Option<DnsRecord>> {
         let records = self.list_records().await?;
-        let full_name = format!("{}.{}", subdomain, self.config.domain);
+        let full_name = format!("{}.{}", subdomain, self.domain);
 
         Ok(records
             .into_iter()
@@ -160,7 +162,7 @@ impl DnsService {
 
     pub async fn set_a_record(&self, subdomain: &str, ip: &str) -> Result<()> {
         let existing = self.find_record(subdomain).await?;
-        let full_name = format!("{}.{}", subdomain, self.config.domain);
+        let full_name = format!("{}.{}", subdomain, self.domain);
         let ip_addr = ip
             .parse()
             .map_err(|e| eyre::eyre!("Invalid IP address: {}", e))?;
@@ -173,7 +175,7 @@ impl DnsService {
                     params: UpdateDnsRecordParams {
                         name: &full_name,
                         content: DnsContent::A { content: ip_addr },
-                        ttl: Some(self.config.default_ttl),
+                        ttl: Some(self.default_ttl),
                         proxied: Some(false),
                     },
                 })
@@ -186,7 +188,7 @@ impl DnsService {
                     params: CreateDnsRecordParams {
                         name: &full_name,
                         content: DnsContent::A { content: ip_addr },
-                        ttl: Some(self.config.default_ttl),
+                        ttl: Some(self.default_ttl),
                         proxied: Some(false),
                         priority: None,
                     },
@@ -202,11 +204,11 @@ impl DnsService {
         let existing = self.list_records().await?;
         let mut results = Vec::new();
 
-        let domain_suffix = format!(".{}", self.config.domain);
+        let domain_suffix = format!(".{}", self.domain);
         let a_records: Vec<&DnsRecord> = existing
             .iter()
             .filter(|r| matches!(r.content, DnsContent::A { .. }))
-            .filter(|r| r.name.ends_with(&domain_suffix) && r.name != self.config.domain)
+            .filter(|r| r.name.ends_with(&domain_suffix) && r.name != self.domain)
             .collect();
 
         if dry_run {
@@ -265,12 +267,13 @@ impl DnsService {
         let configured_subdomains: Vec<String> =
             discovered.values().map(|e| e.subdomain.clone()).collect();
 
+        let domain_suffix = format!(".{}", self.domain);
         let active_names: std::collections::HashSet<String> = active_records
             .iter()
             .filter(|r| matches!(r.content, DnsContent::A { .. }))
             .map(|r| {
                 r.name
-                    .strip_suffix(&format!(".{}", self.config.domain))
+                    .strip_suffix(&domain_suffix)
                     .unwrap_or(&r.name)
                     .to_string()
             })
@@ -283,7 +286,7 @@ impl DnsService {
             .collect();
 
         Ok(DnsStatus {
-            domain: self.config.domain.clone(),
+            domain: self.domain.clone(),
             configured_subdomains,
             active_records,
             missing_subdomains,
