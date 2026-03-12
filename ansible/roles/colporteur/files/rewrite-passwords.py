@@ -3,9 +3,10 @@
 
 Reads a colporteur config.toml, finds [accounts.*] sections, replaces
 password values with '!cat <secrets_dir>/<account_name>', and outputs
-discovered account names to stdout (one per line).
+a JSON object mapping account names to their original passwords.
 """
 
+import json
 import re
 import sys
 
@@ -25,7 +26,7 @@ def main():
 
     current_account = None
     result = []
-    accounts = []
+    accounts = {}
 
     for line in lines:
         section = re.match(r"\s*\[accounts\.([^\]]+)\]", line)
@@ -34,18 +35,19 @@ def main():
             if not SAFE_NAME.match(current_account):
                 print(
                     f"Unsafe account name '{current_account}': "
-                    "only alphanumeric, hyphen, and underscore allowed",
+                    "only alphanumeric, dot, at-sign, hyphen, and underscore allowed",
                     file=sys.stderr,
                 )
                 sys.exit(1)
-            accounts.append(current_account)
             result.append(line)
         elif re.match(r"\s*\[", line):
             current_account = None
             result.append(line)
-        elif current_account and (m_pw := re.match(r"(\s*)password\s*=\s*\"[^\"]*\"(.*)", line)):
+        elif current_account and (m_pw := re.match(r'(\s*)password\s*=\s*"([^"]*)"(.*)', line)):
             indent = m_pw.group(1)
-            trailing = m_pw.group(2)
+            password = m_pw.group(2)
+            trailing = m_pw.group(3)
+            accounts[current_account] = password
             result.append(f'{indent}password = "!cat {secrets_dir}/{current_account}"{trailing}\n')
         else:
             result.append(line)
@@ -53,8 +55,7 @@ def main():
     with open(config_path, "w") as f:
         f.writelines(result)
 
-    for name in accounts:
-        print(name)
+    json.dump(accounts, sys.stdout)
 
 
 if __name__ == "__main__":

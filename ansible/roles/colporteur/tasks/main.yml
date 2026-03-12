@@ -141,8 +141,12 @@
               - "{{ colporteur_config_dir }}/secrets"
           delegate_to: localhost
           become: false
-          register: colporteur_account_names
+          register: colporteur_rewrite_result
           changed_when: false
+
+        - name: Parse account passwords from rewrite output
+          ansible.builtin.set_fact:
+            colporteur_account_passwords: "{{ colporteur_rewrite_result.stdout | from_json }}"
 
         - name: Deploy processed config file
           ansible.builtin.copy:
@@ -169,22 +173,16 @@
         group: "{{ colporteur_sys_group }}"
         mode: "0750"
 
-    - name: Validate account passwords are configured
-      ansible.builtin.assert:
-        that: "lookup('vars', 'colporteur_' + (item | regex_replace('[^A-Za-z0-9_]', '_')) + '_password', default='') | length > 0"
-        fail_msg: >-
-          Missing config key 'colporteur_{{ item | regex_replace('[^A-Za-z0-9_]', '_') }}_password'.
-          Run: auberge config set colporteur_{{ item | regex_replace('[^A-Za-z0-9_]', '_') }}_password <VALUE>
-      loop: "{{ colporteur_account_names.stdout_lines }}"
-
     - name: Deploy account password sidecar files
       ansible.builtin.copy:
-        content: "{{ lookup('vars', 'colporteur_' + (item | regex_replace('[^A-Za-z0-9_]', '_')) + '_password') }}"
-        dest: "{{ colporteur_config_dir }}/secrets/{{ item }}"
+        content: "{{ item.value }}"
+        dest: "{{ colporteur_config_dir }}/secrets/{{ item.key }}"
         owner: root
         group: "{{ colporteur_sys_group }}"
         mode: "0640"
-      loop: "{{ colporteur_account_names.stdout_lines }}"
+      loop: "{{ colporteur_account_passwords | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
       no_log: true
       notify: Restart colporteur
 
