@@ -47,21 +47,6 @@ pub enum AnsibleCommands {
         )]
         force: bool,
     },
-    #[command(alias = "c")]
-    Check {
-        #[arg(short = 'H', long, help = "Target host")]
-        host: Option<String>,
-        #[arg(short, long, help = "Playbook path")]
-        playbook: Option<PathBuf>,
-        #[arg(long, value_delimiter = ',', help = "Skip tasks with these tags")]
-        skip_tags: Option<Vec<String>>,
-        #[arg(
-            short = 'f',
-            long,
-            help = "Skip confirmation prompts (for CI/CD automation)"
-        )]
-        force: bool,
-    },
     #[command(alias = "b")]
     Bootstrap {
         host: String,
@@ -361,7 +346,7 @@ fn run_single_playbook(
 }
 
 fn show_playbook_warnings(playbook_name: &str, force: bool) -> Result<()> {
-    let needs_cloudflare_warning = playbook_name == "apps.yml" || playbook_name == "auberge.yml";
+    let needs_cloudflare_warning = playbook_name == "apps.yml";
 
     if needs_cloudflare_warning {
         eprintln!();
@@ -430,15 +415,6 @@ fn show_playbook_warnings(playbook_name: &str, force: bool) -> Result<()> {
     }
 
     Ok(())
-}
-
-pub fn run_ansible_check(
-    host: Option<String>,
-    playbook: Option<PathBuf>,
-    skip_tags: Option<Vec<String>>,
-    force: bool,
-) -> Result<()> {
-    run_ansible_run(host, playbook, true, None, skip_tags, None, false, force)
 }
 
 fn validate_ip(ip: &str) -> Result<()> {

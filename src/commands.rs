@@ -1,6 +1,7 @@
 pub mod ansible;
 pub mod backup;
 pub mod config_cmd;
+pub mod deploy;
 pub mod dns;
 pub mod host;
 pub mod select;

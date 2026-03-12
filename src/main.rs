@@ -10,9 +10,7 @@ mod ssh_config;
 mod user_config;
 
 use clap::{Parser, Subcommand};
-use commands::ansible::{
-    AnsibleCommands, run_ansible_bootstrap, run_ansible_check, run_ansible_run,
-};
+use commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ansible_run};
 use commands::backup::{
     BackupCommands, RestoreOptions, run_backup_create, run_backup_list, run_backup_prune,
     run_backup_push, run_backup_restore, run_export_opml, run_import_opml,
@@ -21,6 +19,7 @@ use commands::config_cmd::{
     ConfigCommands, run_config_edit, run_config_get, run_config_init, run_config_list,
     run_config_path, run_config_remove, run_config_set,
 };
+use commands::deploy::{DeployCmd, run_deploy};
 use commands::dns::{
     DnsCommands, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all, run_dns_status,
 };
@@ -49,6 +48,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    #[command(alias = "dp", about = "Deploy apps to a host")]
+    Deploy(DeployCmd),
     #[command(
         subcommand,
         alias = "se",
@@ -78,6 +79,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Deploy(cmd) => run_deploy(cmd),
         Commands::Select(cmd) => match cmd {
             SelectCommands::Host { group } => run_select_host(group),
             SelectCommands::Playbook => run_select_playbook(),
@@ -120,12 +122,6 @@ async fn main() -> Result<()> {
             } => run_ansible_run(
                 host, playbook, check, tags, skip_tags, user, ask_pass, force,
             ),
-            AnsibleCommands::Check {
-                host,
-                playbook,
-                skip_tags,
-                force,
-            } => run_ansible_check(host, playbook, skip_tags, force),
             AnsibleCommands::Bootstrap {
                 host,
                 port,
