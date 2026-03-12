@@ -23,7 +23,7 @@ Optional:
 
 - `bichon_tailscale_ip` - Override auto-detected Tailscale IP (e.g. `100.x.y.z`); signals `dns set-all` to use this IP instead of the public IP
 
-> **Warning**: The encryption password is **permanent**. Changing it after initial deployment requires a complete data wipe. Choose a strong password and store it securely.
+> **Warning**: Once the encryption password is set, it **cannot be changed**. Changing it later will make all encrypted data unreadable. To start over, you must reinitialize Bichon and delete all emails and metadata. See [upstream docs](https://github.com/rustmailer/bichon/wiki/Setting-the-Bichon-Encryption-Password). The Ansible role enforces this: the password file is written once on first deploy, and subsequent runs will fail if the configured password differs from the deployed one.
 
 ## Architecture
 
