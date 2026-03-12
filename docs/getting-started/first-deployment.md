@@ -67,20 +67,16 @@ See `config.example.toml` for all available options.
 ## Step 5: Deploy Full Stack
 
 ```bash
-auberge ansible run
+auberge deploy --all --host my-vps
 ```
 
-Select:
+This runs:
 
-1. **Host**: `my-vps`
-2. **Playbook**: `playbooks/auberge.yml` (complete stack)
-
-This runs all layers:
-
-- Bootstrap (if not done)
 - Hardening (firewall, fail2ban)
 - Infrastructure (Caddy, DNS)
 - Applications (all services)
+
+**Note**: Bootstrap is not included — run `auberge ansible bootstrap` separately (Step 3).
 
 ## Step 6: Configure DNS
 

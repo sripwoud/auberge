@@ -80,6 +80,18 @@ fn build_tag_playbook_map() -> Result<HashMap<String, Vec<PathBuf>>> {
 
 const PLAYBOOK_ORDER: &[&str] = &["infrastructure.yml", "apps.yml"];
 
+pub fn get_app_names() -> Result<Vec<String>> {
+    let playbooks_dir = PlaybookManager::get_playbooks_dir()?;
+    let apps_path = playbooks_dir.join("apps.yml");
+    if !apps_path.exists() {
+        return Ok(Vec::new());
+    }
+    let canonical = std::fs::canonicalize(&apps_path)
+        .wrap_err_with(|| format!("Failed to canonicalize: {}", apps_path.display()))?;
+    let roles = parse_playbook_roles(&canonical)?;
+    Ok(roles.into_iter().map(|(name, _)| name).collect())
+}
+
 pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun>, Vec<String>)> {
     let tag_map = build_tag_playbook_map()?;
 

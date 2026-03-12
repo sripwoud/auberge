@@ -9,37 +9,38 @@ Check mode allows you to preview changes before applying them, similar to a dry 
 **Command:**
 
 ```bash
-auberge ansible check
+auberge deploy --check
 ```
 
 **Output:** Shows tasks that would execute and whether they would make changes
 
 ## Usage
 
-### Interactive Mode
+### Deploy Check Mode (Primary)
 
 ```bash
-auberge ansible check
+# Interactive: select app(s) and host, then dry-run
+auberge deploy --check
+
+# Check a specific app
+auberge deploy paperless --check
+
+# Check all apps on a specific host
+auberge deploy --all --host auberge --check
 ```
 
-Prompts for host and playbook selection.
+### Power-User: ansible run --check
 
-### Non-Interactive Mode
-
-```bash
-auberge ansible check --host auberge --playbook playbooks/apps.yml
-```
-
-### With Tags
+For lower-level control (specific playbooks, skip-tags, etc.):
 
 ```bash
-auberge ansible check --host auberge --tags baikal
-```
+auberge ansible run --host auberge --playbook playbooks/apps.yml --check
 
-### Forced (No Confirmation)
+# With skip-tags
+auberge ansible run --host auberge --playbook playbooks/apps.yml --check --skip-tags navidrome
 
-```bash
-auberge ansible check --host auberge --playbook playbooks/apps.yml --force
+# With explicit tags
+auberge ansible run --host auberge --check --tags baikal
 ```
 
 ## Understanding Output
@@ -294,10 +295,10 @@ Preview changes before deploying:
 
 ```bash
 # Check what would change
-auberge ansible check --host auberge --playbook playbooks/apps.yml
+auberge deploy paperless --check --host auberge
 
 # If output looks good, deploy
-auberge ansible run --host auberge --playbook playbooks/apps.yml
+auberge deploy paperless --host auberge
 ```
 
 ### After Config Changes
@@ -309,10 +310,10 @@ Verify your changes would apply correctly:
 vim ansible/roles/baikal/templates/config.j2
 
 # Check what would change
-auberge ansible check --host auberge --tags baikal
+auberge deploy baikal --check --host auberge
 
 # Review output, then apply
-auberge ansible run --host auberge --tags baikal
+auberge deploy baikal --host auberge
 ```
 
 ### Testing New Playbooks
@@ -320,8 +321,8 @@ auberge ansible run --host auberge --tags baikal
 Test playbooks before first execution:
 
 ```bash
-# Check new playbook
-auberge ansible check --host staging --playbook playbooks/new-feature.yml
+# Check new playbook (power-user)
+auberge ansible run --host staging --playbook playbooks/new-feature.yml --check
 
 # Review output for errors or unexpected changes
 # Fix issues, re-check
@@ -333,7 +334,7 @@ auberge ansible check --host staging --playbook playbooks/new-feature.yml
 See what's out of sync with desired state:
 
 ```bash
-auberge ansible check --host auberge --playbook playbooks/auberge.yml
+auberge deploy --all --check --host auberge
 ```
 
 **If many "changed" tasks:** System has drifted from configuration
@@ -342,17 +343,10 @@ auberge ansible check --host auberge --playbook playbooks/auberge.yml
 
 ## Combining with Verbosity
 
-Add `-v` flags for more detail:
+For verbose output, use `ansible run` directly:
 
 ```bash
-# Basic check
-auberge ansible check --host auberge --tags baikal
-
-# With verbosity (see file diffs)
-auberge ansible check --host auberge --tags baikal -v
-
-# More verbosity (see all task parameters)
-auberge ansible check --host auberge --tags baikal -vv
+auberge ansible run --host auberge --check --tags baikal -vv
 ```
 
 **Example output with `-v`:**
@@ -372,10 +366,10 @@ Shows **diff** of what would change.
 
 ## Diff Mode
 
-Show file differences for all tasks:
+Show file differences for all tasks (power-user):
 
 ```bash
-auberge ansible check --host auberge --playbook playbooks/apps.yml --diff
+auberge ansible run --host auberge --playbook playbooks/apps.yml --check --diff
 ```
 
 **Output:**
@@ -402,10 +396,10 @@ Check mode and normal mode are independent:
 
 ```bash
 # Check mode does NOT affect system
-auberge ansible check --host auberge --playbook playbooks/apps.yml
+auberge deploy paperless --check --host auberge
 
 # Normal mode still needed to apply changes
-auberge ansible run --host auberge --playbook playbooks/apps.yml
+auberge deploy paperless --host auberge
 ```
 
 Check mode is **read-only** - it never modifies the system.
@@ -416,11 +410,11 @@ Check mode is **read-only** - it never modifies the system.
 
 ```bash
 # Before full stack deployment
-auberge ansible check --host auberge --playbook playbooks/auberge.yml
+auberge deploy --all --check --host auberge
 
 # Review output carefully
 # Then deploy
-auberge ansible run --host auberge --playbook playbooks/auberge.yml --skip-tags bootstrap
+auberge deploy --all --host auberge
 ```
 
 ### Combine with Backup
@@ -432,21 +426,19 @@ For production systems:
 auberge backup create --host production
 
 # 2. Check what would change
-auberge ansible check --host production --playbook playbooks/apps.yml
+auberge deploy --all --check --host production
 
 # 3. If safe, apply
-auberge ansible run --host production --playbook playbooks/apps.yml
+auberge deploy --all --host production
 
 # 4. Verify, or restore if needed
 ```
 
-### Use Tags for Focused Checks
+### Use App Targeting for Focused Checks
 
 ```bash
 # Check only what you're changing
-auberge ansible check --host auberge --tags baikal
-
-# Not necessary to check everything
+auberge deploy baikal --check --host auberge
 ```
 
 ### Ignore Expected Failures

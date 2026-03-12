@@ -80,15 +80,6 @@ pub fn required_config_keys(playbook_name: &str) -> Vec<&'static str> {
         "apps.yml" => {
             keys.extend(["admin_user_name", "domain", "cloudflare_dns_api_token"]);
         }
-        "auberge.yml" => {
-            keys.extend([
-                "admin_user_name",
-                "domain",
-                "ssh_port",
-                "cloudflare_dns_api_token",
-                "tailscale_authkey",
-            ]);
-        }
         _ => {
             keys.extend(["admin_user_name", "domain"]);
         }
@@ -232,17 +223,6 @@ mod tests {
     fn test_required_config_keys_hardening_is_empty() {
         let keys = required_config_keys("hardening.yml");
         assert!(keys.is_empty());
-    }
-
-    #[test]
-    fn test_required_config_keys_auberge_is_superset() {
-        let auberge = required_config_keys("auberge.yml");
-        let bootstrap = required_config_keys("bootstrap.yml");
-        let infra = required_config_keys("infrastructure.yml");
-        let apps = required_config_keys("apps.yml");
-        for key in bootstrap.iter().chain(infra.iter()).chain(apps.iter()) {
-            assert!(auberge.contains(key), "auberge.yml missing key: {}", key);
-        }
     }
 
     #[test]

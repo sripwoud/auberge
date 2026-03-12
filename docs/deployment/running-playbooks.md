@@ -12,10 +12,10 @@ auberge ansible run --playbook P --tags TAG  # Explicit playbook, no auto-resolv
 ## Examples
 
 ```bash
-# Full stack (skip bootstrap if already done)
-auberge ansible run --playbook playbooks/auberge.yml --skip-tags bootstrap
+# Full stack: deploy all apps
+auberge deploy --all
 
-# Specific layer
+# Specific layer (power-user)
 auberge ansible run --playbook playbooks/apps.yml
 
 # Specific apps
@@ -31,7 +31,7 @@ auberge ansible run --tags caddy
 
 ```bash
 auberge ansible bootstrap auberge --ip IP
-auberge ansible run --playbook playbooks/auberge.yml --skip-tags bootstrap
+auberge deploy --all
 ```
 
 **Update single app (auto-resolves infrastructure first):**
@@ -50,7 +50,7 @@ auberge ansible run --tags infrastructure
 
 - `-v, -vv, -vvv` - Verbose output (debugging)
 - `--force` - Skip confirmation (CI/CD)
-- `--dry-run` / `check` - Preview without applying
+- `--check` - Preview without applying
 
 ## Error Handling
 

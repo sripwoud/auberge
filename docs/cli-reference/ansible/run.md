@@ -19,7 +19,7 @@ Executes Ansible playbooks on target hosts. Supports check mode (dry run), tag f
 **Important warnings are shown for**:
 
 - bootstrap.yml: Provider firewall configuration required
-- apps.yml/auberge.yml: Cloudflare API token and port 853 configuration
+- apps.yml: Cloudflare API token and port 853 configuration
 
 ## Config Validation
 
@@ -31,7 +31,6 @@ Before executing any playbook, the CLI validates required config values from `co
 | hardening.yml      | (none)                                                  |
 | infrastructure.yml | `admin_user_name`, `domain`, `tailscale_authkey`        |
 | apps.yml           | `admin_user_name`, `domain`, `cloudflare_dns_api_token` |
-| auberge.yml        | all of the above combined                               |
 | other playbooks    | `admin_user_name`, `domain`                             |
 
 Example error output:
@@ -85,9 +84,6 @@ auberge ansible run --host myserver --tags paperless
 # Explicit playbook: runs only apps.yml with the tag (no infra auto-deploy)
 auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --tags paperless
 
-# Run full playbook but skip bootstrap tasks
-auberge ansible run --host myserver --playbook ansible/playbooks/auberge.yml --skip-tags bootstrap
-
 # Skip confirmations (for automation)
 auberge ansible run --host myserver --playbook ansible/playbooks/bootstrap.yml --force
 ```
@@ -112,7 +108,7 @@ Without this, you'll be locked out after SSH port change!
 
 ## Apps Playbook Warnings
 
-When running apps.yml or auberge.yml:
+When running apps.yml:
 
 **Cloudflare API Token**:
 
@@ -127,7 +123,7 @@ When running apps.yml or auberge.yml:
 
 ## Related Commands
 
-- [auberge ansible check](check.md) - Run playbook in check mode
+- [auberge deploy](../deploy.md) - Deploy apps (recommended for app deployments)
 - [auberge ansible bootstrap](bootstrap.md) - Bootstrap a new VPS
 - [auberge select playbook](../select/playbook.md) - Select playbook interactively
 

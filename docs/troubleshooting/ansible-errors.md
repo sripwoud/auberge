@@ -234,7 +234,7 @@ auberge ansible run --host vps -vvv
 
 ```bash
 # Dry run to see what would change
-auberge ansible check --host vps --playbook playbooks/apps.yml
+auberge deploy --all --check --host vps
 ```
 
 ### Run specific task
@@ -274,7 +274,7 @@ auberge ansible run --host vps --playbook playbooks/apps.yml
 
 ```bash
 # Re-run full stack
-auberge ansible run --host vps --playbook playbooks/auberge.yml --skip-tags bootstrap
+auberge deploy --all --host vps
 
 # Or restore from backup
 auberge backup restore latest --host vps
