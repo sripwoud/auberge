@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5](https://github.com/sripwoud/auberge/compare/v0.6.4...v0.6.5) - 2026-03-12
+
+### Fixed
+
+- *(colporteur)* extract passwords from config instead of duplicating in auberge
+
 ## [0.6.4](https://github.com/sripwoud/auberge/compare/v0.6.3...v0.6.4) - 2026-03-12
 
 ### Fixed
