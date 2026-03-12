@@ -3,4 +3,4 @@
 # Includes feat!/fix! (breaking) and feat(scope):/fix(scope):.
 # Does NOT apply to "release-plz release" (publish). Publishing is triggered by merging the release PR
 # (release_always / commit associated with a release-plz-* PR), so no loop.
-release_commits = "^(feat|fix)(!|\\(|:)"
+release_commits = "^(feat|fix|build)(!|\\(|:)"
