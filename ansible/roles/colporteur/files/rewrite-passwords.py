@@ -34,8 +34,10 @@ def main():
         elif re.match(r"\s*\[", line):
             current_account = None
             result.append(line)
-        elif current_account and re.match(r"\s*password\s*=", line):
-            result.append(f'password = "!cat {secrets_dir}/{current_account}"\n')
+        elif current_account and (m_pw := re.match(r"(\s*)password\s*=\s*\"[^\"]*\"(.*)", line)):
+            indent = m_pw.group(1)
+            trailing = m_pw.group(2)
+            result.append(f'{indent}password = "!cat {secrets_dir}/{current_account}"{trailing}\n')
         else:
             result.append(line)
 
