@@ -7,7 +7,7 @@ pub fn has_skim_support() -> bool {
     std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
 }
 
-pub fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
+fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
     if items.is_empty() {
         return None;
     }
@@ -45,7 +45,7 @@ pub fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
         .map(|item| item.output().to_string())
 }
 
-pub fn select_with_dialoguer(items: &[String], prompt: &str) -> Option<String> {
+fn select_with_dialoguer(items: &[String], prompt: &str) -> Option<String> {
     if items.is_empty() {
         return None;
     }
