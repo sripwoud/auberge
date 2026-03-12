@@ -8,6 +8,7 @@ a JSON object mapping account names to their original passwords.
 
 import json
 import re
+import subprocess
 import sys
 
 SAFE_NAME = re.compile(r"^[A-Za-z0-9_.@-]+$")
@@ -47,6 +48,16 @@ def main():
             indent = m_pw.group(1)
             password = m_pw.group(2)
             trailing = m_pw.group(3)
+            if password.startswith("!"):
+                cmd = password[1:]
+                proc = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if proc.returncode != 0:
+                    print(
+                        f"Failed to resolve password command for account '{current_account}': {proc.stderr.strip()}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                password = proc.stdout.strip()
             accounts[current_account] = password
             result.append(f'{indent}password = "!cat {secrets_dir}/{current_account}"{trailing}\n')
         else:
