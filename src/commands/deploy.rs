@@ -148,8 +148,13 @@ fn show_execution_plan(runs: &[PlaybookRun], host: &Host, check: bool) -> Result
 fn prepend_hardening(runs: Vec<PlaybookRun>) -> Result<Vec<PlaybookRun>> {
     let playbooks_dir = PlaybookManager::get_playbooks_dir()?;
     let hardening_path = playbooks_dir.join("hardening.yml");
-    let canonical = std::fs::canonicalize(&hardening_path)
-        .map_err(|_| eyre::eyre!("hardening.yml not found in {}", playbooks_dir.display()))?;
+    let canonical = std::fs::canonicalize(&hardening_path).map_err(|e| {
+        eyre::eyre!(
+            "hardening.yml not found in {}: {}",
+            playbooks_dir.display(),
+            e
+        )
+    })?;
 
     let mut all_runs = vec![PlaybookRun {
         path: canonical,
@@ -157,6 +162,21 @@ fn prepend_hardening(runs: Vec<PlaybookRun>) -> Result<Vec<PlaybookRun>> {
     }];
     all_runs.extend(runs);
     Ok(all_runs)
+}
+
+fn warn_apps_prerequisites(runs: &[PlaybookRun]) {
+    let has_apps = runs.iter().any(|run| {
+        run.path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n == "apps.yml")
+    });
+
+    if has_apps {
+        output::warn(
+            "Ensure Cloudflare API token is configured and provider firewall allows port 853 (DNS-over-TLS)",
+        );
+    }
 }
 
 fn confirm_deploy(force: bool) -> Result<()> {
@@ -208,6 +228,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
     let runs = prepend_hardening(resolved_runs)?;
 
     show_execution_plan(&runs, &host, cmd.check)?;
+    warn_apps_prerequisites(&runs);
     confirm_deploy(cmd.force)?;
 
     let inventory_host = InventoryHost {
