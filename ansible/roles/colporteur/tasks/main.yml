@@ -115,13 +115,74 @@
         group: "{{ colporteur_sys_group }}"
         mode: "0644"
 
-    - name: Deploy Colporteur config file
+    - name: Create temp directory for config processing
+      ansible.builtin.tempfile:
+        state: directory
+      delegate_to: localhost
+      become: false
+      register: colporteur_config_tmpdir
+
+    - name: Copy local config to temp for processing
       ansible.builtin.copy:
         src: "{{ colporteur_config_src }}"
+        dest: "{{ colporteur_config_tmpdir.path }}/config.toml"
+        mode: "0640"
+      delegate_to: localhost
+      become: false
+
+    - name: Rewrite passwords to use sidecar secret files
+      ansible.builtin.command:
+        cmd: >-
+          python3 {{ role_path }}/files/rewrite-passwords.py
+          {{ colporteur_config_tmpdir.path }}/config.toml
+          {{ colporteur_config_dir }}/secrets
+      delegate_to: localhost
+      become: false
+      register: colporteur_account_names
+      changed_when: false
+
+    - name: Deploy processed config file
+      ansible.builtin.copy:
+        src: "{{ colporteur_config_tmpdir.path }}/config.toml"
         dest: "{{ colporteur_config_dir }}/config.toml"
         owner: root
         group: "{{ colporteur_sys_group }}"
         mode: "0640"
+      notify: Restart colporteur
+
+    - name: Clean up temp directory
+      ansible.builtin.file:
+        path: "{{ colporteur_config_tmpdir.path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+
+    - name: Create secrets directory
+      ansible.builtin.file:
+        path: "{{ colporteur_config_dir }}/secrets"
+        state: directory
+        owner: root
+        group: "{{ colporteur_sys_group }}"
+        mode: "0750"
+
+    - name: Validate account passwords are configured
+      ansible.builtin.assert:
+        that: "lookup('vars', 'colporteur_' + item + '_password', default='') | length > 0"
+        fail_msg: >-
+          Missing config key 'colporteur_{{ item }}_password'.
+          Run: auberge config set colporteur_{{ item }}_password <VALUE>
+      loop: "{{ colporteur_account_names.stdout_lines }}"
+      no_log: true
+
+    - name: Deploy account password sidecar files
+      ansible.builtin.copy:
+        content: "{{ lookup('vars', 'colporteur_' + item + '_password') }}"
+        dest: "{{ colporteur_config_dir }}/secrets/{{ item }}"
+        owner: root
+        group: "{{ colporteur_sys_group }}"
+        mode: "0640"
+      loop: "{{ colporteur_account_names.stdout_lines }}"
+      no_log: true
       notify: Restart colporteur
 
     - name: Deploy Colporteur systemd service file
