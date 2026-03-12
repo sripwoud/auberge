@@ -220,7 +220,7 @@ auberge ansible run --tags security
 ### Full Deployment
 
 ```bash
-# Deploy all apps (infrastructure dependencies resolved automatically)
+# Deploy all apps (hardening + infrastructure + apps)
 auberge deploy --all
 ```
 
@@ -289,7 +289,7 @@ Running `--tags security` executes all security-related tasks.
 List all tags in a playbook:
 
 ```bash
-ansible-playbook playbooks/apps.yml --list-tags
+cd ansible && ansible-playbook playbooks/apps.yml --list-tags
 ```
 
 **Example output:**
@@ -423,7 +423,7 @@ No tasks have the specified tag.
 **Fix:** Check tag spelling:
 
 ```bash
-ansible-playbook playbooks/apps.yml --list-tags
+cd ansible && ansible-playbook playbooks/apps.yml --list-tags
 ```
 
 ### Unexpected Tasks Run

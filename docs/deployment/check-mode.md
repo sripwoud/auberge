@@ -343,17 +343,7 @@ auberge deploy --all --check --host auberge
 
 ## Combining with Verbosity
 
-Add `--verbose` for more detail:
-
-```bash
-# Basic check
-auberge deploy baikal --check --host auberge
-
-# With verbosity (see file diffs)
-auberge deploy baikal --check --host auberge --verbose
-```
-
-For multiple verbosity levels, use `ansible run` directly:
+For verbose output, use `ansible run` directly:
 
 ```bash
 auberge ansible run --host auberge --check --tags baikal -vv

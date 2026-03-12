@@ -1,6 +1,6 @@
 # auberge deploy
 
-Deploy apps to a host
+Deploy apps to a host with automatic hardening
 
 ## Synopsis
 
@@ -14,9 +14,11 @@ auberge deploy [apps...] [OPTIONS]
 
 ## Description
 
-Deploys one or more self-hosted applications to a target host using Ansible. Infrastructure dependencies are resolved automatically — you do not need to specify playbooks or manage layer ordering.
+Deploys one or more self-hosted applications to a target host using Ansible. Every deploy automatically runs hardening first, then resolves infrastructure dependencies — you do not need to specify playbooks or manage layer ordering.
 
-A confirmation prompt shows the execution plan before running (unless `--force` is passed).
+A confirmation prompt shows the resolved execution plan (hardening → infrastructure → apps) before running (unless `--force` is passed).
+
+To skip hardening, use `auberge ansible run` directly.
 
 App names are derived from roles defined in `apps.yml`.
 
@@ -29,7 +31,6 @@ App names are derived from roles defined in `apps.yml`.
 | `-C, --check`     | Dry-run mode (ansible check mode, no changes applied)      | false                 |
 | `--all`           | Deploy all apps                                            | false                 |
 | `-f, --force`     | Skip confirmation prompt                                   | false                 |
-| `--verbose`       | Increase ansible output verbosity                          | false                 |
 
 ## Examples
 
@@ -67,17 +68,26 @@ Running `auberge deploy` without arguments opens:
 Before executing, the CLI displays the execution plan:
 
 ```
-Deploying: paperless freshrss
-Host: prod
+Execution plan:
+  Host: prod (203.0.113.10)
+  → hardening
+  → infrastructure
+  → apps (tags: paperless, freshrss)
 
-? Confirm? [y/N]:
+Proceed with deployment? [y/N]:
 ```
 
 Use `--force` to skip this prompt.
 
-### Infrastructure Dependencies
+### Execution Order
 
-Infrastructure layers required by selected apps are resolved automatically. You do not need to reference `infrastructure.yml` or any other playbook.
+Every deploy runs in this order:
+
+1. **Hardening** — firewall, fail2ban, kernel hardening (always, no tags)
+2. **Infrastructure** — Caddy, Tailscale, DNS (auto-resolved dependencies)
+3. **Apps** — only the selected applications (filtered by tags)
+
+To skip hardening or run arbitrary playbooks, use [`auberge ansible run`](ansible/run.md).
 
 ### Check Mode
 

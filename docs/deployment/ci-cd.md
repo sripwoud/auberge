@@ -318,7 +318,7 @@ Log all deployments:
 ```yaml
 - name: Check Ansible syntax
   run: |
-    ansible-playbook playbooks/apps.yml --syntax-check
+    cd ansible && ansible-playbook playbooks/apps.yml --syntax-check
 ```
 
 ### Lint Playbooks

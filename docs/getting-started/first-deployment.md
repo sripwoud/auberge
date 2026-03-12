@@ -70,12 +70,13 @@ See `config.example.toml` for all available options.
 auberge deploy --all --host my-vps
 ```
 
-This runs all layers:
+This runs:
 
-- Bootstrap (if not done)
 - Hardening (firewall, fail2ban)
 - Infrastructure (Caddy, DNS)
 - Applications (all services)
+
+**Note**: Bootstrap is not included — run `auberge ansible bootstrap` separately (Step 3).
 
 ## Step 6: Configure DNS
 

@@ -10,7 +10,7 @@ cargo clippy
 ## Ansible
 
 ```bash
-ansible-playbook playbooks/apps.yml --syntax-check
+cd ansible && ansible-playbook playbooks/apps.yml --syntax-check
 ansible-lint
 auberge deploy myapp --check  # Dry run
 ```
