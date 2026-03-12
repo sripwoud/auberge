@@ -85,9 +85,12 @@ fn select_or_use_host(host_arg: Option<String>) -> Result<Host> {
     }
 }
 
-fn validate_config_for_playbook(playbook_name: &str) -> Result<crate::user_config::UserConfig> {
+fn validate_config_for_playbook(
+    playbook_name: &str,
+    tags: Option<&[String]>,
+) -> Result<crate::user_config::UserConfig> {
     let config = crate::user_config::UserConfig::load()?;
-    let required_keys = required_config_keys(playbook_name);
+    let required_keys = required_config_keys(playbook_name, tags);
     let missing = config.validate_required(&required_keys);
     if !missing.is_empty() {
         output::error("Missing required config values:");
@@ -210,7 +213,13 @@ fn run_auto_resolved(
             .and_then(|n| n.to_str())
             .unwrap_or("");
 
-        validate_config_for_playbook(playbook_name)?;
+        let run_tags_ref = if run.tags.is_empty() {
+            None
+        } else {
+            Some(run.tags.as_slice())
+        };
+
+        validate_config_for_playbook(playbook_name, run_tags_ref)?;
         show_playbook_warnings(playbook_name, force)?;
 
         let run_tags = if run.tags.is_empty() {
@@ -277,7 +286,7 @@ fn run_single_playbook(
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    let config = validate_config_for_playbook(playbook_name)?;
+    let config = validate_config_for_playbook(playbook_name, tags)?;
     let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
 
     if is_fresh_bootstrap {
@@ -453,7 +462,7 @@ pub fn run_ansible_bootstrap(
     user: Option<String>,
     force: bool,
 ) -> Result<()> {
-    validate_config_for_playbook("bootstrap.yml")?;
+    validate_config_for_playbook("bootstrap.yml", None)?;
 
     let host = get_host(&host_name, None)?;
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
