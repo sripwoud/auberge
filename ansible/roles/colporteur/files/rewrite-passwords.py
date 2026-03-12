@@ -9,6 +9,8 @@ discovered account names to stdout (one per line).
 import re
 import sys
 
+SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
+
 
 def main():
     if len(sys.argv) != 3:
@@ -29,6 +31,13 @@ def main():
         section = re.match(r"\s*\[accounts\.([^\]]+)\]", line)
         if section:
             current_account = section.group(1).strip('"').strip("'")
+            if not SAFE_NAME.match(current_account):
+                print(
+                    f"Unsafe account name '{current_account}': "
+                    "only alphanumeric, hyphen, and underscore allowed",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             accounts.append(current_account)
             result.append(line)
         elif re.match(r"\s*\[", line):
