@@ -50,6 +50,10 @@ fn select_host(host_arg: Option<String>) -> Result<Host> {
 }
 
 fn select_apps(available: &[String]) -> Result<Vec<String>> {
+    if available.len() == 1 {
+        return Ok(available.to_vec());
+    }
+
     let mut items: Vec<String> = vec![ALL_ENTRY.to_string()];
     items.extend(available.iter().cloned());
 
