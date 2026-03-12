@@ -164,8 +164,15 @@ pub fn select_multi(items: &[String], prompt: &str) -> Option<Vec<String>> {
     }
 
     if !has_skim_support() {
+        if items.len() == 1 {
+            return Some(vec![items[0].clone()]);
+        }
         return None;
     }
 
-    select_multi_with_skim(items, prompt).or_else(|| select_multi_with_dialoguer(items, prompt))
+    if let Some(result) = select_multi_with_skim(items, prompt) {
+        return Some(result);
+    }
+
+    select_multi_with_dialoguer(items, prompt)
 }
