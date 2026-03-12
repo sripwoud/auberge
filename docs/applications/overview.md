@@ -42,10 +42,10 @@ All applications are deployed via Ansible playbooks. See [Running Playbooks](../
 
 ```bash
 # Deploy all apps
-auberge ansible run --playbook playbooks/apps.yml
+auberge deploy --all
 
 # Deploy specific app
-auberge ansible run --tags baikal
+auberge deploy baikal
 ```
 
 ## Backup Support

@@ -41,6 +41,7 @@
 
 - CLI Reference
   - [Overview](cli-reference/auberge.md)
+  - [deploy](cli-reference/deploy.md)
   - Host Management
     - [add](cli-reference/host/add.md)
     - [list](cli-reference/host/list.md)

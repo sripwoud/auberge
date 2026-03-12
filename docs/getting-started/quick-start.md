@@ -19,13 +19,8 @@ Follow the prompts to enter SSH user and port (defaults to current user, port 22
 ## 3. Deploy
 
 ```bash
-auberge ansible run
+auberge deploy --all --host my-vps
 ```
-
-Select:
-
-1. Your VPS host
-2. The "auberge" playbook (complete stack)
 
 Sit back while Auberge configures everything.
 
@@ -45,7 +40,7 @@ Services are available at subdomains of your primary domain:
 - `https://cal.yourdomain.com` - Baikal (calendar/contacts)
 - `https://rss.yourdomain.com` - FreshRSS
 - `https://musique.yourdomain.com` - Navidrome
-- `https://lire.yourdomain.com` - Calibre
+- `https://lire.yourdomain.com` - Booklore
 - `https://webdav.yourdomain.com` - WebDAV
 - `https://url.yourdomain.com` - YOURLS
 

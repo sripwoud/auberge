@@ -30,7 +30,7 @@ auberge host add my-vps 203.0.113.10
 Deploy the full stack:
 
 ```bash
-auberge ansible run
+auberge deploy --all
 ```
 
 That's it! Auberge will configure your VPS with all infrastructure and applications.

@@ -25,24 +25,29 @@ After deployment, your VPS will be running:
 
 **Infrastructure**:
 
-- Caddy (reverse proxy with automatic HTTPS)
-- fail2ban (intrusion prevention)
-- UFW (firewall)
+- [Caddy](https://caddyserver.com) (reverse proxy with automatic HTTPS)
+- [fail2ban](https://github.com/fail2ban/fail2ban) (intrusion prevention)
+- [UFW](https://launchpad.net/ufw) (firewall)
 
 **Networking**:
 
-- Blocky (DNS + ad-blocking)
-- WireGuard
-- Tailscale
+- [Blocky](https://0xerr0r.github.io/blocky) (DNS + ad-blocking)
+- [Headscale](https://headscale.net) (coordination server)
+- [WireGuard](https://wireguard.com)
+- [Tailscale](https://tailscale.com)
 
 **Applications**:
 
-- Baikal (calendar/contacts)
-- FreshRSS (RSS reader)
-- Navidrome (music streaming)
-- Booklore (digital library)
-- WebDAV (file sharing)
-- YOURLS (URL shortener)
+- [Baikal](https://sabre.io/baikal) (calendar/contacts)
+- [Bichon](https://github.com/rustmailer/bichon) (email archiving)
+- [Booklore](https://booklore.org) (digital library)
+- [Colporteur](https://github.com/sripwoud/colporteur) (newsletter-to-feed)
+- [FreshRSS](https://freshrss.org) (RSS reader)
+- [Navidrome](https://navidrome.org) (music streaming)
+- [Paperless-ngx](https://docs.paperless-ngx.com) (document management)
+- [Syncthing](https://syncthing.net) (file sync)
+- [WebDAV](https://github.com/hacdias/webdav) (file sharing)
+- [YOURLS](https://yourls.org) (URL shortener)
 
 ## How It Works
 
