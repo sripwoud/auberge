@@ -159,7 +159,7 @@
             state: absent
           delegate_to: localhost
           become: false
-          when: colporteur_config_tmpdir.path is defined
+          when: colporteur_config_tmpdir is defined and colporteur_config_tmpdir.path is defined
 
     - name: Create secrets directory
       ansible.builtin.file:
