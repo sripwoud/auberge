@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4](https://github.com/sripwoud/auberge/compare/v0.6.3...v0.6.4) - 2026-03-12
+
+### Fixed
+
+- *(colporteur)* allow email-style account names in password rewriter
+- *(colporteur)* guard cleanup task against undefined tempdir variable
+
 ## [0.6.3](https://github.com/sripwoud/auberge/compare/v0.6.2...v0.6.3) - 2026-03-12
 
 ### Added
