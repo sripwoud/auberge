@@ -14,8 +14,9 @@ Holds all role defaults. No secrets here — those come from `config.toml` via A
 
 Key variables:
 
-- `bichon_version` — pinned release tag (e.g. `"0.1.0"`)
+- `bichon_version` — pinned release tag (e.g. `"0.3.7"`)
 - `bichon_port: 15630`
+- `bichon_bind_ip: 127.0.0.1`
 - `bichon_sys_user: bichon`
 - `bichon_sys_group: bichon`
 - `bichon_install_dir: /opt/bichon`
@@ -25,6 +26,8 @@ Key variables:
 - `bichon_log_level: info`
 - `bichon_subdomain: bichon`
 - `bichon_domain: "{{ bichon_subdomain }}.{{ domain }}"`
+- `bichon_public_url: "https://{{ bichon_domain }}"`
+- `bichon_encrypt_password_file: "{{ bichon_install_dir }}/encrypt.password"`
 - `bichon_release_url` — constructed from `bichon_version` pointing to the GitHub releases asset URL
 
 ### `ansible/roles/bichon/tasks/main.yml`
@@ -65,7 +68,10 @@ BICHON_ROOT_DIR={{ bichon_root_dir }}
 BICHON_INDEX_DIR={{ bichon_index_dir }}
 BICHON_DATA_DIR={{ bichon_data_dir }}
 BICHON_LOG_LEVEL={{ bichon_log_level }}
-BICHON_ENCRYPTION_PASSWORD={{ bichon_encryption_password }}
+BICHON_BIND_IP={{ bichon_bind_ip }}
+BICHON_HTTP_PORT={{ bichon_port }}
+BICHON_PUBLIC_URL={{ bichon_public_url }}
+BICHON_ENCRYPT_PASSWORD_FILE={{ bichon_encrypt_password_file }}
 ```
 
 ---
@@ -82,7 +88,7 @@ bichon_subdomain = ""
 bichon_tailscale_ip = ""
 ```
 
-`bichon_encryption_password` ends in `_password` so it is automatically redacted by `SENSITIVE_SUFFIXES`. `bichon_tailscale_ip` is an optional override matching the existing `paperless_tailscale_ip` pattern.
+`bichon_encryption_password` is the config key used to supply the password value; it ends in `_password` so it is automatically redacted by `SENSITIVE_SUFFIXES`. At deploy time the role writes this value to a file and passes the path via `BICHON_ENCRYPT_PASSWORD_FILE`. `bichon_tailscale_ip` is an optional override matching the existing `paperless_tailscale_ip` pattern.
 
 ### `src/services/dns.rs`
 
@@ -122,13 +128,13 @@ fn bichon() -> Self {
 
 ## 3. Config Keys in `config.toml`
 
-| Key                          | Required | Sensitive | Purpose                                          |
-| ---------------------------- | -------- | --------- | ------------------------------------------------ |
-| `bichon_subdomain`           | yes      | no        | Subdomain for Caddy vhost and DNS A record       |
-| `bichon_encryption_password` | yes      | yes       | Passed as `BICHON_ENCRYPTION_PASSWORD` env var   |
-| `bichon_tailscale_ip`        | no       | no        | Override Tailscale IP (auto-discovered if empty) |
+| Key                          | Required | Sensitive | Purpose                                                                                  |
+| ---------------------------- | -------- | --------- | ---------------------------------------------------------------------------------------- |
+| `bichon_subdomain`           | yes      | no        | Subdomain for Caddy vhost and DNS A record                                               |
+| `bichon_encryption_password` | yes      | yes       | Written to `bichon_encrypt_password_file`; path passed as `BICHON_ENCRYPT_PASSWORD_FILE` |
+| `bichon_tailscale_ip`        | no       | no        | Override Tailscale IP (auto-discovered if empty)                                         |
 
-No `bichon_admin_password` is required — the service uses access-token auth with defaults (`admin` / `admin@bichon`). The encryption password is the only secret required at deploy time.
+No `bichon_admin_password` is required — the service uses access-token auth (always enabled; `BICHON_ENABLE_ACCESS_TOKEN` is deprecated since v0.2.0). The encryption password is the only secret required at deploy time. It is permanent — changing it after initial deployment requires a complete data wipe.
 
 ---
 
@@ -136,7 +142,7 @@ No `bichon_admin_password` is required — the service uses access-token auth wi
 
 All steps inside a `block:` for clean failure grouping, matching the paperless structure:
 
-1. **Validate required credentials** — `ansible.builtin.assert` that `bichon_encryption_password` is defined and non-empty. Fail fast before any filesystem changes.
+1. **Validate required credentials** — `ansible.builtin.assert` that `bichon_encryption_password` is defined and non-empty. Fail fast before any filesystem changes. (The role then writes this value to `bichon_encrypt_password_file` and passes the path via `BICHON_ENCRYPT_PASSWORD_FILE`.)
 
 2. **Get Tailscale status** — `tailscale status --json`, `register: bichon_tailscale_status_raw`, `failed_when: false`.
 
@@ -209,9 +215,11 @@ UMask=0027
 
 ### Encryption at rest
 
-- `BICHON_ENCRYPTION_PASSWORD` is delivered via an `EnvironmentFile` with `mode: 0600`, readable only by the `bichon` system user at runtime.
-- The env file task uses `no_log: true` to prevent the password appearing in Ansible run output.
+- Encryption covers credentials and metadata only — email content is not encrypted.
+- The password is delivered via a dedicated file (`bichon_encrypt_password_file`, `mode: 0400`, owned by `bichon:bichon`). Its path is passed to the process as `BICHON_ENCRYPT_PASSWORD_FILE`.
+- The file-write task uses `no_log: true` to prevent the password appearing in Ansible run output.
 - The `bichon_encryption_password` config key is automatically redacted in `auberge config list` due to the `_password` suffix in `SENSITIVE_SUFFIXES`.
+- The encryption password is permanent. Changing it after initial deployment requires a complete data wipe.
 
 ---
 
@@ -249,7 +257,7 @@ Self-contained: role is fully runnable but not yet wired into any playbook or CL
 
 **Files modified:**
 
-- `src/user_config.rs` — add `bichon_encryption_password`, `bichon_subdomain`, `bichon_tailscale_ip` to TEMPLATE
+- `src/user_config.rs` — add `bichon_encryption_password`, `bichon_subdomain`, `bichon_tailscale_ip` to TEMPLATE (password value is written to file at deploy time; path passed as `BICHON_ENCRYPT_PASSWORD_FILE`)
 - `src/services/dns.rs` — add `"bichon_subdomain"` to `KNOWN_SUBDOMAIN_KEYS`
 
 After this commit: `auberge dns` discovers the bichon subdomain; `auberge config list` shows/redacts bichon keys correctly.

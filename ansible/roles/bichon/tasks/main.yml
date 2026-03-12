@@ -110,6 +110,49 @@
             path: /tmp/bichon.tar.gz
             state: absent
 
+    - name: Check existing encryption password file
+      ansible.builtin.stat:
+        path: "{{ bichon_encrypt_password_file }}"
+      register: bichon_password_file
+
+    - name: Read existing encryption password
+      when: bichon_password_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ bichon_encrypt_password_file }}"
+      register: bichon_existing_password
+      no_log: true
+
+    - name: Fail if encryption password changed
+      when:
+        - bichon_password_file.stat.exists
+        - (bichon_existing_password.content | b64decode | trim) != (bichon_encryption_password | trim)
+      ansible.builtin.fail:
+        msg: >-
+          bichon_encryption_password differs from the deployed password file.
+          The encryption password is permanent — changing it requires wiping all existing
+          Bichon data that was encrypted with the old password. To safely rotate the password,
+          first stop Bichon, back up and then delete all existing Bichon data, remove
+          {{ bichon_encrypt_password_file }}, and only then re-run this playbook with the new password.
+
+    - name: Deploy encryption password file
+      when: not bichon_password_file.stat.exists
+      ansible.builtin.copy:
+        content: "{{ bichon_encryption_password }}"
+        dest: "{{ bichon_encrypt_password_file }}"
+        owner: "{{ bichon_sys_user }}"
+        group: "{{ bichon_sys_group }}"
+        mode: "0400"
+      no_log: true
+      notify: Restart bichon
+
+    - name: Enforce encryption password file permissions
+      when: bichon_password_file.stat.exists
+      ansible.builtin.file:
+        path: "{{ bichon_encrypt_password_file }}"
+        owner: "{{ bichon_sys_user }}"
+        group: "{{ bichon_sys_group }}"
+        mode: "0400"
+
     - name: Deploy environment file
       ansible.builtin.template:
         src: bichon.env.j2

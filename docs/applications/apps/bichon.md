@@ -16,20 +16,20 @@ Bare-metal deployment (no Docker). Requires the [Tailscale](../networking/tailsc
 
 Required variables in `config.toml`:
 
-- `bichon_encryption_password` - Encryption password for at-rest email encryption
+- `bichon_encryption_password` - Encryption password for stored credentials (IMAP passwords, OAuth tokens, login passwords) and metadata database. Email content is stored as zstd-compressed blocks and is **not** encrypted by this password.
 - `bichon_subdomain` - Subdomain for HTTPS access (e.g. `bichon`)
 
 Optional:
 
 - `bichon_tailscale_ip` - Override auto-detected Tailscale IP (e.g. `100.x.y.z`); signals `dns set-all` to use this IP instead of the public IP
 
-See [Environment Variables](../../configuration/environment-variables.md).
+> **Warning**: Once the encryption password is set, it **cannot be changed**. Changing it later will make all encrypted data unreadable. To start over, you must reinitialize Bichon and delete all emails and metadata. See [upstream docs](https://github.com/rustmailer/bichon/wiki/Setting-the-Bichon-Encryption-Password). The Ansible role enforces this: the password file is written once on first deploy, and subsequent runs will fail if the configured password differs from the deployed one.
 
 ## Architecture
 
 - **Runtime**: Rust single binary
 - **Search**: Tantivy (embedded full-text search, no external DB)
-- **Encryption**: Mandatory at-rest encryption
+- **Encryption**: Credential and metadata encryption (email content is not encrypted)
 - **Config**: `/opt/bichon/bichon.env`
 - **Data**: `/opt/bichon/data`
 
@@ -63,7 +63,6 @@ Bichon supports importing EML, MBOX, and PST archives. Refer to the [upstream do
 
 ## Related
 
-- [Environment Variables](../../configuration/environment-variables.md)
 - [Tailscale](../networking/tailscale.md)
 - [Tailnet-only subdomains](../../dns/batch-operations.md#tailnet-only-subdomains)
 - [Backup & Restore](../../backup-restore/overview.md)
