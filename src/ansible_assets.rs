@@ -107,8 +107,7 @@ fn extract_dir(dir: &Dir, base: &Path) -> Result<()> {
 fn extract_entry(entry: &include_dir::DirEntry, base: &Path) -> Result<()> {
     match entry {
         include_dir::DirEntry::Dir(dir) => {
-            let rel = strip_top_component(dir.path());
-            let dest = base.join(rel);
+            let dest = base.join(dir.path());
             std::fs::create_dir_all(&dest)
                 .wrap_err_with(|| format!("Failed to create dir: {}", dest.display()))?;
             for sub in dir.entries() {
@@ -116,8 +115,7 @@ fn extract_entry(entry: &include_dir::DirEntry, base: &Path) -> Result<()> {
             }
         }
         include_dir::DirEntry::File(file) => {
-            let rel = strip_top_component(file.path());
-            let dest = base.join(rel);
+            let dest = base.join(file.path());
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -126,12 +124,6 @@ fn extract_entry(entry: &include_dir::DirEntry, base: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn strip_top_component(p: &Path) -> &Path {
-    let mut components = p.components();
-    components.next();
-    components.as_path()
 }
 
 fn write_ansible_cfg(ansible_dir: &Path) -> Result<()> {
@@ -153,18 +145,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_strip_top_component() {
-        assert_eq!(
-            strip_top_component(Path::new("ansible/roles/caddy")),
-            Path::new("roles/caddy")
-        );
-        assert_eq!(
-            strip_top_component(Path::new("ansible/playbooks/apps.yml")),
-            Path::new("playbooks/apps.yml")
-        );
-    }
-
-    #[test]
     fn test_prepare_impl_uses_dev_mode() {
         let assets = AnsibleAssets::prepare_impl(true).unwrap();
         assert_eq!(assets.ansible_dir(), Path::new("ansible"));
@@ -178,5 +158,31 @@ mod tests {
     #[test]
     fn test_embedded_ansible_has_playbooks() {
         assert!(EMBEDDED_ANSIBLE.get_dir("playbooks").is_some());
+    }
+
+    #[test]
+    fn test_extract_dir_writes_files_to_correct_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("ansible");
+        std::fs::create_dir_all(&base).unwrap();
+        extract_dir(&EMBEDDED_ANSIBLE, &base).unwrap();
+
+        assert!(base.join("playbooks").is_dir());
+        assert!(base.join("roles").is_dir());
+        assert!(base.join("requirements.yml").is_file());
+    }
+
+    #[test]
+    fn test_embedded_paths_have_no_ansible_prefix() {
+        for entry in EMBEDDED_ANSIBLE.entries() {
+            let path = match entry {
+                include_dir::DirEntry::Dir(d) => d.path().to_path_buf(),
+                include_dir::DirEntry::File(f) => f.path().to_path_buf(),
+            };
+            assert!(
+                !path.starts_with("ansible"),
+                "Entry path {path:?} should NOT start with 'ansible/' — include_dir paths are relative to the included directory"
+            );
+        }
     }
 }
