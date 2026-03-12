@@ -13,7 +13,11 @@ pub struct AnsibleAssets {
 
 impl AnsibleAssets {
     pub fn prepare() -> Result<Self> {
-        if std::env::var("AUBERGE_DEV").is_ok() {
+        Self::prepare_impl(std::env::var("AUBERGE_DEV").is_ok())
+    }
+
+    fn prepare_impl(dev_mode: bool) -> Result<Self> {
+        if dev_mode {
             let dev_dir = PathBuf::from("ansible");
             if dev_dir.join("playbooks").exists() && dev_dir.join("roles").exists() {
                 return Ok(Self {
@@ -161,15 +165,9 @@ mod tests {
     }
 
     #[test]
-    fn test_prepare_uses_dev_mode() {
-        unsafe {
-            std::env::set_var("AUBERGE_DEV", "1");
-        }
-        let assets = AnsibleAssets::prepare().unwrap();
+    fn test_prepare_impl_uses_dev_mode() {
+        let assets = AnsibleAssets::prepare_impl(true).unwrap();
         assert_eq!(assets.ansible_dir(), Path::new("ansible"));
-        unsafe {
-            std::env::remove_var("AUBERGE_DEV");
-        }
     }
 
     #[test]
