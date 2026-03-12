@@ -150,7 +150,7 @@ fn prepend_hardening(runs: Vec<PlaybookRun>) -> Result<Vec<PlaybookRun>> {
     let hardening_path = assets.playbooks_dir().join("hardening.yml");
     let canonical = std::fs::canonicalize(&hardening_path).map_err(|e| {
         eyre::eyre!(
-            "hardening.yml not found in {}: {}",
+            "hardening playbook not found at {}: {}",
             hardening_path.display(),
             e
         )
