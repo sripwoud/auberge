@@ -165,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn test_prepare_uses_dev_mode() {
+    fn test_prepare_impl_uses_dev_mode() {
         let assets = AnsibleAssets::prepare_impl(true).unwrap();
         assert_eq!(assets.ansible_dir(), Path::new("ansible"));
     }
