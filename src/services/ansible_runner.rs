@@ -65,7 +65,14 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
     Ok(tmpfile)
 }
 
-pub fn required_config_keys(playbook_name: &str) -> Vec<&'static str> {
+fn tag_required_keys(tag: &str) -> &[&'static str] {
+    match tag {
+        "colporteur" => &["colporteur_subdomain"],
+        _ => &[],
+    }
+}
+
+pub fn required_config_keys(playbook_name: &str, tags: Option<&[String]>) -> Vec<&'static str> {
     let mut keys: Vec<&'static str> = Vec::new();
 
     match playbook_name {
@@ -81,6 +88,16 @@ pub fn required_config_keys(playbook_name: &str) -> Vec<&'static str> {
         }
         _ => {
             keys.extend(["admin_user_name", "domain"]);
+        }
+    }
+
+    if let Some(tags) = tags {
+        for tag in tags {
+            for key in tag_required_keys(tag) {
+                if !keys.contains(key) {
+                    keys.push(key);
+                }
+            }
         }
     }
 
@@ -201,14 +218,14 @@ mod tests {
 
     #[test]
     fn test_required_config_keys_bootstrap() {
-        let keys = required_config_keys("bootstrap.yml");
+        let keys = required_config_keys("bootstrap.yml", None);
         assert!(keys.contains(&"admin_user_name"));
         assert!(keys.contains(&"ssh_port"));
     }
 
     #[test]
     fn test_required_config_keys_infrastructure() {
-        let keys = required_config_keys("infrastructure.yml");
+        let keys = required_config_keys("infrastructure.yml", None);
         assert!(keys.contains(&"admin_user_name"));
         assert!(keys.contains(&"domain"));
         assert!(keys.contains(&"tailscale_authkey"));
@@ -216,19 +233,35 @@ mod tests {
 
     #[test]
     fn test_required_config_keys_apps() {
-        let keys = required_config_keys("apps.yml");
+        let keys = required_config_keys("apps.yml", None);
         assert!(keys.contains(&"cloudflare_dns_api_token"));
+        assert!(!keys.contains(&"colporteur_subdomain"));
+    }
+
+    #[test]
+    fn test_required_config_keys_apps_with_colporteur_tag() {
+        let tags = vec!["colporteur".to_string()];
+        let keys = required_config_keys("apps.yml", Some(&tags));
+        assert!(keys.contains(&"cloudflare_dns_api_token"));
+        assert!(keys.contains(&"colporteur_subdomain"));
+    }
+
+    #[test]
+    fn test_required_config_keys_apps_with_unrelated_tag() {
+        let tags = vec!["paperless".to_string()];
+        let keys = required_config_keys("apps.yml", Some(&tags));
+        assert!(!keys.contains(&"colporteur_subdomain"));
     }
 
     #[test]
     fn test_required_config_keys_hardening_is_empty() {
-        let keys = required_config_keys("hardening.yml");
+        let keys = required_config_keys("hardening.yml", None);
         assert!(keys.is_empty());
     }
 
     #[test]
     fn test_required_config_keys_unknown_playbook_returns_defaults() {
-        let keys = required_config_keys("custom.yml");
+        let keys = required_config_keys("custom.yml", None);
         assert!(keys.contains(&"admin_user_name"));
         assert!(keys.contains(&"domain"));
     }

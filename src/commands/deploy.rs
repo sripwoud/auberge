@@ -90,11 +90,16 @@ fn validate_apps(requested: &[String], available: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn validate_config_for_deploy() -> Result<UserConfig> {
+fn validate_config_for_deploy(apps: &[String]) -> Result<UserConfig> {
     let config = UserConfig::load()?;
     let mut all_keys = Vec::new();
-    for playbook in ["hardening.yml", "infrastructure.yml", "apps.yml"] {
-        for key in required_config_keys(playbook) {
+    let playbooks: [(&str, Option<&[String]>); 3] = [
+        ("hardening.yml", None),
+        ("infrastructure.yml", None),
+        ("apps.yml", Some(apps)),
+    ];
+    for (playbook, tags) in &playbooks {
+        for key in required_config_keys(playbook, *tags) {
             if !all_keys.contains(&key) {
                 all_keys.push(key);
             }
@@ -213,7 +218,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
 
     let host = select_host(cmd.host)?;
 
-    validate_config_for_deploy()?;
+    validate_config_for_deploy(&apps)?;
 
     let (resolved_runs, unknown_tags) = resolve_tags_to_playbook_runs(&apps)?;
 
