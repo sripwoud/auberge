@@ -73,23 +73,11 @@ enum Commands {
     Config(ConfigCommands),
 }
 
-fn needs_ansible(command: &Commands) -> bool {
-    matches!(
-        command,
-        Commands::Deploy(_) | Commands::Ansible(_) | Commands::Backup(_)
-    )
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
     let cli = Cli::parse();
-
-    if needs_ansible(&cli.command) {
-        let assets = ansible_assets::AnsibleAssets::prepare()?;
-        assets.ensure_collections()?;
-    }
 
     match cli.command {
         Commands::Deploy(cmd) => run_deploy(cmd),

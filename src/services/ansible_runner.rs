@@ -97,9 +97,9 @@ pub fn run_playbook(
     ask_vault_pass: bool,
     ask_pass: bool,
 ) -> Result<AnsibleResult> {
-    let ansible_dir = crate::ansible_assets::AnsibleAssets::prepare()?
-        .ansible_dir()
-        .to_path_buf();
+    let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+    assets.ensure_collections()?;
+    let ansible_dir = assets.ansible_dir().to_path_buf();
     let vars_file = write_extra_vars_file()?;
     let inventory_file = write_inventory_file(host)?;
 
@@ -164,9 +164,9 @@ pub fn run_playbook(
 }
 
 pub fn run_bootstrap(playbook: &Path, host: &InventoryHost) -> Result<AnsibleResult> {
-    let ansible_dir = crate::ansible_assets::AnsibleAssets::prepare()?
-        .ansible_dir()
-        .to_path_buf();
+    let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+    assets.ensure_collections()?;
+    let ansible_dir = assets.ansible_dir().to_path_buf();
     let vars_file = write_extra_vars_file()?;
     let inventory_file = write_inventory_file(host)?;
 
