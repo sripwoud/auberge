@@ -1,7 +1,7 @@
 use dialoguer::{Select, theme::ColorfulTheme};
 use eyre::Result;
 use skim::prelude::*;
-use std::io::{Cursor, IsTerminal};
+use std::io::{Cursor, IsTerminal, Write};
 
 pub fn has_skim_support() -> bool {
     std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
@@ -27,6 +27,9 @@ pub fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
     let items = item_reader.of_bufread(Cursor::new(input));
 
     let output = Skim::run_with(&options, Some(items))?;
+
+    let _ = std::io::stderr().write_all(b"\x1b[J");
+    let _ = std::io::stderr().flush();
 
     if output.is_abort {
         return None;
