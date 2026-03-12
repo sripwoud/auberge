@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/sripwoud/auberge/compare/v0.5.0...v0.6.0) - 2026-03-12
+
+### Added
+
+- [**breaking**] embed full ansible directory for self-contained binary ([#147](https://github.com/sripwoud/auberge/pull/147))
+
+### Other
+
+- inject dev-mode flag to eliminate env var mutation ([#153](https://github.com/sripwoud/auberge/pull/153))
+- move ensure_collections to playbook execution sites ([#152](https://github.com/sripwoud/auberge/pull/152))
+- *(colporteur)* bump version to `0.3.3`
+- update README and docs for deploy command and current app stack
+
 ## [0.5.0](https://github.com/sripwoud/auberge/compare/v0.4.7...v0.5.0) - 2026-03-12
 
 ### Added
