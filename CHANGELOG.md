@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3](https://github.com/sripwoud/auberge/compare/v0.6.2...v0.6.3) - 2026-03-12
+
+### Added
+
+- *(colporteur)* deploy IMAP passwords as sidecar secret files ([#158](https://github.com/sripwoud/auberge/pull/158))
+
 ## [0.6.2](https://github.com/sripwoud/auberge/compare/v0.6.1...v0.6.2) - 2026-03-12
 
 ### Fixed
