@@ -216,7 +216,7 @@ UMask=0027
 ### Encryption at rest
 
 - Encryption covers credentials and metadata only — email content is not encrypted.
-- The password is delivered via a dedicated file (`bichon_encrypt_password_file`, `mode: 0600`, owned by `bichon:bichon`). Its path is passed to the process as `BICHON_ENCRYPT_PASSWORD_FILE`.
+- The password is delivered via a dedicated file (`bichon_encrypt_password_file`, `mode: 0400`, owned by `bichon:bichon`). Its path is passed to the process as `BICHON_ENCRYPT_PASSWORD_FILE`.
 - The file-write task uses `no_log: true` to prevent the password appearing in Ansible run output.
 - The `bichon_encryption_password` config key is automatically redacted in `auberge config list` due to the `_password` suffix in `SENSITIVE_SUFFIXES`.
 - The encryption password is permanent. Changing it after initial deployment requires a complete data wipe.
