@@ -1,4 +1,4 @@
-use dialoguer::{Select, theme::ColorfulTheme};
+use dialoguer::{MultiSelect, Select, theme::ColorfulTheme};
 use eyre::Result;
 use skim::prelude::*;
 use std::io::{Cursor, IsTerminal, Write};
@@ -95,4 +95,77 @@ where
         }
         None => Ok(None),
     }
+}
+
+fn select_multi_with_skim(items: &[String], prompt: &str) -> Option<Vec<String>> {
+    if items.is_empty() {
+        return None;
+    }
+
+    let prompt_str = format!("{}> ", prompt);
+
+    let options = SkimOptionsBuilder::default()
+        .prompt(Some(&prompt_str))
+        .height(Some("40%"))
+        .multi(true)
+        .reverse(true)
+        .build()
+        .ok()?;
+
+    let input = items.join("\n");
+    let item_reader = SkimItemReader::default();
+    let items = item_reader.of_bufread(Cursor::new(input));
+
+    let output = Skim::run_with(&options, Some(items))?;
+
+    let mut stderr = std::io::stderr().lock();
+    let _ = stderr.write_all(b"\x1b[0m\x1b[J");
+    let _ = stderr.flush();
+
+    if output.is_abort {
+        return None;
+    }
+
+    let selected: Vec<String> = output
+        .selected_items
+        .iter()
+        .map(|item| item.output().to_string())
+        .collect();
+
+    if selected.is_empty() {
+        None
+    } else {
+        Some(selected)
+    }
+}
+
+fn select_multi_with_dialoguer(items: &[String], prompt: &str) -> Option<Vec<String>> {
+    if items.is_empty() {
+        return None;
+    }
+
+    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt)
+        .items(items)
+        .interact_opt()
+        .ok()
+        .flatten()?;
+
+    if selections.is_empty() {
+        return None;
+    }
+
+    Some(selections.iter().map(|&i| items[i].clone()).collect())
+}
+
+pub fn select_multi(items: &[String], prompt: &str) -> Option<Vec<String>> {
+    if items.is_empty() {
+        return None;
+    }
+
+    if !has_skim_support() {
+        return None;
+    }
+
+    select_multi_with_skim(items, prompt).or_else(|| select_multi_with_dialoguer(items, prompt))
 }
