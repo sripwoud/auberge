@@ -62,7 +62,7 @@ impl AnsibleAssets {
 
     pub fn ensure_collections(&self) -> Result<()> {
         let collections_dir = self.ansible_dir.join(".ansible/collections");
-        if collections_dir.exists() {
+        if collections_dir.join("ansible_collections").exists() {
             return Ok(());
         }
 
