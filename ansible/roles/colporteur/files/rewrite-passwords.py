@@ -9,7 +9,7 @@ discovered account names to stdout (one per line).
 import re
 import sys
 
-SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
+SAFE_NAME = re.compile(r"^[A-Za-z0-9_.@-]+$")
 
 
 def main():
