@@ -93,22 +93,6 @@ impl AnsibleAssets {
     }
 }
 
-fn should_skip(path: &Path) -> bool {
-    let path_str = path.to_string_lossy();
-    if path_str.contains(".ansible") {
-        return true;
-    }
-    if let Some(ext) = path.extension()
-        && ext == "vault"
-    {
-        return true;
-    }
-    if path.file_name().is_some_and(|n| n == "CLAUDE.md") {
-        return true;
-    }
-    false
-}
-
 fn extract_dir(dir: &Dir, base: &Path) -> Result<()> {
     for entry in dir.entries() {
         extract_entry(entry, base)?;
@@ -120,9 +104,6 @@ fn extract_entry(entry: &include_dir::DirEntry, base: &Path) -> Result<()> {
     match entry {
         include_dir::DirEntry::Dir(dir) => {
             let rel = strip_top_component(dir.path());
-            if should_skip(rel) {
-                return Ok(());
-            }
             let dest = base.join(rel);
             std::fs::create_dir_all(&dest)
                 .wrap_err_with(|| format!("Failed to create dir: {}", dest.display()))?;
@@ -132,9 +113,6 @@ fn extract_entry(entry: &include_dir::DirEntry, base: &Path) -> Result<()> {
         }
         include_dir::DirEntry::File(file) => {
             let rel = strip_top_component(file.path());
-            if should_skip(rel) {
-                return Ok(());
-            }
             let dest = base.join(rel);
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent)?;
@@ -169,29 +147,6 @@ fn write_ansible_cfg(ansible_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_should_skip_ansible_collections() {
-        assert!(should_skip(Path::new(".ansible/collections/foo")));
-        assert!(should_skip(Path::new("some/.ansible/bar")));
-    }
-
-    #[test]
-    fn test_should_skip_vault_files() {
-        assert!(should_skip(Path::new("group_vars/all/secrets.vault")));
-    }
-
-    #[test]
-    fn test_should_skip_claude_md() {
-        assert!(should_skip(Path::new("playbooks/CLAUDE.md")));
-    }
-
-    #[test]
-    fn test_should_not_skip_normal_files() {
-        assert!(!should_skip(Path::new("playbooks/apps.yml")));
-        assert!(!should_skip(Path::new("roles/caddy/tasks/main.yml")));
-        assert!(!should_skip(Path::new("requirements.yml")));
-    }
 
     #[test]
     fn test_strip_top_component() {
