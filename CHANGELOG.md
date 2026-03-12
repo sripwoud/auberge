@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6](https://github.com/sripwoud/auberge/compare/v0.6.5...v0.6.6) - 2026-03-12
+
+### Fixed
+
+- *(colporteur)* resolve password commands before writing to secret files ([#165](https://github.com/sripwoud/auberge/pull/165))
+
 ## [0.6.5](https://github.com/sripwoud/auberge/compare/v0.6.4...v0.6.5) - 2026-03-12
 
 ### Fixed
