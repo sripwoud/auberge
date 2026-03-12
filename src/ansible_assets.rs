@@ -170,6 +170,7 @@ mod tests {
         assert!(base.join("playbooks").is_dir());
         assert!(base.join("roles").is_dir());
         assert!(base.join("requirements.yml").is_file());
+        assert!(base.join("playbooks/apps.yml").is_file());
     }
 
     #[test]
