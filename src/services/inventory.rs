@@ -1,31 +1,19 @@
+use crate::ansible_assets::AnsibleAssets;
 use crate::hosts::HostManager;
 use crate::models::inventory::{Host, HostVars, Inventory, RawInventory};
 use crate::models::playbook::Playbook;
-use crate::playbooks::PlaybookManager;
 use eyre::{Result, WrapErr};
 use minijinja::Environment;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-
-pub fn find_project_root() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-
-    let mut current = cwd.as_path();
-    loop {
-        if current.join("ansible/inventory.yml").exists() {
-            return current.to_path_buf();
-        }
-        match current.parent() {
-            Some(parent) => current = parent,
-            None => return cwd,
-        }
-    }
-}
+use std::path::Path;
 
 pub fn load_inventory(inventory_path: Option<&Path>) -> Result<Inventory> {
     let path = match inventory_path {
         Some(p) => p.to_path_buf(),
-        None => find_project_root().join("ansible/inventory.yml"),
+        None => {
+            let assets = AnsibleAssets::prepare()?;
+            assets.ansible_dir().join("inventory.yml")
+        }
     };
 
     let content = std::fs::read_to_string(&path)
@@ -135,7 +123,7 @@ pub fn discover_hosts_with_ips(inventory_path: Option<&Path>) -> Result<HashMap<
 pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<Playbook>> {
     let path = match playbooks_path {
         Some(p) => p.to_path_buf(),
-        None => PlaybookManager::get_playbooks_dir()?,
+        None => AnsibleAssets::prepare()?.playbooks_dir(),
     };
 
     if !path.exists() {

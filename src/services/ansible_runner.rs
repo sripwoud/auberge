@@ -1,4 +1,3 @@
-use crate::services::inventory::find_project_root;
 use crate::user_config::UserConfig;
 use eyre::{Result, WrapErr};
 use std::io::Write;
@@ -98,8 +97,9 @@ pub fn run_playbook(
     ask_vault_pass: bool,
     ask_pass: bool,
 ) -> Result<AnsibleResult> {
-    let project_root = find_project_root();
-    let ansible_dir = project_root.join("ansible");
+    let ansible_dir = crate::ansible_assets::AnsibleAssets::prepare()?
+        .ansible_dir()
+        .to_path_buf();
     let vars_file = write_extra_vars_file()?;
     let inventory_file = write_inventory_file(host)?;
 
@@ -164,8 +164,9 @@ pub fn run_playbook(
 }
 
 pub fn run_bootstrap(playbook: &Path, host: &InventoryHost) -> Result<AnsibleResult> {
-    let project_root = find_project_root();
-    let ansible_dir = project_root.join("ansible");
+    let ansible_dir = crate::ansible_assets::AnsibleAssets::prepare()?
+        .ansible_dir()
+        .to_path_buf();
     let vars_file = write_extra_vars_file()?;
     let inventory_file = write_inventory_file(host)?;
 

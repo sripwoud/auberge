@@ -1,9 +1,10 @@
+mod ansible_assets;
 mod commands;
 mod config;
 mod hosts;
 mod models;
 mod output;
-mod playbooks;
+
 mod selector;
 mod services;
 mod ssh_config;
@@ -72,11 +73,23 @@ enum Commands {
     Config(ConfigCommands),
 }
 
+fn needs_ansible(command: &Commands) -> bool {
+    matches!(
+        command,
+        Commands::Deploy(_) | Commands::Ansible(_) | Commands::Backup(_) | Commands::Select(_)
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
     let cli = Cli::parse();
+
+    if needs_ansible(&cli.command) {
+        let assets = ansible_assets::AnsibleAssets::prepare()?;
+        assets.ensure_collections()?;
+    }
 
     match cli.command {
         Commands::Deploy(cmd) => run_deploy(cmd),

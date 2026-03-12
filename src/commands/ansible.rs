@@ -456,8 +456,8 @@ pub fn run_ansible_bootstrap(
     validate_config_for_playbook("bootstrap.yml")?;
 
     let host = get_host(&host_name, None)?;
-    let bootstrap_playbook =
-        crate::services::inventory::find_project_root().join("ansible/playbooks/bootstrap.yml");
+    let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+    let bootstrap_playbook = assets.playbooks_dir().join("bootstrap.yml");
 
     if !bootstrap_playbook.exists() {
         eyre::bail!(

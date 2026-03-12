@@ -1,4 +1,4 @@
-use crate::playbooks::PlaybookManager;
+use crate::ansible_assets::AnsibleAssets;
 use eyre::{Result, WrapErr};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -47,7 +47,7 @@ fn parse_playbook_roles(playbook_path: &PathBuf) -> Result<Vec<(String, Vec<Stri
 }
 
 fn build_tag_playbook_map() -> Result<HashMap<String, Vec<PathBuf>>> {
-    let playbooks_dir = PlaybookManager::get_playbooks_dir()?;
+    let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
     let mut tag_map: HashMap<String, Vec<PathBuf>> = HashMap::new();
 
     let target_playbooks = ["infrastructure.yml", "apps.yml"];
@@ -81,7 +81,7 @@ fn build_tag_playbook_map() -> Result<HashMap<String, Vec<PathBuf>>> {
 const PLAYBOOK_ORDER: &[&str] = &["infrastructure.yml", "apps.yml"];
 
 pub fn get_app_names() -> Result<Vec<String>> {
-    let playbooks_dir = PlaybookManager::get_playbooks_dir()?;
+    let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
     let apps_path = playbooks_dir.join("apps.yml");
     if !apps_path.exists() {
         return Ok(Vec::new());
@@ -126,7 +126,7 @@ pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun
     }
 
     if has_apps && !has_infra {
-        let playbooks_dir = PlaybookManager::get_playbooks_dir()?;
+        let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
         let infra = playbooks_dir.join("infrastructure.yml");
         if infra.exists() {
             let canonical = std::fs::canonicalize(&infra)?;
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_parse_playbook_roles_apps() {
-        let playbooks_dir = PlaybookManager::get_playbooks_dir().unwrap();
+        let playbooks_dir = AnsibleAssets::prepare().unwrap().playbooks_dir();
         let apps_path = std::fs::canonicalize(playbooks_dir.join("apps.yml")).unwrap();
         let roles = parse_playbook_roles(&apps_path).unwrap();
 
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_parse_playbook_roles_infrastructure() {
-        let playbooks_dir = PlaybookManager::get_playbooks_dir().unwrap();
+        let playbooks_dir = AnsibleAssets::prepare().unwrap().playbooks_dir();
         let infra_path = std::fs::canonicalize(playbooks_dir.join("infrastructure.yml")).unwrap();
         let roles = parse_playbook_roles(&infra_path).unwrap();
 
