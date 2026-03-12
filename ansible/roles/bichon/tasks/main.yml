@@ -110,6 +110,16 @@
             path: /tmp/bichon.tar.gz
             state: absent
 
+    - name: Deploy encryption password file
+      ansible.builtin.copy:
+        content: "{{ bichon_encryption_password }}"
+        dest: "{{ bichon_encrypt_password_file }}"
+        owner: "{{ bichon_sys_user }}"
+        group: "{{ bichon_sys_group }}"
+        mode: "0400"
+      no_log: true
+      notify: Restart bichon
+
     - name: Deploy environment file
       ansible.builtin.template:
         src: bichon.env.j2
