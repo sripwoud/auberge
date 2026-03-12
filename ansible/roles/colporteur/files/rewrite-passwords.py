@@ -50,14 +50,28 @@ def main():
             trailing = m_pw.group(3)
             if password.startswith("!"):
                 cmd = password[1:]
-                proc = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-                if proc.returncode != 0:
+                try:
+                    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+                except subprocess.TimeoutExpired:
                     print(
-                        f"Failed to resolve password command for account '{current_account}': {proc.stderr.strip()}",
+                        f"Password command for account '{current_account}' timed out after 30s",
                         file=sys.stderr,
                     )
                     sys.exit(1)
-                password = proc.stdout.strip()
+                if proc.returncode != 0:
+                    error_output = proc.stderr.strip() or proc.stdout.strip() or "no output from command"
+                    print(
+                        f"Failed to resolve password command for account '{current_account}' "
+                        f"(exit code {proc.returncode}): {error_output}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                stdout = proc.stdout
+                if stdout.endswith("\r\n"):
+                    stdout = stdout[:-2]
+                elif stdout.endswith("\n"):
+                    stdout = stdout[:-1]
+                password = stdout
             accounts[current_account] = password
             result.append(f'{indent}password = "!cat {secrets_dir}/{current_account}"{trailing}\n')
         else:
