@@ -91,7 +91,9 @@ pub fn required_config_keys(playbook_name: &str, tags: Option<&[String]>) -> Vec
         }
     }
 
-    if let Some(tags) = tags {
+    if playbook_name == "apps.yml"
+        && let Some(tags) = tags
+    {
         for tag in tags {
             for key in tag_required_keys(tag) {
                 if !keys.contains(key) {
@@ -250,6 +252,13 @@ mod tests {
     fn test_required_config_keys_apps_with_unrelated_tag() {
         let tags = vec!["paperless".to_string()];
         let keys = required_config_keys("apps.yml", Some(&tags));
+        assert!(!keys.contains(&"colporteur_subdomain"));
+    }
+
+    #[test]
+    fn test_required_config_keys_ignores_tags_for_non_apps_playbooks() {
+        let tags = vec!["colporteur".to_string()];
+        let keys = required_config_keys("infrastructure.yml", Some(&tags));
         assert!(!keys.contains(&"colporteur_subdomain"));
     }
 
