@@ -1,13 +1,13 @@
 use dialoguer::{Select, theme::ColorfulTheme};
 use eyre::Result;
 use skim::prelude::*;
-use std::io::{Cursor, IsTerminal};
+use std::io::{Cursor, IsTerminal, Write};
 
 pub fn has_skim_support() -> bool {
     std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
 }
 
-pub fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
+fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
     if items.is_empty() {
         return None;
     }
@@ -28,6 +28,13 @@ pub fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
 
     let output = Skim::run_with(&options, Some(items))?;
 
+    // Skim leaves terminal background color set after exit.
+    // \x1b[0m resets all SGR attributes (fixes colored bands on subsequent lines).
+    // \x1b[J clears from cursor to end of screen (removes phantom blank lines).
+    let mut stderr = std::io::stderr().lock();
+    let _ = stderr.write_all(b"\x1b[0m\x1b[J");
+    let _ = stderr.flush();
+
     if output.is_abort {
         return None;
     }
@@ -38,7 +45,7 @@ pub fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
         .map(|item| item.output().to_string())
 }
 
-pub fn select_with_dialoguer(items: &[String], prompt: &str) -> Option<String> {
+fn select_with_dialoguer(items: &[String], prompt: &str) -> Option<String> {
     if items.is_empty() {
         return None;
     }
