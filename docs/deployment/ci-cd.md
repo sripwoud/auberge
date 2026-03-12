@@ -211,16 +211,17 @@ Set in Settings → CI/CD → Variables:
 ```yaml
 - name: Check what would change
   run: |
-    auberge ansible check \
+    auberge deploy \
+      --all \
       --host production \
-      --playbook playbooks/apps.yml \
+      --check \
       --force
 
 - name: Deploy if check passed
   run: |
-    auberge ansible run \
+    auberge deploy \
+      --all \
       --host production \
-      --playbook playbooks/apps.yml \
       --force
 ```
 
@@ -317,7 +318,7 @@ Log all deployments:
 ```yaml
 - name: Check Ansible syntax
   run: |
-    ansible-playbook playbooks/auberge.yml --syntax-check
+    ansible-playbook playbooks/apps.yml --syntax-check
 ```
 
 ### Lint Playbooks

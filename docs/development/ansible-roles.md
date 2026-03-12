@@ -57,8 +57,8 @@ Edit `ansible/playbooks/apps.yml`:
 ## Testing
 
 ```bash
-auberge ansible check --tags myapp  # Dry run
-auberge ansible run --tags myapp    # Deploy
+auberge deploy myapp --check  # Dry run
+auberge deploy myapp          # Deploy
 ```
 
 ## Best Practices

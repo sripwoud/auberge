@@ -44,8 +44,7 @@ done
 ```
 ? Select playbook
   Bootstrap (bootstrap.yml)
-  Applications (apps.yml)
-> Full Stack (auberge.yml)
+> Applications (apps.yml)
   Freshrss Only (freshrss.yml)
 
 [↑↓ to move, Enter to select, Esc to cancel]
@@ -56,7 +55,7 @@ done
 Outputs the full playbook path:
 
 ```
-/home/user/code/auberge/ansible/playbooks/auberge.yml
+/home/user/code/auberge/ansible/playbooks/apps.yml
 ```
 
 Exit codes:
@@ -75,7 +74,6 @@ Recognized playbooks:
 
 - bootstrap.yml
 - apps.yml
-- auberge.yml
 - Individual app playbooks (freshrss.yml, baikal.yml, etc.)
 
 ## Use Cases

@@ -40,14 +40,6 @@ auberge ansible run --tags apps
 auberge ansible run --tags baikal,freshrss
 ```
 
-### auberge.yml
-
-Master playbook (runs all layers)
-
-```bash
-auberge ansible run --playbook playbooks/auberge.yml
-```
-
 ## Tags
 
 Use tags for selective execution:
@@ -64,7 +56,7 @@ auberge ansible run --skip-tags navidrome   # Exclude app
 Dry run before execution:
 
 ```bash
-auberge ansible check --tags myapp
+auberge deploy myapp --check
 ```
 
 ## Dependencies

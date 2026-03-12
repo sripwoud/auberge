@@ -67,13 +67,8 @@ See `config.example.toml` for all available options.
 ## Step 5: Deploy Full Stack
 
 ```bash
-auberge ansible run
+auberge deploy --all --host my-vps
 ```
-
-Select:
-
-1. **Host**: `my-vps`
-2. **Playbook**: `playbooks/auberge.yml` (complete stack)
 
 This runs all layers:
 

@@ -151,9 +151,6 @@ auberge ansible run --tags baikal,freshrss,navidrome
 Run everything **except** specified tags:
 
 ```bash
-# Run full stack but skip bootstrap
-auberge ansible run --playbook playbooks/auberge.yml --skip-tags bootstrap
-
 # Run all apps except Navidrome
 auberge ansible run --tags apps --skip-tags navidrome
 ```
@@ -220,14 +217,12 @@ auberge ansible run --tags security
 - SSH hardening
 - Kernel hardening
 
-### Full Deployment (Skip Bootstrap)
+### Full Deployment
 
 ```bash
-# Common for already-bootstrapped systems
-auberge ansible run --playbook playbooks/auberge.yml --skip-tags bootstrap
+# Deploy all apps (infrastructure dependencies resolved automatically)
+auberge deploy --all
 ```
-
-**Why:** Bootstrap is one-time setup. Skipping prevents errors/conflicts.
 
 ## Tag Hierarchy
 
@@ -294,13 +289,13 @@ Running `--tags security` executes all security-related tasks.
 List all tags in a playbook:
 
 ```bash
-ansible-playbook playbooks/auberge.yml --list-tags
+ansible-playbook playbooks/apps.yml --list-tags
 ```
 
 **Example output:**
 
 ```
-playbook: playbooks/auberge.yml
+playbook: playbooks/apps.yml
 
   play #1 (vps): Bootstrap
     TAGS: [bootstrap, ssh, ufw]
@@ -375,26 +370,26 @@ auberge ansible run --playbook playbooks/apps.yml --tags baikal
 
 **Benefit:** Faster feedback loop during development. Use `--playbook` to skip infra when you know only app config changed.
 
-### Always Skip Bootstrap in Production
+### Skip Bootstrap in Production
+
+Bootstrap is one-time setup. Use `auberge deploy` or `ansible run` with explicit playbooks to avoid re-running bootstrap tasks:
 
 ```bash
-# Good
-auberge ansible run --playbook playbooks/auberge.yml --skip-tags bootstrap
+# Recommended: deploy command handles this automatically
+auberge deploy --all
 
-# Bad (may cause errors)
-auberge ansible run --playbook playbooks/auberge.yml
+# Power-user: explicit playbook without bootstrap
+auberge ansible run --playbook playbooks/apps.yml
 ```
-
-**Why:** Bootstrap creates users and changes SSH - should only run once.
 
 ### Combine with Check Mode
 
 ```bash
-# Preview what specific tag would change
-auberge ansible check --tags baikal
+# Preview what would change
+auberge deploy baikal --check
 
 # If safe, apply
-auberge ansible run --tags baikal
+auberge deploy baikal
 ```
 
 ### Tag Application Groups
