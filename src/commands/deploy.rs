@@ -1,9 +1,12 @@
 use crate::models::inventory::Host;
 use crate::models::playbook::Playbook;
 use crate::output;
+use crate::playbooks::PlaybookManager;
 use crate::selector::{select_item, select_multi};
 use crate::services::ansible_runner::{InventoryHost, required_config_keys, run_playbook};
-use crate::services::dependency_resolver::{get_app_names, resolve_tags_to_playbook_runs};
+use crate::services::dependency_resolver::{
+    PlaybookRun, get_app_names, resolve_tags_to_playbook_runs,
+};
 use crate::services::inventory::get_hosts;
 use crate::user_config::UserConfig;
 use clap::Args;
@@ -20,12 +23,10 @@ pub struct DeployCmd {
     pub host: Option<String>,
     #[arg(short = 'C', long, help = "Dry-run mode (ansible check mode)")]
     pub check: bool,
-    #[arg(long, help = "Deploy all apps")]
+    #[arg(long, help = "Deploy all apps", conflicts_with = "apps")]
     pub all: bool,
     #[arg(short = 'f', long, help = "Skip confirmation prompt")]
     pub force: bool,
-    #[arg(short, long, help = "Increase ansible output verbosity")]
-    pub verbose: bool,
 }
 
 fn select_host(host_arg: Option<String>) -> Result<Host> {
@@ -88,7 +89,7 @@ fn validate_apps(requested: &[String], available: &[String]) -> Result<()> {
 fn validate_config_for_deploy() -> Result<UserConfig> {
     let config = UserConfig::load()?;
     let mut all_keys = Vec::new();
-    for playbook in ["infrastructure.yml", "apps.yml"] {
+    for playbook in ["hardening.yml", "infrastructure.yml", "apps.yml"] {
         for key in required_config_keys(playbook) {
             if !all_keys.contains(&key) {
                 all_keys.push(key);
@@ -113,7 +114,7 @@ fn validate_config_for_deploy() -> Result<UserConfig> {
     Ok(config)
 }
 
-fn show_execution_plan(apps: &[String], host: &Host, check: bool) -> Result<()> {
+fn show_execution_plan(runs: &[PlaybookRun], host: &Host, check: bool) -> Result<()> {
     eprintln!();
     if check {
         output::info("Execution plan (DRY RUN):");
@@ -124,10 +125,34 @@ fn show_execution_plan(apps: &[String], host: &Host, check: bool) -> Result<()> 
         "  Host: {} ({})",
         host.name, host.vars.ansible_host
     ));
-    output::info(&format!("  Apps: {}", apps.join(", ")));
-    output::info("  Infrastructure dependencies will be resolved automatically");
+    for run in runs {
+        let name = run
+            .path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        if run.tags.is_empty() {
+            output::info(&format!("  → {}", name));
+        } else {
+            output::info(&format!("  → {} (tags: {})", name, run.tags.join(", ")));
+        }
+    }
     eprintln!();
     Ok(())
+}
+
+fn prepend_hardening(runs: Vec<PlaybookRun>) -> Result<Vec<PlaybookRun>> {
+    let playbooks_dir = PlaybookManager::get_playbooks_dir()?;
+    let hardening_path = playbooks_dir.join("hardening.yml");
+    let canonical = std::fs::canonicalize(&hardening_path)
+        .map_err(|_| eyre::eyre!("hardening.yml not found in {}", playbooks_dir.display()))?;
+
+    let mut all_runs = vec![PlaybookRun {
+        path: canonical,
+        tags: vec![],
+    }];
+    all_runs.extend(runs);
+    Ok(all_runs)
 }
 
 fn confirm_deploy(force: bool) -> Result<()> {
@@ -166,18 +191,20 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
 
     validate_config_for_deploy()?;
 
-    show_execution_plan(&apps, &host, cmd.check)?;
-    confirm_deploy(cmd.force)?;
-
-    let (runs, unknown_tags) = resolve_tags_to_playbook_runs(&apps)?;
+    let (resolved_runs, unknown_tags) = resolve_tags_to_playbook_runs(&apps)?;
 
     if !unknown_tags.is_empty() {
         output::warn(&format!("Unknown tags: {}", unknown_tags.join(", ")));
     }
 
-    if runs.is_empty() {
+    if resolved_runs.is_empty() {
         eyre::bail!("No playbook runs resolved for apps: {}", apps.join(", "));
     }
+
+    let runs = prepend_hardening(resolved_runs)?;
+
+    show_execution_plan(&runs, &host, cmd.check)?;
+    confirm_deploy(cmd.force)?;
 
     let inventory_host = InventoryHost {
         name: host.name.clone(),
@@ -257,6 +284,28 @@ mod tests {
     fn test_validate_apps_empty_requested() {
         let available = vec!["paperless".to_string()];
         assert!(validate_apps(&[], &available).is_ok());
+    }
+
+    #[test]
+    fn test_prepend_hardening() {
+        let playbooks_dir = PlaybookManager::get_playbooks_dir().unwrap();
+        let apps_path = std::fs::canonicalize(playbooks_dir.join("apps.yml")).unwrap();
+        let runs = vec![PlaybookRun {
+            path: apps_path.clone(),
+            tags: vec!["paperless".to_string()],
+        }];
+
+        let result = prepend_hardening(runs).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(
+            result[0].path.file_name().unwrap().to_str().unwrap(),
+            "hardening.yml"
+        );
+        assert!(result[0].tags.is_empty());
+        assert_eq!(
+            result[1].path.file_name().unwrap().to_str().unwrap(),
+            "apps.yml"
+        );
     }
 
     #[test]
