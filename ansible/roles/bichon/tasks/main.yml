@@ -110,7 +110,30 @@
             path: /tmp/bichon.tar.gz
             state: absent
 
+    - name: Check existing encryption password file
+      ansible.builtin.stat:
+        path: "{{ bichon_encrypt_password_file }}"
+      register: bichon_password_file
+
+    - name: Read existing encryption password
+      when: bichon_password_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ bichon_encrypt_password_file }}"
+      register: bichon_existing_password
+      no_log: true
+
+    - name: Fail if encryption password changed
+      when:
+        - bichon_password_file.stat.exists
+        - (bichon_existing_password.content | b64decode) != bichon_encryption_password
+      ansible.builtin.fail:
+        msg: >-
+          bichon_encryption_password in config.toml differs from the deployed password file.
+          The encryption password is permanent — changing it requires a complete data wipe.
+          If this is intentional, manually remove {{ bichon_encrypt_password_file }} and re-run.
+
     - name: Deploy encryption password file
+      when: not bichon_password_file.stat.exists
       ansible.builtin.copy:
         content: "{{ bichon_encryption_password }}"
         dest: "{{ bichon_encrypt_password_file }}"
