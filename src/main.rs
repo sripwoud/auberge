@@ -76,7 +76,7 @@ enum Commands {
 fn needs_ansible(command: &Commands) -> bool {
     matches!(
         command,
-        Commands::Deploy(_) | Commands::Ansible(_) | Commands::Backup(_) | Commands::Select(_)
+        Commands::Deploy(_) | Commands::Ansible(_) | Commands::Backup(_)
     )
 }
 
