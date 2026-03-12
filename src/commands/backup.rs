@@ -1036,8 +1036,8 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     if !opts.skip_playbook_unsafe && !opts.dry_run {
         eprintln!("\n[2/2] Running Ansible playbooks to fix permissions...");
 
-        let project_root = crate::services::inventory::find_project_root();
-        let apps_playbook = project_root.join("ansible/playbooks/apps.yml");
+        let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+        let apps_playbook = assets.playbooks_dir().join("apps.yml");
 
         if !apps_playbook.exists() {
             eprintln!("⚠ Ansible playbook not found: {}", apps_playbook.display());

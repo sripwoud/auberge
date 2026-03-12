@@ -1,7 +1,7 @@
+use crate::ansible_assets::AnsibleAssets;
 use crate::models::inventory::Host;
 use crate::models::playbook::Playbook;
 use crate::output;
-use crate::playbooks::PlaybookManager;
 use crate::selector::{select_item, select_multi};
 use crate::services::ansible_runner::{InventoryHost, required_config_keys, run_playbook};
 use crate::services::dependency_resolver::{
@@ -146,12 +146,12 @@ fn show_execution_plan(runs: &[PlaybookRun], host: &Host, check: bool) -> Result
 }
 
 fn prepend_hardening(runs: Vec<PlaybookRun>) -> Result<Vec<PlaybookRun>> {
-    let playbooks_dir = PlaybookManager::get_playbooks_dir()?;
-    let hardening_path = playbooks_dir.join("hardening.yml");
+    let assets = AnsibleAssets::prepare()?;
+    let hardening_path = assets.playbooks_dir().join("hardening.yml");
     let canonical = std::fs::canonicalize(&hardening_path).map_err(|e| {
         eyre::eyre!(
-            "hardening.yml not found in {}: {}",
-            playbooks_dir.display(),
+            "hardening playbook not found at {}: {}",
+            hardening_path.display(),
             e
         )
     })?;
@@ -313,8 +313,8 @@ mod tests {
 
     #[test]
     fn test_prepend_hardening() {
-        let playbooks_dir = PlaybookManager::get_playbooks_dir().unwrap();
-        let apps_path = std::fs::canonicalize(playbooks_dir.join("apps.yml")).unwrap();
+        let assets = AnsibleAssets::prepare().unwrap();
+        let apps_path = std::fs::canonicalize(assets.playbooks_dir().join("apps.yml")).unwrap();
         let runs = vec![PlaybookRun {
             path: apps_path.clone(),
             tags: vec!["paperless".to_string()],
