@@ -13,13 +13,6 @@ pub struct AnsibleAssets {
 
 impl AnsibleAssets {
     pub fn prepare() -> Result<Self> {
-        if cfg!(test) {
-            let dev_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible");
-            return Ok(Self {
-                ansible_dir: dev_dir,
-            });
-        }
-
         if std::env::var("AUBERGE_DEV").is_ok() {
             let dev_dir = PathBuf::from("ansible");
             if dev_dir.join("playbooks").exists() && dev_dir.join("roles").exists() {
@@ -27,6 +20,13 @@ impl AnsibleAssets {
                     ansible_dir: dev_dir,
                 });
             }
+        }
+
+        if cfg!(test) {
+            let dev_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible");
+            return Ok(Self {
+                ansible_dir: dev_dir,
+            });
         }
 
         let ansible_dir = crate::config::Config::data_dir()?.join("ansible");
@@ -166,7 +166,7 @@ mod tests {
             std::env::set_var("AUBERGE_DEV", "1");
         }
         let assets = AnsibleAssets::prepare().unwrap();
-        assert!(assets.playbooks_dir().ends_with("playbooks"));
+        assert_eq!(assets.ansible_dir(), Path::new("ansible"));
         unsafe {
             std::env::remove_var("AUBERGE_DEV");
         }
