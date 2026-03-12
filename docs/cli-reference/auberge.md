@@ -25,6 +25,7 @@ Auberge is a comprehensive command-line tool for managing self-hosted infrastruc
 
 | Command                      | Alias | Description                             |
 | ---------------------------- | ----- | --------------------------------------- |
+| [deploy](deploy.md)          | dp    | Deploy apps to a host                   |
 | [select](select/host.md)     | se    | Select hosts or playbooks interactively |
 | [ansible](ansible/run.md)    | a     | Run ansible playbooks                   |
 | [backup](backup/create.md)   | b     | Backup and restore application data     |
