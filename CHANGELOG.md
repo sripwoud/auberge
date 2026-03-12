@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/sripwoud/auberge/compare/v0.4.7...v0.5.0) - 2026-03-12
+
+### Added
+
+- [**breaking**] add `deploy` command ([#145](https://github.com/sripwoud/auberge/pull/145))
+
+### Fixed
+
+- *(bichon)* align ansible role with upstream env vars and config ([#142](https://github.com/sripwoud/auberge/pull/142))
+- clear skim terminal artifacts after interactive select ([#141](https://github.com/sripwoud/auberge/pull/141))
+
+### Other
+
+- update outdated sections ([#138](https://github.com/sripwoud/auberge/pull/138))
+
 ## [0.4.7](https://github.com/sripwoud/auberge/compare/v0.4.6...v0.4.7) - 2026-03-11
 
 ### Added
