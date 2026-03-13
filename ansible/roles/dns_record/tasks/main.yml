@@ -9,7 +9,7 @@
       - dns_record_cloudflare_api_token is defined
       - dns_record_cloudflare_api_token | length > 0
       - dns_record_ip is defined
-      - dns_record_ip is regex('^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
+      - dns_record_ip is match('^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
     fail_msg: >-
       dns_record requires: dns_record_subdomain, dns_record_domain,
       dns_record_cloudflare_api_token (non-empty) and dns_record_ip
@@ -25,9 +25,16 @@
       Content-Type: application/json
     return_content: true
   register: _dns_record_zone_lookup
-  failed_when: not _dns_record_zone_lookup.json.success
-  no_log: "{{ not (ansible_verbosity >= 3) }}"
+  failed_when: false
+  no_log: true
   when: _dns_record_zone_ids is not defined or dns_record_domain not in _dns_record_zone_ids
+
+- name: Fail if Cloudflare zone lookup failed for {{ dns_record_domain }}
+  ansible.builtin.fail:
+    msg: "Cloudflare zone lookup failed: {{ _dns_record_zone_lookup.json.errors | default('unknown error') }}"
+  when:
+    - _dns_record_zone_lookup is not skipped
+    - not (_dns_record_zone_lookup.json.success | default(false))
 
 - name: Fail if Cloudflare zone not found or ambiguous for {{ dns_record_domain }}
   ansible.builtin.fail:
@@ -59,8 +66,13 @@
       Content-Type: application/json
     return_content: true
   register: _dns_record_existing
-  failed_when: not _dns_record_existing.json.success
-  no_log: "{{ not (ansible_verbosity >= 3) }}"
+  failed_when: false
+  no_log: true
+
+- name: Fail if DNS record lookup failed for {{ dns_record_subdomain + '.' + dns_record_domain }}
+  ansible.builtin.fail:
+    msg: "DNS record lookup failed: {{ _dns_record_existing.json.errors | default('unknown error') }}"
+  when: not (_dns_record_existing.json.success | default(false))
 
 - name: Fail if multiple A records found for {{ dns_record_subdomain + '.' + dns_record_domain }}
   ansible.builtin.fail:
@@ -86,10 +98,17 @@
       proxied: "{{ dns_record_proxied | bool }}"
     status_code: 200
   register: _dns_record_create
-  failed_when: not _dns_record_create.json.success
-  changed_when: _dns_record_create.json.success
+  failed_when: false
+  changed_when: _dns_record_create.json.success | default(false)
   when: _dns_record_existing.json.result | length == 0
-  no_log: "{{ not (ansible_verbosity >= 3) }}"
+  no_log: true
+
+- name: Fail if DNS record creation failed for {{ dns_record_subdomain + '.' + dns_record_domain }}
+  ansible.builtin.fail:
+    msg: "DNS record creation failed: {{ _dns_record_create.json.errors | default('unknown error') }}"
+  when:
+    - _dns_record_create is not skipped
+    - not (_dns_record_create.json.success | default(false))
 
 - name: Update DNS A record for {{ dns_record_subdomain + '.' + dns_record_domain }}
   ansible.builtin.uri:
@@ -107,12 +126,19 @@
       proxied: "{{ dns_record_proxied | bool }}"
     status_code: 200
   register: _dns_record_update
-  failed_when: not _dns_record_update.json.success
-  changed_when: _dns_record_update.json.success
+  failed_when: false
+  changed_when: _dns_record_update.json.success | default(false)
   when:
     - _dns_record_existing.json.result | length == 1
     - >-
       _dns_record_existing.json.result[0].content != dns_record_ip or
       _dns_record_existing.json.result[0].ttl != (dns_record_ttl | int) or
       _dns_record_existing.json.result[0].proxied != (dns_record_proxied | bool)
-  no_log: "{{ not (ansible_verbosity >= 3) }}"
+  no_log: true
+
+- name: Fail if DNS record update failed for {{ dns_record_subdomain + '.' + dns_record_domain }}
+  ansible.builtin.fail:
+    msg: "DNS record update failed: {{ _dns_record_update.json.errors | default('unknown error') }}"
+  when:
+    - _dns_record_update is not skipped
+    - not (_dns_record_update.json.success | default(false))
