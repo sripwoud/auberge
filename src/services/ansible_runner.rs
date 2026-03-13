@@ -223,6 +223,7 @@ mod tests {
         let keys = required_config_keys("bootstrap.yml", None);
         assert!(keys.contains(&"admin_user_name"));
         assert!(keys.contains(&"ssh_port"));
+        assert!(keys.contains(&"hostname"));
     }
 
     #[test]
