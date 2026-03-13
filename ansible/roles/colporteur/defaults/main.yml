@@ -10,3 +10,5 @@ colporteur_binary_url: "https://github.com/sripwoud/colporteur/releases/download
 colporteur_checksum_url: "https://github.com/sripwoud/colporteur/releases/download/v{{ colporteur_version }}/colporteur-x86_64-unknown-linux-gnu.sha256"
 colporteur_check_interval: 15min
 colporteur_config_src: "~/.config/colporteur/config.toml"
+colporteur_freshrss_sync: false
+colporteur_internal_port: 8085

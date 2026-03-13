@@ -1,0 +1,7 @@
+:{{ colporteur_internal_port }} {
+	root * {{ colporteur_feeds_dir }}
+	file_server
+
+	@xml path *.xml
+	header @xml Content-Type application/atom+xml
+}
