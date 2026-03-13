@@ -1,6 +1,12 @@
 ---
 - name: Cockpit Installation and Configuration
   block:
+    - name: Validate Debian distribution
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == 'Debian'
+        fail_msg: "Cockpit role requires Debian (detected: {{ ansible_facts['distribution'] | default('unknown') }})"
+
     - name: Ensure Debian backports repository is present
       ansible.builtin.apt_repository:
         repo: "deb http://deb.debian.org/debian {{ ansible_distribution_release }}-backports main"
