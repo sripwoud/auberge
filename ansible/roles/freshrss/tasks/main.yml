@@ -153,3 +153,11 @@
         enabled: true
         state: started
         daemon_reload: true
+
+    - name: Ensure Cloudflare DNS A record exists for {{ freshrss_subdomain + '.' + domain }}
+      ansible.builtin.include_role:
+        name: dns_record
+      vars:
+        dns_record_subdomain: "{{ freshrss_subdomain }}"
+        dns_record_domain: "{{ domain }}"
+        dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"

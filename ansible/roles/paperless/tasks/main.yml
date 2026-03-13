@@ -339,3 +339,11 @@
           - "  systemctl status paperless-consumer"
           - "  systemctl status paperless-task-queue"
           - "  systemctl status paperless-scheduler"
+
+    - name: Ensure Cloudflare DNS A record exists for {{ paperless_subdomain + '.' + domain }}
+      ansible.builtin.include_role:
+        name: dns_record
+      vars:
+        dns_record_subdomain: "{{ paperless_subdomain }}"
+        dns_record_domain: "{{ domain }}"
+        dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"
