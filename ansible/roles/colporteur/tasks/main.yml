@@ -30,7 +30,7 @@
         state: directory
         owner: "{{ colporteur_sys_user }}"
         group: "{{ colporteur_sys_group }}"
-        mode: "0700"
+        mode: "0711"
 
     - name: Create Colporteur feeds directory
       ansible.builtin.file:
@@ -234,3 +234,71 @@
         group: root
         mode: "0644"
       notify: Restart caddy
+
+    - name: Sync Colporteur feeds to FreshRSS
+      when: colporteur_freshrss_sync | bool
+      block:
+        - name: Deploy internal Caddyfile for localhost feed serving
+          ansible.builtin.template:
+            src: templates/Caddyfile-internal.j2
+            dest: /etc/caddy/sites/colporteur-internal.caddyfile
+            owner: root
+            group: root
+            mode: "0644"
+          notify: Restart caddy
+
+        - name: Flush handlers to ensure Caddy is reloaded
+          ansible.builtin.meta: flush_handlers
+
+        - name: Check if FreshRSS CLI exists
+          ansible.builtin.stat:
+            path: "{{ colporteur_freshrss_install_path }}/cli/import-for-user.php"
+          register: colporteur_freshrss_cli_check
+
+        - name: Generate OPML from Colporteur config
+          when: colporteur_freshrss_cli_check.stat.exists
+          ansible.builtin.command:
+            argv:
+              - "{{ colporteur_install_path }}/colporteur"
+              - export-opml
+              - --base-url
+              - "http://localhost:{{ colporteur_internal_port }}"
+          environment:
+            XDG_CONFIG_HOME: /etc
+            XDG_DATA_HOME: /var/lib
+          become: true
+          become_user: "{{ colporteur_sys_user }}"
+          register: colporteur_opml_output
+          changed_when: false
+
+        - name: Create secure temp file for OPML
+          when: colporteur_freshrss_cli_check.stat.exists
+          ansible.builtin.tempfile:
+            suffix: .opml
+          register: colporteur_opml_tmpfile
+
+        - name: Write OPML to temp file
+          when: colporteur_freshrss_cli_check.stat.exists
+          ansible.builtin.copy:
+            content: "{{ colporteur_opml_output.stdout }}"
+            dest: "{{ colporteur_opml_tmpfile.path }}"
+            mode: "0600"
+
+        - name: Import OPML into FreshRSS
+          when: colporteur_freshrss_cli_check.stat.exists
+          ansible.builtin.command:
+            argv:
+              - php
+              - "{{ colporteur_freshrss_install_path }}/cli/import-for-user.php"
+              - "--user={{ admin_user_name }}"
+              - "--filename={{ colporteur_opml_tmpfile.path }}"
+          become: true
+          become_user: "{{ colporteur_freshrss_user }}"
+          register: colporteur_freshrss_import_result
+          changed_when: "'imported' in colporteur_freshrss_import_result.stdout | default('')"
+      always:
+        - name: Clean up OPML temp file
+          when: colporteur_opml_tmpfile is defined and colporteur_opml_tmpfile.path is defined
+          ansible.builtin.file:
+            path: "{{ colporteur_opml_tmpfile.path }}"
+            state: absent
