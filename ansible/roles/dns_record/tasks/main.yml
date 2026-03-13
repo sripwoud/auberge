@@ -9,7 +9,7 @@
       - dns_record_cloudflare_api_token is defined
       - dns_record_cloudflare_api_token | length > 0
     fail_msg: "dns_record_subdomain, dns_record_domain, and dns_record_cloudflare_api_token must all be defined and non-empty"
-  no_log: true
+  no_log: "{{ not (ansible_verbosity >= 3) }}"
 
 - name: Look up Cloudflare zone ID for {{ dns_record_domain }}
   ansible.builtin.uri:
@@ -20,15 +20,18 @@
       Content-Type: application/json
     return_content: true
   register: _dns_record_zone_lookup
+  failed_when: not _dns_record_zone_lookup.json.success
   no_log: "{{ not (ansible_verbosity >= 3) }}"
   when: _dns_record_zone_id is not defined
 
-- name: Fail if Cloudflare zone not found for {{ dns_record_domain }}
+- name: Fail if Cloudflare zone not found or ambiguous for {{ dns_record_domain }}
   ansible.builtin.fail:
-    msg: "Cloudflare zone not found for domain: {{ dns_record_domain }}"
+    msg: >-
+      Expected exactly 1 Cloudflare zone for '{{ dns_record_domain }}',
+      got {{ _dns_record_zone_lookup.json.result | length }}.
   when:
     - _dns_record_zone_id is not defined
-    - _dns_record_zone_lookup.json.result | length == 0
+    - _dns_record_zone_lookup.json.result | length != 1
 
 - name: Set Cloudflare zone ID fact
   ansible.builtin.set_fact:
@@ -44,6 +47,7 @@
       Content-Type: application/json
     return_content: true
   register: _dns_record_existing
+  failed_when: not _dns_record_existing.json.success
   no_log: "{{ not (ansible_verbosity >= 3) }}"
 
 - name: Create DNS A record for {{ dns_record_subdomain + '.' + dns_record_domain }}
