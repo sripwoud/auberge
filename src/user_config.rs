@@ -29,6 +29,7 @@ booklore_subdomain = ""
 cloudflare_dns_api_token = ""
 
 colporteur_feeds_password = ""
+colporteur_freshrss_sync = false
 colporteur_subdomain = ""
 
 domain = ""
