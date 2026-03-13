@@ -42,8 +42,9 @@ auberge config init
 auberge config set hostname my-vps
 auberge config set admin_user_name yourname
 auberge config set admin_user_email you@example.com
-auberge config set admin_user_password your-linux-password
 auberge config set ssh_port 22022
+# Optional: only needed for Cockpit web console login
+auberge config set admin_user_password your-linux-password
 ```
 
 Then run the bootstrap playbook:
@@ -55,7 +56,7 @@ auberge ansible bootstrap --host my-vps --ip 203.0.113.10
 This:
 
 - Sets server hostname (from `hostname` in `config.toml`)
-- Creates an admin user with a Linux password (from `admin_user_password` in `config.toml`)
+- Creates an admin user (optionally sets a Linux password if `admin_user_password` is configured)
 - Disables root SSH login
 - Changes SSH port (from `ssh_port` in `config.toml`)
 - Configures basic security
