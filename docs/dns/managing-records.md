@@ -131,23 +131,16 @@ auberge dns s --subdomain rss --ip 10.0.0.1
 
 > **Note:** For most apps (baikal, booklore, cockpit, colporteur, freshrss, navidrome, paperless, webdav, yourls), DNS A records are provisioned automatically during deployment. Manual setup is only needed for apps without this integration (e.g. Blocky, Calibre).
 
-Set up all records for a new deployment:
+Set up records for non-integrated apps:
 
 ```bash
-# Get VPS IP
 AUBERGE_IP="203.0.113.10"
 
-# Set each subdomain
 auberge dns set --subdomain dns --ip $AUBERGE_IP
-auberge dns set --subdomain cal --ip $AUBERGE_IP
-auberge dns set --subdomain rss --ip $AUBERGE_IP
-auberge dns set --subdomain music --ip $AUBERGE_IP
-auberge dns set --subdomain books --ip $AUBERGE_IP
-auberge dns set --subdomain files --ip $AUBERGE_IP
-auberge dns set --subdomain url --ip $AUBERGE_IP
+auberge dns set --subdomain lire --ip $AUBERGE_IP
 ```
 
-**Better alternative:** Use `dns set-all` for batch operations:
+Or use `dns set-all` for batch operations (covers all configured subdomains):
 
 ```bash
 auberge dns set-all --host auberge

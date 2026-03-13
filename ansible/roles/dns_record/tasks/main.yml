@@ -9,7 +9,7 @@
       - dns_record_cloudflare_api_token is defined
       - dns_record_cloudflare_api_token | length > 0
       - dns_record_ip is defined
-      - dns_record_ip is regex('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+      - dns_record_ip is regex('^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
     fail_msg: >-
       dns_record requires: dns_record_subdomain, dns_record_domain,
       dns_record_cloudflare_api_token (non-empty) and dns_record_ip
