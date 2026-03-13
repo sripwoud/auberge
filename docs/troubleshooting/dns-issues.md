@@ -266,6 +266,31 @@ ssh ansible@vps "sudo systemctl status caddy"
 ssh ansible@vps "sudo ufw status"
 ```
 
+### App deployed but DNS record missing
+
+**Problem:** App role ran successfully but subdomain doesn't resolve.
+
+**Causes:**
+
+- `cloudflare_dns_api_token` not configured
+- `domain` not configured
+- Cloudflare API error during deployment
+
+**Solutions:**
+
+```bash
+auberge config get cloudflare_dns_api_token
+auberge config get domain
+
+auberge deploy <app> --host vps
+```
+
+Or create the record manually:
+
+```bash
+auberge dns set --subdomain <subdomain> --ip <ip>
+```
+
 ## Debugging
 
 ### Verbose output

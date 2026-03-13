@@ -68,3 +68,4 @@ auberge deploy myapp          # Deploy
 - Use handlers for service restarts
 - Template config files with variables
 - Tag roles appropriately
+- Include `dns_record` role for web-accessible apps with a public subdomain

@@ -438,6 +438,17 @@ Each application follows the same deployment pattern:
    - Caddy config is regenerated with all app routes
    - Automatic HTTPS via Let's Encrypt
 
+8. **Provision DNS record** (for web-accessible apps)
+   ```yaml
+   - name: Ensure Cloudflare DNS A record
+     ansible.builtin.include_role:
+       name: dns_record
+     vars:
+       dns_record_subdomain: "{{ app_subdomain }}"
+       dns_record_domain: "{{ domain }}"
+       dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"
+   ```
+
 ### Dependencies
 
 **All applications require:**
@@ -458,6 +469,7 @@ Each application follows the same deployment pattern:
 - ✓ HTTPS endpoints accessible
 - ✓ Data directories created with correct permissions
 - ✓ Automatic service restart on boot
+- ✓ DNS A records provisioned in Cloudflare
 
 ## Layer Interactions
 

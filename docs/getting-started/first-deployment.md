@@ -78,20 +78,19 @@ This runs:
 
 **Note**: Bootstrap is not included — run `auberge ansible bootstrap` separately (Step 3).
 
-## Step 6: Configure DNS
+## Step 6: Verify DNS Records
 
-Point your DNS records to your VPS:
+DNS A records for app subdomains are created automatically during deployment. Verify they were provisioned:
+
+```bash
+auberge dns status
+```
+
+To manually create or re-sync all records (e.g. for apps without automatic provisioning):
 
 ```bash
 auberge dns set-all --host my-vps
 ```
-
-This creates A records for all subdomains:
-
-- `cal.yourdomain.com`
-- `rss.yourdomain.com`
-- `musique.yourdomain.com`
-- etc.
 
 ## Step 7: Verify Services
 

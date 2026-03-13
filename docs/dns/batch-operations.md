@@ -12,6 +12,8 @@ Create multiple DNS A records in one command using `dns set-all`.
 - Bulk record creation
 - Synchronizing DNS with configuration
 
+> **Note:** For apps with `dns_record` role integration (baikal, booklore, colporteur, freshrss, navidrome, paperless, webdav, yourls), DNS records are provisioned automatically during deployment. `dns set-all` remains useful for apps without this integration, bulk IP migrations, and initial setup across all subdomains.
+
 ## Basic Usage
 
 ### With Host
@@ -153,25 +155,17 @@ auberge dns set-all --host auberge --continue-on-error
 
 ### Initial DNS Setup
 
-After deploying to fresh VPS:
+After deploying to fresh VPS, DNS records for integrated apps are created automatically. Use `set-all` for remaining apps:
 
 ```bash
-# Deploy infrastructure
-auberge ansible run --host auberge --skip-tags bootstrap
-
-# Create all DNS records
-auberge dns set-all --host auberge
+auberge dns set-all --host auberge --subdomains dns
 ```
 
 ### New Application
 
-Added new app to configuration:
+If the new app role includes `dns_record`, its A record is created on deploy. Otherwise, create it manually:
 
 ```bash
-# Add subdomain to mise.toml
-echo 'NEWAPP_SUBDOMAIN = "newapp"' >> mise.toml
-
-# Create DNS record
 auberge dns set-all --host auberge --subdomains newapp
 ```
 

@@ -129,6 +129,8 @@ auberge dns s --subdomain rss --ip 10.0.0.1
 
 ### Initial DNS Setup
 
+> **Note:** For most apps (baikal, booklore, colporteur, freshrss, navidrome, paperless, webdav, yourls), DNS A records are provisioned automatically during deployment. Manual setup is only needed for apps without this integration (e.g. Blocky).
+
 Set up all records for a new deployment:
 
 ```bash
@@ -394,16 +396,14 @@ auberge dns set-all --ip 10.0.0.1
 
 See [Batch Operations](dns/batch-operations.md).
 
-### Verify Before Deployment
+### Verify After Deployment
 
-Check DNS before running Ansible:
+DNS records are provisioned automatically during app deployment. Verify afterwards:
 
 ```bash
-# Check current DNS status
-auberge dns status
-
-# Deploy if all records exist
 auberge ansible run --host auberge
+
+auberge dns status
 ```
 
 ### Use Status for Health Checks

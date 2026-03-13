@@ -101,6 +101,8 @@ Missing subdomains: dns, lire, rss, musique, calendrier, webdav, url
 
 If you see this, your API token is working correctly.
 
+> **Note:** DNS records for app subdomains are created automatically when you deploy apps. You do not need to create them before deployment.
+
 ## Subdomain Configuration
 
 ### Default Subdomains
