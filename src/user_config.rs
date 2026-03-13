@@ -11,6 +11,7 @@ pub struct UserConfig {
 
 const TEMPLATE: &str = r#"admin_user_email = ""
 admin_user_name = ""
+admin_user_password = ""
 
 baikal_admin_password = ""
 baikal_subdomain = ""
@@ -35,6 +36,8 @@ colporteur_subdomain = ""
 domain = ""
 
 freshrss_subdomain = ""
+
+hostname = ""
 
 headscale_subdomain = ""
 

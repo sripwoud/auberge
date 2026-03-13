@@ -53,7 +53,11 @@
     shell: /bin/bash
     groups: [sudo, sshusers]
     append: true
-  when: ansible_user_admin_name is defined
+    password: "{{ admin_user_password | password_hash('sha512') }}"
+  when:
+    - ansible_user_admin_name is defined
+    - admin_user_password is defined
+    - admin_user_password | length > 0
 
 - name: Install your personal SSH public key
   ansible.posix.authorized_key:

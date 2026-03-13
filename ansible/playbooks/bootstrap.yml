@@ -25,16 +25,24 @@
   vars:
     ansible_port: 22
   tasks:
-    - name: Set hostname to inventory name
+    - name: Set hostname
       ansible.builtin.hostname:
-        name: "{{ inventory_hostname }}"
+        name: "{{ hostname }}"
       tags: [bootstrap, system, hostname]
 
-    - name: Add hostname to /etc/hosts
+    - name: Ensure localhost resolves to 127.0.0.1
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.0\.1'
+        line: "127.0.0.1\tlocalhost"
+        state: present
+      tags: [bootstrap, system, hostname]
+
+    - name: Map hostname to 127.0.1.1
       ansible.builtin.lineinfile:
         path: /etc/hosts
         regexp: '^127\.0\.1\.1'
-        line: "127.0.1.1 {{ inventory_hostname }}"
+        line: "127.0.1.1\t{{ hostname }}"
         state: present
       tags: [bootstrap, system, hostname]
 

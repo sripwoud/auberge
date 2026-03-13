@@ -77,7 +77,7 @@ pub fn required_config_keys(playbook_name: &str, tags: Option<&[String]>) -> Vec
 
     match playbook_name {
         "bootstrap.yml" => {
-            keys.extend(["admin_user_name", "ssh_port"]);
+            keys.extend(["admin_user_name", "ssh_port", "hostname"]);
         }
         "hardening.yml" => {}
         "infrastructure.yml" => {
