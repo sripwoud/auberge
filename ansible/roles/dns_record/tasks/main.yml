@@ -1,4 +1,16 @@
 ---
+- name: Validate required dns_record variables
+  ansible.builtin.assert:
+    that:
+      - dns_record_subdomain is defined
+      - dns_record_subdomain | length > 0
+      - dns_record_domain is defined
+      - dns_record_domain | length > 0
+      - dns_record_cloudflare_api_token is defined
+      - dns_record_cloudflare_api_token | length > 0
+    fail_msg: "dns_record_subdomain, dns_record_domain, and dns_record_cloudflare_api_token must all be defined and non-empty"
+  no_log: true
+
 - name: Look up Cloudflare zone ID for {{ dns_record_domain }}
   ansible.builtin.uri:
     url: "https://api.cloudflare.com/client/v4/zones?name={{ dns_record_domain }}"
@@ -8,16 +20,20 @@
       Content-Type: application/json
     return_content: true
   register: _dns_record_zone_lookup
-  no_log: true
+  no_log: "{{ not (ansible_verbosity >= 3) }}"
+  when: _dns_record_zone_id is not defined
 
 - name: Fail if Cloudflare zone not found for {{ dns_record_domain }}
   ansible.builtin.fail:
     msg: "Cloudflare zone not found for domain: {{ dns_record_domain }}"
-  when: _dns_record_zone_lookup.json.result | length == 0
+  when:
+    - _dns_record_zone_id is not defined
+    - _dns_record_zone_lookup.json.result | length == 0
 
 - name: Set Cloudflare zone ID fact
   ansible.builtin.set_fact:
     _dns_record_zone_id: "{{ _dns_record_zone_lookup.json.result[0].id }}"
+  when: _dns_record_zone_id is not defined
 
 - name: Check for existing DNS A record for {{ dns_record_subdomain + '.' + dns_record_domain }}
   ansible.builtin.uri:
@@ -28,7 +44,7 @@
       Content-Type: application/json
     return_content: true
   register: _dns_record_existing
-  no_log: true
+  no_log: "{{ not (ansible_verbosity >= 3) }}"
 
 - name: Create DNS A record for {{ dns_record_subdomain + '.' + dns_record_domain }}
   ansible.builtin.uri:
@@ -45,8 +61,11 @@
       ttl: "{{ dns_record_ttl | int }}"
       proxied: "{{ dns_record_proxied | bool }}"
     status_code: 200
+  register: _dns_record_create
+  failed_when: not _dns_record_create.json.success
+  changed_when: _dns_record_create.json.success
   when: _dns_record_existing.json.result | length == 0
-  no_log: true
+  no_log: "{{ not (ansible_verbosity >= 3) }}"
 
 - name: Update DNS A record for {{ dns_record_subdomain + '.' + dns_record_domain }}
   ansible.builtin.uri:
@@ -63,7 +82,10 @@
       ttl: "{{ dns_record_ttl | int }}"
       proxied: "{{ dns_record_proxied | bool }}"
     status_code: 200
+  register: _dns_record_update
+  failed_when: not _dns_record_update.json.success
+  changed_when: _dns_record_update.json.success
   when:
     - _dns_record_existing.json.result | length > 0
     - _dns_record_existing.json.result[0].content != dns_record_ip
-  no_log: true
+  no_log: "{{ not (ansible_verbosity >= 3) }}"
