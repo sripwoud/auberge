@@ -33,7 +33,7 @@
     - name: Ensure localhost resolves to 127.0.0.1
       ansible.builtin.lineinfile:
         path: /etc/hosts
-        regexp: '^127\.0\.0\.1'
+        regexp: '^127\.0\.0\.1\s'
         line: "127.0.0.1\tlocalhost"
         state: present
       tags: [bootstrap, system, hostname]
@@ -41,7 +41,7 @@
     - name: Map hostname to 127.0.1.1
       ansible.builtin.lineinfile:
         path: /etc/hosts
-        regexp: '^127\.0\.1\.1'
+        regexp: '^127\.0\.1\.1\s'
         line: "127.0.1.1\t{{ hostname }}"
         state: present
       tags: [bootstrap, system, hostname]
