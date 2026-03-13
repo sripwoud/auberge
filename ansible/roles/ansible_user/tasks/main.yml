@@ -45,7 +45,7 @@
     insertafter: "^ansible ALL="
     validate: "/usr/sbin/visudo -cf %s"
 
-- name: Configure your personal admin user (with password sudo)
+- name: Create personal admin user
   ansible.builtin.user:
     name: "{{ ansible_user_admin_name }}"
     comment: "System Administrator"
@@ -53,7 +53,13 @@
     shell: /bin/bash
     groups: [sudo, sshusers]
     append: true
+  when: ansible_user_admin_name is defined
+
+- name: Set admin user password
+  ansible.builtin.user:
+    name: "{{ ansible_user_admin_name }}"
     password: "{{ admin_user_password | password_hash('sha512') }}"
+    update_password: on_create
   when:
     - ansible_user_admin_name is defined
     - admin_user_password is defined
