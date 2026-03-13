@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.11](https://github.com/sripwoud/auberge/compare/v0.6.10...v0.6.11) - 2026-03-13
+
+### Added
+
+- add configurable hostname and admin user password ([#187](https://github.com/sripwoud/auberge/pull/187))
+
+### Fixed
+
+- include hardening.yml in tag resolution ([#192](https://github.com/sripwoud/auberge/pull/192))
+- *(fail2ban)* use systemd backend for SSH jails ([#189](https://github.com/sripwoud/auberge/pull/189))
+
 ## [0.6.10](https://github.com/sripwoud/auberge/compare/v0.6.9...v0.6.10) - 2026-03-13
 
 ### Added
