@@ -31,7 +31,11 @@
 
 - name: Fail if Cloudflare zone lookup failed for {{ dns_record_domain }}
   ansible.builtin.fail:
-    msg: "Cloudflare zone lookup failed: {{ _dns_record_zone_lookup.json.errors | default('unknown error') }}"
+    msg: >-
+      Cloudflare zone lookup failed: {{
+        _dns_record_zone_lookup.json.errors
+        | default(_dns_record_zone_lookup.msg | default('unknown error'))
+      }} (status={{ _dns_record_zone_lookup.status | default('unknown') }})
   when:
     - _dns_record_zone_lookup is not skipped
     - not (_dns_record_zone_lookup.json.success | default(false))
@@ -71,7 +75,11 @@
 
 - name: Fail if DNS record lookup failed for {{ dns_record_subdomain + '.' + dns_record_domain }}
   ansible.builtin.fail:
-    msg: "DNS record lookup failed: {{ _dns_record_existing.json.errors | default('unknown error') }}"
+    msg: >-
+      DNS record lookup failed: {{
+        _dns_record_existing.json.errors
+        | default(_dns_record_existing.msg | default('unknown error'))
+      }} (status={{ _dns_record_existing.status | default('unknown') }})
   when: not (_dns_record_existing.json.success | default(false))
 
 - name: Fail if multiple A records found for {{ dns_record_subdomain + '.' + dns_record_domain }}
@@ -105,7 +113,11 @@
 
 - name: Fail if DNS record creation failed for {{ dns_record_subdomain + '.' + dns_record_domain }}
   ansible.builtin.fail:
-    msg: "DNS record creation failed: {{ _dns_record_create.json.errors | default('unknown error') }}"
+    msg: >-
+      DNS record creation failed: {{
+        _dns_record_create.json.errors
+        | default(_dns_record_create.msg | default('unknown error'))
+      }} (status={{ _dns_record_create.status | default('unknown') }})
   when:
     - _dns_record_create is not skipped
     - not (_dns_record_create.json.success | default(false))
@@ -138,7 +150,11 @@
 
 - name: Fail if DNS record update failed for {{ dns_record_subdomain + '.' + dns_record_domain }}
   ansible.builtin.fail:
-    msg: "DNS record update failed: {{ _dns_record_update.json.errors | default('unknown error') }}"
+    msg: >-
+      DNS record update failed: {{
+        _dns_record_update.json.errors
+        | default(_dns_record_update.msg | default('unknown error'))
+      }} (status={{ _dns_record_update.status | default('unknown') }})
   when:
     - _dns_record_update is not skipped
     - not (_dns_record_update.json.success | default(false))
