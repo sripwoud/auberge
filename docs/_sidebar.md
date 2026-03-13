@@ -77,6 +77,7 @@
   - [Overview](applications/overview.md)
   - Infrastructure
     - [Caddy](applications/infrastructure/caddy.md)
+    - [Cockpit](applications/infrastructure/cockpit.md)
     - [fail2ban](applications/infrastructure/fail2ban.md)
     - [UFW](applications/infrastructure/ufw.md)
   - Networking

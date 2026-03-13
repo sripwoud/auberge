@@ -1,0 +1,32 @@
+---
+- name: Cockpit Installation and Configuration
+  block:
+    - name: Ensure Debian backports repository is present
+      ansible.builtin.apt_repository:
+        repo: "deb http://deb.debian.org/debian {{ ansible_distribution_release }}-backports main"
+        state: present
+        filename: "{{ ansible_distribution_release }}-backports"
+
+    - name: Install cockpit from Debian backports
+      ansible.builtin.apt:
+        name: cockpit
+        state: present
+        default_release: "{{ ansible_distribution_release }}-backports"
+        update_cache: true
+
+    - name: Enable and start cockpit.socket
+      ansible.builtin.systemd:
+        name: cockpit.socket
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Allow Cockpit access on Tailscale interface (port {{ cockpit_port }})
+      community.general.ufw:
+        rule: allow
+        port: "{{ cockpit_port }}"
+        proto: tcp
+        interface_in: "{{ cockpit_tailscale_interface }}"
+        direction: in
+        comment: "Cockpit web interface (Tailscale only)"
+      when: ansible_facts.services['ufw'] is defined and ansible_facts.services['ufw'].state == 'running'

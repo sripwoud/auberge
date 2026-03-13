@@ -1,0 +1,3 @@
+---
+cockpit_port: 9090
+cockpit_tailscale_interface: tailscale0

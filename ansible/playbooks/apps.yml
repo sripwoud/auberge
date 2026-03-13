@@ -31,3 +31,5 @@
       tags: [apps, network, vpn, wireguard]
     - role: yourls
       tags: [apps, web, url-shortener, yourls]
+    - role: cockpit
+      tags: [apps, monitoring, cockpit]
