@@ -10,7 +10,8 @@ action = %(action_mwl)s
 enabled = true
 port = {{ ssh_port }}
 filter = sshd
-logpath = /var/log/auth.log
+backend = systemd
+journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
 maxretry = {{ fail2ban_ssh_maxretry }}
 bantime = {{ fail2ban_ssh_bantime }}
 
@@ -19,7 +20,8 @@ bantime = {{ fail2ban_ssh_bantime }}
 enabled = true
 port = {{ ssh_port }}
 filter = sshd-ddos
-logpath = /var/log/auth.log
+backend = systemd
+journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
 maxretry = {{ fail2ban_sshddos_maxretry }}
 bantime = {{ fail2ban_sshddos_bantime }}
 
