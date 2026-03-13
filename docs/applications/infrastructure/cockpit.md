@@ -16,9 +16,9 @@ auberge ansible run --tags cockpit
 
 Cockpit is deployed with the following defaults (override in `config.toml` or group vars):
 
-| Variable | Default | Description |
-|---|---|---|
-| `cockpit_port` | `9090` | Port Cockpit listens on |
+| Variable                      | Default      | Description                     |
+| ----------------------------- | ------------ | ------------------------------- |
+| `cockpit_port`                | `9090`       | Port Cockpit listens on         |
 | `cockpit_tailscale_interface` | `tailscale0` | Network interface restricted to |
 
 ## Access
