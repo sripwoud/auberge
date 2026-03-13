@@ -271,12 +271,18 @@
           register: colporteur_opml_output
           changed_when: false
 
+        - name: Create secure temp file for OPML
+          when: colporteur_freshrss_cli_check.stat.exists
+          ansible.builtin.tempfile:
+            suffix: .opml
+          register: colporteur_opml_tmpfile
+
         - name: Write OPML to temp file
           when: colporteur_freshrss_cli_check.stat.exists
           ansible.builtin.copy:
             content: "{{ colporteur_opml_output.stdout }}"
-            dest: /tmp/colporteur-feeds.opml
-            mode: "0644"
+            dest: "{{ colporteur_opml_tmpfile.path }}"
+            mode: "0600"
 
         - name: Import OPML into FreshRSS
           when: colporteur_freshrss_cli_check.stat.exists
@@ -285,11 +291,14 @@
               - php
               - "{{ colporteur_freshrss_install_path }}/cli/import-for-user.php"
               - "--user={{ admin_user_name }}"
-              - --filename=/tmp/colporteur-feeds.opml
+              - "--filename={{ colporteur_opml_tmpfile.path }}"
+          become: true
+          become_user: "{{ colporteur_freshrss_user }}"
           register: colporteur_freshrss_import_result
           changed_when: "'imported' in colporteur_freshrss_import_result.stdout | default('')"
-
+      always:
         - name: Clean up OPML temp file
+          when: colporteur_opml_tmpfile is defined and colporteur_opml_tmpfile.path is defined
           ansible.builtin.file:
-            path: /tmp/colporteur-feeds.opml
+            path: "{{ colporteur_opml_tmpfile.path }}"
             state: absent
