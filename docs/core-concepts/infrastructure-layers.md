@@ -36,13 +36,15 @@ Establishes secure foundation for all subsequent automation.
 
 #### Hostname Configuration
 
-Sets the VPS hostname to match inventory name:
+Sets the VPS hostname from `hostname` in `config.toml`:
 
 ```yaml
-- name: Set hostname to inventory name
+- name: Set hostname
   ansible.builtin.hostname:
-    name: "{{ inventory_hostname }}"
+    name: "{{ hostname }}"
 ```
+
+Also configures `/etc/hosts` with separate entries: `127.0.0.1 localhost` and `127.0.1.1 {{ hostname }}`.
 
 **Why:** Ensures consistent identification across backups, logs, and SSH.
 
@@ -59,8 +61,9 @@ Creates two users with different roles:
 
 **{admin_user_name} (personal admin):**
 
-- Created by `user` role
+- Created by `ansible_user` role
 - SSH public key deployed
+- Linux password optionally set from `admin_user_password` in `config.toml` (required for Cockpit web login; if omitted, set later with `passwd`)
 - Full sudo privileges
 - Used for manual administration
 

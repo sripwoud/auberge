@@ -19,11 +19,19 @@ auberge config set SECRET_NAME value
 **Required values:**
 
 ```bash
+auberge config set hostname yourserver
 auberge config set admin_user_name yourname
 auberge config set admin_user_email you@example.com
 auberge config set domain example.com
 auberge config set cloudflare_dns_api_token your-token
 auberge config set ssh_port 22022
+```
+
+**Optional values:**
+
+```bash
+# Only needed for Cockpit web console login
+auberge config set admin_user_password your-linux-password
 ```
 
 See `config.example.toml` for the complete list.

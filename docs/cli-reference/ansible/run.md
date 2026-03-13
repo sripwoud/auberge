@@ -27,7 +27,7 @@ Before executing any playbook, the CLI validates required config values from `co
 
 | Playbook           | Required config keys                                    |
 | ------------------ | ------------------------------------------------------- |
-| bootstrap.yml      | `admin_user_name`, `ssh_port`                           |
+| bootstrap.yml      | `hostname`, `admin_user_name`, `ssh_port`               |
 | hardening.yml      | (none)                                                  |
 | infrastructure.yml | `admin_user_name`, `domain`, `tailscale_authkey`        |
 | apps.yml           | `admin_user_name`, `domain`, `cloudflare_dns_api_token` |
