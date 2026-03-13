@@ -63,7 +63,7 @@ Creates two users with different roles:
 
 - Created by `ansible_user` role
 - SSH public key deployed
-- Linux password set from `admin_user_password` in `config.toml` (used for Cockpit web login)
+- Linux password optionally set from `admin_user_password` in `config.toml` (required for Cockpit web login; if omitted, set later with `passwd`)
 - Full sudo privileges
 - Used for manual administration
 
