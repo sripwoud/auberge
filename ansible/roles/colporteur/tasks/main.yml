@@ -252,7 +252,7 @@
 
         - name: Check if FreshRSS CLI exists
           ansible.builtin.stat:
-            path: "{{ freshrss_install_path }}/cli/import-for-user.php"
+            path: "{{ colporteur_freshrss_install_path }}/cli/import-for-user.php"
           register: colporteur_freshrss_cli_check
 
         - name: Generate OPML from Colporteur config
@@ -283,7 +283,7 @@
           ansible.builtin.command:
             argv:
               - php
-              - "{{ freshrss_install_path }}/cli/import-for-user.php"
+              - "{{ colporteur_freshrss_install_path }}/cli/import-for-user.php"
               - "--user={{ admin_user_name }}"
               - --filename=/tmp/colporteur-feeds.opml
           register: colporteur_freshrss_import_result
