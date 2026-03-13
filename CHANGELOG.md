@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.7](https://github.com/sripwoud/auberge/compare/v0.6.6...v0.6.7) - 2026-03-13
+
+### Added
+
+- *(colporteur)* opt-in FreshRSS feed sync on deploy ([#173](https://github.com/sripwoud/auberge/pull/173))
+
+### Fixed
+
+- *(colporteur)* validate colporteur_subdomain before deployment ([#167](https://github.com/sripwoud/auberge/pull/167))
+
 ## [0.6.6](https://github.com/sripwoud/auberge/compare/v0.6.5...v0.6.6) - 2026-03-12
 
 ### Fixed
