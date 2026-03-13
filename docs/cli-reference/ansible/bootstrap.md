@@ -78,10 +78,15 @@ Before running bootstrap:
    ```
 
 4. **Required config values**:
-   The CLI validates `admin_user_name` and `ssh_port` in `config.toml` before running. Set missing values with:
+   The CLI validates `admin_user_name`, `hostname`, and `ssh_port` in `config.toml` before running. Set missing values with:
    ```bash
+   auberge config set hostname <VALUE>
    auberge config set admin_user_name <VALUE>
    auberge config set ssh_port <VALUE>
+   ```
+   Optionally set `admin_user_password` for Cockpit web login:
+   ```bash
+   auberge config set admin_user_password <VALUE>
    ```
 
 5. **Have initial access**:

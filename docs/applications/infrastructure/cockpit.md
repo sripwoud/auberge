@@ -23,7 +23,7 @@ auberge ansible run --tags cockpit
 
 Cockpit is proxied through Caddy with a real TLS certificate, bound to the Tailscale interface only — not exposed to the public internet.
 
-Access it at `https://cockpit.<your-domain>` from any device on your tailnet. Log in with your system user credentials (the admin user created during bootstrap).
+Access it at `https://cockpit.<your-domain>` from any device on your tailnet. Log in with your admin username and the password set via `admin_user_password` in `config.toml`.
 
 Cockpit itself listens on `127.0.0.1:9090` (localhost only) via a systemd socket override. Caddy terminates TLS and reverse proxies to it.
 

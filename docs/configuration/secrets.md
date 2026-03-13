@@ -19,8 +19,10 @@ auberge config set SECRET_NAME value
 **Required values:**
 
 ```bash
+auberge config set hostname yourserver
 auberge config set admin_user_name yourname
 auberge config set admin_user_email you@example.com
+auberge config set admin_user_password your-linux-password
 auberge config set domain example.com
 auberge config set cloudflare_dns_api_token your-token
 auberge config set ssh_port 22022

@@ -8,9 +8,11 @@ First-time VPS setup. Run once on fresh VPS.
 2. **Config values set in `config.toml`:**
    ```bash
    auberge config init
+   auberge config set hostname yourserver
    auberge config set ssh_port 22022
    auberge config set admin_user_name yourname
    auberge config set admin_user_email you@example.com
+   auberge config set admin_user_password your-linux-password
    ```
 
 3. **Provider firewall configured** (critical):
@@ -33,7 +35,7 @@ auberge ansible bootstrap auberge --ip 203.0.113.10
 
 ## What It Does
 
-1. Sets hostname to inventory name
+1. Sets hostname from `hostname` in `config.toml`
 2. Creates dual-user system:
    - `ansible` - automation user (passwordless sudo)
    - `{admin_user_name}` - personal admin (full sudo)
@@ -59,6 +61,12 @@ auberge ansible run --tags hardening
 ```bash
 auberge config init
 auberge config set ssh_port 22022
+```
+
+**"Missing config value: hostname"**
+
+```bash
+auberge config set hostname yourserver
 ```
 
 **"Connection refused"**
