@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.8](https://github.com/sripwoud/auberge/compare/v0.6.7...v0.6.8) - 2026-03-13
+
+### Fixed
+
+- *(colporteur)* set OPML temp file owner to freshrss user ([#183](https://github.com/sripwoud/auberge/pull/183))
+
+### Other
+
+- add comparison with self-hosting alternatives ([#182](https://github.com/sripwoud/auberge/pull/182))
+
 ## [0.6.7](https://github.com/sripwoud/auberge/compare/v0.6.6...v0.6.7) - 2026-03-13
 
 ### Added
