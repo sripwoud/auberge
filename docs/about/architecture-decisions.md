@@ -252,6 +252,7 @@ Over:
 
 ## Related Pages
 
-- [Architecture](core-concepts/architecture.md) - System design
-- [Roadmap](about/roadmap.md) - Future direction
-- [Contributing](development/contributing.md) - How to contribute
+- [Alternatives Comparison](alternatives.md) - How Auberge compares to other self-hosting platforms
+- [Architecture](../core-concepts/architecture.md) - System design
+- [Roadmap](roadmap.md) - Future direction
+- [Contributing](../development/contributing.md) - How to contribute
