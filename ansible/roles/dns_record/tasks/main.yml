@@ -1,0 +1,69 @@
+---
+- name: Look up Cloudflare zone ID for {{ dns_record_domain }}
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones?name={{ dns_record_domain }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ dns_record_cloudflare_api_token }}"
+      Content-Type: application/json
+    return_content: true
+  register: _dns_record_zone_lookup
+  no_log: true
+
+- name: Fail if Cloudflare zone not found for {{ dns_record_domain }}
+  ansible.builtin.fail:
+    msg: "Cloudflare zone not found for domain: {{ dns_record_domain }}"
+  when: _dns_record_zone_lookup.json.result | length == 0
+
+- name: Set Cloudflare zone ID fact
+  ansible.builtin.set_fact:
+    _dns_record_zone_id: "{{ _dns_record_zone_lookup.json.result[0].id }}"
+
+- name: Check for existing DNS A record for {{ dns_record_subdomain + '.' + dns_record_domain }}
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ _dns_record_zone_id }}/dns_records?type=A&name={{ dns_record_subdomain }}.{{ dns_record_domain }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ dns_record_cloudflare_api_token }}"
+      Content-Type: application/json
+    return_content: true
+  register: _dns_record_existing
+  no_log: true
+
+- name: Create DNS A record for {{ dns_record_subdomain + '.' + dns_record_domain }}
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ _dns_record_zone_id }}/dns_records"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ dns_record_cloudflare_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      type: A
+      name: "{{ dns_record_subdomain }}.{{ dns_record_domain }}"
+      content: "{{ dns_record_ip }}"
+      ttl: "{{ dns_record_ttl | int }}"
+      proxied: "{{ dns_record_proxied | bool }}"
+    status_code: 200
+  when: _dns_record_existing.json.result | length == 0
+  no_log: true
+
+- name: Update DNS A record for {{ dns_record_subdomain + '.' + dns_record_domain }}
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ _dns_record_zone_id }}/dns_records/{{ _dns_record_existing.json.result[0].id }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ dns_record_cloudflare_api_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      type: A
+      name: "{{ dns_record_subdomain }}.{{ dns_record_domain }}"
+      content: "{{ dns_record_ip }}"
+      ttl: "{{ dns_record_ttl | int }}"
+      proxied: "{{ dns_record_proxied | bool }}"
+    status_code: 200
+  when:
+    - _dns_record_existing.json.result | length > 0
+    - _dns_record_existing.json.result[0].content != dns_record_ip
+  no_log: true
