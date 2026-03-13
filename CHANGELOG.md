@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.10](https://github.com/sripwoud/auberge/compare/v0.6.9...v0.6.10) - 2026-03-13
+
+### Added
+
+- automate Cloudflare DNS record creation in Ansible roles ([#181](https://github.com/sripwoud/auberge/pull/181))
+- deploy `Cockpit` for web-based monitoring and control ([#180](https://github.com/sripwoud/auberge/pull/180))
+
+### Fixed
+
+- *(colporteur)* use plain HTTP for internal Caddy feed server
+
 ## [0.6.9](https://github.com/sripwoud/auberge/compare/v0.6.8...v0.6.9) - 2026-03-13
 
 ### Other
