@@ -42,6 +42,18 @@ account = "mxroute"
 senders = ["hello@newsletter.com"]
 ```
 
+## FreshRSS Sync
+
+Set `colporteur_freshrss_sync = true` in `~/.config/auberge/config.toml` to automatically import colporteur feeds into FreshRSS on each deploy.
+
+Requires FreshRSS to be deployed on the same server.
+
+When enabled, the deploy will:
+
+1. Deploy an internal Caddyfile serving feeds on `localhost:8085`
+2. Generate an OPML file from the colporteur config
+3. Import the OPML into FreshRSS via its CLI
+
 ## Operations
 
 ```bash
