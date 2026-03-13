@@ -60,6 +60,7 @@
     name: "{{ ansible_user_admin_name }}"
     password: "{{ admin_user_password | password_hash('sha512') }}"
     update_password: on_create
+  no_log: true
   when:
     - ansible_user_admin_name is defined
     - admin_user_password is defined
