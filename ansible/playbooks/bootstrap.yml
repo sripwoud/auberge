@@ -1,8 +1,14 @@
 ---
-- name: Validate ssh_port configuration
+- name: Validate bootstrap configuration
   hosts: localhost
   gather_facts: false
   tasks:
+    - name: Check hostname is set
+      ansible.builtin.fail:
+        msg: "hostname is not configured. Run: auberge config set hostname <HOSTNAME>"
+      when: hostname is not defined or hostname == ''
+      tags: [bootstrap, system, hostname]
+
     - name: Check ssh_port is set
       ansible.builtin.fail:
         msg: "ssh_port is not configured. Run: auberge config set ssh_port <PORT>"
