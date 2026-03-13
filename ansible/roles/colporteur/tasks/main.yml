@@ -30,7 +30,7 @@
         state: directory
         owner: "{{ colporteur_sys_user }}"
         group: "{{ colporteur_sys_group }}"
-        mode: "0700"
+        mode: "0711"
 
     - name: Create Colporteur feeds directory
       ansible.builtin.file:
