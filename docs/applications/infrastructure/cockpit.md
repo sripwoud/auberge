@@ -14,22 +14,21 @@ auberge ansible run --tags cockpit
 
 ## Configuration
 
-| Variable                      | Default      | Description                     |
-| ----------------------------- | ------------ | ------------------------------- |
-| `cockpit_port`                | `9090`       | Port Cockpit listens on         |
-| `cockpit_tailscale_interface` | `tailscale0` | Network interface restricted to |
+| Variable            | Default   | Description                              |
+| ------------------- | --------- | ---------------------------------------- |
+| `cockpit_port`      | `9090`    | Port Cockpit listens on (localhost only) |
+| `cockpit_subdomain` | `cockpit` | Subdomain for Cockpit                    |
 
 ## Access
 
-Cockpit is restricted to the Tailscale interface only via a UFW rule — not exposed to the public internet.
+Cockpit is proxied through Caddy with a real TLS certificate, bound to the Tailscale interface only — not exposed to the public internet.
 
-Access it at `https://<tailscale-ip>:9090` from any device on your tailnet. Log in with your system user credentials (the admin user created during bootstrap).
+Access it at `https://cockpit.<your-domain>` from any device on your tailnet. Log in with your system user credentials (the admin user created during bootstrap).
 
-> [!NOTE]
-> Cockpit serves HTTPS with a self-signed certificate. Your browser will show a warning on first visit — safe to accept since the Tailscale tunnel already provides end-to-end encryption.
+Cockpit itself listens on `127.0.0.1:9090` (localhost only) via a systemd socket override. Caddy terminates TLS and reverse proxies to it.
 
 ## Related
 
+- [Caddy](caddy.md)
 - [Tailscale](../networking/tailscale.md)
-- [UFW](ufw.md)
 - [Applications Overview](../overview.md)
