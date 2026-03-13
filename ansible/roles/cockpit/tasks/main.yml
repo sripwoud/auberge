@@ -1,0 +1,102 @@
+---
+- name: Cockpit Installation and Configuration
+  block:
+    - name: Validate Debian distribution
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == 'Debian'
+        fail_msg: "Cockpit role requires Debian (detected: {{ ansible_facts['distribution'] | default('unknown') }})"
+
+    - name: Ensure Debian backports repository is present
+      ansible.builtin.apt_repository:
+        repo: "deb http://deb.debian.org/debian {{ ansible_distribution_release }}-backports main"
+        state: present
+        filename: "{{ ansible_distribution_release }}-backports"
+
+    - name: Install cockpit from Debian backports
+      ansible.builtin.apt:
+        name: cockpit
+        state: present
+        default_release: "{{ ansible_distribution_release }}-backports"
+        update_cache: true
+
+    - name: Get Tailscale status
+      ansible.builtin.command: tailscale status --json
+      register: cockpit_tailscale_status_raw
+      changed_when: false
+      failed_when: false
+
+    - name: Parse Tailscale status
+      ansible.builtin.set_fact:
+        cockpit_tailscale_status: "{{ cockpit_tailscale_status_raw.stdout | from_json }}"
+      when: cockpit_tailscale_status_raw.rc == 0
+      changed_when: false
+
+    - name: Set Tailscale IPv4 fact
+      ansible.builtin.set_fact:
+        cockpit_tailscale_ip: "{{ cockpit_tailscale_status.Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
+      when:
+        - cockpit_tailscale_status_raw.rc == 0
+        - cockpit_tailscale_status is defined
+        - cockpit_tailscale_status.BackendState | default('') == "Running"
+        - cockpit_tailscale_status.Self is defined
+        - cockpit_tailscale_status.Self.TailscaleIPs is defined
+        - cockpit_tailscale_status.Self.TailscaleIPs | select('match', '^[0-9]+\\.') | list | length > 0
+      changed_when: false
+
+    - name: Fail if Tailscale not available
+      ansible.builtin.fail:
+        msg: "Tailscale is not running or no Tailscale IP available. Cockpit requires Tailscale."
+      when: cockpit_tailscale_ip is not defined
+
+    - name: Deploy cockpit configuration
+      ansible.builtin.template:
+        src: cockpit.conf.j2
+        dest: /etc/cockpit/cockpit.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart cockpit
+
+    - name: Create cockpit.socket override directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/cockpit.socket.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Bind cockpit.socket to localhost only
+      ansible.builtin.copy:
+        content: |
+          [Socket]
+          ListenStream=
+          ListenStream=127.0.0.1:{{ cockpit_port }}
+        dest: /etc/systemd/system/cockpit.socket.d/override.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart cockpit
+
+    - name: Enable and start cockpit.socket
+      ansible.builtin.systemd:
+        name: cockpit.socket
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Validate Cloudflare API token for Caddy DNS-01 challenge
+      ansible.builtin.assert:
+        that:
+          - cloudflare_dns_api_token is defined
+          - cloudflare_dns_api_token | length > 0
+        fail_msg: "cloudflare_dns_api_token must be defined for Caddy DNS-01 TLS challenge"
+
+    - name: Deploy Caddy site configuration
+      ansible.builtin.template:
+        src: cockpit.caddyfile.j2
+        dest: "/etc/caddy/sites/{{ cockpit_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy

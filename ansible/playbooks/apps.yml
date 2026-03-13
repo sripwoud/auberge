@@ -11,6 +11,8 @@
       tags: [apps, network, dns, blocky]
     - role: booklore
       tags: [apps, storage, media, books, booklore]
+    - role: cockpit
+      tags: [apps, monitoring, cockpit]
     - role: colporteur
       tags: [apps, web, rss, colporteur]
     - role: freshrss

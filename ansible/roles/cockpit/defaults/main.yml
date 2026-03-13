@@ -1,0 +1,4 @@
+---
+cockpit_port: 9090
+cockpit_subdomain: cockpit
+cockpit_domain: "{{ cockpit_subdomain }}.{{ domain }}"

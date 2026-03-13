@@ -7,6 +7,7 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | Application                            | Description                        |
 | -------------------------------------- | ---------------------------------- |
 | [Caddy](infrastructure/caddy.md)       | Reverse proxy with automatic HTTPS |
+| [Cockpit](infrastructure/cockpit.md)   | Web-based server administration    |
 | [fail2ban](infrastructure/fail2ban.md) | Intrusion prevention system        |
 | [UFW](infrastructure/ufw.md)           | Uncomplicated firewall             |
 
