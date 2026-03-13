@@ -58,6 +58,7 @@ Full documentation available at [auberge.sripwoud.xyz](https://auberge.sripwoud.
 - [First Deployment](https://auberge.sripwoud.xyz/#/getting-started/first-deployment) - Step-by-step walkthrough
 - [CLI Reference](https://auberge.sripwoud.xyz/#/cli-reference/auberge) - All commands documented
 - [Backup & Restore](https://auberge.sripwoud.xyz/#/backup-restore/overview) - Data protection and migration
+- [Alternatives Comparison](https://auberge.sripwoud.xyz/#/about/alternatives) - How Auberge compares to other platforms
 
 ## Requirements
 
