@@ -4,6 +4,6 @@
   become: true
   roles:
     - role: fail2ban
-      tags: [hardening, security, intrusion-prevention]
+      tags: [hardening, security, intrusion-prevention, fail2ban]
     - role: kernel_hardening
-      tags: [hardening, security, kernel]
+      tags: [hardening, security, kernel, kernel_hardening]

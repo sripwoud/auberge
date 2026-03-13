@@ -50,7 +50,7 @@ fn build_tag_playbook_map() -> Result<HashMap<String, Vec<PathBuf>>> {
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
     let mut tag_map: HashMap<String, Vec<PathBuf>> = HashMap::new();
 
-    let target_playbooks = ["infrastructure.yml", "apps.yml"];
+    let target_playbooks = ["hardening.yml", "infrastructure.yml", "apps.yml"];
     for filename in &target_playbooks {
         let path = playbooks_dir.join(filename);
         if !path.exists() {
@@ -78,7 +78,7 @@ fn build_tag_playbook_map() -> Result<HashMap<String, Vec<PathBuf>>> {
     Ok(tag_map)
 }
 
-const PLAYBOOK_ORDER: &[&str] = &["infrastructure.yml", "apps.yml"];
+const PLAYBOOK_ORDER: &[&str] = &["hardening.yml", "infrastructure.yml", "apps.yml"];
 
 pub fn get_app_names() -> Result<Vec<String>> {
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
@@ -287,6 +287,42 @@ mod tests {
             "apps.yml"
         );
         assert!(runs[1].tags.contains(&"network".to_string()));
+    }
+
+    #[test]
+    fn test_parse_playbook_roles_hardening() {
+        let playbooks_dir = AnsibleAssets::prepare().unwrap().playbooks_dir();
+        let hardening_path = std::fs::canonicalize(playbooks_dir.join("hardening.yml")).unwrap();
+        let roles = parse_playbook_roles(&hardening_path).unwrap();
+
+        let role_names: Vec<&str> = roles.iter().map(|(name, _)| name.as_str()).collect();
+        assert!(role_names.contains(&"fail2ban"));
+        assert!(role_names.contains(&"kernel_hardening"));
+    }
+
+    #[test]
+    fn test_build_tag_playbook_map_includes_hardening() {
+        let map = build_tag_playbook_map().unwrap();
+
+        let fail2ban_playbooks = map.get("fail2ban").unwrap();
+        assert_eq!(fail2ban_playbooks.len(), 1);
+        assert_eq!(
+            fail2ban_playbooks[0].file_name().unwrap().to_str().unwrap(),
+            "hardening.yml"
+        );
+    }
+
+    #[test]
+    fn test_resolve_hardening_tag_no_infra_or_apps() {
+        let (runs, unknown) = resolve_tags_to_playbook_runs(&["fail2ban".to_string()]).unwrap();
+
+        assert!(unknown.is_empty());
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].path.file_name().unwrap().to_str().unwrap(),
+            "hardening.yml"
+        );
+        assert_eq!(runs[0].tags, vec!["fail2ban"]);
     }
 
     #[test]
