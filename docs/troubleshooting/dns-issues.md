@@ -272,15 +272,15 @@ ssh ansible@vps "sudo ufw status"
 
 **Causes:**
 
-- `cloudflare_dns_api_token` not configured
-- `domain` not configured
-- Cloudflare API error during deployment
+- App role doesn't include `dns_record` integration (e.g. Blocky, Calibre)
+- Cloudflare API token lacks DNS edit permissions for the zone
+- Cloudflare API rate limit or transient error during deployment
+- Zone mismatch between `domain` config and Cloudflare account
 
 **Solutions:**
 
 ```bash
-auberge config get cloudflare_dns_api_token
-auberge config get domain
+auberge dns status
 
 auberge deploy <app> --host vps
 ```
