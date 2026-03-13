@@ -50,8 +50,7 @@ fn build_tag_playbook_map() -> Result<HashMap<String, Vec<PathBuf>>> {
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
     let mut tag_map: HashMap<String, Vec<PathBuf>> = HashMap::new();
 
-    let target_playbooks = ["hardening.yml", "infrastructure.yml", "apps.yml"];
-    for filename in &target_playbooks {
+    for filename in PLAYBOOK_ORDER {
         let path = playbooks_dir.join(filename);
         if !path.exists() {
             continue;
@@ -313,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_hardening_tag_no_infra_or_apps() {
+    fn test_resolve_fail2ban_tag_targets_hardening() {
         let (runs, unknown) = resolve_tags_to_playbook_runs(&["fail2ban".to_string()]).unwrap();
 
         assert!(unknown.is_empty());
