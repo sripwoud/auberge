@@ -14,6 +14,8 @@ auberge ansible run --tags baikal
 
 Requires `baikal_subdomain` and `baikal_admin_password` set in `config.toml`.
 
+The deployed `baikal.yaml` config file has mode `0640` (owner + group read) since it contains the `encryption_key` and `admin_passwordhash`.
+
 Initial setup is done through the web interface at `https://{baikal_subdomain}.{domain}/admin/`.
 
 ## Features

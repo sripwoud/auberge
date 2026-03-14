@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn test_required_config_keys_openclaw() {
-        let keys = required_config_keys("openclaw.yml");
+        let keys = required_config_keys("openclaw.yml", None);
         assert!(keys.contains(&"admin_user_name"));
         assert!(keys.contains(&"domain"));
         assert!(keys.contains(&"openclaw_gateway_token"));
