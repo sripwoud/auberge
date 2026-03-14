@@ -113,5 +113,4 @@
 
 - About
   - [Alternatives Comparison](about/alternatives.md)
-  - [Changelog](about/changelog.md)
   - [License](about/license.md)
