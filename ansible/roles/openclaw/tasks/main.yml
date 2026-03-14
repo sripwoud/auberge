@@ -175,10 +175,8 @@
 - name: Validate required OpenClaw secrets
   ansible.builtin.assert:
     that:
-      - openclaw_gateway_token is defined
-      - openclaw_gateway_token | length > 0
-      - openclaw_claude_ai_session_key is defined
-      - openclaw_claude_ai_session_key | length > 0
+      - openclaw_gateway_token | default('') | length > 0
+      - openclaw_claude_ai_session_key | default('') | length > 0
     fail_msg: |
       Required OpenClaw secrets are not set or empty.
       Set them with:
