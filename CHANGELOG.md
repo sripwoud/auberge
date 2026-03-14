@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.12](https://github.com/sripwoud/auberge/compare/v0.6.11...v0.6.12) - 2026-03-14
+
+### Fixed
+
+- harden secret file permissions and add OpenClaw deploy validation ([#159](https://github.com/sripwoud/auberge/pull/159))
+
 ## [0.6.11](https://github.com/sripwoud/auberge/compare/v0.6.10...v0.6.11) - 2026-03-13
 
 ### Added
