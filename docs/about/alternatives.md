@@ -113,6 +113,4 @@ The platforms above do more than I need in some places, less in others. Auberge 
 
 ## Related Pages
 
-- [Architecture Decisions](architecture-decisions.md) - Why Auberge is built the way it is
-- [Roadmap](roadmap.md) - Future direction
 - [Contributing](../development/contributing.md) - How to get involved

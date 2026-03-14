@@ -86,5 +86,4 @@ backups/
 
 ## Related Pages
 
-- [Roadmap](about/roadmap.md) - Future plans
 - [GitHub Releases](https://github.com/sripwoud/auberge/releases) - Detailed changelog

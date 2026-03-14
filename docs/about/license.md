@@ -113,4 +113,3 @@ Auberge depends on third-party software with various licenses:
 ## Related Pages
 
 - [Contributing](development/contributing.md) - How to contribute
-- [Architecture Decisions](about/architecture-decisions.md) - Why AGPL

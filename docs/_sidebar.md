@@ -112,8 +112,6 @@
   - [DNS Issues](troubleshooting/dns-issues.md)
 
 - About
-  - [Architecture Decisions](about/architecture-decisions.md)
   - [Alternatives Comparison](about/alternatives.md)
-  - [Roadmap](about/roadmap.md)
   - [Changelog](about/changelog.md)
   - [License](about/license.md)
