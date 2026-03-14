@@ -172,6 +172,19 @@
   changed_when: false
   failed_when: openclaw_which_result.rc != 0
 
+- name: Validate required OpenClaw secrets
+  ansible.builtin.assert:
+    that:
+      - openclaw_gateway_token is defined
+      - openclaw_gateway_token | length > 0
+      - openclaw_claude_ai_session_key is defined
+      - openclaw_claude_ai_session_key | length > 0
+    fail_msg: |
+      Required OpenClaw secrets are not set or empty.
+      Set them with:
+        auberge config set openclaw_gateway_token <VALUE>
+        auberge config set openclaw_claude_ai_session_key <VALUE>
+
 - name: Deploy OpenClaw environment file
   ansible.builtin.template:
     src: env.j2
@@ -179,6 +192,7 @@
     owner: "{{ openclaw_user }}"
     group: "{{ openclaw_group }}"
     mode: "0600"
+  no_log: true
   notify: Restart openclaw gateway
 
 - name: Deploy OpenClaw gateway systemd service
@@ -221,6 +235,9 @@
       - ""
       - "Web UI access:"
       - "{% if openclaw_tailscale_ip is defined %}http://{{ openclaw_tailscale_ip }}:{{ openclaw_gateway_port }}{% else %}SSH tunnel required{% endif %}"
+      - ""
+      - "Secrets:"
+      - "Ensure openclaw_gateway_token and openclaw_claude_ai_session_key are set in: auberge config"
       - ""
       - "Install Tailscale on laptop:"
       - "https://tailscale.com/download"
