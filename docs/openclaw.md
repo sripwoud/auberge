@@ -229,6 +229,8 @@ openclaw doctor
 - Never commit `config.toml`
 - Rotate tokens regularly
 - Use strong gateway token (generate with `openssl rand -hex 32`)
+- Secrets are deployed to `{{ openclaw_config_dir }}/env` with mode `0600` (owner-only read/write)
+- The systemd service loads secrets via `EnvironmentFile=` — they never appear in the service unit file
 
 ## Troubleshooting
 
