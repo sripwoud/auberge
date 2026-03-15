@@ -24,6 +24,13 @@ blocking:
   #     - https://raw.githubusercontent.com/m0zgen/dns-hole/master/regex/common-wl.txt
   clientGroupsBlock:
     default: [ads, fakenews, gambling, porn]
+{% if blocky_tailscale_bound_domains is defined and blocky_tailscale_bound_domains | length > 0 and blocky_tailscale_ipv4 is defined %}
+customDNS:
+  mapping:
+{% for fqdn in blocky_tailscale_bound_domains %}
+    {{ fqdn }}: {{ blocky_tailscale_ipv4 }}
+{% endfor %}
+{% endif %}
 ports:
   dns:
     - 5353
