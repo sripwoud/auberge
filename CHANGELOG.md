@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.13](https://github.com/sripwoud/auberge/compare/v0.6.12...v0.6.13) - 2026-03-15
+
+### Fixed
+
+- *(paperless)* skip PDF/A archive for text-rich documents
+
+### Other
+
+- move ADR and roadmap to meta/, remove changelog from docs
+- *(docs)* remove roadmap and architecture-decisions pages
+
 ## [0.6.12](https://github.com/sripwoud/auberge/compare/v0.6.11...v0.6.12) - 2026-03-14
 
 ### Fixed
