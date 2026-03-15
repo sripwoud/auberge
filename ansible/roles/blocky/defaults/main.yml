@@ -14,3 +14,5 @@ blocky_cert_file: "{{ blocky_cert_dir }}/{{ blocky_domain }}.crt"
 blocky_key_file: "{{ blocky_cert_dir }}/{{ blocky_domain }}.key"
 
 blocky_letsencrypt_email: "{{ admin_user_email }}"
+
+blocky_tailscale_bound_domains: []

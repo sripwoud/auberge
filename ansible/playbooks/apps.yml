@@ -9,6 +9,10 @@
       tags: [apps, storage, email, bichon]
     - role: blocky
       tags: [apps, network, dns, blocky]
+      vars:
+        blocky_tailscale_bound_domains:
+          - "{{ cockpit_subdomain | default('cockpit') }}.{{ domain }}"
+          - "{{ paperless_subdomain | default('paperless') }}.{{ domain }}"
     - role: booklore
       tags: [apps, storage, media, books, booklore]
     - role: cockpit
