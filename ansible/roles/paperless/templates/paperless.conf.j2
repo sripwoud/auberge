@@ -16,6 +16,9 @@ PAPERLESS_BIND_ADDR={{ paperless_bind_addr }}
 PAPERLESS_PORT={{ paperless_port }}
 
 PAPERLESS_OCR_LANGUAGE={{ paperless_ocr_language }}
+# Skip Ghostscript PDF/A archive creation for documents that already have embedded text.
+# Prevents OOM on large digital PDFs (e.g. 390-page manuals) on memory-constrained VPS.
+PAPERLESS_OCR_SKIP_ARCHIVE_FILE=with_text
 PAPERLESS_TIME_ZONE={{ paperless_time_zone }}
 
 PAPERLESS_ADMIN_USER={{ paperless_admin_user }}
