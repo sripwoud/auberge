@@ -11,7 +11,6 @@ This is useful if you are a member of a shared iCloud calendar (with read/write 
 ## Prerequisites
 
 - [Baikal](baikal.md) deployed and accessible
-- A calendar created in the Baikal admin interface (`https://{baikal_subdomain}.{domain}/admin/`)
 - An iCloud app-specific password ([Apple instructions](https://support.apple.com/en-us/102654))
 - Your iCloud CalDAV URL (the calendar ID is extracted from it automatically)
 

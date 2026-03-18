@@ -13,12 +13,14 @@
           - vdirsyncer_icloud_calendar_id | length > 0
           - vdirsyncer_baikal_calendar_name is defined
           - vdirsyncer_baikal_calendar_name | length > 0
+          - vdirsyncer_baikal_calendar_name is match('^[a-zA-Z0-9_-]+$')
           - baikal_admin_password is defined
           - baikal_admin_password | length > 0
         fail_msg: |
           vdirsyncer requires iCloud CalDAV credentials and a Baikal calendar name.
           Set them via: auberge config set <key> <value>
           If vdirsyncer_icloud_calendar_id is empty, ensure vdirsyncer_icloud_url does not end with a trailing slash.
+          vdirsyncer_baikal_calendar_name must contain only letters, numbers, hyphens, or underscores (no spaces).
 
     - name: Create vdirsyncer system group
       ansible.builtin.group:
@@ -77,6 +79,28 @@
         group: "{{ vdirsyncer_sys_group }}"
         mode: "0640"
       notify: Restart vdirsyncer timer
+      no_log: true
+
+    - name: Create Baikal calendar via CalDAV
+      ansible.builtin.uri:
+        method: MKCALENDAR
+        url: "{{ vdirsyncer_baikal_calendar_url }}{{ vdirsyncer_baikal_calendar_name }}/"
+        url_username: "{{ admin_user_name }}"
+        url_password: "{{ baikal_admin_password }}"
+        force_basic_auth: true
+        body_format: raw
+        body: |
+          <?xml version="1.0" encoding="utf-8" ?>
+          <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+            <D:set><D:prop>
+              <D:displayname>{{ vdirsyncer_baikal_calendar_name }}</D:displayname>
+            </D:prop></D:set>
+          </C:mkcalendar>
+        headers:
+          Content-Type: application/xml
+        status_code: [201, 405]
+      register: vdirsyncer_mkcalendar_result
+      changed_when: vdirsyncer_mkcalendar_result.status == 201
       no_log: true
 
     - name: Run vdirsyncer discover to initialize pair
