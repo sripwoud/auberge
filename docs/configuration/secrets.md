@@ -59,6 +59,8 @@ some_literal_bang = "!!not-a-cmd"
 
 **Requirements:** the command must exit 0 and produce non-empty UTF-8 output. Deployment fails with a clear error if either condition is not met.
 
+> **Unix only.** Command-based values (`!cmd`) are not supported on Windows.
+
 ## Viewing Config
 
 ```bash
