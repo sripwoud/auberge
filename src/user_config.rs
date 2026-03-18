@@ -198,43 +198,47 @@ fn value_to_string(v: &toml::Value) -> Option<String> {
 }
 
 fn resolve_value(v: &str) -> Result<String> {
-    use std::process::Stdio;
-
     if let Some(rest) = v.strip_prefix("!!") {
         return Ok(format!("!{rest}"));
     }
     if let Some(cmd) = v.strip_prefix('!') {
-        let output = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .wrap_err_with(|| format!("Failed to execute shell command: {cmd}"))?;
-        if !output.stderr.is_empty() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let sanitized: String = stderr
-                .chars()
-                .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
-                .take(200)
-                .collect();
-            eprintln!("debug: shell command stderr: {sanitized}");
+        #[cfg(not(unix))]
+        eyre::bail!("command-based config values are only supported on Unix: {cmd}");
+        #[cfg(unix)]
+        {
+            use std::process::Stdio;
+            let output = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(cmd)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .wrap_err_with(|| format!("Failed to execute shell command: {cmd}"))?;
+            if !output.status.success() {
+                let code = output
+                    .status
+                    .code()
+                    .map_or("signal".to_string(), |c| c.to_string());
+                if !output.stderr.is_empty() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let sanitized: String = stderr
+                        .chars()
+                        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+                        .take(200)
+                        .collect();
+                    eprintln!("{sanitized}");
+                }
+                eyre::bail!("Shell command failed (exit {code}): {cmd}");
+            }
+            let stdout = String::from_utf8(output.stdout)
+                .wrap_err_with(|| format!("Shell command output is not valid UTF-8: {cmd}"))?;
+            let resolved = stdout.trim().to_string();
+            if resolved.is_empty() {
+                eyre::bail!("Shell command produced empty output: {cmd}");
+            }
+            return Ok(resolved);
         }
-        if !output.status.success() {
-            let code = output
-                .status
-                .code()
-                .map_or("signal".to_string(), |c| c.to_string());
-            eyre::bail!("Shell command failed (exit {code}): {cmd}");
-        }
-        let stdout = String::from_utf8(output.stdout)
-            .wrap_err_with(|| format!("Shell command output is not valid UTF-8: {cmd}"))?;
-        let resolved = stdout.trim().to_string();
-        if resolved.is_empty() {
-            eyre::bail!("Shell command produced empty output: {cmd}");
-        }
-        return Ok(resolved);
     }
     Ok(v.to_string())
 }
@@ -246,7 +250,9 @@ fn flatten_toml(table: &toml::Table) -> Result<BTreeMap<String, String>> {
             toml::Value::Table(inner) => result.extend(flatten_toml(inner)?),
             other => {
                 if let Some(s) = value_to_string(other) {
-                    result.insert(key.clone(), resolve_value(&s)?);
+                    let resolved = resolve_value(&s)
+                        .wrap_err_with(|| format!("Failed to resolve config key '{key}'"))?;
+                    result.insert(key.clone(), resolved);
                 }
             }
         }
