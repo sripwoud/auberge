@@ -13,7 +13,7 @@ This is useful if you are a member of a shared iCloud calendar (with read/write 
 - [Baikal](baikal.md) deployed and accessible
 - A calendar created in the Baikal admin interface (`https://{baikal_subdomain}.{domain}/admin/`)
 - An iCloud app-specific password ([Apple instructions](https://support.apple.com/en-us/102654))
-- Your iCloud CalDAV URL and calendar ID
+- Your iCloud CalDAV URL (the calendar ID is extracted from it automatically)
 
 <details>
 <summary>How to retrieve your iCloud CalDAV URL</summary>
@@ -24,7 +24,7 @@ This is useful if you are a member of a shared iCloud calendar (with read/write 
 4. The request URL has the form: `https://[serverId]-calendarws.icloud.com/ca/collections/[calendarId]?[...]&dsid=[userId]`
 5. Your CalDAV URL is: `https://[serverId]-caldav.icloud.com/[userId]/calendars/[calendarId]`
 
-The `serverId`, `userId`, and `calendarId` from step 4 map directly into the CalDAV URL in step 5.
+The `serverId`, `userId`, and `calendarId` from step 4 map directly into the CalDAV URL in step 5. The `calendarId` is extracted automatically from the URL — you do not need to configure it separately.
 
 </details>
 
@@ -34,7 +34,6 @@ The `serverId`, `userId`, and `calendarId` from step 4 map directly into the Cal
 auberge config set vdirsyncer_icloud_url <icloud-caldav-url>
 auberge config set vdirsyncer_icloud_username <apple-id-email>
 auberge config set vdirsyncer_icloud_password <app-specific-password>
-auberge config set vdirsyncer_icloud_calendar_id <icloud-calendar-id>
 auberge config set vdirsyncer_baikal_calendar_name <baikal-calendar-name>
 ```
 
