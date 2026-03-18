@@ -38,6 +38,18 @@ auberge config set vdirsyncer_baikal_calendar_name <baikal-calendar-name>
 
 The role is skipped entirely if `vdirsyncer_icloud_password` is not set, so vdirsyncer is opt-in by default.
 
+### Optional Calendar Metadata
+
+The Baikal calendar is created automatically on deployment. You can customize its appearance:
+
+```bash
+auberge config set vdirsyncer_baikal_calendar_display_name "My iCloud Calendar"
+auberge config set vdirsyncer_baikal_calendar_description "Synced from iCloud"
+auberge config set vdirsyncer_baikal_calendar_color "#0082C9FF"
+```
+
+`vdirsyncer_baikal_calendar_display_name` defaults to the value of `vdirsyncer_baikal_calendar_name`. The color uses `#RRGGBBAA` format (8-digit hex with alpha channel). If unset, Baikal assigns no color.
+
 ## Deployment
 
 ```bash

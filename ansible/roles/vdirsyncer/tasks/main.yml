@@ -84,27 +84,46 @@
     - name: Create Baikal calendar in SQLite database
       ansible.builtin.shell: |
         set -o pipefail
-        exists=$(sqlite3 "{{ vdirsyncer_baikal_db_path }}" \
-          "SELECT COUNT(*) FROM calendarinstances \
+        calendarid=$(sqlite3 "{{ vdirsyncer_baikal_db_path }}" \
+          "SELECT calendarid FROM calendarinstances \
            WHERE principaluri='principals/{{ admin_user_name }}' \
            AND uri='{{ vdirsyncer_baikal_calendar_name }}';")
-        if [ "$exists" = "0" ]; then
+        if [ -z "$calendarid" ]; then
           sqlite3 "{{ vdirsyncer_baikal_db_path }}" "
             BEGIN;
             INSERT INTO calendars (synctoken, components) VALUES (1, 'VEVENT');
             INSERT INTO calendarinstances
-              (calendarid, principaluri, access, displayname, uri, description, transparent)
+              (calendarid, principaluri, access, displayname, uri, description, calendarcolor, transparent)
               VALUES (last_insert_rowid(), 'principals/{{ admin_user_name }}',
-                1, '{{ vdirsyncer_baikal_calendar_name }}',
-                '{{ vdirsyncer_baikal_calendar_name }}', '', 0);
+                1, '{{ vdirsyncer_baikal_calendar_display_name }}',
+                '{{ vdirsyncer_baikal_calendar_name }}',
+                '{{ vdirsyncer_baikal_calendar_description }}',
+                '{{ vdirsyncer_baikal_calendar_color }}', 0);
             COMMIT;
           "
           echo "created"
+        else
+          components=$(sqlite3 "{{ vdirsyncer_baikal_db_path }}" \
+            "SELECT components FROM calendars WHERE id=$calendarid;")
+          if [ "$components" != "VEVENT" ]; then
+            sqlite3 "{{ vdirsyncer_baikal_db_path }}" "
+              BEGIN;
+              UPDATE calendars SET components='VEVENT' WHERE id=$calendarid;
+              UPDATE calendarinstances
+                SET displayname='{{ vdirsyncer_baikal_calendar_display_name }}',
+                    description='{{ vdirsyncer_baikal_calendar_description }}',
+                    calendarcolor='{{ vdirsyncer_baikal_calendar_color }}'
+                WHERE calendarid=$calendarid
+                  AND principaluri='principals/{{ admin_user_name }}';
+              COMMIT;
+            "
+            echo "fixed"
+          fi
         fi
       args:
         executable: /bin/bash
       register: vdirsyncer_mkcalendar_result
-      changed_when: "'created' in vdirsyncer_mkcalendar_result.stdout"
+      changed_when: "vdirsyncer_mkcalendar_result.stdout | length > 0"
 
     - name: Run vdirsyncer discover to initialize pair
       become: true
