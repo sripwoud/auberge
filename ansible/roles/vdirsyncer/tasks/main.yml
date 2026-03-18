@@ -13,12 +13,14 @@
           - vdirsyncer_icloud_calendar_id | length > 0
           - vdirsyncer_baikal_calendar_name is defined
           - vdirsyncer_baikal_calendar_name | length > 0
+          - vdirsyncer_baikal_calendar_name is match('^[a-zA-Z0-9 _-]+$')
           - baikal_admin_password is defined
           - baikal_admin_password | length > 0
         fail_msg: |
           vdirsyncer requires iCloud CalDAV credentials and a Baikal calendar name.
           Set them via: auberge config set <key> <value>
           If vdirsyncer_icloud_calendar_id is empty, ensure vdirsyncer_icloud_url does not end with a trailing slash.
+          vdirsyncer_baikal_calendar_name must contain only letters, numbers, spaces, hyphens, or underscores.
 
     - name: Create vdirsyncer system group
       ansible.builtin.group:
@@ -97,6 +99,8 @@
         headers:
           Content-Type: application/xml
         status_code: [201, 405]
+      register: vdirsyncer_mkcalendar_result
+      changed_when: vdirsyncer_mkcalendar_result.status == 201
       no_log: true
 
     - name: Run vdirsyncer discover to initialize pair
