@@ -220,16 +220,18 @@ fn resolve_value(v: &str) -> Result<String> {
                     .status
                     .code()
                     .map_or("signal".to_string(), |c| c.to_string());
-                if !output.stderr.is_empty() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    let sanitized: String = stderr
+                let stderr_hint = if !output.stderr.is_empty() {
+                    let raw = String::from_utf8_lossy(&output.stderr);
+                    let sanitized: String = raw
                         .chars()
-                        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+                        .filter(|c| c.is_ascii_graphic() || *c == ' ')
                         .take(200)
                         .collect();
-                    eprintln!("{sanitized}");
-                }
-                eyre::bail!("Shell command failed (exit {code}): {cmd}");
+                    format!(" (stderr: {sanitized})")
+                } else {
+                    String::new()
+                };
+                eyre::bail!("Shell command failed (exit {code}): {cmd}{stderr_hint}");
             }
             let stdout = String::from_utf8(output.stdout)
                 .wrap_err_with(|| format!("Shell command output is not valid UTF-8: {cmd}"))?;
