@@ -36,6 +36,29 @@ auberge config set admin_user_password your-linux-password
 
 See `config.example.toml` for the complete list.
 
+## Password Commands
+
+Values prefixed with `!` are treated as shell commands. At deploy time, Auberge runs the command via `sh -c` and uses the trimmed stdout as the actual value. The command is **not** evaluated at `config set` time.
+
+**Value formats:**
+
+| Stored value   | Behaviour                                               |
+| -------------- | ------------------------------------------------------- |
+| `!cmd`         | Runs `sh -c "cmd"`, uses trimmed stdout                 |
+| `!!literal`    | Stores as `!literal` (escape hatch - no command is run) |
+| `plain string` | Used as-is                                              |
+
+**Example (`config.toml`):**
+
+```toml
+vdirsyncer_icloud_password = "!pass icloud/app-password"
+baikal_admin_password = "!op read op://vault/baikal/password"
+cloudflare_dns_api_token = "secret123"
+some_literal_bang = "!!not-a-cmd"
+```
+
+**Requirements:** the command must exit 0 and produce non-empty UTF-8 output. Deployment fails with a clear error if either condition is not met.
+
 ## Viewing Config
 
 ```bash

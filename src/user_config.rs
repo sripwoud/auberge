@@ -169,7 +169,7 @@ impl UserConfig {
             .collect()
     }
 
-    pub fn flatten_for_ansible(&self) -> BTreeMap<String, String> {
+    pub fn flatten_for_ansible(&self) -> Result<BTreeMap<String, String>> {
         flatten_toml(&self.table)
     }
 
@@ -197,19 +197,53 @@ fn value_to_string(v: &toml::Value) -> Option<String> {
     }
 }
 
-fn flatten_toml(table: &toml::Table) -> BTreeMap<String, String> {
+fn resolve_value(v: &str) -> Result<String> {
+    if let Some(rest) = v.strip_prefix("!!") {
+        return Ok(format!("!{rest}"));
+    }
+    if let Some(cmd) = v.strip_prefix('!') {
+        use std::process::Stdio;
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .wrap_err("Failed to execute shell command")?;
+        if !output.status.success() {
+            let code = output
+                .status
+                .code()
+                .map_or("signal".to_string(), |c| c.to_string());
+            eyre::bail!("Shell command failed (exit {code})");
+        }
+        let stdout =
+            String::from_utf8(output.stdout).wrap_err("Shell command output is not valid UTF-8")?;
+        let resolved = stdout.trim().to_string();
+        if resolved.is_empty() {
+            eyre::bail!("Shell command produced empty output");
+        }
+        return Ok(resolved);
+    }
+    Ok(v.to_string())
+}
+
+fn flatten_toml(table: &toml::Table) -> Result<BTreeMap<String, String>> {
     let mut result = BTreeMap::new();
     for (key, value) in table {
         match value {
-            toml::Value::Table(inner) => result.extend(flatten_toml(inner)),
+            toml::Value::Table(inner) => result.extend(flatten_toml(inner)?),
             other => {
                 if let Some(s) = value_to_string(other) {
-                    result.insert(key.clone(), s);
+                    let resolved = resolve_value(&s)
+                        .wrap_err_with(|| format!("Failed to resolve config key '{key}'"))?;
+                    result.insert(key.clone(), resolved);
                 }
             }
         }
     }
-    result
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -242,7 +276,7 @@ mod tests {
             admin_user_name = "alice"
         "#;
         let table: toml::Table = toml::from_str(toml_str).unwrap();
-        let flat = flatten_toml(&table);
+        let flat = flatten_toml(&table).unwrap();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
         assert_eq!(flat.get("admin_user_name").unwrap(), "alice");
@@ -431,9 +465,82 @@ mod tests {
             path: PathBuf::from("/tmp/fake"),
             table,
         };
-        let flat = config.flatten_for_ansible();
+        let flat = config.flatten_for_ansible().unwrap();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "secret");
+    }
+
+    #[test]
+    fn test_resolve_value_plain_string() {
+        assert_eq!(resolve_value("hello").unwrap(), "hello");
+        assert_eq!(resolve_value("secret123").unwrap(), "secret123");
+        assert_eq!(resolve_value("").unwrap(), "");
+    }
+
+    #[test]
+    fn test_resolve_value_escaped_bang() {
+        assert_eq!(resolve_value("!!literal-bang").unwrap(), "!literal-bang");
+        assert_eq!(resolve_value("!!pass foo").unwrap(), "!pass foo");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_value_shell_command() {
+        let result = resolve_value("!echo mysecret").unwrap();
+        assert_eq!(result, "mysecret");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_value_shell_command_trims_whitespace() {
+        let result = resolve_value("!printf '  trimmed  '").unwrap();
+        assert_eq!(result, "trimmed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_value_shell_command_nonzero_exit_fails() {
+        let err = resolve_value("!false").unwrap_err();
+        assert!(err.to_string().contains("Shell command failed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_value_shell_command_empty_output_fails() {
+        let err = resolve_value("!true").unwrap_err();
+        assert!(err.to_string().contains("empty output"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_flatten_for_ansible_resolves_command() {
+        let toml_str = r#"
+            domain = "example.com"
+            baikal_admin_password = "!echo cmdpassword"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let flat = config.flatten_for_ansible().unwrap();
+        assert_eq!(flat.get("domain").unwrap(), "example.com");
+        assert_eq!(flat.get("baikal_admin_password").unwrap(), "cmdpassword");
+    }
+
+    #[test]
+    fn test_flatten_for_ansible_resolves_escaped_bang() {
+        let toml_str = r#"
+            domain = "example.com"
+            baikal_admin_password = "!!literal"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let flat = config.flatten_for_ansible().unwrap();
+        assert_eq!(flat.get("baikal_admin_password").unwrap(), "!literal");
     }
 }

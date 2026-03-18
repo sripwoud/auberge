@@ -18,7 +18,9 @@ pub struct InventoryHost {
 
 fn write_extra_vars_file() -> Result<tempfile::NamedTempFile> {
     let config = UserConfig::load()?;
-    let flat = config.flatten_for_ansible();
+    let flat = config
+        .flatten_for_ansible()
+        .wrap_err("Failed to resolve config values")?;
     let yaml = serde_yaml::to_string(&flat).wrap_err("Failed to serialize config to YAML")?;
     let mut tmpfile = tempfile::NamedTempFile::new().wrap_err("Failed to create temp file")?;
     tmpfile
