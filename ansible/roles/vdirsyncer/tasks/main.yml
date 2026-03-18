@@ -81,25 +81,30 @@
       notify: Restart vdirsyncer timer
       no_log: true
 
-    - name: Create Baikal calendar via CalDAV
+    - name: Create Baikal calendar in SQLite database
       ansible.builtin.shell: |
         set -o pipefail
-        status=$(curl -s -o /dev/null -w "%{http_code}" \
-          --digest \
-          -u "${USERNAME}:${PASSWORD}" \
-          -X MKCALENDAR \
-          "${CALENDAR_URL}${CALENDAR_NAME}/")
-        [ "$status" = "201" ] && echo "created" || { [ "$status" = "405" ] || exit 1; }
-      environment:
-        USERNAME: "{{ admin_user_name }}"
-        PASSWORD: "{{ baikal_admin_password }}"
-        CALENDAR_URL: "{{ vdirsyncer_baikal_calendar_url }}"
-        CALENDAR_NAME: "{{ vdirsyncer_baikal_calendar_name }}"
+        exists=$(sqlite3 "{{ vdirsyncer_baikal_db_path }}" \
+          "SELECT COUNT(*) FROM calendarinstances \
+           WHERE principaluri='principals/{{ admin_user_name }}' \
+           AND uri='{{ vdirsyncer_baikal_calendar_name }}';")
+        if [ "$exists" = "0" ]; then
+          sqlite3 "{{ vdirsyncer_baikal_db_path }}" "
+            BEGIN;
+            INSERT INTO calendars (synctoken, components) VALUES (1, 'VEVENT');
+            INSERT INTO calendarinstances
+              (calendarid, principaluri, access, displayname, uri, description, transparent)
+              VALUES (last_insert_rowid(), 'principals/{{ admin_user_name }}',
+                1, '{{ vdirsyncer_baikal_calendar_name }}',
+                '{{ vdirsyncer_baikal_calendar_name }}', '', 0);
+            COMMIT;
+          "
+          echo "created"
+        fi
       args:
         executable: /bin/bash
       register: vdirsyncer_mkcalendar_result
       changed_when: "'created' in vdirsyncer_mkcalendar_result.stdout"
-      no_log: true
 
     - name: Run vdirsyncer discover to initialize pair
       become: true

@@ -5,4 +5,5 @@ vdirsyncer_sys_user: vdirsyncer
 vdirsyncer_sys_group: vdirsyncer
 vdirsyncer_sync_interval: 2min
 vdirsyncer_baikal_calendar_url: "https://{{ baikal_subdomain }}.{{ domain }}/cal.php/calendars/{{ admin_user_name }}/"
+vdirsyncer_baikal_db_path: /opt/baikal/Specific/db/db.sqlite
 vdirsyncer_icloud_calendar_id: "{{ vdirsyncer_icloud_url | regex_replace('/$', '') | urlsplit('path') | basename }}"
