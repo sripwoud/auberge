@@ -82,25 +82,23 @@
       no_log: true
 
     - name: Create Baikal calendar via CalDAV
-      ansible.builtin.uri:
-        method: MKCALENDAR
-        url: "{{ vdirsyncer_baikal_calendar_url }}{{ vdirsyncer_baikal_calendar_name }}/"
-        url_username: "{{ admin_user_name }}"
-        url_password: "{{ baikal_admin_password }}"
-        force_basic_auth: true
-        body_format: raw
-        body: |
-          <?xml version="1.0" encoding="utf-8" ?>
-          <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-            <D:set><D:prop>
-              <D:displayname>{{ vdirsyncer_baikal_calendar_name }}</D:displayname>
-            </D:prop></D:set>
-          </C:mkcalendar>
-        headers:
-          Content-Type: application/xml
-        status_code: [201, 405]
+      ansible.builtin.shell: |
+        set -o pipefail
+        status=$(curl -s -o /dev/null -w "%{http_code}" \
+          --digest \
+          -u "${USERNAME}:${PASSWORD}" \
+          -X MKCALENDAR \
+          "${CALENDAR_URL}${CALENDAR_NAME}/")
+        [ "$status" = "201" ] && echo "created" || { [ "$status" = "405" ] || exit 1; }
+      environment:
+        USERNAME: "{{ admin_user_name }}"
+        PASSWORD: "{{ baikal_admin_password }}"
+        CALENDAR_URL: "{{ vdirsyncer_baikal_calendar_url }}"
+        CALENDAR_NAME: "{{ vdirsyncer_baikal_calendar_name }}"
+      args:
+        executable: /bin/bash
       register: vdirsyncer_mkcalendar_result
-      changed_when: vdirsyncer_mkcalendar_result.status == 201
+      changed_when: "'created' in vdirsyncer_mkcalendar_result.stdout"
       no_log: true
 
     - name: Run vdirsyncer discover to initialize pair
