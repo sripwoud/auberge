@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.16](https://github.com/sripwoud/auberge/compare/v0.6.15...v0.6.16) - 2026-03-18
+
+### Added
+
+- *(vdirsyncer)* auto-create Baikal calendar on deploy ([#201](https://github.com/sripwoud/auberge/pull/201))
+
 ## [0.6.15](https://github.com/sripwoud/auberge/compare/v0.6.14...v0.6.15) - 2026-03-18
 
 ### Added
