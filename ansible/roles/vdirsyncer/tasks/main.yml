@@ -10,6 +10,7 @@
           - vdirsyncer_icloud_url | length > 0
           - vdirsyncer_icloud_username is defined
           - vdirsyncer_icloud_username | length > 0
+          - vdirsyncer_icloud_calendar_id | length > 0
           - vdirsyncer_baikal_calendar_name is defined
           - vdirsyncer_baikal_calendar_name | length > 0
           - baikal_admin_password is defined
@@ -17,6 +18,7 @@
         fail_msg: |
           vdirsyncer requires iCloud CalDAV credentials and a Baikal calendar name.
           Set them via: auberge config set <key> <value>
+          If vdirsyncer_icloud_calendar_id is empty, ensure vdirsyncer_icloud_url does not end with a trailing slash.
 
     - name: Create vdirsyncer system group
       ansible.builtin.group:
