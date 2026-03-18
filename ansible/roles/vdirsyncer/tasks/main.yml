@@ -10,8 +10,6 @@
           - vdirsyncer_icloud_url | length > 0
           - vdirsyncer_icloud_username is defined
           - vdirsyncer_icloud_username | length > 0
-          - vdirsyncer_icloud_calendar_id is defined
-          - vdirsyncer_icloud_calendar_id | length > 0
           - vdirsyncer_baikal_calendar_name is defined
           - vdirsyncer_baikal_calendar_name | length > 0
           - baikal_admin_password is defined

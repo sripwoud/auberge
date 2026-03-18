@@ -34,7 +34,6 @@ The `serverId`, `userId`, and `calendarId` from step 4 map directly into the Cal
 auberge config set vdirsyncer_icloud_url <icloud-caldav-url>
 auberge config set vdirsyncer_icloud_username <apple-id-email>
 auberge config set vdirsyncer_icloud_password <app-specific-password>
-auberge config set vdirsyncer_icloud_calendar_id <icloud-calendar-id>
 auberge config set vdirsyncer_baikal_calendar_name <baikal-calendar-name>
 ```
 
