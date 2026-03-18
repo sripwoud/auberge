@@ -203,7 +203,7 @@ fn resolve_value(v: &str) -> Result<String> {
     }
     if let Some(cmd) = v.strip_prefix('!') {
         #[cfg(not(unix))]
-        eyre::bail!("command-based config values are only supported on Unix: {cmd}");
+        eyre::bail!("command-based config values are not supported on this platform");
         #[cfg(unix)]
         {
             use std::process::Stdio;
@@ -214,30 +214,19 @@ fn resolve_value(v: &str) -> Result<String> {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
-                .wrap_err_with(|| format!("Failed to execute shell command: {cmd}"))?;
+                .wrap_err("Failed to execute shell command")?;
             if !output.status.success() {
                 let code = output
                     .status
                     .code()
                     .map_or("signal".to_string(), |c| c.to_string());
-                let stderr_hint = if !output.stderr.is_empty() {
-                    let raw = String::from_utf8_lossy(&output.stderr);
-                    let sanitized: String = raw
-                        .chars()
-                        .filter(|c| c.is_ascii_graphic() || *c == ' ')
-                        .take(200)
-                        .collect();
-                    format!(" (stderr: {sanitized})")
-                } else {
-                    String::new()
-                };
-                eyre::bail!("Shell command failed (exit {code}): {cmd}{stderr_hint}");
+                eyre::bail!("Shell command failed (exit {code})");
             }
             let stdout = String::from_utf8(output.stdout)
-                .wrap_err_with(|| format!("Shell command output is not valid UTF-8: {cmd}"))?;
+                .wrap_err("Shell command output is not valid UTF-8")?;
             let resolved = stdout.trim().to_string();
             if resolved.is_empty() {
-                eyre::bail!("Shell command produced empty output: {cmd}");
+                eyre::bail!("Shell command produced empty output");
             }
             return Ok(resolved);
         }
