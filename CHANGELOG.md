@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.15](https://github.com/sripwoud/auberge/compare/v0.6.14...v0.6.15) - 2026-03-18
+
+### Added
+
+- *(config)* support shell command values with `!` prefix ([#200](https://github.com/sripwoud/auberge/pull/200))
+
+### Fixed
+
+- *(release)* use PAT for release-plz PR to trigger required CI checks
+
+### Other
+
+- *(vdirsyncer)* derive calendar ID from URL ([#197](https://github.com/sripwoud/auberge/pull/197))
+
 ## [0.6.14](https://github.com/sripwoud/auberge/compare/v0.6.13...v0.6.14) - 2026-03-15
 
 ### Fixed
