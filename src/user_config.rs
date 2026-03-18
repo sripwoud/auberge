@@ -197,7 +197,21 @@ fn value_to_string(v: &toml::Value) -> Option<String> {
     }
 }
 
+#[cfg(not(unix))]
 fn resolve_value(v: &str) -> Result<String> {
+    if v.starts_with('!') && !v.starts_with("!!") {
+        eyre::bail!("command-based config values are only supported on Unix: {v}");
+    }
+    if let Some(rest) = v.strip_prefix("!!") {
+        return Ok(format!("!{rest}"));
+    }
+    Ok(v.to_string())
+}
+
+#[cfg(unix)]
+fn resolve_value(v: &str) -> Result<String> {
+    use std::process::Stdio;
+
     if let Some(rest) = v.strip_prefix("!!") {
         return Ok(format!("!{rest}"));
     }
@@ -205,13 +219,26 @@ fn resolve_value(v: &str) -> Result<String> {
         let output = std::process::Command::new("sh")
             .arg("-c")
             .arg(cmd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .output()
             .wrap_err_with(|| format!("Failed to execute shell command: {cmd}"))?;
+        if !output.stderr.is_empty() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let sanitized: String = stderr
+                .chars()
+                .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+                .take(200)
+                .collect();
+            eprintln!("debug: shell command stderr: {sanitized}");
+        }
         if !output.status.success() {
-            eyre::bail!(
-                "Shell command failed (exit {}): {cmd}",
-                output.status.code().unwrap_or(-1)
-            );
+            let code = output
+                .status
+                .code()
+                .map_or("signal".to_string(), |c| c.to_string());
+            eyre::bail!("Shell command failed (exit {code}): {cmd}");
         }
         let stdout = String::from_utf8(output.stdout)
             .wrap_err_with(|| format!("Shell command output is not valid UTF-8: {cmd}"))?;
