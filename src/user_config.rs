@@ -197,18 +197,6 @@ fn value_to_string(v: &toml::Value) -> Option<String> {
     }
 }
 
-#[cfg(not(unix))]
-fn resolve_value(v: &str) -> Result<String> {
-    if v.starts_with('!') && !v.starts_with("!!") {
-        eyre::bail!("command-based config values are only supported on Unix: {v}");
-    }
-    if let Some(rest) = v.strip_prefix("!!") {
-        return Ok(format!("!{rest}"));
-    }
-    Ok(v.to_string())
-}
-
-#[cfg(unix)]
 fn resolve_value(v: &str) -> Result<String> {
     use std::process::Stdio;
 
@@ -504,30 +492,35 @@ mod tests {
         assert_eq!(resolve_value("!!pass foo").unwrap(), "!pass foo");
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_resolve_value_shell_command() {
         let result = resolve_value("!echo mysecret").unwrap();
         assert_eq!(result, "mysecret");
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_resolve_value_shell_command_trims_whitespace() {
         let result = resolve_value("!printf '  trimmed  '").unwrap();
         assert_eq!(result, "trimmed");
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_resolve_value_shell_command_nonzero_exit_fails() {
         let err = resolve_value("!false").unwrap_err();
         assert!(err.to_string().contains("Shell command failed"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_resolve_value_shell_command_empty_output_fails() {
         let err = resolve_value("!true").unwrap_err();
         assert!(err.to_string().contains("empty output"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_flatten_for_ansible_resolves_command() {
         let toml_str = r#"
