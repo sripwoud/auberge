@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.17](https://github.com/sripwoud/auberge/compare/v0.6.16...v0.6.17) - 2026-03-18
+
+### Added
+
+- *(vdirsyncer)* validate required config keys before running ansible ([#203](https://github.com/sripwoud/auberge/pull/203))
+
+### Fixed
+
+- *(vdirsyncer)* create calendar via SQLite INSERT instead of CalDAV MKCALENDAR ([#206](https://github.com/sripwoud/auberge/pull/206))
+- *(vdirsyncer)* use curl --digest for MKCALENDAR ([#204](https://github.com/sripwoud/auberge/pull/204))
+
 ## [0.6.16](https://github.com/sripwoud/auberge/compare/v0.6.15...v0.6.16) - 2026-03-18
 
 ### Added
