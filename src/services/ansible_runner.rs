@@ -70,6 +70,13 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
 fn tag_required_keys(tag: &str) -> &[&'static str] {
     match tag {
         "colporteur" => &["colporteur_subdomain"],
+        "vdirsyncer" => &[
+            "vdirsyncer_icloud_url",
+            "vdirsyncer_icloud_username",
+            "vdirsyncer_icloud_password",
+            "vdirsyncer_baikal_calendar_name",
+            "baikal_admin_password",
+        ],
         _ => &[],
     }
 }
@@ -257,6 +264,17 @@ mod tests {
         let keys = required_config_keys("apps.yml", Some(&tags));
         assert!(keys.contains(&"cloudflare_dns_api_token"));
         assert!(keys.contains(&"colporteur_subdomain"));
+    }
+
+    #[test]
+    fn test_required_config_keys_apps_with_vdirsyncer_tag() {
+        let tags = vec!["vdirsyncer".to_string()];
+        let keys = required_config_keys("apps.yml", Some(&tags));
+        assert!(keys.contains(&"vdirsyncer_icloud_url"));
+        assert!(keys.contains(&"vdirsyncer_icloud_username"));
+        assert!(keys.contains(&"vdirsyncer_icloud_password"));
+        assert!(keys.contains(&"vdirsyncer_baikal_calendar_name"));
+        assert!(keys.contains(&"baikal_admin_password"));
     }
 
     #[test]
