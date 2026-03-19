@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/sripwoud/auberge/compare/v0.6.17...v0.7.0) - 2026-03-19
+
+### Added
+
+- [**breaking**] remove vdirsyncer role and all related code
+
 ## [0.6.17](https://github.com/sripwoud/auberge/compare/v0.6.16...v0.6.17) - 2026-03-18
 
 ### Added
