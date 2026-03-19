@@ -1,5 +1,0 @@
-- name: Restart vdirsyncer timer
-  ansible.builtin.systemd_service:
-    name: vdirsyncer.timer
-    state: restarted
-    daemon_reload: true

@@ -347,7 +347,6 @@ impl AppBackupConfig {
             "headscale" => Some(Self::headscale()),
             "navidrome" => Some(Self::navidrome(include_music)),
             "calibre" => Some(Self::calibre()),
-            "vdirsyncer" => Some(Self::vdirsyncer()),
             "webdav" => Some(Self::webdav()),
             "yourls" => Some(Self::yourls()),
             "paperless" => Some(Self::paperless()),
@@ -417,16 +416,6 @@ impl AppBackupConfig {
             systemd_services: vec!["calibre"],
             paths: vec!["/srv/calibre", "/opt/calibre", "/home/calibre"],
             owner: Some(("calibre", "calibre")),
-            db: None,
-        }
-    }
-
-    fn vdirsyncer() -> Self {
-        Self {
-            name: "vdirsyncer",
-            systemd_services: vec!["vdirsyncer.timer", "vdirsyncer.service"],
-            paths: vec!["/var/lib/vdirsyncer"],
-            owner: Some(("vdirsyncer", "vdirsyncer")),
             db: None,
         }
     }
@@ -2079,7 +2068,6 @@ mod tests {
         assert!(AppBackupConfig::navidrome(false).db.is_none());
         assert!(AppBackupConfig::navidrome(true).db.is_none());
         assert!(AppBackupConfig::calibre().db.is_none());
-        assert!(AppBackupConfig::vdirsyncer().db.is_none());
         assert!(AppBackupConfig::webdav().db.is_none());
         assert!(AppBackupConfig::yourls().db.is_none());
     }

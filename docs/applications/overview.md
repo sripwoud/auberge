@@ -34,7 +34,6 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | [Paperless-ngx](apps/paperless.md) | Document management system              |
 | [Syncthing](apps/syncthing.md)     | Continuous file synchronization         |
 | [WebDAV](apps/webdav.md)           | File sharing and synchronization        |
-| [vdirsyncer](apps/vdirsyncer.md)   | iCloud-to-Baikal calendar sync          |
 | [YOURLS](apps/yourls.md)           | URL shortener                           |
 
 ## Deployment

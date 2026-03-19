@@ -51,7 +51,6 @@ Values prefixed with `!` are treated as shell commands. At deploy time, Auberge 
 **Example (`config.toml`):**
 
 ```toml
-vdirsyncer_icloud_password = "!pass icloud/app-password"
 baikal_admin_password = "!op read op://vault/baikal/password"
 cloudflare_dns_api_token = "secret123"
 some_literal_bang = "!!not-a-cmd"

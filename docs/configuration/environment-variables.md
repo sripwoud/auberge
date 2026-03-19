@@ -36,10 +36,6 @@ auberge config set headscale_subdomain hs
 auberge config set freshrss_subdomain rss
 auberge config set navidrome_subdomain musique
 auberge config set webdav_subdomain webdav
-auberge config set vdirsyncer_icloud_url <icloud-caldav-url>
-auberge config set vdirsyncer_icloud_username <apple-id-email>
-auberge config set vdirsyncer_icloud_password <app-specific-password>
-auberge config set vdirsyncer_baikal_calendar_name <baikal-calendar-name>
 ```
 
 ## Tailnet-only Subdomains
