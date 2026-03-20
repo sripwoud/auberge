@@ -16,6 +16,17 @@ Requires `baikal_subdomain` and `baikal_admin_password` set in `config.toml`.
 
 The deployed `baikal.yaml` config file has mode `0640` (owner + group read) since it contains the `encryption_key` and `admin_passwordhash`.
 
+### Authentication
+
+> [!NOTE]
+> Baikal is configured to use **Basic** HTTP authentication by default. This is safe because Caddy enforces HTTPS, which encrypts credentials in transit. Basic auth offers better compatibility with CLI CardDAV/CalDAV clients (e.g. [cardamum](https://github.com/pimalaya/cardamum)) that do not support Digest auth.
+
+To override, set `baikal_dav_auth_type` in your `config.toml`:
+
+```toml
+baikal_dav_auth_type = "Digest"
+```
+
 Initial setup is done through the web interface at `https://{baikal_subdomain}.{domain}/admin/`.
 
 ## Features
