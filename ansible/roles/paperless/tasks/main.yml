@@ -223,6 +223,12 @@
         creates: "/usr/share/nltk_data/corpora/stopwords"
       become: true
 
+    - name: Download NLTK punkt_tab tokenizer
+      ansible.builtin.command:
+        cmd: "{{ paperless_install_path }}/venv/bin/python3 -m nltk.downloader -d /usr/share/nltk_data punkt_tab"
+        creates: "/usr/share/nltk_data/tokenizers/punkt_tab"
+      become: true
+
     - name: Detect ImageMagick policy path
       ansible.builtin.command: find /etc -maxdepth 2 -name policy.xml -path "*/ImageMagick-*" -print -quit
       register: paperless_imagemagick_policy
