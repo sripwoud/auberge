@@ -7,7 +7,7 @@ system:
   card_enabled: true
   cal_enabled: true
   invite_from: {{ admin_user_email }}
-  dav_auth_type: Digest
+  dav_auth_type: {{ baikal_dav_auth_type }}
   admin_passwordhash: '{{ baikal_admin_password_hash }}'
   auth_realm: BaikalDAV
   base_uri: ''

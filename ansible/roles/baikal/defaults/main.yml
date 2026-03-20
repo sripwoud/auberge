@@ -3,3 +3,4 @@ baikal_data_dir: "{{ baikal_install_dir }}/Specific"
 baikal_domain: "{{ baikal_subdomain }}.{{ domain }}"
 baikal_sys_user: baikal
 baikal_fpm_socket: /var/run/php/baikal-fpm.sock
+baikal_dav_auth_type: Basic
