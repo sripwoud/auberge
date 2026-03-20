@@ -217,6 +217,13 @@
       become: true
       become_user: "{{ paperless_sys_user }}"
 
+    - name: Download NLTK stopwords corpus
+      ansible.builtin.command:
+        cmd: >-
+          {{ paperless_install_path }}/venv/bin/python3 -c
+          "import nltk; nltk.download('stopwords', download_dir='/usr/share/nltk_data')"
+        creates: /usr/share/nltk_data/corpora/stopwords
+
     - name: Detect ImageMagick policy path
       ansible.builtin.command: find /etc -maxdepth 2 -name policy.xml -path "*/ImageMagick-*" -print -quit
       register: paperless_imagemagick_policy
