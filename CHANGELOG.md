@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2](https://github.com/sripwoud/auberge/compare/v0.7.1...v0.7.2) - 2026-03-20
+
+### Fixed
+
+- *(paperless)* download NLTK punkt_tab tokenizer during deployment
+
 ## [0.7.1](https://github.com/sripwoud/auberge/compare/v0.7.0...v0.7.1) - 2026-03-20
 
 ### Fixed
