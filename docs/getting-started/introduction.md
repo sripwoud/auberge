@@ -6,7 +6,7 @@ Auberge is a CLI tool for managing self-hosted infrastructure using Ansible auto
 
 Auberge (French for "inn") provides shelter for your self-hosted services. It's selfware - software built to manage your self-hosted infrastructure with:
 
-- **Minimal footprint**: Runs on a 2GB RAM VPS (4GB recommended with Booklore)
+- **Minimal footprint**: Runs on a 2GB RAM VPS (4GB recommended with Grimmory)
 - **No Docker bloat**: Native systemd services
 - **Automated deployment**: Ansible playbooks handle everything
 - **Built-in backups**: Full backup and restore with cross-host migration
@@ -40,7 +40,7 @@ After deployment, your VPS will be running:
 
 - [Baikal](https://sabre.io/baikal) (calendar/contacts)
 - [Bichon](https://github.com/rustmailer/bichon) (email archiving)
-- [Booklore](https://booklore.org) (digital library)
+- [Grimmory](https://grimmory.org) (digital library)
 - [Colporteur](https://github.com/sripwoud/colporteur) (newsletter-to-feed)
 - [FreshRSS](https://freshrss.org) (RSS reader)
 - [Navidrome](https://navidrome.org) (music streaming)

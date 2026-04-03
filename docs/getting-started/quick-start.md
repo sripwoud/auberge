@@ -40,7 +40,7 @@ Services are available at subdomains of your primary domain:
 - `https://cal.yourdomain.com` - Baikal (calendar/contacts)
 - `https://rss.yourdomain.com` - FreshRSS
 - `https://musique.yourdomain.com` - Navidrome
-- `https://lire.yourdomain.com` - Booklore
+- `https://lire.yourdomain.com` - Grimmory
 - `https://webdav.yourdomain.com` - WebDAV
 - `https://url.yourdomain.com` - YOURLS
 

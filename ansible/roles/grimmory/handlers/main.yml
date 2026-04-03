@@ -1,6 +1,6 @@
-- name: Restart booklore
+- name: Restart grimmory
   ansible.builtin.systemd_service:
-    name: booklore
+    name: grimmory
     state: restarted
 
 - name: Restart caddy

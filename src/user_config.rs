@@ -22,10 +22,10 @@ bichon_tailscale_ip = ""
 
 blocky_subdomain = ""
 
-booklore_admin_password = ""
-booklore_admin_user = ""
-booklore_db_password = ""
-booklore_subdomain = ""
+grimmory_admin_password = ""
+grimmory_admin_user = ""
+grimmory_db_password = ""
+grimmory_subdomain = ""
 
 cloudflare_dns_api_token = ""
 

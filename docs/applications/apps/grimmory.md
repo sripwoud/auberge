@@ -1,22 +1,22 @@
-# Booklore
+# Grimmory
 
 Self-hosted multi-user digital library with smart shelves, auto metadata, and built-in reader for EPUB, PDF, and comics.
 
-Official Documentation: [https://booklore.org](https://booklore.org)
+Official Documentation: [https://grimmory.org](https://grimmory.org)
 
 ## Prerequisites
 
-1. Run the `build-booklore` GitHub Action to build the JAR artifact before deployment.
+1. Run the `build-grimmory` GitHub Action to build the JAR artifact before deployment.
 2. Set the database password:
 
 ```bash
-auberge config set booklore_db_password your-password
+auberge config set grimmory_db_password your-password
 ```
 
 ## Deployment
 
 ```bash
-auberge ansible run --tags booklore
+auberge ansible run --tags grimmory
 ```
 
 ## Configuration
@@ -24,18 +24,19 @@ auberge ansible run --tags booklore
 | Setting  | Default       |
 | -------- | ------------- |
 | Port     | 6060          |
-| Data     | /srv/booklore |
+| Data     | /srv/grimmory |
 | BookDrop | /srv/bookdrop |
-| JVM heap | 768 MB max    |
+| JVM      | Shenandoah GC |
 
 ## Features
 
 - Multi-user with OIDC authentication
-- EPUB, PDF, CBZ, CBR, MOBI, and AZW3 support
+- EPUB, PDF, CBZ, CBR, CB7, MOBI, AZW, AZW3, and FB2 support
+- Audiobook support (M4B, M4A, MP3, OPUS)
 - Kobo and KOReader sync
 - OPDS catalog
 - BookDrop auto-import
-- Auto metadata from Google Books, Open Library, and Amazon
+- Auto metadata from Google Books, Open Library, and Goodreads
 
 ## Backup
 

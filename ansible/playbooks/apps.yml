@@ -13,8 +13,8 @@
         blocky_tailscale_bound_domains:
           - "{{ cockpit_subdomain | default('cockpit') }}.{{ domain }}"
           - "{{ paperless_subdomain | default('paperless') }}.{{ domain }}"
-    - role: booklore
-      tags: [apps, storage, media, books, booklore]
+    - role: grimmory
+      tags: [apps, storage, media, books, grimmory]
     - role: cockpit
       tags: [apps, monitoring, cockpit]
     - role: colporteur
