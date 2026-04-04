@@ -1,13 +1,19 @@
 - name: Install and configure Grimmory
   block:
-    - name: Validate grimmory_db_password is set
+    - name: Validate required Grimmory variables are set
       ansible.builtin.assert:
         that:
           - grimmory_db_password is defined
           - grimmory_db_password | length > 0
           - grimmory_admin_password is defined
           - grimmory_admin_password | length > 0
-        fail_msg: "grimmory_db_password and grimmory_admin_password must be defined and non-empty"
+          - grimmory_admin_user is defined
+          - grimmory_admin_user | length > 0
+          - grimmory_subdomain is defined
+          - grimmory_subdomain | length > 0
+          - domain is defined
+          - domain | length > 0
+        fail_msg: "grimmory_db_password, grimmory_admin_password, grimmory_admin_user, grimmory_subdomain, and domain must be defined and non-empty"
 
     - name: Check if Grimmory version file exists
       ansible.builtin.stat:
@@ -74,6 +80,7 @@
       community.mysql.mysql_user:
         name: "{{ grimmory_db_user }}"
         password: "{{ grimmory_db_password }}"
+        host: "{{ grimmory_db_host }}"
         priv: "{{ grimmory_db_name }}.*:ALL"
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
