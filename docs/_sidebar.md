@@ -56,6 +56,7 @@
     - [create](cli-reference/backup/create.md)
     - [list](cli-reference/backup/list.md)
     - [restore](cli-reference/backup/restore.md)
+    - [sync](cli-reference/backup/sync.md)
     - [export-opml](cli-reference/backup/export-opml.md)
     - [import-opml](cli-reference/backup/import-opml.md)
   - SSH
