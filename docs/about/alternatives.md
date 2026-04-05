@@ -26,7 +26,7 @@ This page explains where these platforms excel, where their priorities diverge f
 - The base stack isn't swappable (can't replace Nginx with Caddy, can't remove the mail server)
 - Expects to own the machine — running custom services alongside it (Headscale, custom DNS) means working around the abstraction
 - Recovery means restoring from backup rather than re-running a playbook on a fresh box
-- Some apps I use aren't packaged: Headscale, Blocky, Colporteur, Bichon, Booklore
+- Some apps I use aren't packaged: Headscale, Blocky, Colporteur, Bichon, Grimmory
 
 YunoHost is an excellent choice for anyone who wants to self-host without thinking about infrastructure. It covers the most ground with the least effort.
 

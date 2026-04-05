@@ -13,7 +13,7 @@ Auberge is a CLI tool for managing self-hosted infrastructure using Ansible auto
 
 ## Features
 
-- **Minimal footprint**: Runs on a 2GB RAM VPS (4GB recommended with Booklore)
+- **Minimal footprint**: Runs on a 2GB RAM VPS (4GB recommended with Grimmory)
 - **No Docker bloat**: Native systemd services
 - **Automated deployment**: Ansible playbooks handle everything
 - **Built-in backups**: Full backup and restore with cross-host migration
@@ -48,7 +48,7 @@ After deployment, your VPS will be running:
 
 - **Infrastructure**: [Caddy](https://caddyserver.com) (reverse proxy), [fail2ban](https://github.com/fail2ban/fail2ban) (intrusion prevention), [UFW](https://launchpad.net/ufw) (firewall)
 - **Networking**: [Blocky](https://0xerr0r.github.io/blocky) (DNS + ad-blocking), [Headscale](https://headscale.net) (coordination server), [WireGuard](https://wireguard.com), [Tailscale](https://tailscale.com)
-- **Apps**: [Baikal](https://sabre.io/baikal) (calendar/contacts), [Bichon](https://github.com/rustmailer/bichon) (email archiving), [Booklore](https://booklore.org) (digital library), [Colporteur](https://github.com/sripwoud/colporteur) (newsletter-to-feed), [FreshRSS](https://freshrss.org) (RSS reader), [Navidrome](https://navidrome.org) (music), [Paperless-ngx](https://docs.paperless-ngx.com) (document management), [Syncthing](https://syncthing.net) (file sync), [WebDAV](https://github.com/hacdias/webdav) (file sharing), [YOURLS](https://yourls.org) (URL shortener)
+- **Apps**: [Baikal](https://sabre.io/baikal) (calendar/contacts), [Bichon](https://github.com/rustmailer/bichon) (email archiving), [Grimmory](https://grimmory.org) (digital library), [Colporteur](https://github.com/sripwoud/colporteur) (newsletter-to-feed), [FreshRSS](https://freshrss.org) (RSS reader), [Navidrome](https://navidrome.org) (music), [Paperless-ngx](https://docs.paperless-ngx.com) (document management), [Syncthing](https://syncthing.net) (file sync), [WebDAV](https://github.com/hacdias/webdav) (file sharing), [YOURLS](https://yourls.org) (URL shortener)
 
 ## Documentation
 

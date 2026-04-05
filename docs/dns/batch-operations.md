@@ -12,7 +12,7 @@ Create multiple DNS A records in one command using `dns set-all`.
 - Bulk record creation
 - Synchronizing DNS with configuration
 
-> **Note:** For apps with `dns_record` role integration (baikal, booklore, cockpit, colporteur, freshrss, navidrome, paperless, webdav, yourls), DNS records are provisioned automatically during deployment. `dns set-all` remains useful for apps without this integration (e.g. Blocky, Calibre), bulk IP migrations, and initial setup across all subdomains.
+> **Note:** For apps with `dns_record` role integration (baikal, grimmory, cockpit, colporteur, freshrss, navidrome, paperless, webdav, yourls), DNS records are provisioned automatically during deployment. `dns set-all` remains useful for apps without this integration (e.g. Blocky, Calibre), bulk IP migrations, and initial setup across all subdomains.
 
 ## Basic Usage
 

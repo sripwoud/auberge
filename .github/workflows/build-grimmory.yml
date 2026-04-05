@@ -1,0 +1,53 @@
+name: build-grimmory
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Grimmory version (without v prefix, e.g. 2.3.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - run: corepack enable
+
+      - run: curl -fsSL "https://github.com/grimmory-tools/grimmory/archive/refs/tags/v${{ inputs.version }}.tar.gz" | tar -xz
+
+      - run: yarn install --immutable
+        working-directory: grimmory-${{ inputs.version }}/frontend
+
+      - run: yarn build --configuration=production
+        working-directory: grimmory-${{ inputs.version }}/frontend
+
+      - run: cp -r grimmory-${{ inputs.version }}/frontend/dist/grimmory/browser/. grimmory-${{ inputs.version }}/booklore-api/src/main/resources/static/
+
+      - run: ./gradlew clean build -x test --no-daemon
+        working-directory: grimmory-${{ inputs.version }}/booklore-api
+
+      - run: |
+          JAR=$(find grimmory-${{ inputs.version }}/booklore-api/build/libs/ -name '*.jar' ! -name '*-plain.jar')
+          cp "$JAR" grimmory-api.jar
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: grimmory/v${{ inputs.version }}
+          files: grimmory-api.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

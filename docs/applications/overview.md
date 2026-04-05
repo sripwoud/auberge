@@ -26,8 +26,8 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | ---------------------------------- | --------------------------------------- |
 | [Baikal](apps/baikal.md)           | CalDAV/CardDAV server                   |
 | [Bichon](apps/bichon.md)           | Email archiving and search              |
-| [Booklore](apps/booklore.md)       | Multi-user digital library              |
-| [Calibre](apps/calibre.md)         | Ebook library (alternative to Booklore) |
+| [Grimmory](apps/grimmory.md)       | Multi-user digital library              |
+| [Calibre](apps/calibre.md)         | Ebook library (alternative to Grimmory) |
 | [Colporteur](apps/colporteur.md)   | Newsletter-to-feed converter            |
 | [FreshRSS](apps/freshrss.md)       | RSS feed aggregator                     |
 | [Navidrome](apps/navidrome.md)     | Music streaming server                  |

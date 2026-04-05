@@ -129,7 +129,7 @@ auberge dns s --subdomain rss --ip 10.0.0.1
 
 ### Initial DNS Setup
 
-> **Note:** For most apps (baikal, booklore, cockpit, colporteur, freshrss, navidrome, paperless, webdav, yourls), DNS A records are provisioned automatically during deployment. Manual setup is only needed for apps without this integration (e.g. Blocky, Calibre).
+> **Note:** For most apps (baikal, grimmory, cockpit, colporteur, freshrss, navidrome, paperless, webdav, yourls), DNS A records are provisioned automatically during deployment. Manual setup is only needed for apps without this integration (e.g. Blocky, Calibre).
 
 Set up records for non-integrated apps:
 

@@ -42,7 +42,7 @@ const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
     "baikal_subdomain",
     "bichon_subdomain",
     "blocky_subdomain",
-    "booklore_subdomain",
+    "grimmory_subdomain",
     "colporteur_subdomain",
     "freshrss_subdomain",
     "headscale_subdomain",

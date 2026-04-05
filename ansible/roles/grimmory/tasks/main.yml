@@ -1,0 +1,210 @@
+- name: Install and configure Grimmory
+  block:
+    - name: Validate required Grimmory variables are set
+      ansible.builtin.assert:
+        that:
+          - grimmory_db_password is defined
+          - grimmory_db_password | length > 0
+          - grimmory_admin_password is defined
+          - grimmory_admin_password | length > 0
+          - grimmory_admin_user is defined
+          - grimmory_admin_user | length > 0
+          - grimmory_subdomain is defined
+          - grimmory_subdomain | length > 0
+          - domain is defined
+          - domain | length > 0
+        fail_msg: "grimmory_db_password, grimmory_admin_password, grimmory_admin_user, grimmory_subdomain, and domain must be defined and non-empty"
+
+    - name: Check if Grimmory version file exists
+      ansible.builtin.stat:
+        path: "{{ grimmory_install_path }}/version"
+      register: grimmory_version_file
+
+    - name: Read installed Grimmory version
+      when: grimmory_version_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ grimmory_install_path }}/version"
+      register: grimmory_installed_version_raw
+
+    - name: Set installed Grimmory version fact
+      ansible.builtin.set_fact:
+        grimmory_installed_version: >-
+          {{ grimmory_installed_version_raw.content | b64decode | trim
+             if grimmory_version_file.stat.exists else '' }}
+
+    - name: Create Java installation directory
+      ansible.builtin.file:
+        path: "{{ grimmory_java_home }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Check if JRE is already installed
+      ansible.builtin.stat:
+        path: "{{ grimmory_java_home }}/bin/java"
+      register: grimmory_java_binary
+
+    - name: Download and extract Eclipse Temurin JRE
+      when: not grimmory_java_binary.stat.exists
+      ansible.builtin.unarchive:
+        src: "{{ grimmory_java_url }}"
+        dest: "{{ grimmory_java_home }}"
+        remote_src: true
+        extra_opts:
+          - --strip-components=1
+
+    - name: Install Grimmory dependencies
+      ansible.builtin.apt:
+        name:
+          - mariadb-server
+          - mariadb-client
+          - python3-pymysql
+        state: present
+        update_cache: true
+
+    - name: Start and enable MariaDB service
+      ansible.builtin.systemd_service:
+        name: mysql
+        enabled: true
+        state: started
+
+    - name: Create Grimmory database
+      community.mysql.mysql_db:
+        name: "{{ grimmory_db_name }}"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create Grimmory database user
+      no_log: true
+      community.mysql.mysql_user:
+        name: "{{ grimmory_db_user }}"
+        password: "{{ grimmory_db_password }}"
+        host: "{{ grimmory_db_host }}"
+        priv: "{{ grimmory_db_name }}.*:ALL"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create Grimmory system group
+      ansible.builtin.group:
+        name: "{{ grimmory_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create Grimmory system user
+      ansible.builtin.user:
+        name: "{{ grimmory_sys_user }}"
+        group: "{{ grimmory_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ grimmory_install_path }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create Grimmory installation directory
+      ansible.builtin.file:
+        path: "{{ grimmory_install_path }}"
+        state: directory
+        owner: "{{ grimmory_sys_user }}"
+        group: "{{ grimmory_sys_group }}"
+        mode: "0755"
+
+    - name: Create Grimmory data directory
+      ansible.builtin.file:
+        path: "{{ grimmory_data_path }}"
+        state: directory
+        owner: "{{ grimmory_sys_user }}"
+        group: "{{ grimmory_sys_group }}"
+        mode: "0755"
+
+    - name: Create Grimmory bookdrop directory
+      ansible.builtin.file:
+        path: "{{ grimmory_bookdrop_path }}"
+        state: directory
+        owner: "{{ grimmory_sys_user }}"
+        group: "{{ grimmory_sys_group }}"
+        mode: "0755"
+
+    - name: Download Grimmory JAR
+      when: grimmory_installed_version != grimmory_version
+      ansible.builtin.get_url:
+        url: "{{ grimmory_jar_url }}"
+        dest: "{{ grimmory_install_path }}/app.jar"
+        owner: "{{ grimmory_sys_user }}"
+        group: "{{ grimmory_sys_group }}"
+        mode: "0644"
+      notify: Restart grimmory
+
+    - name: Write installed version file
+      when: grimmory_installed_version != grimmory_version
+      ansible.builtin.copy:
+        content: "{{ grimmory_version }}"
+        dest: "{{ grimmory_install_path }}/version"
+        owner: "{{ grimmory_sys_user }}"
+        group: "{{ grimmory_sys_group }}"
+        mode: "0644"
+
+    - name: Deploy Grimmory environment file
+      ansible.builtin.template:
+        src: templates/grimmory.env.j2
+        dest: "{{ grimmory_install_path }}/.env"
+        owner: "{{ grimmory_sys_user }}"
+        group: "{{ grimmory_sys_group }}"
+        mode: "0600"
+      notify: Restart grimmory
+
+    - name: Deploy Grimmory systemd service file
+      ansible.builtin.template:
+        src: templates/grimmory.service.j2
+        dest: /etc/systemd/system/grimmory.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart grimmory
+
+    - name: Enable and start Grimmory service
+      ansible.builtin.systemd_service:
+        name: grimmory
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Wait for Grimmory to be ready
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ grimmory_port }}/api/v1/setup/status"
+        method: GET
+      register: grimmory_setup_status
+      until: grimmory_setup_status.status == 200
+      retries: 30
+      delay: 2
+
+    - name: Provision admin user
+      when: not grimmory_setup_status.json.data
+      no_log: true
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ grimmory_port }}/api/v1/setup"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ grimmory_admin_user }}"
+          name: "{{ grimmory_admin_name }}"
+          email: "{{ grimmory_admin_email }}"
+          password: "{{ grimmory_admin_password }}"
+        status_code: 200
+
+    - name: Deploy Grimmory Caddyfile
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ grimmory_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
+    - name: Ensure Cloudflare DNS A record exists for {{ grimmory_subdomain + '.' + domain }}
+      ansible.builtin.include_role:
+        name: dns_record
+      vars:
+        dns_record_subdomain: "{{ grimmory_subdomain }}"
+        dns_record_domain: "{{ domain }}"
+        dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"
