@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/sripwoud/auberge/compare/v0.8.0...v0.8.1) - 2026-04-05
+
+### Fixed
+
+- *(grimmory)* set APP_VERSION in env to show correct version in UI
+- *(grimmory)* raise systemd memory limits to 1200M
+- *(grimmory)* add systemd memory limits to prevent OOM
+- *(grimmory)* use fixed 768MB heap cap instead of RAM percentage
+
 ## [0.8.0](https://github.com/sripwoud/auberge/compare/v0.7.2...v0.8.0) - 2026-04-05
 
 ### Added
