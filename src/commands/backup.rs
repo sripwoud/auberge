@@ -1387,8 +1387,10 @@ fn load_restic_config() -> Result<(String, String)> {
         );
     }
     Ok((
-        config.get("restic_repository").unwrap(),
-        config.get("restic_password").unwrap(),
+        config
+            .get_resolved("restic_repository")?
+            .unwrap_or_default(),
+        config.get_resolved("restic_password")?.unwrap_or_default(),
     ))
 }
 
@@ -1411,6 +1413,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         .arg("--json")
         .env("RESTIC_REPOSITORY", &restic_repo)
         .env("RESTIC_PASSWORD", &restic_password)
+        .env_remove("RESTIC_PASSWORD_COMMAND")
         .output();
 
     let needs_init = match snapshots_check {
@@ -1434,6 +1437,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
             .arg("init")
             .env("RESTIC_REPOSITORY", &restic_repo)
             .env("RESTIC_PASSWORD", &restic_password)
+            .env_remove("RESTIC_PASSWORD_COMMAND")
             .output()
             .wrap_err("Failed to initialize restic repository")?;
 
@@ -1449,6 +1453,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         .arg(&backup_dir)
         .env("RESTIC_REPOSITORY", &restic_repo)
         .env("RESTIC_PASSWORD", &restic_password)
+        .env_remove("RESTIC_PASSWORD_COMMAND")
         .output()
         .wrap_err("Failed to run restic backup")?;
 
@@ -1485,7 +1490,8 @@ pub fn run_backup_prune(dry_run: bool) -> Result<()> {
         .arg("12")
         .arg("--prune")
         .env("RESTIC_REPOSITORY", &restic_repo)
-        .env("RESTIC_PASSWORD", &restic_password);
+        .env("RESTIC_PASSWORD", &restic_password)
+        .env_remove("RESTIC_PASSWORD_COMMAND");
 
     if dry_run {
         cmd.arg("--dry-run");
