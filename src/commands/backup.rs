@@ -7,6 +7,7 @@ use clap::Subcommand;
 use eyre::{Context, Result};
 use std::ffi::OsString;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Instant;
@@ -1487,6 +1488,20 @@ fn load_restic_config() -> Result<(String, String)> {
     ))
 }
 
+#[derive(serde::Deserialize)]
+#[serde(tag = "message_type", rename_all = "lowercase")]
+enum ResticMessage {
+    Status {
+        #[serde(default)]
+        total_bytes: u64,
+        #[serde(default)]
+        bytes_done: u64,
+    },
+    Summary {
+        snapshot_id: String,
+    },
+}
+
 pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -> Result<()> {
     let (restic_repo, restic_password) = load_restic_config()?;
 
@@ -1540,30 +1555,63 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         }
     }
 
-    spinner.set_message(format!("Backing up {}", backup_dir.display()));
-    let backup_output = Command::new("restic")
+    spinner.finish_and_clear();
+
+    let pb = output::progress_bar(&format!("Backing up {}", backup_dir.display()));
+    let mut child = Command::new("restic")
         .arg("backup")
+        .arg("--json")
         .arg(&backup_dir)
         .env("RESTIC_REPOSITORY", &restic_repo)
         .env("RESTIC_PASSWORD", &restic_password)
         .env_remove("RESTIC_PASSWORD_COMMAND")
-        .output()
+        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
         .wrap_err("Failed to run restic backup")?;
 
-    spinner.finish_and_clear();
-
-    if !backup_output.status.success() {
-        let stderr = String::from_utf8_lossy(&backup_output.stderr);
-        eyre::bail!("restic backup failed: {}", stderr.trim());
+    let mut snapshot_id: Option<String> = None;
+    let mut stderr_content: Vec<String> = Vec::new();
+    let mut length_set = false;
+    if let Some(stderr) = child.stderr.take() {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            let line = line.wrap_err("Failed to read restic output")?;
+            if let Ok(msg) = serde_json::from_str::<ResticMessage>(&line) {
+                match msg {
+                    ResticMessage::Status {
+                        total_bytes,
+                        bytes_done,
+                    } => {
+                        if !length_set && total_bytes > 0 {
+                            pb.set_length(total_bytes);
+                            length_set = true;
+                        }
+                        pb.set_position(bytes_done);
+                    }
+                    ResticMessage::Summary { snapshot_id: id } => {
+                        snapshot_id = Some(id);
+                    }
+                }
+            } else {
+                stderr_content.push(line);
+            }
+        }
     }
 
-    let stdout = String::from_utf8_lossy(&backup_output.stdout);
-    let snapshot_id = stdout
-        .lines()
-        .find(|line| line.contains("snapshot") && line.contains("saved"))
-        .unwrap_or("backup completed");
+    let status = child.wait().wrap_err("Failed to wait for restic backup")?;
+    pb.finish_and_clear();
 
-    output::success(&format!("Push complete: {}", snapshot_id.trim()));
+    if !status.success() {
+        if stderr_content.is_empty() {
+            eyre::bail!("restic backup failed");
+        } else {
+            eyre::bail!("restic backup failed: {}", stderr_content.join("\n"));
+        }
+    }
+
+    let snapshot_id = snapshot_id.as_deref().unwrap_or("unknown");
+    output::success(&format!("Push complete: snapshot {}", snapshot_id.trim()));
 
     Ok(())
 }

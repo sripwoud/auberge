@@ -104,6 +104,33 @@ pub fn spinner(msg: &str) -> ProgressBar {
     spinner
 }
 
+pub fn progress_bar(msg: &str) -> ProgressBar {
+    let pb = ProgressBar::new(0);
+
+    if should_use_colors() {
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template(
+                    "{msg}\n[{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} (ETA: {eta})",
+                )
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+    } else {
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template(
+                    "{msg}\n[{elapsed_precise}] [{wide_bar}] {bytes}/{total_bytes} (ETA: {eta})",
+                )
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+    }
+
+    pb.set_message(msg.to_string());
+    pb
+}
+
 pub fn format_duration(seconds: u64) -> String {
     if seconds < 60 {
         format!("{}s", seconds)
