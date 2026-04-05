@@ -1389,8 +1389,10 @@ fn load_restic_config() -> Result<(String, String)> {
     Ok((
         config
             .get_resolved("restic_repository")?
-            .unwrap_or_default(),
-        config.get_resolved("restic_password")?.unwrap_or_default(),
+            .ok_or_else(|| eyre::eyre!("restic_repository is missing or not a valid value"))?,
+        config
+            .get_resolved("restic_password")?
+            .ok_or_else(|| eyre::eyre!("restic_password is missing or not a valid value"))?,
     ))
 }
 

@@ -123,7 +123,9 @@ impl UserConfig {
 
     pub fn get_resolved(&self, key: &str) -> Result<Option<String>> {
         match self.get(key) {
-            Some(v) => resolve_value(&v).map(Some),
+            Some(v) => resolve_value(&v)
+                .wrap_err_with(|| format!("Failed to resolve config key '{key}'"))
+                .map(Some),
             None => Ok(None),
         }
     }
