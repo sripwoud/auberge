@@ -220,7 +220,11 @@ pub enum BackupCommands {
         ssh_key: Option<PathBuf>,
         #[arg(long, help = "Include music files in Navidrome backup (large, slow)")]
         include_music: bool,
-        #[arg(short = 'n', long, help = "Dry run (show what would be backed up)")]
+        #[arg(
+            short = 'n',
+            long,
+            help = "Dry run (runs create in preview mode, skips push/prune/cleanup)"
+        )]
         dry_run: bool,
         #[arg(short, long, help = "Show detailed progress and paths")]
         verbose: bool,
@@ -649,7 +653,13 @@ pub fn run_backup_sync(
     let staging_dir = resolve_backup_dir(&backup_root, Some(&host_name), None)
         .wrap_err("No staging directory found after create")?;
 
-    run_backup_push(Some(host_name), None)?;
+    let backup_id = staging_dir
+        .file_name()
+        .ok_or_else(|| eyre::eyre!("Staging directory has no final path component"))?
+        .to_string_lossy()
+        .into_owned();
+
+    run_backup_push(Some(host_name), Some(backup_id))?;
 
     if let Err(e) = run_backup_prune(false) {
         output::warn(&format!("Prune failed (push succeeded): {}", e));
