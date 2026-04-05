@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2](https://github.com/sripwoud/auberge/compare/v0.8.1...v0.8.2) - 2026-04-05
+
+### Added
+
+- *(cli)* add `sync` subcommand for full backup pipeline ([#217](https://github.com/sripwoud/auberge/pull/217))
+
+### Fixed
+
+- *(cli)* resolve `!` commands in restic config values ([#218](https://github.com/sripwoud/auberge/pull/218))
+
 ## [0.8.1](https://github.com/sripwoud/auberge/compare/v0.8.0...v0.8.1) - 2026-04-05
 
 ### Fixed
