@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/sripwoud/auberge/compare/v0.7.2...v0.8.0) - 2026-04-05
+
+### Added
+
+- [**breaking**] replace booklore with grimmory ([#214](https://github.com/sripwoud/auberge/pull/214))
+
+### Fixed
+
+- *(grimmory)* let gradle processResources handle frontend assets
+- *(grimmory)* clear static dir before copying frontend build output
+- *(grimmory)* fix build workflow for v2.3.0 source structure
+
 ## [0.7.2](https://github.com/sripwoud/auberge/compare/v0.7.1...v0.7.2) - 2026-03-20
 
 ### Fixed
