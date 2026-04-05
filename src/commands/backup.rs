@@ -198,6 +198,33 @@ pub enum BackupCommands {
         #[arg(short, long, help = "Show detailed progress and paths")]
         verbose: bool,
     },
+    #[command(
+        alias = "s",
+        about = "Create backup, push to restic, prune, and clean up local staging"
+    )]
+    Sync {
+        #[arg(short = 'H', long, help = "Target host")]
+        host: Option<String>,
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            help = "Apps to backup (baikal,bichon,freshrss,headscale,navidrome,calibre,webdav,yourls,paperless). Default: all"
+        )]
+        apps: Option<Vec<String>>,
+        #[arg(
+            short = 'k',
+            long,
+            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+        )]
+        ssh_key: Option<PathBuf>,
+        #[arg(long, help = "Include music files in Navidrome backup (large, slow)")]
+        include_music: bool,
+        #[arg(short = 'n', long, help = "Dry run (show what would be backed up)")]
+        dry_run: bool,
+        #[arg(short, long, help = "Show detailed progress and paths")]
+        verbose: bool,
+    },
     #[command(alias = "ls", about = "List available backups")]
     List {
         #[arg(short = 'H', long, help = "Filter by host")]
@@ -587,6 +614,80 @@ pub fn run_backup_create(
     if failed > 0 {
         eyre::bail!("{} backup(s) failed", failed);
     }
+
+    Ok(())
+}
+
+pub fn run_backup_sync(
+    host: Option<String>,
+    apps: Option<Vec<String>>,
+    ssh_key: Option<PathBuf>,
+    include_music: bool,
+    dry_run: bool,
+    verbose: bool,
+) -> Result<()> {
+    output::info("Starting backup sync pipeline");
+
+    run_backup_create(
+        host.clone(),
+        apps,
+        None,
+        ssh_key,
+        include_music,
+        dry_run,
+        verbose,
+    )?;
+
+    if dry_run {
+        output::info("Dry run: would next push to restic, prune, and clean up local staging");
+        return Ok(());
+    }
+
+    run_backup_push(host.clone(), None)?;
+
+    run_backup_prune(false)?;
+
+    let backup_root = default_backup_dir();
+    let host_dir = match &host {
+        Some(h) => backup_root.join(h),
+        None => {
+            let mut hosts: Vec<_> = fs::read_dir(&backup_root)?
+                .filter_map(Result::ok)
+                .filter(|e| e.path().is_dir())
+                .collect();
+            if hosts.len() == 1 {
+                hosts.remove(0).path()
+            } else {
+                output::warn("Multiple hosts found, skipping local cleanup");
+                output::success("Sync complete (local staging retained)");
+                return Ok(());
+            }
+        }
+    };
+
+    let mut timestamps: Vec<_> = fs::read_dir(&host_dir)?
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_dir() && !e.path().is_symlink())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            name.contains('_') && name.starts_with("20")
+        })
+        .collect();
+
+    timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
+
+    if let Some(latest) = timestamps.first() {
+        let staging_dir = latest.path();
+        let size = calculate_dir_size(&staging_dir).unwrap_or(0);
+        fs::remove_dir_all(&staging_dir)?;
+        output::success(&format!(
+            "Cleaned up local staging: {} freed ({})",
+            output::format_size(size),
+            staging_dir.display()
+        ));
+    }
+
+    output::success("Sync complete: create → push → prune → cleanup");
 
     Ok(())
 }
@@ -2292,6 +2393,60 @@ mod tests {
         let e_arg = session.rsync_e_arg();
         assert!(!e_arg.contains("-i /home/user/my keys/id_ed25519"));
         assert!(e_arg.contains("'/home/user/my keys/id_ed25519'"));
+    }
+
+    #[test]
+    fn test_sync_variant_exists() {
+        let _sync = BackupCommands::Sync {
+            host: Some("myserver".to_string()),
+            apps: None,
+            ssh_key: None,
+            include_music: false,
+            dry_run: true,
+            verbose: false,
+        };
+    }
+
+    #[test]
+    fn test_sync_cleanup_removes_staging_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        let ts_dir = host_dir.join("2026-04-06_03-00-00");
+        fs::create_dir_all(&ts_dir).unwrap();
+        fs::write(ts_dir.join("data.bin"), vec![0u8; 1024]).unwrap();
+
+        assert!(ts_dir.exists());
+        let size = calculate_dir_size(&ts_dir).unwrap();
+        assert_eq!(size, 1024);
+        fs::remove_dir_all(&ts_dir).unwrap();
+        assert!(!ts_dir.exists());
+    }
+
+    #[test]
+    fn test_sync_cleanup_skips_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        let ts_dir = host_dir.join("2026-04-06_03-00-00");
+        fs::create_dir_all(&ts_dir).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&ts_dir, host_dir.join("latest")).unwrap();
+
+        let mut timestamps: Vec<_> = fs::read_dir(&host_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.path().is_dir() && !e.path().is_symlink())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name.contains('_') && name.starts_with("20")
+            })
+            .collect();
+        timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
+
+        assert_eq!(timestamps.len(), 1);
+        assert_eq!(
+            timestamps[0].file_name().to_string_lossy(),
+            "2026-04-06_03-00-00"
+        );
     }
 
     #[test]

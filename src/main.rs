@@ -14,7 +14,7 @@ use clap::{Parser, Subcommand};
 use commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ansible_run};
 use commands::backup::{
     BackupCommands, RestoreOptions, run_backup_create, run_backup_list, run_backup_prune,
-    run_backup_push, run_backup_restore, run_export_opml, run_import_opml,
+    run_backup_push, run_backup_restore, run_backup_sync, run_export_opml, run_import_opml,
 };
 use commands::config_cmd::{
     ConfigCommands, run_config_edit, run_config_get, run_config_init, run_config_list,
@@ -141,6 +141,14 @@ async fn main() -> Result<()> {
                 dry_run,
                 verbose,
             } => run_backup_create(host, apps, dest, ssh_key, include_music, dry_run, verbose),
+            BackupCommands::Sync {
+                host,
+                apps,
+                ssh_key,
+                include_music,
+                dry_run,
+                verbose,
+            } => run_backup_sync(host, apps, ssh_key, include_music, dry_run, verbose),
             BackupCommands::List { host, app, format } => run_backup_list(host, app, format),
             BackupCommands::Restore {
                 backup_id,
