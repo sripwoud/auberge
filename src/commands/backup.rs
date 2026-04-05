@@ -198,6 +198,37 @@ pub enum BackupCommands {
         #[arg(short, long, help = "Show detailed progress and paths")]
         verbose: bool,
     },
+    #[command(
+        alias = "s",
+        about = "Create backup, push to restic, prune, and clean up local staging"
+    )]
+    Sync {
+        #[arg(short = 'H', long, help = "Target host")]
+        host: Option<String>,
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            help = "Apps to backup (baikal,bichon,freshrss,headscale,navidrome,calibre,webdav,yourls,paperless). Default: all"
+        )]
+        apps: Option<Vec<String>>,
+        #[arg(
+            short = 'k',
+            long,
+            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+        )]
+        ssh_key: Option<PathBuf>,
+        #[arg(long, help = "Include music files in Navidrome backup (large, slow)")]
+        include_music: bool,
+        #[arg(
+            short = 'n',
+            long,
+            help = "Dry run (runs create in preview mode, skips push/prune/cleanup)"
+        )]
+        dry_run: bool,
+        #[arg(short, long, help = "Show detailed progress and paths")]
+        verbose: bool,
+    },
     #[command(alias = "ls", about = "List available backups")]
     List {
         #[arg(short = 'H', long, help = "Filter by host")]
@@ -588,6 +619,66 @@ pub fn run_backup_create(
         eyre::bail!("{} backup(s) failed", failed);
     }
 
+    Ok(())
+}
+
+pub fn run_backup_sync(
+    host: Option<String>,
+    apps: Option<Vec<String>>,
+    ssh_key: Option<PathBuf>,
+    include_music: bool,
+    dry_run: bool,
+    verbose: bool,
+) -> Result<()> {
+    let resolved = get_host_or_select(host)?;
+    let host_name = resolved.name.clone();
+    output::info(&format!("Starting backup sync pipeline for {}", host_name));
+
+    run_backup_create(
+        Some(host_name.clone()),
+        apps,
+        None,
+        ssh_key,
+        include_music,
+        dry_run,
+        verbose,
+    )?;
+
+    if dry_run {
+        output::info("Dry run: would next push to restic, prune, and clean up local staging");
+        return Ok(());
+    }
+
+    let backup_root = default_backup_dir();
+    let staging_dir = resolve_backup_dir(&backup_root, Some(&host_name), None)
+        .wrap_err("No staging directory found after create")?;
+
+    let backup_id = staging_dir
+        .file_name()
+        .ok_or_else(|| eyre::eyre!("Staging directory has no final path component"))?
+        .to_string_lossy()
+        .into_owned();
+
+    run_backup_push(Some(host_name), Some(backup_id))?;
+
+    if let Err(e) = run_backup_prune(false) {
+        output::warn(&format!("Prune failed (push succeeded): {}", e));
+    }
+
+    cleanup_staging_dir(&staging_dir)?;
+
+    output::success("Sync complete: create \u{2192} push \u{2192} prune \u{2192} cleanup");
+
+    Ok(())
+}
+
+fn cleanup_staging_dir(staging_dir: &Path) -> Result<()> {
+    fs::remove_dir_all(staging_dir)
+        .wrap_err_with(|| format!("Failed to clean up staging dir: {}", staging_dir.display()))?;
+    output::success(&format!(
+        "Cleaned up local staging ({})",
+        staging_dir.display()
+    ));
     Ok(())
 }
 
@@ -2300,6 +2391,54 @@ mod tests {
         let e_arg = session.rsync_e_arg();
         assert!(!e_arg.contains("-i /home/user/my keys/id_ed25519"));
         assert!(e_arg.contains("'/home/user/my keys/id_ed25519'"));
+    }
+
+    #[test]
+    fn test_sync_variant_exists() {
+        let _sync = BackupCommands::Sync {
+            host: Some("myserver".to_string()),
+            apps: None,
+            ssh_key: None,
+            include_music: false,
+            dry_run: true,
+            verbose: false,
+        };
+    }
+
+    #[test]
+    fn test_cleanup_staging_dir_removes_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let staging = tmp.path().join("2026-04-06_03-00-00");
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("data.bin"), vec![0u8; 1024]).unwrap();
+
+        assert!(staging.exists());
+        cleanup_staging_dir(&staging).unwrap();
+        assert!(!staging.exists());
+    }
+
+    #[test]
+    fn test_cleanup_staging_dir_fails_on_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let staging = tmp.path().join("nonexistent");
+        assert!(cleanup_staging_dir(&staging).is_err());
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_selects_newest_for_cleanup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir_all(host_dir.join("2026-04-05_03-00-00")).unwrap();
+        fs::create_dir_all(host_dir.join("2026-04-06_03-00-00")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            host_dir.join("2026-04-06_03-00-00"),
+            host_dir.join("latest"),
+        )
+        .unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), Some("myserver"), None).unwrap();
+        assert_eq!(result, host_dir.join("2026-04-06_03-00-00"));
     }
 
     #[test]
