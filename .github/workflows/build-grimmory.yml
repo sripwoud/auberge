@@ -34,9 +34,8 @@ jobs:
       - run: npm run build -- --configuration=production
         working-directory: grimmory-${{ inputs.version }}/booklore-ui
 
-      - run: |
-          rm -rf grimmory-${{ inputs.version }}/booklore-api/src/main/resources/static
-          cp -r grimmory-${{ inputs.version }}/booklore-ui/dist/grimmory/browser grimmory-${{ inputs.version }}/booklore-api/src/main/resources/static
+      - run: rm -rf src/main/resources/static
+        working-directory: grimmory-${{ inputs.version }}/booklore-api
 
       - run: ./gradlew clean build -x test --no-daemon
         working-directory: grimmory-${{ inputs.version }}/booklore-api
