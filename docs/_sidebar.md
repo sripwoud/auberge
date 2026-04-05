@@ -50,15 +50,18 @@
     - [remove](cli-reference/host/remove.md)
   - Ansible
     - [run](cli-reference/ansible/run.md)
-    - [check](cli-reference/ansible/check.md)
     - [bootstrap](cli-reference/ansible/bootstrap.md)
   - Backup
     - [create](cli-reference/backup/create.md)
     - [list](cli-reference/backup/list.md)
     - [restore](cli-reference/backup/restore.md)
+    - [push](cli-reference/backup/push.md)
+    - [prune](cli-reference/backup/prune.md)
     - [sync](cli-reference/backup/sync.md)
     - [export-opml](cli-reference/backup/export-opml.md)
     - [import-opml](cli-reference/backup/import-opml.md)
+  - Config
+    - [overview](cli-reference/config/overview.md)
   - SSH
     - [keygen](cli-reference/ssh/keygen.md)
     - [add-key](cli-reference/ssh/add-key.md)
@@ -93,6 +96,7 @@
     - [FreshRSS](applications/apps/freshrss.md)
     - [Navidrome](applications/apps/navidrome.md)
     - [Calibre](applications/apps/calibre.md)
+    - [Grimmory](applications/apps/grimmory.md)
     - [WebDAV](applications/apps/webdav.md)
     - [Syncthing](applications/apps/syncthing.md)
     - [YOURLS](applications/apps/yourls.md)
