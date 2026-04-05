@@ -121,6 +121,13 @@ impl UserConfig {
         self.table.get(key).and_then(value_to_string)
     }
 
+    pub fn get_resolved(&self, key: &str) -> Result<Option<String>> {
+        match self.get(key) {
+            Some(v) => resolve_value(&v).map(Some),
+            None => Ok(None),
+        }
+    }
+
     pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
         self.table
             .insert(key.to_string(), toml::Value::String(value.to_string()));
@@ -464,6 +471,62 @@ mod tests {
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "secret");
+    }
+
+    #[test]
+    fn test_get_resolved_plain_value() {
+        let toml_str = r#"
+            domain = "example.com"
+            restic_password = "secret123"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        assert_eq!(
+            config.get_resolved("domain").unwrap().unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            config.get_resolved("restic_password").unwrap().unwrap(),
+            "secret123"
+        );
+        assert!(config.get_resolved("nonexistent").unwrap().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_resolved_shell_command() {
+        let toml_str = r#"
+            restic_password = "!echo resolved_secret"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        assert_eq!(
+            config.get_resolved("restic_password").unwrap().unwrap(),
+            "resolved_secret"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_resolved_escaped_bang() {
+        let toml_str = r#"
+            value = "!!literal-bang"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        assert_eq!(
+            config.get_resolved("value").unwrap().unwrap(),
+            "!literal-bang"
+        );
     }
 
     #[test]
