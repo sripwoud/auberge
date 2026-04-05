@@ -73,6 +73,12 @@ auberge config set restic_password "your-encryption-passphrase"
 - `restic_repository` - the rclone remote path in the format `rclone:<remote-name>:<folder>`. This tells restic where to store snapshots.
 - `restic_password` - restic's own encryption passphrase. This is **not** your Filen password — it is a separate key restic uses to encrypt data before uploading. Choose a strong passphrase and store it in a password manager. Losing it means losing access to all snapshots.
 
+Both values support `!` command syntax to fetch from a password manager (see [Secrets Management](../../configuration/secrets.md#password-commands)):
+
+```bash
+auberge config set restic_password '!pass show auberge/restic'
+```
+
 The repository is initialized automatically on first push.
 
 ## Full Workflow

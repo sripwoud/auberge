@@ -38,7 +38,7 @@ See `config.example.toml` for the complete list.
 
 ## Password Commands
 
-Values prefixed with `!` are treated as shell commands. At deploy time, Auberge runs the command via `sh -c` and uses the trimmed stdout as the actual value. The command is **not** evaluated at `config set` time.
+Values prefixed with `!` are treated as shell commands. When a config value is consumed (during deploy, backup, or other operations), Auberge runs the command via `sh -c` and uses the trimmed stdout as the actual value. The command is **not** evaluated at `config set` time.
 
 **Value formats:**
 
