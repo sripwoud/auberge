@@ -38,7 +38,7 @@ See `config.example.toml` for the complete list.
 
 ## Password Commands
 
-Values prefixed with `!` are treated as shell commands. At deploy time, Auberge runs the command via `sh -c` and uses the trimmed stdout as the actual value. The command is **not** evaluated at `config set` time.
+Values prefixed with `!` are treated as shell commands. When a config value is consumed (during deploy, backup, or other operations), Auberge runs the command via `sh -c` and uses the trimmed stdout as the actual value. The command is **not** evaluated at `config set` time.
 
 **Value formats:**
 
@@ -56,7 +56,7 @@ cloudflare_dns_api_token = "secret123"
 some_literal_bang = "!!not-a-cmd"
 ```
 
-**Requirements:** the command must exit 0 and produce non-empty UTF-8 output. Deployment fails with a clear error if either condition is not met.
+**Requirements:** the command must exit 0 and produce non-empty UTF-8 output. The operation fails with a clear error if either condition is not met.
 
 ## Viewing Config
 
