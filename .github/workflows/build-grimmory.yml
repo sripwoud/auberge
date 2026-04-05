@@ -24,19 +24,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
-
-      - run: corepack enable
+          node-version: "22"
 
       - run: curl -fsSL "https://github.com/grimmory-tools/grimmory/archive/refs/tags/v${{ inputs.version }}.tar.gz" | tar -xz
 
-      - run: yarn install --immutable
-        working-directory: grimmory-${{ inputs.version }}/frontend
+      - run: npm ci --force
+        working-directory: grimmory-${{ inputs.version }}/booklore-ui
 
-      - run: yarn build --configuration=production
-        working-directory: grimmory-${{ inputs.version }}/frontend
+      - run: npm run build -- --configuration=production
+        working-directory: grimmory-${{ inputs.version }}/booklore-ui
 
-      - run: cp -r grimmory-${{ inputs.version }}/frontend/dist/grimmory/browser/. grimmory-${{ inputs.version }}/booklore-api/src/main/resources/static/
+      - run: cp -r grimmory-${{ inputs.version }}/booklore-ui/dist/grimmory/browser/. grimmory-${{ inputs.version }}/booklore-api/src/main/resources/static/
 
       - run: ./gradlew clean build -x test --no-daemon
         working-directory: grimmory-${{ inputs.version }}/booklore-api
