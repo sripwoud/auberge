@@ -16,7 +16,7 @@ grimmory_admin_email: "{{ grimmory_admin_user }}@{{ domain }}"
 grimmory_github_repo: grimmory-tools/grimmory
 grimmory_version: "2.3.0"
 grimmory_jar_url: "https://github.com/sripwoud/auberge/releases/download/grimmory/v{{ grimmory_version }}/grimmory-api.jar"
-grimmory_jvm_opts: "-XX:+UseShenandoahGC -XX:MaxRAMPercentage=60 -XX:InitialRAMPercentage=8 -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError"
+grimmory_jvm_opts: "-Xmx768m -XX:+UseShenandoahGC -XX:+ExitOnOutOfMemoryError"
 
 grimmory_java_major: "25"
 grimmory_java_home: "/opt/java/temurin-{{ grimmory_java_major }}-jre"
