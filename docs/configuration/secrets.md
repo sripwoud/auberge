@@ -56,7 +56,7 @@ cloudflare_dns_api_token = "secret123"
 some_literal_bang = "!!not-a-cmd"
 ```
 
-**Requirements:** the command must exit 0 and produce non-empty UTF-8 output. Deployment fails with a clear error if either condition is not met.
+**Requirements:** the command must exit 0 and produce non-empty UTF-8 output. The operation fails with a clear error if either condition is not met.
 
 ## Viewing Config
 
