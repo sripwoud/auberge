@@ -13,7 +13,7 @@ auberge backup sync [OPTIONS]
 
 - `-H, --host` - Target host (interactive if omitted)
 - `-a, --apps` - Apps to backup (comma-separated, default: all)
-- `-k, --ssh-key` - SSH private key (default: ~/.ssh/identities/{user}\_{host})
+- `-k, --ssh-key` - SSH private key (default: ~/.ssh/identities/{user}_{host})
 - `--include-music` - Include music files in Navidrome backup
 - `-n, --dry-run` - Preview the full pipeline without making changes
 - `-v, --verbose` - Show detailed progress

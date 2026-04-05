@@ -626,10 +626,12 @@ pub fn run_backup_sync(
     dry_run: bool,
     verbose: bool,
 ) -> Result<()> {
-    output::info("Starting backup sync pipeline");
+    let resolved = get_host_or_select(host)?;
+    let host_name = resolved.name.clone();
+    output::info(&format!("Starting backup sync pipeline for {}", host_name));
 
     run_backup_create(
-        host.clone(),
+        Some(host_name.clone()),
         apps,
         None,
         ssh_key,
@@ -643,52 +645,30 @@ pub fn run_backup_sync(
         return Ok(());
     }
 
-    run_backup_push(host.clone(), None)?;
-
-    run_backup_prune(false)?;
-
     let backup_root = default_backup_dir();
-    let host_dir = match &host {
-        Some(h) => backup_root.join(h),
-        None => {
-            let mut hosts: Vec<_> = fs::read_dir(&backup_root)?
-                .filter_map(Result::ok)
-                .filter(|e| e.path().is_dir())
-                .collect();
-            if hosts.len() == 1 {
-                hosts.remove(0).path()
-            } else {
-                output::warn("Multiple hosts found, skipping local cleanup");
-                output::success("Sync complete (local staging retained)");
-                return Ok(());
-            }
-        }
-    };
+    let staging_dir = resolve_backup_dir(&backup_root, Some(&host_name), None)
+        .wrap_err("No staging directory found after create")?;
 
-    let mut timestamps: Vec<_> = fs::read_dir(&host_dir)?
-        .filter_map(Result::ok)
-        .filter(|e| e.path().is_dir() && !e.path().is_symlink())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            name.contains('_') && name.starts_with("20")
-        })
-        .collect();
+    run_backup_push(Some(host_name), None)?;
 
-    timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
-
-    if let Some(latest) = timestamps.first() {
-        let staging_dir = latest.path();
-        let size = calculate_dir_size(&staging_dir).unwrap_or(0);
-        fs::remove_dir_all(&staging_dir)?;
-        output::success(&format!(
-            "Cleaned up local staging: {} freed ({})",
-            output::format_size(size),
-            staging_dir.display()
-        ));
+    if let Err(e) = run_backup_prune(false) {
+        output::warn(&format!("Prune failed (push succeeded): {}", e));
     }
 
-    output::success("Sync complete: create → push → prune → cleanup");
+    cleanup_staging_dir(&staging_dir)?;
 
+    output::success("Sync complete: create \u{2192} push \u{2192} prune \u{2192} cleanup");
+
+    Ok(())
+}
+
+fn cleanup_staging_dir(staging_dir: &Path) -> Result<()> {
+    fs::remove_dir_all(staging_dir)
+        .wrap_err_with(|| format!("Failed to clean up staging dir: {}", staging_dir.display()))?;
+    output::success(&format!(
+        "Cleaned up local staging ({})",
+        staging_dir.display()
+    ));
     Ok(())
 }
 
@@ -2408,45 +2388,39 @@ mod tests {
     }
 
     #[test]
-    fn test_sync_cleanup_removes_staging_dir() {
+    fn test_cleanup_staging_dir_removes_directory() {
         let tmp = tempfile::tempdir().unwrap();
-        let host_dir = tmp.path().join("myserver");
-        let ts_dir = host_dir.join("2026-04-06_03-00-00");
-        fs::create_dir_all(&ts_dir).unwrap();
-        fs::write(ts_dir.join("data.bin"), vec![0u8; 1024]).unwrap();
+        let staging = tmp.path().join("2026-04-06_03-00-00");
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("data.bin"), vec![0u8; 1024]).unwrap();
 
-        assert!(ts_dir.exists());
-        let size = calculate_dir_size(&ts_dir).unwrap();
-        assert_eq!(size, 1024);
-        fs::remove_dir_all(&ts_dir).unwrap();
-        assert!(!ts_dir.exists());
+        assert!(staging.exists());
+        cleanup_staging_dir(&staging).unwrap();
+        assert!(!staging.exists());
     }
 
     #[test]
-    fn test_sync_cleanup_skips_symlinks() {
+    fn test_cleanup_staging_dir_fails_on_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let staging = tmp.path().join("nonexistent");
+        assert!(cleanup_staging_dir(&staging).is_err());
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_selects_newest_for_cleanup() {
         let tmp = tempfile::tempdir().unwrap();
         let host_dir = tmp.path().join("myserver");
-        let ts_dir = host_dir.join("2026-04-06_03-00-00");
-        fs::create_dir_all(&ts_dir).unwrap();
+        fs::create_dir_all(host_dir.join("2026-04-05_03-00-00")).unwrap();
+        fs::create_dir_all(host_dir.join("2026-04-06_03-00-00")).unwrap();
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&ts_dir, host_dir.join("latest")).unwrap();
+        std::os::unix::fs::symlink(
+            host_dir.join("2026-04-06_03-00-00"),
+            host_dir.join("latest"),
+        )
+        .unwrap();
 
-        let mut timestamps: Vec<_> = fs::read_dir(&host_dir)
-            .unwrap()
-            .filter_map(Result::ok)
-            .filter(|e| e.path().is_dir() && !e.path().is_symlink())
-            .filter(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
-                name.contains('_') && name.starts_with("20")
-            })
-            .collect();
-        timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
-
-        assert_eq!(timestamps.len(), 1);
-        assert_eq!(
-            timestamps[0].file_name().to_string_lossy(),
-            "2026-04-06_03-00-00"
-        );
+        let result = resolve_backup_dir(tmp.path(), Some("myserver"), None).unwrap();
+        assert_eq!(result, host_dir.join("2026-04-06_03-00-00"));
     }
 
     #[test]

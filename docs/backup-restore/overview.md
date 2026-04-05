@@ -84,7 +84,7 @@ Local backups can be pushed to an offsite restic repository for disaster recover
 2. Push it offsite with `auberge backup push`
 3. Apply retention policies with `auberge backup prune` (7 daily, 4 weekly, 12 monthly)
 
-For automated daily backups, use `auberge backup sync` which runs the full pipeline (create → push → prune → cleanup) in one command and removes local staging after a successful push. See [backup sync](../cli-reference/backup/sync.md).
+For automated daily backups, use `auberge backup sync` which runs the full pipeline (create → push → prune → cleanup) in one command and removes local staging after a successful push. Prune failures are non-fatal. See [backup sync](../cli-reference/backup/sync.md).
 
 For the full end-to-end setup guide (installing dependencies, configuring rclone, setting auberge config), see [backup push](../cli-reference/backup/push.md#setup).
 
