@@ -472,6 +472,71 @@ pub fn run_with_stdout_progress(
     })
 }
 
+pub fn run_with_cr_stdout_progress(
+    label: &str,
+    cmd: &mut Command,
+    pb: &ProgressBar,
+    mut line_handler: impl FnMut(&str, &ProgressBar),
+) -> Result<ProgressResult> {
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let verbose = is_verbose();
+
+    const MAX_LINES: usize = 20;
+
+    let stderr_tail: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let stderr_tail_clone = Arc::clone(&stderr_tail);
+    let label_owned = label.to_owned();
+
+    std::thread::scope(|s| {
+        s.spawn(move || {
+            for line_result in BufReader::new(stderr).lines() {
+                let Ok(line) = line_result else { continue };
+                if verbose {
+                    emit_subprocess_line(&label_owned, &line);
+                }
+                let mut tail = stderr_tail_clone.lock().unwrap();
+                tail.push(line);
+                if tail.len() > MAX_LINES {
+                    tail.remove(0);
+                }
+            }
+        });
+
+        let mut reader = BufReader::new(stdout);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            match reader.read_until(b'\r', &mut buf) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+            while buf.last() == Some(&b'\r') || buf.last() == Some(&b'\n') {
+                buf.pop();
+            }
+            let line = String::from_utf8_lossy(&buf);
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if verbose {
+                emit_subprocess_line(label, trimmed);
+            }
+            line_handler(trimmed, pb);
+        }
+    });
+
+    let status = child.wait().wrap_err("failed to wait on subprocess")?;
+    let last_stderr = stderr_tail.lock().unwrap().join("\n");
+    Ok(ProgressResult {
+        status,
+        last_stderr,
+    })
+}
+
 pub fn parse_rsync_progress(line: &str) -> Option<RsyncProgress> {
     let line = line.trim_end_matches('\r');
     let fields: Vec<&str> = line.split_whitespace().collect();
@@ -759,6 +824,45 @@ mod tests {
 
         assert!(!result.status.success());
         assert!(result.last_stderr.contains("output details"));
+    }
+
+    #[test]
+    fn run_with_cr_stdout_progress_splits_on_cr() {
+        let pb = ProgressBar::hidden();
+        let lines_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let lines_clone = std::sync::Arc::clone(&lines_seen);
+
+        let result = run_with_cr_stdout_progress(
+            "test",
+            Command::new("printf").arg("update1\rupdate2\rupdate3\n"),
+            &pb,
+            move |line, _pb| {
+                lines_clone.lock().unwrap().push(line.to_string());
+            },
+        )
+        .unwrap();
+
+        assert!(result.status.success());
+        let seen = lines_seen.lock().unwrap();
+        assert_eq!(*seen, vec!["update1", "update2", "update3"]);
+    }
+
+    #[test]
+    fn run_with_cr_stdout_progress_captures_stderr_on_failure() {
+        let pb = ProgressBar::hidden();
+
+        let result = run_with_cr_stdout_progress(
+            "test",
+            Command::new("sh")
+                .arg("-c")
+                .arg("echo err_detail >&2; exit 1"),
+            &pb,
+            |_line, _pb| {},
+        )
+        .unwrap();
+
+        assert!(!result.status.success());
+        assert!(result.last_stderr.contains("err_detail"));
     }
 
     #[test]

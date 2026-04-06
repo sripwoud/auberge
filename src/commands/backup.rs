@@ -1384,8 +1384,10 @@ fn rsync_to_remote(
             .arg(parent_dir),
     );
 
-    let mut cmd = Command::new("rsync");
-    cmd.arg("-az")
+    let mut cmd = Command::new("stdbuf");
+    cmd.arg("-o0")
+        .arg("rsync")
+        .arg("-az")
         .arg("--delete")
         .arg("--info=progress2")
         .arg("--rsync-path=sudo rsync");
@@ -1399,7 +1401,7 @@ fn rsync_to_remote(
         .arg(format!("{}/", local_source.display()))
         .arg(format!("{}@{}:{}", host.user, host.address, remote_path));
 
-    let result = output::run_with_stdout_progress("rsync", &mut cmd, pb, |line, pb| {
+    let result = output::run_with_cr_stdout_progress("rsync", &mut cmd, pb, |line, pb| {
         if let Some(p) = output::parse_rsync_progress(line) {
             if pb.length().is_none() {
                 output::set_percent_style(pb);
@@ -1896,11 +1898,10 @@ fn backup_app(
 
     let backup_size = calculate_dir_size(&app_backup_dir)?;
 
-    if output::is_verbose() {
-        pb.finish_and_clear();
-    } else {
-        pb.finish_with_message(format!(
-            "  ✓ {} ({})",
+    pb.finish_and_clear();
+    if !output::is_verbose() {
+        output::success(&format!(
+            "{} ({})",
             config.name,
             output::format_size(backup_size)
         ));
@@ -2108,8 +2109,10 @@ fn rsync_from_remote(
     pb.set_position(0);
     pb.set_prefix(String::new());
     let session = SshSession::new(host, ssh_key);
-    let mut cmd = Command::new("rsync");
-    cmd.arg("-az")
+    let mut cmd = Command::new("stdbuf");
+    cmd.arg("-o0")
+        .arg("rsync")
+        .arg("-az")
         .arg("--relative")
         .arg("--info=progress2")
         .arg("--rsync-path=sudo rsync");
@@ -2123,7 +2126,7 @@ fn rsync_from_remote(
         .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
         .arg(local_dest);
 
-    let result = output::run_with_stdout_progress("rsync", &mut cmd, pb, |line, pb| {
+    let result = output::run_with_cr_stdout_progress("rsync", &mut cmd, pb, |line, pb| {
         if let Some(p) = output::parse_rsync_progress(line) {
             if pb.length().is_none() {
                 output::set_percent_style(pb);
