@@ -320,6 +320,24 @@ pub fn progress_bar(msg: &str, total_bytes: Option<u64>) -> ProgressBar {
     }
 }
 
+pub fn set_bytes_style(pb: &ProgressBar) {
+    if should_use_colors() {
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner} {msg} [{bar:40}] {bytes}/{total_bytes} ({eta})")
+                .unwrap()
+                .progress_chars("█▉▊▋▌▍▎▏ "),
+        );
+    } else {
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{msg} [{bar:40}] {bytes}/{total_bytes} ({eta})")
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+    }
+}
+
 pub fn set_percent_style(pb: &ProgressBar) {
     if should_use_colors() {
         pb.set_style(
@@ -601,5 +619,46 @@ mod tests {
     #[test]
     fn parse_rsync_too_few_fields_returns_none() {
         assert!(parse_rsync_progress("1234 42%").is_none());
+    }
+
+    #[test]
+    fn run_with_progress_invokes_handler_for_each_stderr_line() {
+        let pb = ProgressBar::hidden();
+        let lines_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let lines_clone = std::sync::Arc::clone(&lines_seen);
+
+        let result = run_with_progress(
+            "test",
+            Command::new("sh")
+                .arg("-c")
+                .arg("echo line1 >&2; echo line2 >&2; echo line3 >&2"),
+            &pb,
+            move |line, _pb| {
+                lines_clone.lock().unwrap().push(line.to_string());
+            },
+        )
+        .unwrap();
+
+        assert!(result.status.success());
+        let seen = lines_seen.lock().unwrap();
+        assert_eq!(*seen, vec!["line1", "line2", "line3"]);
+    }
+
+    #[test]
+    fn run_with_progress_captures_last_stderr() {
+        let pb = ProgressBar::hidden();
+
+        let result = run_with_progress(
+            "test",
+            Command::new("sh")
+                .arg("-c")
+                .arg("echo error details >&2; exit 1"),
+            &pb,
+            |_line, _pb| {},
+        )
+        .unwrap();
+
+        assert!(!result.status.success());
+        assert!(result.last_stderr.contains("error details"));
     }
 }

@@ -1604,15 +1604,18 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         &pb,
         |line, pb| match output::parse_restic_message(line) {
             Some(output::ResticMessage::Status(s)) => {
-                if let Some(total) = s.total_bytes {
-                    pb.set_length(total);
-                }
-                if let Some(done) = s.bytes_done {
+                if let (Some(total), Some(done)) = (s.total_bytes, s.bytes_done) {
+                    if pb.length() != Some(total) {
+                        output::set_bytes_style(pb);
+                        pb.set_length(total);
+                    }
                     pb.set_position(done);
                 } else {
-                    pb.set_position(
-                        (s.percent_done * pb.length().unwrap_or(1_000_000) as f64) as u64,
-                    );
+                    if pb.length() != Some(100) {
+                        output::set_percent_style(pb);
+                        pb.set_length(100);
+                    }
+                    pb.set_position((s.percent_done * 100.0) as u64);
                 }
             }
             Some(output::ResticMessage::Summary(s)) => {
