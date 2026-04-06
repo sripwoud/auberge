@@ -78,6 +78,7 @@ async fn main() -> Result<()> {
     color_eyre::install()?;
 
     let cli = Cli::parse();
+    output::set_verbose(cli.verbose);
 
     match cli.command {
         Commands::Deploy(cmd) => run_deploy(cmd),
