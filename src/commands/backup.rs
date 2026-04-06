@@ -1357,6 +1357,7 @@ fn rsync_to_remote(
     pb: &indicatif::ProgressBar,
 ) -> Result<()> {
     pb.set_position(0);
+    pb.set_prefix(String::new());
     let local_source = local_path.join(remote_path.trim_start_matches('/'));
 
     if !local_source.exists() {
@@ -1594,7 +1595,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     spinner.finish_and_clear();
 
     let pb = output::progress_bar(&format!("Pushing {}", backup_dir.display()), None);
-    let snapshot_id = std::sync::Mutex::new(None::<String>);
+    let mut snapshot_id: Option<String> = None;
 
     let result = output::run_with_progress(
         "restic",
@@ -1623,7 +1624,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
                 }
             }
             Some(output::ResticMessage::Summary(s)) => {
-                *snapshot_id.lock().unwrap() = Some(s.snapshot_id);
+                snapshot_id = Some(s.snapshot_id);
             }
             None => {}
         },
@@ -1640,7 +1641,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         }
     }
 
-    match snapshot_id.into_inner().unwrap() {
+    match snapshot_id {
         Some(id) => output::success(&format!("Push complete: snapshot {}", id)),
         None => output::success("Push complete"),
     };
@@ -2101,6 +2102,7 @@ fn rsync_from_remote(
     pb: &indicatif::ProgressBar,
 ) -> Result<()> {
     pb.set_position(0);
+    pb.set_prefix(String::new());
     let session = SshSession::new(host, ssh_key);
     let mut cmd = Command::new("rsync");
     cmd.arg("-az")

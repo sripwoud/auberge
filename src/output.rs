@@ -165,7 +165,7 @@ pub fn run_with_progress(
     label: &str,
     cmd: &mut Command,
     pb: &ProgressBar,
-    line_handler: impl Fn(&str, &ProgressBar) + Send,
+    mut line_handler: impl FnMut(&str, &ProgressBar),
 ) -> Result<ProgressResult> {
     cmd.stdout(Stdio::null()).stderr(Stdio::piped());
     let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
@@ -174,7 +174,7 @@ pub fn run_with_progress(
 
     let verbose = is_verbose();
 
-    let stderr_tail = std::sync::Mutex::new(Vec::<String>::new());
+    let mut stderr_tail: Vec<String> = Vec::new();
     const MAX_STDERR_LINES: usize = 20;
 
     let reader = BufReader::new(stderr);
@@ -182,18 +182,15 @@ pub fn run_with_progress(
         if verbose {
             emit_subprocess_line(label, &line);
         }
-        {
-            let mut tail = stderr_tail.lock().unwrap();
-            tail.push(line.clone());
-            if tail.len() > MAX_STDERR_LINES {
-                tail.remove(0);
-            }
+        stderr_tail.push(line.clone());
+        if stderr_tail.len() > MAX_STDERR_LINES {
+            stderr_tail.remove(0);
         }
         line_handler(&line, pb);
     }
 
     let status = child.wait().wrap_err("failed to wait on subprocess")?;
-    let last_stderr = stderr_tail.into_inner().unwrap().join("\n");
+    let last_stderr = stderr_tail.join("\n");
 
     Ok(ProgressResult {
         status,
