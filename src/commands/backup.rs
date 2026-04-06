@@ -7,6 +7,7 @@ use clap::Subcommand;
 use eyre::{Context, Result};
 use std::ffi::OsString;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::Instant;
@@ -1259,11 +1260,18 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
         stopped_services.push(service);
     }
 
+    let pb = output::progress_bar(&format!("Restoring {}", app_name), None);
+
     let restore_result = (|| -> Result<()> {
         for remote_path in &config.paths {
-            eprintln!("  Restoring to: {}", remote_path);
-            rsync_to_remote(host, ssh_key, backup_path, remote_path)?;
+            pb.set_message(format!("Restoring {} → {}", app_name, remote_path));
+            if !std::io::stderr().is_terminal() {
+                eprintln!("  Restoring to: {}", remote_path);
+            }
+            rsync_to_remote(host, ssh_key, backup_path, remote_path, &pb)?;
         }
+
+        output::reset_to_spinner(&pb);
 
         if let Some((user, group)) = config.owner {
             eprintln!("  Setting ownership to {}:{}", user, group);
@@ -1308,6 +1316,8 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
         Ok(())
     })();
 
+    pb.finish_and_clear();
+
     let mut start_failures: Vec<String> = Vec::new();
     for service in &config.systemd_services {
         eprintln!("  Starting service: {}", service);
@@ -1348,7 +1358,10 @@ fn rsync_to_remote(
     ssh_key: &Path,
     local_path: &Path,
     remote_path: &str,
+    pb: &indicatif::ProgressBar,
 ) -> Result<()> {
+    pb.set_position(0);
+    pb.set_prefix(String::new());
     let local_source = local_path.join(remote_path.trim_start_matches('/'));
 
     if !local_source.exists() {
@@ -1374,6 +1387,7 @@ fn rsync_to_remote(
     let mut cmd = Command::new("rsync");
     cmd.arg("-az")
         .arg("--delete")
+        .arg("--info=progress2")
         .arg("--rsync-path=sudo rsync");
 
     for pattern in RSYNC_EXCLUDES {
@@ -1385,13 +1399,28 @@ fn rsync_to_remote(
         .arg(format!("{}/", local_source.display()))
         .arg(format!("{}@{}:{}", host.user, host.address, remote_path));
 
-    let result = output::run_piped("rsync", &mut cmd).wrap_err("Failed to execute rsync")?;
-    if result.status.success() {
-        output::clear_subprocess_lines(result.lines_written);
-    }
+    let result = output::run_with_progress("rsync", &mut cmd, pb, |line, pb| {
+        if let Some(p) = output::parse_rsync_progress(line) {
+            if pb.length().is_none() {
+                output::set_percent_style(pb);
+                pb.set_length(100);
+            }
+            pb.set_position(p.percent as u64);
+            pb.set_prefix(format!("{} ETA {}", p.speed, p.eta));
+        }
+    })
+    .wrap_err("Failed to execute rsync")?;
 
     if !result.status.success() {
-        eyre::bail!("rsync failed for {}", remote_path);
+        if result.last_stderr.is_empty() {
+            eyre::bail!("rsync failed for {}", remote_path);
+        } else {
+            eyre::bail!(
+                "rsync failed for {}: {}",
+                remote_path,
+                result.last_stderr.trim()
+            );
+        }
     }
 
     Ok(())
@@ -1567,35 +1596,59 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         }
     }
 
-    spinner.set_message(format!("Backing up {}", backup_dir.display()));
-    let backup_output = Command::new("restic")
-        .arg("backup")
-        .arg(&backup_dir)
-        .env("RESTIC_REPOSITORY", &restic_repo)
-        .env("RESTIC_PASSWORD", &restic_password)
-        .env_remove("RESTIC_PASSWORD_COMMAND")
-        .output()
-        .wrap_err("Failed to run restic backup")?;
-
     spinner.finish_and_clear();
 
-    let stderr_text = String::from_utf8_lossy(&backup_output.stderr);
-    let lines = output::subprocess_output("restic", &stderr_text);
-    if backup_output.status.success() {
-        output::clear_subprocess_lines(lines);
+    let pb = output::progress_bar(&format!("Pushing {}", backup_dir.display()), None);
+    let mut snapshot_id: Option<String> = None;
+
+    let result = output::run_with_progress(
+        "restic",
+        Command::new("restic")
+            .arg("backup")
+            .arg("--json")
+            .arg(&backup_dir)
+            .env("RESTIC_REPOSITORY", &restic_repo)
+            .env("RESTIC_PASSWORD", &restic_password)
+            .env_remove("RESTIC_PASSWORD_COMMAND"),
+        &pb,
+        |line, pb| match output::parse_restic_message(line) {
+            Some(output::ResticMessage::Status(s)) => {
+                if let (Some(total), Some(done)) = (s.total_bytes, s.bytes_done) {
+                    if pb.length() != Some(total) {
+                        output::set_bytes_style(pb);
+                        pb.set_length(total);
+                    }
+                    pb.set_position(done);
+                } else {
+                    if pb.length() != Some(100) {
+                        output::set_percent_style(pb);
+                        pb.set_length(100);
+                    }
+                    pb.set_position((s.percent_done * 100.0) as u64);
+                }
+            }
+            Some(output::ResticMessage::Summary(s)) => {
+                snapshot_id = Some(s.snapshot_id);
+            }
+            None => {}
+        },
+    )
+    .wrap_err("Failed to run restic backup")?;
+
+    pb.finish_and_clear();
+
+    if !result.status.success() {
+        if result.last_stderr.is_empty() {
+            eyre::bail!("restic backup failed");
+        } else {
+            eyre::bail!("restic backup failed: {}", result.last_stderr.trim());
+        }
     }
 
-    if !backup_output.status.success() {
-        eyre::bail!("restic backup failed: {}", stderr_text.trim());
-    }
-
-    let stdout = String::from_utf8_lossy(&backup_output.stdout);
-    let snapshot_id = stdout
-        .lines()
-        .find(|line| line.contains("snapshot") && line.contains("saved"))
-        .unwrap_or("backup completed");
-
-    output::success(&format!("Push complete: {}", snapshot_id.trim()));
+    match snapshot_id {
+        Some(id) => output::success(&format!("Push complete: snapshot {}", id)),
+        None => output::success("Push complete"),
+    };
 
     Ok(())
 }
@@ -1745,7 +1798,7 @@ fn backup_app(
     ssh_key: &Path,
     timestamp: &str,
 ) -> Result<u64> {
-    let spinner = output::spinner(&format!("Backing up {}", config.name));
+    let pb = output::progress_bar(&format!("Backing up {}", config.name), None);
     let app_backup_dir = backup_dest
         .join(&host.name)
         .join(timestamp)
@@ -1760,12 +1813,13 @@ fn backup_app(
 
     let mut stopped_services: Vec<&str> = Vec::new();
     if !config.systemd_services.is_empty() {
-        spinner.set_message(format!("Backing up {} (stopping services)", config.name));
+        pb.set_message(format!("Backing up {} (stopping services)", config.name));
         for service in &config.systemd_services {
             if let Err(e) = remote_systemctl(host, ssh_key, "stop", service) {
                 for previously_stopped in &stopped_services {
                     let _ = remote_systemctl(host, ssh_key, "start", previously_stopped);
                 }
+                pb.finish_and_clear();
                 return Err(e).wrap_err_with(|| format!("Failed to stop service {}", service));
             }
             stopped_services.push(service);
@@ -1773,20 +1827,21 @@ fn backup_app(
     }
 
     if let Some(db) = &config.db {
-        spinner.set_message(format!("Backing up {} (dumping database)", config.name));
+        pb.set_message(format!("Backing up {} (dumping database)", config.name));
         if let Err(e) = remote_pg_dump(host, ssh_key, db) {
             remote_pg_dump_cleanup(host, ssh_key, db);
             for service in &stopped_services {
                 let _ = remote_systemctl(host, ssh_key, "start", service);
             }
+            pb.finish_and_clear();
             return Err(e).wrap_err("pg_dump failed");
         }
     }
 
-    spinner.set_message(format!("Backing up {} (copying files)", config.name));
+    pb.set_message(format!("Backing up {} (copying files)", config.name));
     let rsync_result = (|| -> Result<()> {
         for path in &config.paths {
-            rsync_from_remote(host, ssh_key, path, &app_backup_dir)?;
+            rsync_from_remote(host, ssh_key, path, &app_backup_dir, &pb)?;
         }
         if let Some(db) = &config.db {
             scp_from_remote(
@@ -1803,9 +1858,10 @@ fn backup_app(
         remote_pg_dump_cleanup(host, ssh_key, db);
     }
 
+    output::reset_to_spinner(&pb);
     let mut start_failures: Vec<String> = Vec::new();
     if !config.systemd_services.is_empty() {
-        spinner.set_message(format!("Backing up {} (starting services)", config.name));
+        pb.set_message(format!("Backing up {} (starting services)", config.name));
         for service in &config.systemd_services {
             if let Err(e) = remote_systemctl(host, ssh_key, "start", service) {
                 start_failures.push(format!("{}: {}", service, e));
@@ -1816,6 +1872,7 @@ fn backup_app(
     match rsync_result {
         Ok(()) => {
             if !start_failures.is_empty() {
+                pb.finish_and_clear();
                 eyre::bail!(
                     "Backup of {} succeeded but failed to restart services:\n  {}",
                     config.name,
@@ -1824,6 +1881,7 @@ fn backup_app(
             }
         }
         Err(e) => {
+            pb.finish_and_clear();
             if !start_failures.is_empty() {
                 eyre::bail!(
                     "Backup of {} failed during file copy: {}\nAdditionally, failed to restart services:\n  {}",
@@ -1839,9 +1897,9 @@ fn backup_app(
     let backup_size = calculate_dir_size(&app_backup_dir)?;
 
     if output::is_verbose() {
-        spinner.finish_and_clear();
+        pb.finish_and_clear();
     } else {
-        spinner.finish_with_message(format!(
+        pb.finish_with_message(format!(
             "  ✓ {} ({})",
             config.name,
             output::format_size(backup_size)
@@ -2045,11 +2103,15 @@ fn rsync_from_remote(
     ssh_key: &Path,
     remote_path: &str,
     local_dest: &Path,
+    pb: &indicatif::ProgressBar,
 ) -> Result<()> {
+    pb.set_position(0);
+    pb.set_prefix(String::new());
     let session = SshSession::new(host, ssh_key);
     let mut cmd = Command::new("rsync");
     cmd.arg("-az")
         .arg("--relative")
+        .arg("--info=progress2")
         .arg("--rsync-path=sudo rsync");
 
     for pattern in RSYNC_EXCLUDES {
@@ -2061,13 +2123,28 @@ fn rsync_from_remote(
         .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
         .arg(local_dest);
 
-    let result = output::run_piped("rsync", &mut cmd).wrap_err("Failed to execute rsync")?;
-    if result.status.success() {
-        output::clear_subprocess_lines(result.lines_written);
-    }
+    let result = output::run_with_progress("rsync", &mut cmd, pb, |line, pb| {
+        if let Some(p) = output::parse_rsync_progress(line) {
+            if pb.length().is_none() {
+                output::set_percent_style(pb);
+                pb.set_length(100);
+            }
+            pb.set_position(p.percent as u64);
+            pb.set_prefix(format!("{} ETA {}", p.speed, p.eta));
+        }
+    })
+    .wrap_err("Failed to execute rsync")?;
 
     if !result.status.success() {
-        eyre::bail!("rsync failed for {}", remote_path);
+        if result.last_stderr.is_empty() {
+            eyre::bail!("rsync failed for {}", remote_path);
+        } else {
+            eyre::bail!(
+                "rsync failed for {}: {}",
+                remote_path,
+                result.last_stderr.trim()
+            );
+        }
     }
 
     Ok(())
