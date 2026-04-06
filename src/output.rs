@@ -161,44 +161,6 @@ pub struct ProgressResult {
     pub last_stderr: String,
 }
 
-pub fn run_with_progress(
-    label: &str,
-    cmd: &mut Command,
-    pb: &ProgressBar,
-    mut line_handler: impl FnMut(&str, &ProgressBar),
-) -> Result<ProgressResult> {
-    cmd.stdout(Stdio::null()).stderr(Stdio::piped());
-    let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
-
-    let stderr = child.stderr.take().unwrap();
-
-    let verbose = is_verbose();
-
-    let mut stderr_tail: Vec<String> = Vec::new();
-    const MAX_STDERR_LINES: usize = 20;
-
-    let reader = BufReader::new(stderr);
-    for line_result in reader.lines() {
-        let Ok(line) = line_result else { continue };
-        if verbose {
-            emit_subprocess_line(label, &line);
-        }
-        stderr_tail.push(line.clone());
-        if stderr_tail.len() > MAX_STDERR_LINES {
-            stderr_tail.remove(0);
-        }
-        line_handler(&line, pb);
-    }
-
-    let status = child.wait().wrap_err("failed to wait on subprocess")?;
-    let last_stderr = stderr_tail.join("\n");
-
-    Ok(ProgressResult {
-        status,
-        last_stderr,
-    })
-}
-
 pub fn print_table<T: Tabled>(data: &[T]) {
     if data.is_empty() {
         return;
@@ -911,46 +873,5 @@ mod tests {
         let p = parse_rsync_progress(line).unwrap();
         assert_eq!(p.eta, "0:01:23");
         assert_eq!(p.percent, 42);
-    }
-
-    #[test]
-    fn run_with_progress_invokes_handler_for_each_stderr_line() {
-        let pb = ProgressBar::hidden();
-        let lines_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-        let lines_clone = std::sync::Arc::clone(&lines_seen);
-
-        let result = run_with_progress(
-            "test",
-            Command::new("sh")
-                .arg("-c")
-                .arg("echo line1 >&2; echo line2 >&2; echo line3 >&2"),
-            &pb,
-            move |line, _pb| {
-                lines_clone.lock().unwrap().push(line.to_string());
-            },
-        )
-        .unwrap();
-
-        assert!(result.status.success());
-        let seen = lines_seen.lock().unwrap();
-        assert_eq!(*seen, vec!["line1", "line2", "line3"]);
-    }
-
-    #[test]
-    fn run_with_progress_captures_last_stderr() {
-        let pb = ProgressBar::hidden();
-
-        let result = run_with_progress(
-            "test",
-            Command::new("sh")
-                .arg("-c")
-                .arg("echo error details >&2; exit 1"),
-            &pb,
-            |_line, _pb| {},
-        )
-        .unwrap();
-
-        assert!(!result.status.success());
-        assert!(result.last_stderr.contains("error details"));
     }
 }
