@@ -196,7 +196,7 @@ pub fn run_with_progress(
         });
 
         let reader = BufReader::new(stderr);
-        for line in reader.lines().filter_map(Result::ok) {
+        for line in reader.lines().map_while(Result::ok) {
             if verbose {
                 emit_subprocess_line(label, &line);
             }
