@@ -186,7 +186,7 @@ pub fn run_with_progress(
         s.spawn(|| {
             let reader = BufReader::new(stdout_handle);
             let mut buf = stdout_content.lock().unwrap();
-            for line in reader.lines().filter_map(Result::ok) {
+            for line in reader.lines().map_while(Result::ok) {
                 if verbose {
                     emit_subprocess_line(&label_owned, &line);
                 }
