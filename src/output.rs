@@ -399,6 +399,7 @@ pub fn parse_restic_message(line: &str) -> Option<ResticMessage> {
 }
 
 pub fn parse_rsync_progress(line: &str) -> Option<RsyncProgress> {
+    let line = line.trim_end_matches('\r');
     let fields: Vec<&str> = line.split_whitespace().collect();
     if fields.len() < 4 {
         return None;
@@ -614,6 +615,14 @@ mod tests {
     #[test]
     fn parse_rsync_too_few_fields_returns_none() {
         assert!(parse_rsync_progress("1234 42%").is_none());
+    }
+
+    #[test]
+    fn parse_rsync_strips_trailing_carriage_return() {
+        let line = "  1,234,567  42%   12.34MB/s    0:01:23\r";
+        let p = parse_rsync_progress(line).unwrap();
+        assert_eq!(p.eta, "0:01:23");
+        assert_eq!(p.percent, 42);
     }
 
     #[test]
