@@ -1393,14 +1393,25 @@ fn rsync_to_remote(
 
     let result = output::run_with_progress("rsync", &mut cmd, pb, |line, pb| {
         if let Some(p) = output::parse_rsync_progress(line) {
-            pb.set_length(100);
+            if pb.length().is_none() {
+                output::set_percent_style(pb);
+                pb.set_length(100);
+            }
             pb.set_position(p.percent as u64);
         }
     })
     .wrap_err("Failed to execute rsync")?;
 
     if !result.status.success() {
-        eyre::bail!("rsync failed for {}", remote_path);
+        if result.last_stderr.is_empty() {
+            eyre::bail!("rsync failed for {}", remote_path);
+        } else {
+            eyre::bail!(
+                "rsync failed for {}: {}",
+                remote_path,
+                result.last_stderr.trim()
+            );
+        }
     }
 
     Ok(())
@@ -1615,7 +1626,11 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     pb.finish_and_clear();
 
     if !result.status.success() {
-        eyre::bail!("restic backup failed");
+        if result.last_stderr.is_empty() {
+            eyre::bail!("restic backup failed");
+        } else {
+            eyre::bail!("restic backup failed: {}", result.last_stderr.trim());
+        }
     }
 
     let snap = snapshot_id
@@ -2097,14 +2112,25 @@ fn rsync_from_remote(
 
     let result = output::run_with_progress("rsync", &mut cmd, pb, |line, pb| {
         if let Some(p) = output::parse_rsync_progress(line) {
-            pb.set_length(100);
+            if pb.length().is_none() {
+                output::set_percent_style(pb);
+                pb.set_length(100);
+            }
             pb.set_position(p.percent as u64);
         }
     })
     .wrap_err("Failed to execute rsync")?;
 
     if !result.status.success() {
-        eyre::bail!("rsync failed for {}", remote_path);
+        if result.last_stderr.is_empty() {
+            eyre::bail!("rsync failed for {}", remote_path);
+        } else {
+            eyre::bail!(
+                "rsync failed for {}: {}",
+                remote_path,
+                result.last_stderr.trim()
+            );
+        }
     }
 
     Ok(())
