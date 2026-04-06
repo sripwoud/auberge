@@ -1398,6 +1398,7 @@ fn rsync_to_remote(
                 pb.set_length(100);
             }
             pb.set_position(p.percent as u64);
+            pb.set_message(format!("{} ETA {}", p.speed, p.eta));
         }
     })
     .wrap_err("Failed to execute rsync")?;
@@ -1636,12 +1637,10 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         }
     }
 
-    let snap = snapshot_id
-        .into_inner()
-        .unwrap()
-        .unwrap_or_else(|| "backup completed".to_string());
-
-    output::success(&format!("Push complete: snapshot {}", snap));
+    match snapshot_id.into_inner().unwrap() {
+        Some(id) => output::success(&format!("Push complete: snapshot {}", id)),
+        None => output::success("Push complete"),
+    };
 
     Ok(())
 }
@@ -2120,6 +2119,7 @@ fn rsync_from_remote(
                 pb.set_length(100);
             }
             pb.set_position(p.percent as u64);
+            pb.set_message(format!("{} ETA {}", p.speed, p.eta));
         }
     })
     .wrap_err("Failed to execute rsync")?;
