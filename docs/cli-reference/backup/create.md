@@ -16,7 +16,6 @@ auberge backup create [OPTIONS]
 - `-d, --dest` - Destination directory (default: ~/.local/share/auberge/backups)
 - `--include-music` - Include music files in Navidrome backup
 - `-n, --dry-run` - Preview without backing up
-- `-v, --verbose` - Show detailed progress
 
 ## Examples
 

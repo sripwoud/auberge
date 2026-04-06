@@ -63,18 +63,19 @@ auberge sync music --host myserver --dry-run
 
 ## Output Example
 
-```
-Syncing music to ansible@192.168.1.10:/srv/music/
-sending incremental file list
-./
-Albums/
-Albums/Artist - Album/01 - Track.mp3
-         3.2M 100%  2.1MB/s    0:00:01
-Albums/Artist - Album/02 - Track.mp3
-         4.1M 100%  2.3MB/s    0:00:01
+Default (subprocess output suppressed):
 
-sent 125.3M bytes  received 1.2K bytes  8.1M bytes/sec
-total size is 8.2G  speedup is 65.47
+```
+→ Syncing music to ansible@192.168.1.10:/srv/music/
+✓ Music sync completed
+```
+
+With `--verbose` (dimmed subprocess output, cleared on success):
+
+```
+→ Syncing music to ansible@192.168.1.10:/srv/music/
+  rsync | sending incremental file list       ← dimmed, cleared on success
+  rsync | Albums/Artist - Album/01 - Track.mp3
 ✓ Music sync completed
 ```
 
