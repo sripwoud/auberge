@@ -183,6 +183,17 @@ pub fn run_playbook(
         }
     }
 
+    let needs_tty = ask_vault_pass || ask_pass || is_fresh_bootstrap;
+    if needs_tty {
+        let status = cmd
+            .status()
+            .wrap_err("Failed to execute ansible-playbook")?;
+        return Ok(AnsibleResult {
+            success: status.success(),
+            exit_code: status.code().unwrap_or(-1),
+        });
+    }
+
     let result =
         output::run_piped("ansible", &mut cmd).wrap_err("Failed to execute ansible-playbook")?;
     if result.status.success() {
