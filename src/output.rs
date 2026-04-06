@@ -3,7 +3,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::env;
 use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::{Command, ExitStatus, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tabled::{Table, Tabled, settings::Style as TableStyle};
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
@@ -67,30 +68,56 @@ pub fn info(msg: &str) {
     }
 }
 
-fn emit_subprocess_line(label: &str, line: &str) {
-    if line.trim().is_empty() {
+pub struct SubprocessResult {
+    pub status: ExitStatus,
+    pub lines_written: usize,
+}
+
+const CURSOR_UP: &str = "\x1b[A";
+const ERASE_LINE: &str = "\x1b[2K";
+
+pub fn clear_subprocess_lines(count: usize) {
+    if count == 0 || !std::io::stderr().is_terminal() {
         return;
+    }
+    for _ in 0..count {
+        eprint!("{CURSOR_UP}{ERASE_LINE}");
+    }
+}
+
+fn emit_subprocess_line(label: &str, line: &str) -> bool {
+    if line.trim().is_empty() {
+        return false;
     }
     if should_use_colors() {
         eprintln!("{DIM}  {label} | {line}{RESET}");
     } else {
         eprintln!("  {label} | {line}");
     }
+    true
 }
 
-pub fn subprocess_output(label: &str, text: &str) {
+pub fn subprocess_output(label: &str, text: &str) -> usize {
     if !is_verbose() {
-        return;
+        return 0;
     }
+    let mut count = 0;
     for line in text.lines() {
-        emit_subprocess_line(label, line);
+        if emit_subprocess_line(label, line) {
+            count += 1;
+        }
     }
+    count
 }
 
-pub fn run_piped(label: &str, cmd: &mut Command) -> Result<ExitStatus> {
+pub fn run_piped(label: &str, cmd: &mut Command) -> Result<SubprocessResult> {
     if !is_verbose() {
         cmd.stdout(Stdio::null()).stderr(Stdio::null());
-        return cmd.status().wrap_err("failed to run subprocess");
+        let status = cmd.status().wrap_err("failed to run subprocess")?;
+        return Ok(SubprocessResult {
+            status,
+            lines_written: 0,
+        });
     }
 
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -99,22 +126,33 @@ pub fn run_piped(label: &str, cmd: &mut Command) -> Result<ExitStatus> {
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
 
+    let line_count = Arc::new(AtomicUsize::new(0));
     let label_owned = label.to_owned();
+    let count_clone = Arc::clone(&line_count);
+
     std::thread::scope(|s| {
-        s.spawn(|| {
+        s.spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines().flatten() {
-                emit_subprocess_line(&label_owned, &line);
+                if emit_subprocess_line(&label_owned, &line) {
+                    count_clone.fetch_add(1, Ordering::Relaxed);
+                }
             }
         });
 
         let reader = BufReader::new(stderr);
         for line in reader.lines().flatten() {
-            emit_subprocess_line(label, &line);
+            if emit_subprocess_line(label, &line) {
+                line_count.fetch_add(1, Ordering::Relaxed);
+            }
         }
     });
 
-    child.wait().wrap_err("failed to wait on subprocess")
+    let status = child.wait().wrap_err("failed to wait on subprocess")?;
+    Ok(SubprocessResult {
+        status,
+        lines_written: line_count.load(Ordering::Relaxed),
+    })
 }
 
 pub fn print_table<T: Tabled>(data: &[T]) {
@@ -220,7 +258,8 @@ mod tests {
     fn subprocess_output_skips_blank_lines() {
         let _guard = TEST_LOCK.lock().unwrap();
         set_verbose(true);
-        subprocess_output("test", "\n\n   \n");
+        let count = subprocess_output("test", "\n\n   \n");
+        assert_eq!(count, 0);
         set_verbose(false);
     }
 
@@ -228,24 +267,49 @@ mod tests {
     fn subprocess_output_handles_empty_string() {
         let _guard = TEST_LOCK.lock().unwrap();
         set_verbose(true);
-        subprocess_output("test", "");
+        let count = subprocess_output("test", "");
+        assert_eq!(count, 0);
         set_verbose(false);
+    }
+
+    #[test]
+    fn subprocess_output_counts_lines() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(true);
+        let count = subprocess_output("test", "line1\nline2\n\nline3");
+        assert_eq!(count, 3);
+        set_verbose(false);
+    }
+
+    #[test]
+    fn subprocess_output_returns_zero_when_not_verbose() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(false);
+        let count = subprocess_output("test", "line1\nline2");
+        assert_eq!(count, 0);
     }
 
     #[test]
     fn run_piped_suppresses_when_not_verbose() {
         let _guard = TEST_LOCK.lock().unwrap();
         set_verbose(false);
-        let status = run_piped("true", Command::new("true").arg("")).unwrap();
-        assert!(status.success());
+        let result = run_piped("true", Command::new("true").arg("")).unwrap();
+        assert!(result.status.success());
+        assert_eq!(result.lines_written, 0);
     }
 
     #[test]
     fn run_piped_streams_when_verbose() {
         let _guard = TEST_LOCK.lock().unwrap();
         set_verbose(true);
-        let status = run_piped("echo", Command::new("echo").arg("hello")).unwrap();
-        assert!(status.success());
+        let result = run_piped("echo", Command::new("echo").arg("hello")).unwrap();
+        assert!(result.status.success());
+        assert!(result.lines_written > 0);
         set_verbose(false);
+    }
+
+    #[test]
+    fn clear_subprocess_lines_zero_is_noop() {
+        clear_subprocess_lines(0);
     }
 }
