@@ -140,16 +140,14 @@ async fn main() -> Result<()> {
                 ssh_key,
                 include_music,
                 dry_run,
-                verbose,
-            } => run_backup_create(host, apps, dest, ssh_key, include_music, dry_run, verbose),
+            } => run_backup_create(host, apps, dest, ssh_key, include_music, dry_run),
             BackupCommands::Sync {
                 host,
                 apps,
                 ssh_key,
                 include_music,
                 dry_run,
-                verbose,
-            } => run_backup_sync(host, apps, ssh_key, include_music, dry_run, verbose),
+            } => run_backup_sync(host, apps, ssh_key, include_music, dry_run),
             BackupCommands::List { host, app, format } => run_backup_list(host, app, format),
             BackupCommands::Restore {
                 backup_id,

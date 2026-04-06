@@ -195,8 +195,6 @@ pub enum BackupCommands {
         include_music: bool,
         #[arg(short = 'n', long, help = "Dry run (show what would be backed up)")]
         dry_run: bool,
-        #[arg(short, long, help = "Show detailed progress and paths")]
-        verbose: bool,
     },
     #[command(
         alias = "s",
@@ -226,8 +224,6 @@ pub enum BackupCommands {
             help = "Dry run (runs create in preview mode, skips push/prune/cleanup)"
         )]
         dry_run: bool,
-        #[arg(short, long, help = "Show detailed progress and paths")]
-        verbose: bool,
     },
     #[command(alias = "ls", about = "List available backups")]
     List {
@@ -497,16 +493,18 @@ pub fn run_backup_create(
     ssh_key: Option<PathBuf>,
     include_music: bool,
     dry_run: bool,
-    verbose: bool,
 ) -> Result<()> {
     let host = get_host_or_select(host_arg)?;
     let backup_dest = dest.unwrap_or_else(default_backup_dir);
 
     let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
 
-    if verbose {
-        eprintln!("Using SSH key: {}", ssh_key_path.display());
-        eprintln!("Backing up to: {}", backup_dest.join(&host.name).display());
+    if output::is_verbose() {
+        output::info(&format!("SSH key: {}", ssh_key_path.display()));
+        output::info(&format!(
+            "Backing up to: {}",
+            backup_dest.join(&host.name).display()
+        ));
     } else {
         let short_dest = backup_dest
             .to_string_lossy()
@@ -526,9 +524,9 @@ pub fn run_backup_create(
         eyre::bail!("No valid apps specified for backup");
     }
 
-    if verbose {
+    if output::is_verbose() {
         let app_names: Vec<&str> = app_configs.iter().map(|c| c.name).collect();
-        eprintln!("Apps: {}\n", app_names.join(", "));
+        output::info(&format!("Apps: {}", app_names.join(", ")));
     }
 
     if dry_run {
@@ -540,14 +538,7 @@ pub fn run_backup_create(
 
     let mut results = Vec::new();
     for config in app_configs {
-        match backup_app(
-            &host,
-            &config,
-            &backup_dest,
-            &ssh_key_path,
-            &timestamp,
-            verbose,
-        ) {
+        match backup_app(&host, &config, &backup_dest, &ssh_key_path, &timestamp) {
             Ok(size) => results.push((config.name, true, Some(size), None)),
             Err(e) => {
                 eprintln!("✗ {} backup failed: {}", config.name, e);
@@ -563,7 +554,7 @@ pub fn run_backup_create(
 
     eprintln!();
 
-    if verbose {
+    if output::is_verbose() {
         #[derive(Tabled)]
         struct BackupResult {
             #[tabled(rename = "App")]
@@ -607,12 +598,12 @@ pub fn run_backup_create(
         );
     }
 
-    if verbose {
-        eprintln!(
+    if output::is_verbose() {
+        output::info(&format!(
             "Location: {}/{}/",
             backup_dest.join(&host.name).display(),
             timestamp
-        );
+        ));
     }
 
     if failed > 0 {
@@ -628,7 +619,6 @@ pub fn run_backup_sync(
     ssh_key: Option<PathBuf>,
     include_music: bool,
     dry_run: bool,
-    verbose: bool,
 ) -> Result<()> {
     let resolved = get_host_or_select(host)?;
     let host_name = resolved.name.clone();
@@ -641,7 +631,6 @@ pub fn run_backup_sync(
         ssh_key,
         include_music,
         dry_run,
-        verbose,
     )?;
 
     if dry_run {
@@ -1071,7 +1060,6 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             Some(app_names.clone()),
             Some(backup_root.clone()),
             Some(ssh_key_path.clone()),
-            false,
             false,
             false,
         ) {
@@ -1707,7 +1695,6 @@ fn backup_app(
     backup_dest: &Path,
     ssh_key: &Path,
     timestamp: &str,
-    verbose: bool,
 ) -> Result<u64> {
     let spinner = output::spinner(&format!("Backing up {}", config.name));
     let app_backup_dir = backup_dest
@@ -1802,7 +1789,7 @@ fn backup_app(
 
     let backup_size = calculate_dir_size(&app_backup_dir)?;
 
-    if verbose {
+    if output::is_verbose() {
         spinner.finish_and_clear();
     } else {
         spinner.finish_with_message(format!(
@@ -2401,7 +2388,6 @@ mod tests {
             ssh_key: None,
             include_music: false,
             dry_run: true,
-            verbose: false,
         };
     }
 
