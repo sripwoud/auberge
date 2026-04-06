@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3](https://github.com/sripwoud/auberge/compare/v0.8.2...v0.8.3) - 2026-04-06
+
+### Added
+
+- *(cli)* stream ansible task names during deploy and ansible subcommands ([#228](https://github.com/sripwoud/auberge/pull/228))
+- *(cli)* show progress bars with ETA during backup commands ([#226](https://github.com/sripwoud/auberge/pull/226))
+- *(cli)* add verbose mode with dimmed subprocess output ([#224](https://github.com/sripwoud/auberge/pull/224))
+
+### Fixed
+
+- *(cli)* read rsync and restic progress from stdout not stderr ([#229](https://github.com/sripwoud/auberge/pull/229))
+- *(cockpit)* set NetworkManager as netplan renderer for PackageKit ([#227](https://github.com/sripwoud/auberge/pull/227))
+
+### Other
+
+- fix sidebar missing pages and broken link
+- *(backup)* add sync subcommand to sidebar navigation
+
 ## [0.8.2](https://github.com/sripwoud/auberge/compare/v0.8.1...v0.8.2) - 2026-04-05
 
 ### Added
