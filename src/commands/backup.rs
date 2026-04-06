@@ -1401,7 +1401,7 @@ fn rsync_to_remote(
                 pb.set_length(100);
             }
             pb.set_position(p.percent as u64);
-            pb.set_message(format!("{} ETA {}", p.speed, p.eta));
+            pb.set_prefix(format!("{} ETA {}", p.speed, p.eta));
         }
     })
     .wrap_err("Failed to execute rsync")?;
@@ -2124,7 +2124,7 @@ fn rsync_from_remote(
                 pb.set_length(100);
             }
             pb.set_position(p.percent as u64);
-            pb.set_message(format!("{} ETA {}", p.speed, p.eta));
+            pb.set_prefix(format!("{} ETA {}", p.speed, p.eta));
         }
     })
     .wrap_err("Failed to execute rsync")?;

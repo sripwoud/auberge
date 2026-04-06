@@ -158,8 +158,6 @@ pub fn run_piped(label: &str, cmd: &mut Command) -> Result<SubprocessResult> {
 
 pub struct ProgressResult {
     pub status: ExitStatus,
-    #[allow(dead_code)]
-    pub stdout: String,
     pub last_stderr: String,
 }
 
@@ -169,55 +167,36 @@ pub fn run_with_progress(
     pb: &ProgressBar,
     line_handler: impl Fn(&str, &ProgressBar) + Send,
 ) -> Result<ProgressResult> {
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdout(Stdio::null()).stderr(Stdio::piped());
     let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
 
-    let stdout_handle = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
 
     let verbose = is_verbose();
-    let label_owned = label.to_owned();
 
-    let stdout_content = std::sync::Mutex::new(String::new());
     let stderr_tail = std::sync::Mutex::new(Vec::<String>::new());
     const MAX_STDERR_LINES: usize = 20;
 
-    std::thread::scope(|s| {
-        s.spawn(|| {
-            let reader = BufReader::new(stdout_handle);
-            let mut buf = stdout_content.lock().unwrap();
-            for line in reader.lines().map_while(Result::ok) {
-                if verbose {
-                    emit_subprocess_line(&label_owned, &line);
-                }
-                buf.push_str(&line);
-                buf.push('\n');
-            }
-        });
-
-        let reader = BufReader::new(stderr);
-        for line in reader.lines().map_while(Result::ok) {
-            if verbose {
-                emit_subprocess_line(label, &line);
-            }
-            {
-                let mut tail = stderr_tail.lock().unwrap();
-                tail.push(line.clone());
-                if tail.len() > MAX_STDERR_LINES {
-                    tail.remove(0);
-                }
-            }
-            line_handler(&line, pb);
+    let reader = BufReader::new(stderr);
+    for line in reader.lines().map_while(Result::ok) {
+        if verbose {
+            emit_subprocess_line(label, &line);
         }
-    });
+        {
+            let mut tail = stderr_tail.lock().unwrap();
+            tail.push(line.clone());
+            if tail.len() > MAX_STDERR_LINES {
+                tail.remove(0);
+            }
+        }
+        line_handler(&line, pb);
+    }
 
     let status = child.wait().wrap_err("failed to wait on subprocess")?;
-    let stdout = stdout_content.into_inner().unwrap();
     let last_stderr = stderr_tail.into_inner().unwrap().join("\n");
 
     Ok(ProgressResult {
         status,
-        stdout,
         last_stderr,
     })
 }
@@ -342,14 +321,14 @@ pub fn set_percent_style(pb: &ProgressBar) {
     if should_use_colors() {
         pb.set_style(
             ProgressStyle::default_bar()
-                .template("{spinner} {msg} [{bar:40}] {pos:>3}%")
+                .template("{spinner} {msg} [{bar:40}] {pos:>3}% {prefix}")
                 .unwrap()
                 .progress_chars("█▉▊▋▌▍▎▏ "),
         );
     } else {
         pb.set_style(
             ProgressStyle::default_bar()
-                .template("{msg} [{bar:40}] {pos:>3}%")
+                .template("{msg} [{bar:40}] {pos:>3}% {prefix}")
                 .unwrap()
                 .progress_chars("#>-"),
         );
@@ -357,6 +336,7 @@ pub fn set_percent_style(pb: &ProgressBar) {
 }
 
 pub fn reset_to_spinner(pb: &ProgressBar) {
+    pb.set_prefix(String::new());
     if should_use_colors() {
         pb.set_style(
             ProgressStyle::default_spinner()
