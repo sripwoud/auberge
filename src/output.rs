@@ -399,6 +399,69 @@ pub fn parse_restic_message(line: &str) -> Option<ResticMessage> {
     serde_json::from_str(line).ok()
 }
 
+pub fn parse_ansible_task(line: &str) -> Option<String> {
+    let rest = line.trim().strip_prefix("TASK [")?;
+    let end = rest.find(']')?;
+    Some(rest[..end].to_string())
+}
+
+pub fn format_ansible_task(task: &str) -> String {
+    if let Some((role, name)) = task.split_once(" : ") {
+        if should_use_colors() {
+            format!("{DIM}{}:{RESET} {}", role, name)
+        } else {
+            format!("{}: {}", role, name)
+        }
+    } else {
+        task.to_string()
+    }
+}
+
+pub fn run_with_stdout_progress(
+    label: &str,
+    cmd: &mut Command,
+    pb: &ProgressBar,
+    mut line_handler: impl FnMut(&str, &ProgressBar),
+) -> Result<ProgressResult> {
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let verbose = is_verbose();
+
+    let mut last_stdout: Vec<String> = Vec::new();
+    const MAX_LINES: usize = 20;
+
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            for line_result in BufReader::new(stderr).lines() {
+                let Ok(line) = line_result else { continue };
+                if verbose {
+                    emit_subprocess_line(label, &line);
+                }
+            }
+        });
+
+        for line_result in BufReader::new(stdout).lines() {
+            let Ok(line) = line_result else { continue };
+            if verbose {
+                emit_subprocess_line(label, &line);
+            }
+            last_stdout.push(line.clone());
+            if last_stdout.len() > MAX_LINES {
+                last_stdout.remove(0);
+            }
+            line_handler(&line, pb);
+        }
+    });
+
+    let status = child.wait().wrap_err("failed to wait on subprocess")?;
+    Ok(ProgressResult {
+        status,
+        last_stderr: last_stdout.join("\n"),
+    })
+}
+
 pub fn parse_rsync_progress(line: &str) -> Option<RsyncProgress> {
     let line = line.trim_end_matches('\r');
     let fields: Vec<&str> = line.split_whitespace().collect();
@@ -576,6 +639,116 @@ mod tests {
             ResticMessage::Status(s) => assert!((s.percent_done - 1.0).abs() < f64::EPSILON),
             _ => panic!("expected Status"),
         }
+    }
+
+    #[test]
+    fn parse_ansible_task_extracts_name() {
+        assert_eq!(
+            parse_ansible_task("TASK [Install nginx] ***************************"),
+            Some("Install nginx".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ansible_task_with_role_prefix() {
+        assert_eq!(
+            parse_ansible_task("TASK [role : subtask name] ****"),
+            Some("role : subtask name".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ansible_task_gathering_facts() {
+        assert_eq!(
+            parse_ansible_task("TASK [Gathering Facts] *****"),
+            Some("Gathering Facts".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ansible_task_strips_leading_whitespace() {
+        assert_eq!(
+            parse_ansible_task("  TASK [Install nginx] ****"),
+            Some("Install nginx".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ansible_task_play_line_returns_none() {
+        assert!(parse_ansible_task("PLAY [all] ****").is_none());
+    }
+
+    #[test]
+    fn parse_ansible_task_ok_line_returns_none() {
+        assert!(parse_ansible_task("ok: [hostname]").is_none());
+    }
+
+    #[test]
+    fn parse_ansible_task_empty_returns_none() {
+        assert!(parse_ansible_task("").is_none());
+    }
+
+    #[test]
+    fn format_ansible_task_dims_role_prefix() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(false);
+        let formatted = format_ansible_task("nginx : Install package");
+        assert!(formatted.contains("nginx:"));
+        assert!(formatted.contains("Install package"));
+    }
+
+    #[test]
+    fn format_ansible_task_no_role_returns_unchanged() {
+        let formatted = format_ansible_task("Gathering Facts");
+        assert_eq!(formatted, "Gathering Facts");
+    }
+
+    #[test]
+    fn format_ansible_task_nested_role_splits_on_first_separator() {
+        let formatted = format_ansible_task("role : sub : detail");
+        assert!(formatted.contains("role:"));
+        assert!(formatted.contains("sub : detail"));
+    }
+
+    #[test]
+    fn run_with_stdout_progress_invokes_handler_for_each_line() {
+        let pb = ProgressBar::hidden();
+        let lines_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let lines_clone = std::sync::Arc::clone(&lines_seen);
+
+        let result = run_with_stdout_progress(
+            "test",
+            Command::new("sh")
+                .arg("-c")
+                .arg("echo line1; echo line2; echo line3"),
+            &pb,
+            move |line, _pb| {
+                lines_clone.lock().unwrap().push(line.to_string());
+            },
+        )
+        .unwrap();
+
+        assert!(result.status.success());
+        let seen = lines_seen.lock().unwrap();
+        assert_eq!(*seen, vec!["line1", "line2", "line3"]);
+    }
+
+    #[test]
+    fn run_with_stdout_progress_captures_last_lines_on_failure() {
+        let pb = ProgressBar::hidden();
+
+        let result = run_with_stdout_progress(
+            "test",
+            Command::new("sh")
+                .arg("-c")
+                .arg("echo output details; exit 1"),
+            &pb,
+            |_line, _pb| {},
+        )
+        .unwrap();
+
+        assert!(!result.status.success());
+        assert!(result.last_stderr.contains("output details"));
     }
 
     #[test]

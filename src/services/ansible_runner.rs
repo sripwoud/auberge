@@ -8,6 +8,7 @@ use std::process::Command;
 pub struct AnsibleResult {
     pub success: bool,
     pub exit_code: i32,
+    pub last_output: String,
 }
 
 pub struct InventoryHost {
@@ -191,18 +192,27 @@ pub fn run_playbook(
         return Ok(AnsibleResult {
             success: status.success(),
             exit_code: status.code().unwrap_or(-1),
+            last_output: String::new(),
         });
     }
 
-    let result =
-        output::run_piped("ansible", &mut cmd).wrap_err("Failed to execute ansible-playbook")?;
-    if result.status.success() {
-        output::clear_subprocess_lines(result.lines_written);
-    }
+    let playbook_label = playbook
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("ansible");
+    let spinner = output::spinner(&format!("Running {}...", playbook_label));
+    let result = output::run_with_stdout_progress("ansible", &mut cmd, &spinner, |line, pb| {
+        if let Some(task) = output::parse_ansible_task(line) {
+            pb.set_message(format!("Running: {}", output::format_ansible_task(&task)));
+        }
+    })
+    .wrap_err("Failed to execute ansible-playbook")?;
+    spinner.finish_and_clear();
 
     Ok(AnsibleResult {
         success: result.status.success(),
         exit_code: result.status.code().unwrap_or(-1),
+        last_output: result.last_stderr,
     })
 }
 
@@ -235,6 +245,7 @@ pub fn run_bootstrap(playbook: &Path, host: &InventoryHost) -> Result<AnsibleRes
     Ok(AnsibleResult {
         success: status.success(),
         exit_code: status.code().unwrap_or(-1),
+        last_output: String::new(),
     })
 }
 

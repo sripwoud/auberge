@@ -256,11 +256,20 @@ fn run_auto_resolved(
         )?;
 
         if !result.success {
-            eyre::bail!(
-                "{} failed with exit code {}",
-                playbook.name,
-                result.exit_code
-            );
+            if result.last_output.is_empty() {
+                eyre::bail!(
+                    "{} failed with exit code {}",
+                    playbook.name,
+                    result.exit_code
+                );
+            } else {
+                eyre::bail!(
+                    "{} failed with exit code {}:\n{}",
+                    playbook.name,
+                    result.exit_code,
+                    result.last_output.trim()
+                );
+            }
         }
 
         output::success(&format!("{} completed successfully", playbook.name));
@@ -349,8 +358,14 @@ fn run_single_playbook(
     if result.success {
         output::success("Playbook completed successfully");
         Ok(())
-    } else {
+    } else if result.last_output.is_empty() {
         eyre::bail!("Playbook failed with exit code {}", result.exit_code)
+    } else {
+        eyre::bail!(
+            "Playbook failed with exit code {}:\n{}",
+            result.exit_code,
+            result.last_output.trim()
+        )
     }
 }
 
