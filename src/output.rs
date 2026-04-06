@@ -1,5 +1,6 @@
 use eyre::{Context, Result};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use serde::Deserialize;
 use std::env;
 use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::{Command, ExitStatus, Stdio};
@@ -155,6 +156,35 @@ pub fn run_piped(label: &str, cmd: &mut Command) -> Result<SubprocessResult> {
     })
 }
 
+pub struct ProgressResult {
+    pub status: ExitStatus,
+}
+
+pub fn run_with_progress(
+    label: &str,
+    cmd: &mut Command,
+    pb: &ProgressBar,
+    line_handler: impl Fn(&str, &ProgressBar) + Send,
+) -> Result<ProgressResult> {
+    cmd.stdout(Stdio::null()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
+
+    let stderr = child.stderr.take().unwrap();
+    let verbose = is_verbose();
+
+    let reader = BufReader::new(stderr);
+    for line in reader.lines().map_while(Result::ok) {
+        if verbose {
+            emit_subprocess_line(label, &line);
+        }
+        line_handler(&line, pb);
+    }
+
+    let status = child.wait().wrap_err("failed to wait on subprocess")?;
+
+    Ok(ProgressResult { status })
+}
+
 pub fn print_table<T: Tabled>(data: &[T]) {
     if data.is_empty() {
         return;
@@ -206,6 +236,44 @@ pub fn spinner(msg: &str) -> ProgressBar {
     spinner
 }
 
+pub fn progress_bar(msg: &str, total_bytes: Option<u64>) -> ProgressBar {
+    match total_bytes {
+        Some(total) => {
+            let pb = ProgressBar::with_draw_target(Some(total), ProgressDrawTarget::stderr());
+            if should_use_colors() {
+                pb.set_style(
+                    ProgressStyle::default_bar()
+                        .template("{spinner} {msg} [{bar:40}] {bytes}/{total_bytes} ({eta})")
+                        .unwrap()
+                        .progress_chars("█▉▊▋▌▍▎▏ "),
+                );
+            } else {
+                pb.set_style(
+                    ProgressStyle::default_bar()
+                        .template("{msg} [{bar:40}] {bytes}/{total_bytes} ({eta})")
+                        .unwrap()
+                        .progress_chars("#>-"),
+                );
+            }
+            pb.set_message(msg.to_string());
+            pb.enable_steady_tick(std::time::Duration::from_millis(100));
+            pb
+        }
+        None => {
+            let pb = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr());
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+                    .template("{spinner} {msg} {bytes} transferred")
+                    .unwrap(),
+            );
+            pb.set_message(msg.to_string());
+            pb.enable_steady_tick(std::time::Duration::from_millis(100));
+            pb
+        }
+    }
+}
+
 pub fn format_duration(seconds: u64) -> String {
     if seconds < 60 {
         format!("{}s", seconds)
@@ -214,6 +282,60 @@ pub fn format_duration(seconds: u64) -> String {
         let secs = seconds % 60;
         format!("{}m {}s", mins, secs)
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResticStatus {
+    pub percent_done: f64,
+    pub total_bytes: Option<u64>,
+    pub bytes_done: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResticSummary {
+    pub snapshot_id: String,
+    #[allow(dead_code)]
+    pub files_new: u64,
+    #[allow(dead_code)]
+    pub files_changed: u64,
+    #[allow(dead_code)]
+    pub data_added: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "message_type", rename_all = "lowercase")]
+pub enum ResticMessage {
+    Status(ResticStatus),
+    Summary(ResticSummary),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct RsyncProgress {
+    pub bytes_transferred: u64,
+    pub percent: u8,
+    pub speed: String,
+    pub eta: String,
+}
+
+pub fn parse_restic_message(line: &str) -> Option<ResticMessage> {
+    serde_json::from_str(line).ok()
+}
+
+pub fn parse_rsync_progress(line: &str) -> Option<RsyncProgress> {
+    let fields: Vec<&str> = line.split_whitespace().collect();
+    if fields.len() < 4 {
+        return None;
+    }
+    let percent_str = fields[1].strip_suffix('%')?;
+    let percent: u8 = percent_str.parse().ok()?;
+    let bytes_str = fields[0].replace(',', "");
+    let bytes_transferred: u64 = bytes_str.parse().ok()?;
+    Some(RsyncProgress {
+        bytes_transferred,
+        percent,
+        speed: fields[2].to_string(),
+        eta: fields[3].to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -311,5 +433,109 @@ mod tests {
     #[test]
     fn clear_subprocess_lines_zero_is_noop() {
         clear_subprocess_lines(0);
+    }
+
+    #[test]
+    fn parse_restic_status_line() {
+        let line = r#"{"message_type":"status","percent_done":0.5,"total_bytes":1048576,"bytes_done":524288}"#;
+        let msg = parse_restic_message(line).unwrap();
+        match msg {
+            ResticMessage::Status(s) => {
+                assert!((s.percent_done - 0.5).abs() < f64::EPSILON);
+                assert_eq!(s.total_bytes, Some(1048576));
+                assert_eq!(s.bytes_done, Some(524288));
+            }
+            _ => panic!("expected Status"),
+        }
+    }
+
+    #[test]
+    fn parse_restic_summary_line() {
+        let line = r#"{"message_type":"summary","snapshot_id":"abc123","files_new":10,"files_changed":2,"data_added":1048576}"#;
+        let msg = parse_restic_message(line).unwrap();
+        match msg {
+            ResticMessage::Summary(s) => {
+                assert_eq!(s.snapshot_id, "abc123");
+                assert_eq!(s.files_new, 10);
+                assert_eq!(s.files_changed, 2);
+                assert_eq!(s.data_added, 1048576);
+            }
+            _ => panic!("expected Summary"),
+        }
+    }
+
+    #[test]
+    fn parse_restic_plain_text_returns_none() {
+        assert!(parse_restic_message("using parent snapshot abc123").is_none());
+    }
+
+    #[test]
+    fn parse_restic_malformed_json_returns_none() {
+        assert!(parse_restic_message("{bad json}").is_none());
+    }
+
+    #[test]
+    fn parse_restic_zero_percent() {
+        let line = r#"{"message_type":"status","percent_done":0.0}"#;
+        let msg = parse_restic_message(line).unwrap();
+        match msg {
+            ResticMessage::Status(s) => {
+                assert!((s.percent_done).abs() < f64::EPSILON);
+                assert_eq!(s.total_bytes, None);
+                assert_eq!(s.bytes_done, None);
+            }
+            _ => panic!("expected Status"),
+        }
+    }
+
+    #[test]
+    fn parse_restic_full_percent() {
+        let line =
+            r#"{"message_type":"status","percent_done":1.0,"total_bytes":100,"bytes_done":100}"#;
+        let msg = parse_restic_message(line).unwrap();
+        match msg {
+            ResticMessage::Status(s) => assert!((s.percent_done - 1.0).abs() < f64::EPSILON),
+            _ => panic!("expected Status"),
+        }
+    }
+
+    #[test]
+    fn parse_rsync_canonical_line() {
+        let line = "    1,234,567  42%   12.34MB/s    0:01:23";
+        let p = parse_rsync_progress(line).unwrap();
+        assert_eq!(
+            p,
+            RsyncProgress {
+                bytes_transferred: 1234567,
+                percent: 42,
+                speed: "12.34MB/s".to_string(),
+                eta: "0:01:23".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_rsync_single_digit_percent() {
+        let line = "  500  5%   1.00MB/s    0:00:01";
+        let p = parse_rsync_progress(line).unwrap();
+        assert_eq!(p.percent, 5);
+        assert_eq!(p.bytes_transferred, 500);
+    }
+
+    #[test]
+    fn parse_rsync_100_percent() {
+        let line = "  10,000,000 100%   50.00MB/s    0:00:00";
+        let p = parse_rsync_progress(line).unwrap();
+        assert_eq!(p.percent, 100);
+    }
+
+    #[test]
+    fn parse_rsync_plain_text_returns_none() {
+        assert!(parse_rsync_progress("sending incremental file list").is_none());
+    }
+
+    #[test]
+    fn parse_rsync_too_few_fields_returns_none() {
+        assert!(parse_rsync_progress("1234 42%").is_none());
     }
 }
