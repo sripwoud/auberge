@@ -134,7 +134,7 @@
 
         - name: Start netplan apply
           ansible.builtin.command: /usr/sbin/netplan apply
-          async: 60
+          async: 180
           poll: 0
           register: cockpit_netplan_apply_job
           changed_when: true
@@ -153,7 +153,7 @@
             jid: "{{ cockpit_netplan_apply_job.ansible_job_id }}"
           register: cockpit_netplan_apply_status
           until: cockpit_netplan_apply_status.finished
-          retries: 12
+          retries: 24
           delay: 5
 
     - name: Validate Cloudflare API token for Caddy DNS-01 challenge
