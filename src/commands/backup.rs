@@ -1267,6 +1267,8 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
             rsync_to_remote(host, ssh_key, backup_path, remote_path, &pb)?;
         }
 
+        output::reset_to_spinner(&pb);
+
         if let Some((user, group)) = config.owner {
             eprintln!("  Setting ownership to {}:{}", user, group);
             for remote_path in &config.paths {
@@ -1354,6 +1356,7 @@ fn rsync_to_remote(
     remote_path: &str,
     pb: &indicatif::ProgressBar,
 ) -> Result<()> {
+    pb.set_position(0);
     let local_source = local_path.join(remote_path.trim_start_matches('/'));
 
     if !local_source.exists() {
@@ -1850,6 +1853,7 @@ fn backup_app(
         remote_pg_dump_cleanup(host, ssh_key, db);
     }
 
+    output::reset_to_spinner(&pb);
     let mut start_failures: Vec<String> = Vec::new();
     if !config.systemd_services.is_empty() {
         pb.set_message(format!("Backing up {} (starting services)", config.name));
@@ -2096,6 +2100,7 @@ fn rsync_from_remote(
     local_dest: &Path,
     pb: &indicatif::ProgressBar,
 ) -> Result<()> {
+    pb.set_position(0);
     let session = SshSession::new(host, ssh_key);
     let mut cmd = Command::new("rsync");
     cmd.arg("-az")

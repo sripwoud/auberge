@@ -356,6 +356,24 @@ pub fn set_percent_style(pb: &ProgressBar) {
     }
 }
 
+pub fn reset_to_spinner(pb: &ProgressBar) {
+    if should_use_colors() {
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+                .template("{spinner} {msg}")
+                .unwrap(),
+        );
+    } else {
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .tick_chars("/-\\|")
+                .template("{spinner} {msg}")
+                .unwrap(),
+        );
+    }
+}
+
 pub fn format_duration(seconds: u64) -> String {
     if seconds < 60 {
         format!("{}s", seconds)
