@@ -194,11 +194,18 @@ pub fn run_playbook(
         });
     }
 
-    let result =
-        output::run_piped("ansible", &mut cmd).wrap_err("Failed to execute ansible-playbook")?;
-    if result.status.success() {
-        output::clear_subprocess_lines(result.lines_written);
-    }
+    let playbook_label = playbook
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("ansible");
+    let spinner = output::spinner(&format!("Running {}...", playbook_label));
+    let result = output::run_with_stdout_progress("ansible", &mut cmd, &spinner, |line, pb| {
+        if let Some(task) = output::parse_ansible_task(line) {
+            pb.set_message(format!("Running: {}", task));
+        }
+    })
+    .wrap_err("Failed to execute ansible-playbook")?;
+    spinner.finish_and_clear();
 
     Ok(AnsibleResult {
         success: result.status.success(),
