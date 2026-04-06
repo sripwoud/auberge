@@ -122,38 +122,39 @@
       when: cockpit_configure_nm_renderer and cockpit_netplan_bin.stat.exists
       register: cockpit_netplan_renderer
 
-    - name: Validate netplan config before applying
-      ansible.builtin.command: /usr/sbin/netplan generate
-      changed_when: false
-      when: cockpit_netplan_renderer is defined and cockpit_netplan_renderer.changed
+    - name: Apply netplan renderer change
+      when:
+        - cockpit_netplan_renderer is defined
+        - cockpit_netplan_renderer.changed
+        - not ansible_check_mode
+      block:
+        - name: Validate netplan config before applying
+          ansible.builtin.command: /usr/sbin/netplan generate
+          changed_when: false
 
-    - name: Start netplan apply
-      ansible.builtin.command: /usr/sbin/netplan apply
-      async: 60
-      poll: 0
-      register: cockpit_netplan_apply_job
-      changed_when: true
-      when: cockpit_netplan_renderer is defined and cockpit_netplan_renderer.changed
+        - name: Start netplan apply
+          ansible.builtin.command: /usr/sbin/netplan apply
+          async: 60
+          poll: 0
+          register: cockpit_netplan_apply_job
+          changed_when: true
 
-    - name: Give netplan apply time to interrupt networking
-      ansible.builtin.pause:
-        seconds: 2
-      when: cockpit_netplan_renderer is defined and cockpit_netplan_renderer.changed
+        - name: Give netplan apply time to interrupt networking
+          ansible.builtin.pause:
+            seconds: 2
 
-    - name: Wait for SSH to return after netplan apply
-      ansible.builtin.wait_for_connection:
-        delay: 2
-        timeout: 60
-      when: cockpit_netplan_renderer is defined and cockpit_netplan_renderer.changed
+        - name: Wait for SSH to return after netplan apply
+          ansible.builtin.wait_for_connection:
+            delay: 2
+            timeout: 60
 
-    - name: Wait for netplan apply to finish
-      ansible.builtin.async_status:
-        jid: "{{ cockpit_netplan_apply_job.ansible_job_id }}"
-      register: cockpit_netplan_apply_status
-      until: cockpit_netplan_apply_status.finished
-      retries: 12
-      delay: 5
-      when: cockpit_netplan_renderer is defined and cockpit_netplan_renderer.changed
+        - name: Wait for netplan apply to finish
+          ansible.builtin.async_status:
+            jid: "{{ cockpit_netplan_apply_job.ansible_job_id }}"
+          register: cockpit_netplan_apply_status
+          until: cockpit_netplan_apply_status.finished
+          retries: 12
+          delay: 5
 
     - name: Validate Cloudflare API token for Caddy DNS-01 challenge
       ansible.builtin.assert:
