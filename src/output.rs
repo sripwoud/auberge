@@ -1,6 +1,8 @@
+use eyre::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::env;
-use std::io::IsTerminal;
+use std::io::{BufRead, BufReader, IsTerminal};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tabled::{Table, Tabled, settings::Style as TableStyle};
 
@@ -65,20 +67,54 @@ pub fn info(msg: &str) {
     }
 }
 
+fn emit_subprocess_line(label: &str, line: &str) {
+    if line.trim().is_empty() {
+        return;
+    }
+    if should_use_colors() {
+        eprintln!("{DIM}  {label} | {line}{RESET}");
+    } else {
+        eprintln!("  {label} | {line}");
+    }
+}
+
 pub fn subprocess_output(label: &str, text: &str) {
     if !is_verbose() {
         return;
     }
     for line in text.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        if should_use_colors() {
-            eprintln!("{DIM}  {label} | {line}{RESET}");
-        } else {
-            eprintln!("  {label} | {line}");
-        }
+        emit_subprocess_line(label, line);
     }
+}
+
+pub fn run_piped(label: &str, cmd: &mut Command) -> Result<ExitStatus> {
+    if !is_verbose() {
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        return cmd.status().wrap_err("failed to run subprocess");
+    }
+
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
+
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+
+    let label_owned = label.to_owned();
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().flatten() {
+                emit_subprocess_line(&label_owned, &line);
+            }
+        });
+
+        let reader = BufReader::new(stderr);
+        for line in reader.lines().flatten() {
+            emit_subprocess_line(label, &line);
+        }
+    });
+
+    child.wait().wrap_err("failed to wait on subprocess")
 }
 
 pub fn print_table<T: Tabled>(data: &[T]) {
@@ -193,6 +229,23 @@ mod tests {
         let _guard = TEST_LOCK.lock().unwrap();
         set_verbose(true);
         subprocess_output("test", "");
+        set_verbose(false);
+    }
+
+    #[test]
+    fn run_piped_suppresses_when_not_verbose() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(false);
+        let status = run_piped("true", Command::new("true").arg("")).unwrap();
+        assert!(status.success());
+    }
+
+    #[test]
+    fn run_piped_streams_when_verbose() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(true);
+        let status = run_piped("echo", Command::new("echo").arg("hello")).unwrap();
+        assert!(status.success());
         set_verbose(false);
     }
 }
