@@ -178,7 +178,8 @@ pub fn run_with_progress(
     const MAX_STDERR_LINES: usize = 20;
 
     let reader = BufReader::new(stderr);
-    for line in reader.lines().map_while(Result::ok) {
+    for line_result in reader.lines() {
+        let Ok(line) = line_result else { continue };
         if verbose {
             emit_subprocess_line(label, &line);
         }

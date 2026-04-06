@@ -7,6 +7,7 @@ use clap::Subcommand;
 use eyre::{Context, Result};
 use std::ffi::OsString;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::Instant;
@@ -1264,6 +1265,9 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
     let restore_result = (|| -> Result<()> {
         for remote_path in &config.paths {
             pb.set_message(format!("Restoring {} → {}", app_name, remote_path));
+            if !std::io::stderr().is_terminal() {
+                eprintln!("  Restoring to: {}", remote_path);
+            }
             rsync_to_remote(host, ssh_key, backup_path, remote_path, &pb)?;
         }
 
