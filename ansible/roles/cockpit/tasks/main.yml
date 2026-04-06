@@ -85,6 +85,17 @@
         state: started
         daemon_reload: true
 
+    - name: Check if netplan is in use
+      ansible.builtin.stat:
+        path: /etc/netplan
+      register: cockpit_netplan_dir
+
+    - name: Ensure NetworkManager is installed
+      ansible.builtin.apt:
+        name: network-manager
+        state: present
+      when: cockpit_netplan_dir.stat.exists
+
     - name: Set NetworkManager as netplan renderer
       # The server uses netplan with the default networkd renderer, so NM has no
       # managed interfaces and reports "connected (local only)". PackageKit checks
@@ -100,7 +111,19 @@
         owner: root
         group: root
         mode: "0600"
+      when: cockpit_netplan_dir.stat.exists
+      register: cockpit_netplan_renderer
       notify: Apply netplan
+
+    - name: Flush handlers to apply netplan before continuing
+      ansible.builtin.meta: flush_handlers
+      when: cockpit_netplan_renderer is defined and cockpit_netplan_renderer.changed
+
+    - name: Wait for SSH to return after netplan apply
+      ansible.builtin.wait_for_connection:
+        delay: 2
+        timeout: 60
+      when: cockpit_netplan_renderer is defined and cockpit_netplan_renderer.changed
 
     - name: Validate Cloudflare API token for Caddy DNS-01 challenge
       ansible.builtin.assert:
