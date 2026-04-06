@@ -89,12 +89,13 @@
       ansible.builtin.stat:
         path: /usr/sbin/netplan
       register: cockpit_netplan_bin
+      when: cockpit_configure_nm_renderer
 
     - name: Ensure NetworkManager is installed
       ansible.builtin.apt:
         name: network-manager
         state: present
-      when: cockpit_netplan_bin.stat.exists
+      when: cockpit_configure_nm_renderer and cockpit_netplan_bin.stat.exists
 
     - name: Set NetworkManager as netplan renderer
       # The server uses netplan with the default networkd renderer, so NM has no
@@ -111,11 +112,16 @@
         owner: root
         group: root
         mode: "0600"
-      when: cockpit_netplan_bin.stat.exists
+      when: cockpit_configure_nm_renderer and cockpit_netplan_bin.stat.exists
       register: cockpit_netplan_renderer
 
+    - name: Validate netplan config before applying
+      ansible.builtin.command: /usr/sbin/netplan generate
+      changed_when: false
+      when: cockpit_netplan_renderer is defined and cockpit_netplan_renderer.changed
+
     - name: Start netplan apply
-      ansible.builtin.command: netplan apply
+      ansible.builtin.command: /usr/sbin/netplan apply
       async: 60
       poll: 0
       register: cockpit_netplan_apply_job

@@ -2,3 +2,4 @@
 cockpit_port: 9090
 cockpit_subdomain: cockpit
 cockpit_domain: "{{ cockpit_subdomain }}.{{ domain }}"
+cockpit_configure_nm_renderer: false
