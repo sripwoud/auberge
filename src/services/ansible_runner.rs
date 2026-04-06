@@ -203,7 +203,7 @@ pub fn run_playbook(
     let spinner = output::spinner(&format!("Running {}...", playbook_label));
     let result = output::run_with_stdout_progress("ansible", &mut cmd, &spinner, |line, pb| {
         if let Some(task) = output::parse_ansible_task(line) {
-            pb.set_message(format!("Running: {}", task));
+            pb.set_message(format!("Running: {}", output::format_ansible_task(&task)));
         }
     })
     .wrap_err("Failed to execute ansible-playbook")?;

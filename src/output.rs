@@ -405,6 +405,18 @@ pub fn parse_ansible_task(line: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
+pub fn format_ansible_task(task: &str) -> String {
+    if let Some((role, name)) = task.split_once(" : ") {
+        if should_use_colors() {
+            format!("{DIM}{}:{RESET} {}", role, name)
+        } else {
+            format!("{}: {}", role, name)
+        }
+    } else {
+        task.to_string()
+    }
+}
+
 pub fn run_with_stdout_progress(
     label: &str,
     cmd: &mut Command,
@@ -662,6 +674,28 @@ mod tests {
     #[test]
     fn parse_ansible_task_empty_returns_none() {
         assert!(parse_ansible_task("").is_none());
+    }
+
+    #[test]
+    fn format_ansible_task_dims_role_prefix() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(false);
+        let formatted = format_ansible_task("nginx : Install package");
+        assert!(formatted.contains("nginx:"));
+        assert!(formatted.contains("Install package"));
+    }
+
+    #[test]
+    fn format_ansible_task_no_role_returns_unchanged() {
+        let formatted = format_ansible_task("Gathering Facts");
+        assert_eq!(formatted, "Gathering Facts");
+    }
+
+    #[test]
+    fn format_ansible_task_nested_role_splits_on_first_separator() {
+        let formatted = format_ansible_task("role : sub : detail");
+        assert!(formatted.contains("role:"));
+        assert!(formatted.contains("sub : detail"));
     }
 
     #[test]
