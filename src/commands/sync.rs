@@ -100,9 +100,9 @@ pub fn run_sync_music(
         output::info("Dry run mode");
     }
 
-    let status = cmd.status().wrap_err("Failed to execute rsync")?;
-
-    if status.success() {
+    let result = output::run_piped("rsync", &mut cmd).wrap_err("Failed to execute rsync")?;
+    if result.status.success() {
+        output::clear_subprocess_lines(result.lines_written);
         output::success("Music sync completed");
         Ok(())
     } else {

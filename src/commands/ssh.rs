@@ -90,9 +90,10 @@ pub fn run_ssh_keygen(host_arg: Option<String>, user: String, force: bool) -> Re
         cmd.arg("-y");
     }
 
-    let status = cmd.status().wrap_err("Failed to execute ssh-keygen")?;
-
-    if status.success() {
+    let result =
+        output::run_piped("ssh-keygen", &mut cmd).wrap_err("Failed to execute ssh-keygen")?;
+    if result.status.success() {
+        output::clear_subprocess_lines(result.lines_written);
         output::success(&format!("Generated key: {}", key_path.display()));
         output::info(&format!("Public key: {}.pub", key_path.display()));
         Ok(())
@@ -222,17 +223,22 @@ pub fn run_ssh_add_key(
         pubkey_content.trim()
     );
 
-    let status = Command::new("ssh")
-        .arg("-i")
-        .arg(&connect_key)
-        .arg("-p")
-        .arg(host.vars.ansible_port.to_string())
-        .arg(format!("{}@{}", user, host.vars.ansible_host))
-        .arg(ssh_cmd)
-        .status()
-        .wrap_err("Failed to execute SSH command")?;
+    let result = output::run_piped(
+        "ssh",
+        Command::new("ssh")
+            .arg("-i")
+            .arg(&connect_key)
+            .arg("-p")
+            .arg(host.vars.ansible_port.to_string())
+            .arg(format!("{}@{}", user, host.vars.ansible_host))
+            .arg(ssh_cmd),
+    )
+    .wrap_err("Failed to execute SSH command")?;
+    if result.status.success() {
+        output::clear_subprocess_lines(result.lines_written);
+    }
 
-    if !status.success() {
+    if !result.status.success() {
         eyre::bail!("Failed to add key to remote host");
     }
 

@@ -7,5 +7,6 @@ ansible/group_vars/all/*.vault
 /target
 config.toml
 CLAUDE.md
+plan.md
 __pycache__/
 *.pyc

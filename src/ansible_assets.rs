@@ -1,3 +1,4 @@
+use crate::output;
 use eyre::{Context, Result};
 use include_dir::{Dir, include_dir};
 use std::path::{Path, PathBuf};
@@ -76,20 +77,25 @@ impl AnsibleAssets {
         }
 
         eprintln!("Installing ansible collections (one-time)...");
-        let status = std::process::Command::new("ansible-galaxy")
-            .arg("collection")
-            .arg("install")
-            .arg("-r")
-            .arg(&requirements)
-            .arg("-p")
-            .arg(&collections_dir)
-            .status()
-            .wrap_err("Failed to run ansible-galaxy. Is ansible installed?")?;
+        let result = output::run_piped(
+            "ansible-galaxy",
+            std::process::Command::new("ansible-galaxy")
+                .arg("collection")
+                .arg("install")
+                .arg("-r")
+                .arg(&requirements)
+                .arg("-p")
+                .arg(&collections_dir),
+        )
+        .wrap_err("Failed to run ansible-galaxy. Is ansible installed?")?;
+        if result.status.success() {
+            output::clear_subprocess_lines(result.lines_written);
+        }
 
-        if !status.success() {
+        if !result.status.success() {
             eyre::bail!(
                 "ansible-galaxy collection install failed with exit code {}",
-                status.code().unwrap_or(-1)
+                result.status.code().unwrap_or(-1)
             );
         }
 

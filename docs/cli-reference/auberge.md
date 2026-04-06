@@ -14,12 +14,12 @@ Auberge is a comprehensive command-line tool for managing self-hosted infrastruc
 
 ## Global Options
 
-| Option        | Description                   |
-| ------------- | ----------------------------- |
-| -v, --verbose | Enable verbose output         |
-| -q, --quiet   | Suppress non-essential output |
-| -h, --help    | Print help information        |
-| -V, --version | Print version information     |
+| Option        | Description                                                         |
+| ------------- | ------------------------------------------------------------------- |
+| -v, --verbose | Show dimmed subprocess output (cleared on success, kept on failure) |
+| -q, --quiet   | Suppress non-essential output                                       |
+| -h, --help    | Print help information                                              |
+| -V, --version | Print version information                                           |
 
 ## Commands
 
