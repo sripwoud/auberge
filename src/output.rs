@@ -423,30 +423,42 @@ pub fn run_with_stdout_progress(
     pb: &ProgressBar,
     mut line_handler: impl FnMut(&str, &ProgressBar),
 ) -> Result<ProgressResult> {
-    cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
     let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
     let verbose = is_verbose();
 
-    let mut last_lines: Vec<String> = Vec::new();
+    let mut last_stdout: Vec<String> = Vec::new();
     const MAX_LINES: usize = 20;
 
-    for line_result in BufReader::new(stdout).lines() {
-        let Ok(line) = line_result else { continue };
-        if verbose {
-            emit_subprocess_line(label, &line);
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            for line_result in BufReader::new(stderr).lines() {
+                let Ok(line) = line_result else { continue };
+                if verbose {
+                    emit_subprocess_line(label, &line);
+                }
+            }
+        });
+
+        for line_result in BufReader::new(stdout).lines() {
+            let Ok(line) = line_result else { continue };
+            if verbose {
+                emit_subprocess_line(label, &line);
+            }
+            last_stdout.push(line.clone());
+            if last_stdout.len() > MAX_LINES {
+                last_stdout.remove(0);
+            }
+            line_handler(&line, pb);
         }
-        last_lines.push(line.clone());
-        if last_lines.len() > MAX_LINES {
-            last_lines.remove(0);
-        }
-        line_handler(&line, pb);
-    }
+    });
 
     let status = child.wait().wrap_err("failed to wait on subprocess")?;
     Ok(ProgressResult {
         status,
-        last_stderr: last_lines.join("\n"),
+        last_stderr: last_stdout.join("\n"),
     })
 }
 
