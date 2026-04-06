@@ -17,6 +17,8 @@
       tags: [apps, storage, media, books, grimmory]
     - role: cockpit
       tags: [apps, monitoring, cockpit]
+      vars:
+        cockpit_configure_nm_renderer: true
     - role: colporteur
       tags: [apps, web, rss, colporteur]
     - role: freshrss
