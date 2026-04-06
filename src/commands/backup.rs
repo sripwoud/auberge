@@ -1399,7 +1399,7 @@ fn rsync_to_remote(
         .arg(format!("{}/", local_source.display()))
         .arg(format!("{}@{}:{}", host.user, host.address, remote_path));
 
-    let result = output::run_with_progress("rsync", &mut cmd, pb, |line, pb| {
+    let result = output::run_with_stdout_progress("rsync", &mut cmd, pb, |line, pb| {
         if let Some(p) = output::parse_rsync_progress(line) {
             if pb.length().is_none() {
                 output::set_percent_style(pb);
@@ -1601,7 +1601,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     let pb = output::progress_bar(&format!("Pushing {}", backup_dir.display()), None);
     let mut snapshot_id: Option<String> = None;
 
-    let result = output::run_with_progress(
+    let result = output::run_with_stdout_progress(
         "restic",
         Command::new("restic")
             .arg("backup")
@@ -2123,7 +2123,7 @@ fn rsync_from_remote(
         .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
         .arg(local_dest);
 
-    let result = output::run_with_progress("rsync", &mut cmd, pb, |line, pb| {
+    let result = output::run_with_stdout_progress("rsync", &mut cmd, pb, |line, pb| {
         if let Some(p) = output::parse_rsync_progress(line) {
             if pb.length().is_none() {
                 output::set_percent_style(pb);

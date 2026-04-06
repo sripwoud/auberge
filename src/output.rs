@@ -4,8 +4,8 @@ use serde::Deserialize;
 use std::env;
 use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::{Command, ExitStatus, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use tabled::{Table, Tabled, settings::Style as TableStyle};
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
@@ -432,12 +432,21 @@ pub fn run_with_stdout_progress(
     let mut last_stdout: Vec<String> = Vec::new();
     const MAX_LINES: usize = 20;
 
+    let stderr_tail: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let stderr_tail_clone = Arc::clone(&stderr_tail);
+    let label_owned = label.to_owned();
+
     std::thread::scope(|s| {
-        s.spawn(|| {
+        s.spawn(move || {
             for line_result in BufReader::new(stderr).lines() {
                 let Ok(line) = line_result else { continue };
                 if verbose {
-                    emit_subprocess_line(label, &line);
+                    emit_subprocess_line(&label_owned, &line);
+                }
+                let mut tail = stderr_tail_clone.lock().unwrap();
+                tail.push(line);
+                if tail.len() > MAX_LINES {
+                    tail.remove(0);
                 }
             }
         });
@@ -456,9 +465,10 @@ pub fn run_with_stdout_progress(
     });
 
     let status = child.wait().wrap_err("failed to wait on subprocess")?;
+    let last_stderr = stderr_tail.lock().unwrap().join("\n");
     Ok(ProgressResult {
         status,
-        last_stderr: last_stdout.join("\n"),
+        last_stderr,
     })
 }
 
@@ -741,7 +751,7 @@ mod tests {
             "test",
             Command::new("sh")
                 .arg("-c")
-                .arg("echo output details; exit 1"),
+                .arg("echo output details >&2; exit 1"),
             &pb,
             |_line, _pb| {},
         )
