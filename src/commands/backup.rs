@@ -8,7 +8,7 @@ use eyre::{Context, Result};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 use std::time::Instant;
 use tabled::Tabled;
 
@@ -48,11 +48,17 @@ impl<'a> SshSession<'a> {
     }
 
     fn run(&self, command: &str) -> Result<Output> {
-        Command::new("ssh")
+        let out = Command::new("ssh")
             .args(self.ssh_args())
             .arg(command)
             .output()
-            .wrap_err("Failed to execute SSH command")
+            .wrap_err("Failed to execute SSH command")?;
+        let stderr_text = String::from_utf8_lossy(&out.stderr);
+        let lines = output::subprocess_output("ssh", &stderr_text);
+        if out.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
+        Ok(out)
     }
 
     fn run_raw(&self, args: &[&str]) -> Result<Output> {
@@ -61,7 +67,13 @@ impl<'a> SshSession<'a> {
         for arg in args {
             cmd.arg(arg);
         }
-        cmd.output().wrap_err("Failed to execute SSH command")
+        let out = cmd.output().wrap_err("Failed to execute SSH command")?;
+        let stderr_text = String::from_utf8_lossy(&out.stderr);
+        let lines = output::subprocess_output("ssh", &stderr_text);
+        if out.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
+        Ok(out)
     }
 
     fn rsync_e_arg(&self) -> String {
@@ -86,7 +98,7 @@ impl<'a> SshSession<'a> {
     }
 
     fn scp_to(&self, local: &Path, remote: &str) -> Result<()> {
-        let output = Command::new("scp")
+        let out = Command::new("scp")
             .args(self.scp_args())
             .arg(local)
             .arg(format!(
@@ -95,9 +107,13 @@ impl<'a> SshSession<'a> {
             ))
             .output()
             .wrap_err("Failed to upload file via scp")?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stderr = stderr.trim();
+        let stderr_text = String::from_utf8_lossy(&out.stderr);
+        let lines = output::subprocess_output("scp", &stderr_text);
+        if out.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
+        if !out.status.success() {
+            let stderr = stderr_text.trim();
             if stderr.is_empty() {
                 eyre::bail!("scp to {}:{} failed", self.host.address, remote);
             } else {
@@ -108,7 +124,7 @@ impl<'a> SshSession<'a> {
     }
 
     fn scp_from(&self, remote: &str, local: &Path) -> Result<()> {
-        let output = Command::new("scp")
+        let out = Command::new("scp")
             .args(self.scp_args())
             .arg(format!(
                 "{}@{}:{}",
@@ -117,9 +133,13 @@ impl<'a> SshSession<'a> {
             .arg(local)
             .output()
             .wrap_err("Failed to download file via scp")?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stderr = stderr.trim();
+        let stderr_text = String::from_utf8_lossy(&out.stderr);
+        let lines = output::subprocess_output("scp", &stderr_text);
+        if out.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
+        if !out.status.success() {
+            let stderr = stderr_text.trim();
             if stderr.is_empty() {
                 eyre::bail!("scp from {}:{} failed", self.host.address, remote);
             } else {
@@ -135,15 +155,20 @@ impl<'a> SshSession<'a> {
     }
 
     fn systemctl(&self, action: &str, service: &str) -> Result<()> {
-        let status = Command::new("ssh")
-            .args(self.ssh_args())
-            .arg("sudo")
-            .arg("systemctl")
-            .arg(action)
-            .arg(service)
-            .status()
-            .wrap_err_with(|| format!("Failed to {} service {}", action, service))?;
-        if !status.success() {
+        let result = output::run_piped(
+            "systemctl",
+            Command::new("ssh")
+                .args(self.ssh_args())
+                .arg("sudo")
+                .arg("systemctl")
+                .arg(action)
+                .arg(service),
+        )
+        .wrap_err_with(|| format!("Failed to {} service {}", action, service))?;
+        if result.status.success() {
+            output::clear_subprocess_lines(result.lines_written);
+        }
+        if !result.status.success() {
             eyre::bail!("systemctl {} {} failed", action, service);
         }
         Ok(())
@@ -1336,20 +1361,20 @@ fn rsync_to_remote(
         .ok_or_else(|| eyre::eyre!("Invalid remote path: {}", remote_path))?;
 
     let session = SshSession::new(host, ssh_key);
-    let _ = Command::new("ssh")
-        .args(session.ssh_args())
-        .arg("sudo")
-        .arg("mkdir")
-        .arg("-p")
-        .arg(parent_dir)
-        .status();
+    let _ = output::run_piped(
+        "ssh",
+        Command::new("ssh")
+            .args(session.ssh_args())
+            .arg("sudo")
+            .arg("mkdir")
+            .arg("-p")
+            .arg(parent_dir),
+    );
 
     let mut cmd = Command::new("rsync");
     cmd.arg("-az")
         .arg("--delete")
-        .arg("--rsync-path=sudo rsync")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .arg("--rsync-path=sudo rsync");
 
     for pattern in RSYNC_EXCLUDES {
         cmd.arg(format!("--exclude={}", pattern));
@@ -1360,9 +1385,12 @@ fn rsync_to_remote(
         .arg(format!("{}/", local_source.display()))
         .arg(format!("{}@{}:{}", host.user, host.address, remote_path));
 
-    let status = cmd.status().wrap_err("Failed to execute rsync")?;
+    let result = output::run_piped("rsync", &mut cmd).wrap_err("Failed to execute rsync")?;
+    if result.status.success() {
+        output::clear_subprocess_lines(result.lines_written);
+    }
 
-    if !status.success() {
+    if !result.status.success() {
         eyre::bail!("rsync failed for {}", remote_path);
     }
 
@@ -1498,15 +1526,19 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         .output();
 
     let needs_init = match snapshots_check {
-        Ok(output) if output.status.success() => false,
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("Is there a repository at the following location")
-                || stderr.contains("unable to open config file")
+        Ok(out) => {
+            let stderr_text = String::from_utf8_lossy(&out.stderr);
+            let lines = output::subprocess_output("restic", &stderr_text);
+            if out.status.success() {
+                output::clear_subprocess_lines(lines);
+                false
+            } else if stderr_text.contains("Is there a repository at the following location")
+                || stderr_text.contains("unable to open config file")
             {
+                output::clear_subprocess_lines(lines);
                 true
             } else {
-                eyre::bail!("restic snapshots failed: {}", stderr.trim());
+                eyre::bail!("restic snapshots failed: {}", stderr_text.trim());
             }
         }
         Err(_) => eyre::bail!("restic not found. Install restic: https://restic.net"),
@@ -1521,10 +1553,17 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
             .env_remove("RESTIC_PASSWORD_COMMAND")
             .output()
             .wrap_err("Failed to initialize restic repository")?;
+        let stderr_text = String::from_utf8_lossy(&init_output.stderr);
+        let lines = output::subprocess_output("restic", &stderr_text);
+        if init_output.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
 
         if !init_output.status.success() {
-            let stderr = String::from_utf8_lossy(&init_output.stderr);
-            eyre::bail!("Failed to initialize restic repository: {}", stderr.trim());
+            eyre::bail!(
+                "Failed to initialize restic repository: {}",
+                stderr_text.trim()
+            );
         }
     }
 
@@ -1540,9 +1579,14 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
 
     spinner.finish_and_clear();
 
+    let stderr_text = String::from_utf8_lossy(&backup_output.stderr);
+    let lines = output::subprocess_output("restic", &stderr_text);
+    if backup_output.status.success() {
+        output::clear_subprocess_lines(lines);
+    }
+
     if !backup_output.status.success() {
-        let stderr = String::from_utf8_lossy(&backup_output.stderr);
-        eyre::bail!("restic backup failed: {}", stderr.trim());
+        eyre::bail!("restic backup failed: {}", stderr_text.trim());
     }
 
     let stdout = String::from_utf8_lossy(&backup_output.stdout);
@@ -1578,16 +1622,21 @@ pub fn run_backup_prune(dry_run: bool) -> Result<()> {
         cmd.arg("--dry-run");
     }
 
-    let output = cmd.output().wrap_err("Failed to run restic forget")?;
+    let prune_output = cmd.output().wrap_err("Failed to run restic forget")?;
 
     spinner.finish_and_clear();
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eyre::bail!("restic prune failed: {}", stderr.trim());
+    let stderr_text = String::from_utf8_lossy(&prune_output.stderr);
+    let lines = output::subprocess_output("restic", &stderr_text);
+    if prune_output.status.success() {
+        output::clear_subprocess_lines(lines);
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !prune_output.status.success() {
+        eyre::bail!("restic prune failed: {}", stderr_text.trim());
+    }
+
+    let stdout = String::from_utf8_lossy(&prune_output.stdout);
     if !stdout.is_empty() {
         eprintln!("{}", stdout.trim());
     }
@@ -1964,22 +2013,27 @@ fn set_remote_ownership(
     group: &str,
 ) -> Result<()> {
     let session = SshSession::new(host, ssh_key);
-    let status = Command::new("ssh")
-        .args(session.ssh_args())
-        .arg("sudo")
-        .arg("chown")
-        .arg("-R")
-        .arg(format!("{}:{}", user, group))
-        .arg(remote_path)
-        .status()
-        .wrap_err_with(|| {
-            format!(
-                "Failed to set ownership of {} to {}:{}",
-                remote_path, user, group
-            )
-        })?;
+    let result = output::run_piped(
+        "ssh",
+        Command::new("ssh")
+            .args(session.ssh_args())
+            .arg("sudo")
+            .arg("chown")
+            .arg("-R")
+            .arg(format!("{}:{}", user, group))
+            .arg(remote_path),
+    )
+    .wrap_err_with(|| {
+        format!(
+            "Failed to set ownership of {} to {}:{}",
+            remote_path, user, group
+        )
+    })?;
+    if result.status.success() {
+        output::clear_subprocess_lines(result.lines_written);
+    }
 
-    if !status.success() {
+    if !result.status.success() {
         eyre::bail!("chown -R {}:{} {} failed", user, group, remote_path);
     }
 
@@ -1996,9 +2050,7 @@ fn rsync_from_remote(
     let mut cmd = Command::new("rsync");
     cmd.arg("-az")
         .arg("--relative")
-        .arg("--rsync-path=sudo rsync")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .arg("--rsync-path=sudo rsync");
 
     for pattern in RSYNC_EXCLUDES {
         cmd.arg(format!("--exclude={}", pattern));
@@ -2009,9 +2061,12 @@ fn rsync_from_remote(
         .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
         .arg(local_dest);
 
-    let status = cmd.status().wrap_err("Failed to execute rsync")?;
+    let result = output::run_piped("rsync", &mut cmd).wrap_err("Failed to execute rsync")?;
+    if result.status.success() {
+        output::clear_subprocess_lines(result.lines_written);
+    }
 
-    if !status.success() {
+    if !result.status.success() {
         eyre::bail!("rsync failed for {}", remote_path);
     }
 
@@ -2069,7 +2124,9 @@ fn validate_cross_host_restore(
         .output();
 
     match ssh_test {
-        Ok(output) if output.status.success() => {
+        Ok(out) if out.status.success() => {
+            let lines = output::subprocess_output("ssh", &String::from_utf8_lossy(&out.stderr));
+            output::clear_subprocess_lines(lines);
             eprintln!("    ✓ SSH connection successful");
         }
         _ => {
