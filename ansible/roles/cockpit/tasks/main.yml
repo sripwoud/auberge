@@ -85,6 +85,23 @@
         state: started
         daemon_reload: true
 
+    - name: Set NetworkManager as netplan renderer
+      # The server uses netplan with the default networkd renderer, so NM has no
+      # managed interfaces and reports "connected (local only)". PackageKit checks
+      # NM state and treats anything below "connected (global)" as offline, breaking
+      # Cockpit's software updates page. Switching the renderer lets NM manage ens6
+      # and properly detect internet connectivity.
+      ansible.builtin.copy:
+        content: |
+          network:
+            version: 2
+            renderer: NetworkManager
+        dest: /etc/netplan/99-nm-renderer.yaml
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Apply netplan
+
     - name: Validate Cloudflare API token for Caddy DNS-01 challenge
       ansible.builtin.assert:
         that:

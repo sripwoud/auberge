@@ -5,6 +5,11 @@
     state: restarted
     daemon_reload: true
 
+- name: Apply netplan
+  ansible.builtin.command:
+    cmd: netplan apply
+  changed_when: true
+
 - name: Restart caddy
   ansible.builtin.systemd_service:
     name: caddy
