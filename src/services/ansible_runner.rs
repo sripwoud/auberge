@@ -8,6 +8,7 @@ use std::process::Command;
 pub struct AnsibleResult {
     pub success: bool,
     pub exit_code: i32,
+    pub last_output: String,
 }
 
 pub struct InventoryHost {
@@ -191,6 +192,7 @@ pub fn run_playbook(
         return Ok(AnsibleResult {
             success: status.success(),
             exit_code: status.code().unwrap_or(-1),
+            last_output: String::new(),
         });
     }
 
@@ -210,6 +212,7 @@ pub fn run_playbook(
     Ok(AnsibleResult {
         success: result.status.success(),
         exit_code: result.status.code().unwrap_or(-1),
+        last_output: result.last_stderr,
     })
 }
 
@@ -242,6 +245,7 @@ pub fn run_bootstrap(playbook: &Path, host: &InventoryHost) -> Result<AnsibleRes
     Ok(AnsibleResult {
         success: status.success(),
         exit_code: status.code().unwrap_or(-1),
+        last_output: String::new(),
     })
 }
 

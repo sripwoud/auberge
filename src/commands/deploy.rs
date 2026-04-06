@@ -270,11 +270,20 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         )?;
 
         if !result.success {
-            eyre::bail!(
-                "{} failed with exit code {}",
-                playbook.name,
-                result.exit_code
-            );
+            if result.last_output.is_empty() {
+                eyre::bail!(
+                    "{} failed with exit code {}",
+                    playbook.name,
+                    result.exit_code
+                );
+            } else {
+                eyre::bail!(
+                    "{} failed with exit code {}:\n{}",
+                    playbook.name,
+                    result.exit_code,
+                    result.last_output.trim()
+                );
+            }
         }
 
         output::success(&format!("{} completed successfully", playbook.name));
