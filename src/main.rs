@@ -25,6 +25,10 @@ use commands::deploy::{DeployCmd, run_deploy};
 use commands::dns::{
     DnsCommands, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all, run_dns_status,
 };
+use commands::headscale::{
+    HeadscaleCommands, run_headscale_add_user, run_headscale_list_nodes, run_headscale_list_users,
+    run_headscale_remove_user,
+};
 use commands::host::{
     AddHostArgs, HostCommands, run_host_add, run_host_edit, run_host_list, run_host_remove,
     run_host_show,
@@ -62,6 +66,12 @@ enum Commands {
     Ansible(AnsibleCommands),
     #[command(subcommand, alias = "b", about = "Backup and restore application data")]
     Backup(BackupCommands),
+    #[command(
+        subcommand,
+        alias = "hs",
+        about = "Manage Headscale VPN users and nodes"
+    )]
+    Headscale(HeadscaleCommands),
     #[command(subcommand, alias = "h", about = "Manage VPS hosts")]
     Host(HostCommands),
     #[command(subcommand, alias = "ss", about = "SSH key management")]
@@ -86,6 +96,18 @@ async fn main() -> Result<()> {
         Commands::Select(cmd) => match cmd {
             SelectCommands::Host { group } => run_select_host(group),
             SelectCommands::Playbook => run_select_playbook(),
+        },
+        Commands::Headscale(cmd) => match cmd {
+            HeadscaleCommands::AddUser {
+                name,
+                expiration,
+                host,
+            } => run_headscale_add_user(name, expiration, host),
+            HeadscaleCommands::ListUsers { output, host } => run_headscale_list_users(output, host),
+            HeadscaleCommands::ListNodes { output, host } => run_headscale_list_nodes(output, host),
+            HeadscaleCommands::RemoveUser { name, yes, host } => {
+                run_headscale_remove_user(name, yes, host)
+            }
         },
         Commands::Host(cmd) => match cmd {
             HostCommands::Add {
