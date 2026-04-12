@@ -302,10 +302,16 @@ pub fn run_headscale_add_user(
     println!();
     println!("Share these instructions:");
     println!("─────────────────────────────────────");
-    println!("1. Install Tailscale from the App Store");
-    println!("2. Long-press the ⋯ menu → \"Use custom coordination server\"");
-    println!("3. Enter: {}", login_server);
-    println!("4. Use pre-auth key: {}", key.key);
+    println!("1. Install Tailscale (App Store / Play Store / tailscale.com)");
+    println!("2. Set custom control server to: {}", login_server);
+    println!("   iOS: long-press ⋯ menu before signing in");
+    println!("   Android: top menu > Use another server");
+    println!("   CLI: tailscale up --login-server {}", login_server);
+    println!("3. Use pre-auth key: {}", key.key);
+    println!(
+        "   CLI: tailscale up --login-server {} --authkey {}",
+        login_server, key.key
+    );
     println!("─────────────────────────────────────");
 
     output::success("Done");
