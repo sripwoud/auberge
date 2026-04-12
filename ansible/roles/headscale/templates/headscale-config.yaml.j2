@@ -1,5 +1,7 @@
 server_url: {{ headscale_server_url }}
 listen_addr: 127.0.0.1:{{ headscale_port }}
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
 metrics_listen_addr: 127.0.0.1:{{ headscale_metrics_port }}
 noise:
   private_key_path: {{ headscale_data_dir }}/noise_private.key
