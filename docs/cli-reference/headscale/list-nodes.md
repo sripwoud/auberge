@@ -36,10 +36,10 @@ auberge headscale list-nodes --host myserver --output json
 ## Output Example
 
 ```
-ID  HOSTNAME      USER     IP             ONLINE  LAST SEEN
-1   laptop        default  100.64.0.1     yes     2024-01-20 15:00:00
-2   phone         mobile   100.64.0.2     no      2024-01-19 08:00:00
-3   home-server   default  100.64.0.3     yes     2024-01-20 15:00:00
+ID  NAME          USER     IPS                               ONLINE  LAST SEEN
+1   laptop        default  100.64.0.1, fd7a:115c:a1e0::1     yes     2024-01-20 15:00:00 UTC
+2   phone         mobile   100.64.0.2, fd7a:115c:a1e0::2     no      2024-01-19 08:00:00 UTC
+3   home-server   default  100.64.0.3, fd7a:115c:a1e0::3     yes     2024-01-20 15:00:00 UTC
 ```
 
 ## Related Commands

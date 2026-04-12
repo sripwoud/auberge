@@ -37,7 +37,7 @@ auberge headscale remove-user --host myserver default --yes
 ## Output Example
 
 ```
-Remove user 'default' and all associated nodes? [y/N]: y
+Remove user 'default'? [y/N]: y
 ✓ User 'default' removed
 ```
 

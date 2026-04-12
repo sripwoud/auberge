@@ -19,12 +19,7 @@ pub enum HeadscaleCommands {
     AddUser {
         #[arg(help = "Username to create")]
         name: Option<String>,
-        #[arg(
-            short,
-            long,
-            help = "Pre-auth key expiration (e.g. 1h, 24h, 48h, 7d)",
-            default_value = "24h"
-        )]
+        #[arg(short, long, help = "Pre-auth key expiration (e.g. 1h, 24h, 48h, 7d)")]
         expiration: Option<String>,
         #[arg(long, help = "Target host running headscale")]
         host: Option<String>,
@@ -213,6 +208,29 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
     Ok((host, ssh_key))
 }
 
+fn validate_username(name: &str) -> Result<()> {
+    if name.is_empty() {
+        eyre::bail!("Username cannot be empty");
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        eyre::bail!("Username must contain only alphanumeric characters, hyphens, or underscores");
+    }
+    Ok(())
+}
+
+fn validate_expiration(exp: &str) -> Result<()> {
+    if !exp
+        .chars()
+        .all(|c| c.is_ascii_digit() || c == 'h' || c == 'd' || c == 'm' || c == 's')
+    {
+        eyre::bail!("Expiration must be a duration like 1h, 24h, 7d");
+    }
+    Ok(())
+}
+
 fn strip_ssh_banner(output: &str) -> &str {
     let trimmed = output.trim();
     if let Some(pos) = trimmed.rfind("****") {
@@ -272,6 +290,9 @@ pub fn run_headscale_add_user(
         None => "24h".to_string(),
     };
 
+    validate_username(&username)?;
+    validate_expiration(&exp)?;
+
     output::info(&format!("Creating user '{}'...", username));
     run_headscale_cmd(&session, &format!("users create {}", username))?;
     output::success(&format!("User '{}' created", username));
@@ -297,22 +318,22 @@ pub fn run_headscale_add_user(
         .unwrap_or_else(|| "example.com".to_string());
     let login_server = format!("https://{}.{}", subdomain, domain);
 
-    println!();
-    println!("Pre-auth key: {}", key.key);
-    println!();
-    println!("Share these instructions:");
-    println!("─────────────────────────────────────");
-    println!("1. Install Tailscale (App Store / Play Store / tailscale.com)");
-    println!("2. Set custom control server to: {}", login_server);
-    println!("   iOS: long-press ⋯ menu before signing in");
-    println!("   Android: top menu > Use another server");
-    println!("   CLI: tailscale up --login-server {}", login_server);
-    println!("3. Use pre-auth key: {}", key.key);
-    println!(
+    println!("{}", key.key);
+
+    eprintln!();
+    eprintln!("Share these instructions:");
+    eprintln!("─────────────────────────────────────");
+    eprintln!("1. Install Tailscale (App Store / Play Store / tailscale.com)");
+    eprintln!("2. Set custom control server to: {}", login_server);
+    eprintln!("   iOS: long-press ⋯ menu before signing in");
+    eprintln!("   Android: top menu > Use another server");
+    eprintln!("   CLI: tailscale up --login-server {}", login_server);
+    eprintln!("3. Use pre-auth key: {}", key.key);
+    eprintln!(
         "   CLI: tailscale up --login-server {} --authkey {}",
         login_server, key.key
     );
-    println!("─────────────────────────────────────");
+    eprintln!("─────────────────────────────────────");
 
     output::success("Done");
     Ok(())
@@ -386,7 +407,10 @@ pub fn run_headscale_remove_user(
     let is_tty = std::io::stdin().is_terminal();
 
     let username = match name {
-        Some(n) => n,
+        Some(n) => {
+            validate_username(&n)?;
+            n
+        }
         None if is_tty => {
             let raw = run_headscale_cmd(&session, "users list -o json")?;
             let users: Vec<HeadscaleUser> =
@@ -557,5 +581,33 @@ mod tests {
         let output = "{\"key\": \"abc\"}";
         let stripped = strip_ssh_banner(output);
         assert_eq!(stripped, "{\"key\": \"abc\"}");
+    }
+
+    #[test]
+    fn validate_username_accepts_valid() {
+        assert!(validate_username("alice").is_ok());
+        assert!(validate_username("bob-123").is_ok());
+        assert!(validate_username("user_name").is_ok());
+    }
+
+    #[test]
+    fn validate_username_rejects_invalid() {
+        assert!(validate_username("").is_err());
+        assert!(validate_username("alice; rm -rf /").is_err());
+        assert!(validate_username("user name").is_err());
+        assert!(validate_username("$(whoami)").is_err());
+    }
+
+    #[test]
+    fn validate_expiration_accepts_valid() {
+        assert!(validate_expiration("1h").is_ok());
+        assert!(validate_expiration("24h").is_ok());
+        assert!(validate_expiration("7d").is_ok());
+    }
+
+    #[test]
+    fn validate_expiration_rejects_invalid() {
+        assert!(validate_expiration("; rm -rf /").is_err());
+        assert!(validate_expiration("24h; whoami").is_err());
     }
 }

@@ -37,8 +37,8 @@ auberge headscale list-users --host myserver --output json
 
 ```
 ID  NAME     CREATED
-1   default  2024-01-15 10:00:00
-2   mobile   2024-01-20 14:30:00
+1   default  2024-01-15 10:00:00 UTC
+2   mobile   2024-01-20 14:30:00 UTC
 ```
 
 ## Related Commands
