@@ -8,6 +8,7 @@ mod output;
 mod selector;
 mod services;
 mod ssh_config;
+mod ssh_session;
 mod user_config;
 
 use clap::{Parser, Subcommand};
