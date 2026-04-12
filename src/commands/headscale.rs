@@ -21,21 +21,21 @@ pub enum HeadscaleCommands {
         name: Option<String>,
         #[arg(short, long, help = "Pre-auth key expiration (e.g. 1h, 24h, 48h, 7d)")]
         expiration: Option<String>,
-        #[arg(long, help = "Target host running headscale")]
+        #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
     #[command(alias = "lu", about = "List registered users")]
     ListUsers {
         #[arg(short, long, help = "Output format: table, json")]
         output: Option<String>,
-        #[arg(long, help = "Target host running headscale")]
+        #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
     #[command(alias = "ln", about = "List connected nodes")]
     ListNodes {
         #[arg(short, long, help = "Output format: table, json")]
         output: Option<String>,
-        #[arg(long, help = "Target host running headscale")]
+        #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
     #[command(alias = "ru", about = "Remove a user")]
@@ -44,7 +44,7 @@ pub enum HeadscaleCommands {
         name: Option<String>,
         #[arg(short, long, help = "Skip confirmation prompt")]
         yes: bool,
-        #[arg(long, help = "Target host running headscale")]
+        #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
 }
