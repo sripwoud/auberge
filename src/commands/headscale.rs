@@ -410,7 +410,10 @@ pub fn run_headscale_remove_user(
         }
     }
 
-    run_headscale_cmd(&session, &format!("users destroy {}", username))?;
+    run_headscale_cmd(
+        &session,
+        &format!("users destroy --name {} --force", username),
+    )?;
     output::success(&format!("User '{}' removed", username));
     Ok(())
 }
