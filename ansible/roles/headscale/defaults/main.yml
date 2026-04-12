@@ -1,7 +1,7 @@
 ---
 headscale_version: "0.25.1"
 headscale_port: 8080
-headscale_metrics_port: 9090
+headscale_metrics_port: 9091
 headscale_stun_port: 3478
 headscale_sys_user: headscale
 headscale_sys_group: headscale
@@ -14,7 +14,7 @@ headscale_server_url: "https://{{ headscale_domain }}"
 headscale_ip_prefix_v4: "100.64.0.0/10"
 headscale_ip_prefix_v6: "fd7a:115c:a1e0::/48"
 headscale_magic_dns_enabled: true
-headscale_base_domain: "{{ domain }}"
+headscale_base_domain: "ts.{{ domain }}"
 headscale_derp_enabled: true
 headscale_derp_region_id: 999
 headscale_derp_region_name: "self-hosted"

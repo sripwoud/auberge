@@ -10,7 +10,7 @@ auberge [OPTIONS] <COMMAND>
 
 ## Description
 
-Auberge is a comprehensive command-line tool for managing self-hosted infrastructure. It provides commands for managing VPS hosts, running Ansible playbooks, backing up and restoring application data, SSH key management, DNS management via Cloudflare, and file synchronization.
+Auberge is a comprehensive command-line tool for managing self-hosted infrastructure. It provides commands for managing VPS hosts, running Ansible playbooks, backing up and restoring application data, SSH key management, DNS management via Cloudflare, Headscale user and node management, and file synchronization.
 
 ## Global Options
 
@@ -23,17 +23,18 @@ Auberge is a comprehensive command-line tool for managing self-hosted infrastruc
 
 ## Commands
 
-| Command                      | Alias | Description                             |
-| ---------------------------- | ----- | --------------------------------------- |
-| [deploy](deploy.md)          | dp    | Deploy apps to a host                   |
-| [select](select/host.md)     | se    | Select hosts or playbooks interactively |
-| [ansible](ansible/run.md)    | a     | Run ansible playbooks                   |
-| [backup](backup/create.md)   | b     | Backup and restore application data     |
-| [host](host/add.md)          | h     | Manage VPS hosts                        |
-| [ssh](ssh/keygen.md)         | ss    | SSH key management                      |
-| [sync](sync/music.md)        | sy    | Sync files to remote hosts              |
-| [dns](dns/list.md)           | d     | DNS management via Cloudflare           |
-| [config](config/overview.md) | c     | Manage user configuration               |
+| Command                            | Alias | Description                             |
+| ---------------------------------- | ----- | --------------------------------------- |
+| [deploy](deploy.md)                | dp    | Deploy apps to a host                   |
+| [select](select/host.md)           | se    | Select hosts or playbooks interactively |
+| [ansible](ansible/run.md)          | a     | Run ansible playbooks                   |
+| [backup](backup/create.md)         | b     | Backup and restore application data     |
+| [host](host/add.md)                | h     | Manage VPS hosts                        |
+| [ssh](ssh/keygen.md)               | ss    | SSH key management                      |
+| [sync](sync/music.md)              | sy    | Sync files to remote hosts              |
+| [dns](dns/list.md)                 | d     | DNS management via Cloudflare           |
+| [headscale](headscale/add-user.md) | hs    | Manage Headscale users and nodes        |
+| [config](config/overview.md)       | c     | Manage user configuration               |
 
 ## Configuration
 

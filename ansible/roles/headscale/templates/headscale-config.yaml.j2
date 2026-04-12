@@ -1,5 +1,7 @@
 server_url: {{ headscale_server_url }}
 listen_addr: 127.0.0.1:{{ headscale_port }}
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
 metrics_listen_addr: 127.0.0.1:{{ headscale_metrics_port }}
 noise:
   private_key_path: {{ headscale_data_dir }}/noise_private.key
@@ -14,6 +16,7 @@ derp:
     region_code: self
     region_name: {{ headscale_derp_region_name }}
     stun_listen_addr: 0.0.0.0:{{ headscale_stun_port }}
+    private_key_path: {{ headscale_data_dir }}/derp_private.key
   urls: []
   auto_update_enabled: false
 database:

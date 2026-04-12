@@ -73,6 +73,11 @@
     - [set](cli-reference/dns/set.md)
     - [migrate](cli-reference/dns/migrate.md)
     - [set-all](cli-reference/dns/set-all.md)
+  - Headscale
+    - [add-user](cli-reference/headscale/add-user.md)
+    - [list-users](cli-reference/headscale/list-users.md)
+    - [list-nodes](cli-reference/headscale/list-nodes.md)
+    - [remove-user](cli-reference/headscale/remove-user.md)
   - Select
     - [host](cli-reference/select/host.md)
     - [playbook](cli-reference/select/playbook.md)
