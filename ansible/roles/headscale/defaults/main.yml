@@ -1,7 +1,7 @@
 ---
 headscale_version: "0.25.1"
 headscale_port: 8080
-headscale_metrics_port: 9090
+headscale_metrics_port: 9091
 headscale_stun_port: 3478
 headscale_sys_user: headscale
 headscale_sys_group: headscale
