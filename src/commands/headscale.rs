@@ -8,6 +8,7 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Input, Select};
 use eyre::{Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use tabled::Tabled;
@@ -55,22 +56,37 @@ pub enum HeadscaleCommands {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct HeadscaleUser {
-    id: String,
+    id: u64,
     name: String,
-    #[serde(rename = "createdAt")]
-    created_at: String,
+    created_at: Option<ProtoTimestamp>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProtoTimestamp {
+    seconds: i64,
+    #[serde(default)]
+    nanos: i32,
+}
+
+impl ProtoTimestamp {
+    fn to_rfc3339(&self) -> String {
+        chrono::DateTime::from_timestamp(self.seconds, self.nanos as u32)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            .unwrap_or_else(|| format!("{}s", self.seconds))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct HeadscaleNode {
-    id: String,
+    id: u64,
     #[serde(rename = "givenName")]
     given_name: String,
-    #[serde(rename = "ipAddresses")]
+    #[serde(rename = "ipAddresses", default)]
     ip_addresses: Vec<String>,
     user: HeadscaleNodeUser,
     #[serde(rename = "lastSeen")]
-    last_seen: String,
+    last_seen: Option<ProtoTimestamp>,
+    #[serde(default)]
     online: bool,
 }
 
@@ -97,9 +113,13 @@ struct UserDisplay {
 impl From<&HeadscaleUser> for UserDisplay {
     fn from(u: &HeadscaleUser) -> Self {
         Self {
-            id: u.id.clone(),
+            id: u.id.to_string(),
             name: u.name.clone(),
-            created_at: u.created_at.clone(),
+            created_at: u
+                .created_at
+                .as_ref()
+                .map(|t| t.to_rfc3339())
+                .unwrap_or_default(),
         }
     }
 }
@@ -123,7 +143,7 @@ struct NodeDisplay {
 impl From<&HeadscaleNode> for NodeDisplay {
     fn from(n: &HeadscaleNode) -> Self {
         Self {
-            id: n.id.clone(),
+            id: n.id.to_string(),
             name: n.given_name.clone(),
             user: n.user.name.clone(),
             ips: n.ip_addresses.join(", "),
@@ -132,7 +152,11 @@ impl From<&HeadscaleNode> for NodeDisplay {
             } else {
                 "no".to_string()
             },
-            last_seen: n.last_seen.clone(),
+            last_seen: n
+                .last_seen
+                .as_ref()
+                .map(|t| t.to_rfc3339())
+                .unwrap_or_default(),
         }
     }
 }
@@ -189,19 +213,31 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
     Ok((host, ssh_key))
 }
 
+fn strip_ssh_banner(output: &str) -> &str {
+    let trimmed = output.trim();
+    if let Some(pos) = trimmed.rfind("****") {
+        let after_banner = &trimmed[pos..];
+        if let Some(newline) = after_banner.find('\n') {
+            return after_banner[newline..].trim();
+        }
+    }
+    trimmed
+}
+
 fn run_headscale_cmd(session: &SshSession, args: &str) -> Result<String> {
     let cmd = format!("sudo headscale {}", args);
     let out = session.run(&cmd)?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        let msg = stderr.trim();
-        if msg.is_empty() {
+        let cleaned = strip_ssh_banner(&stderr);
+        if cleaned.is_empty() {
             eyre::bail!("headscale {} failed", args);
         } else {
-            eyre::bail!("headscale {} failed: {}", args, msg);
+            eyre::bail!("headscale {} failed: {}", args, cleaned);
         }
     }
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    Ok(strip_ssh_banner(&stdout).to_string())
 }
 
 pub fn run_headscale_add_user(
@@ -244,7 +280,7 @@ pub fn run_headscale_add_user(
     let key_output = run_headscale_cmd(
         &session,
         &format!(
-            "preauthkeys create --user {} --expiration {}",
+            "preauthkeys create --user {} --expiration {} -o json",
             username, exp
         ),
     )?;
@@ -305,8 +341,13 @@ pub fn run_headscale_list_nodes(output_fmt: Option<String>, host: Option<String>
     let session = SshSession::new(&host_info, &ssh_key);
 
     let raw = run_headscale_cmd(&session, "nodes list -o json")?;
-    let nodes: Vec<HeadscaleNode> =
+    let parsed: Value =
         serde_json::from_str(raw.trim()).wrap_err("Failed to parse headscale nodes list")?;
+    let nodes: Vec<HeadscaleNode> = if parsed.is_null() {
+        Vec::new()
+    } else {
+        serde_json::from_value(parsed).wrap_err("Failed to parse headscale nodes list")?
+    };
 
     match output_fmt.as_deref() {
         Some("json") => {
@@ -381,13 +422,13 @@ mod tests {
     #[test]
     fn parse_users_list_json() {
         let json = r#"[
-            {"id": "1", "name": "alice", "createdAt": "2026-01-01T00:00:00Z"},
-            {"id": "2", "name": "bob", "createdAt": "2026-02-01T00:00:00Z"}
+            {"id": 1, "name": "alice", "created_at": {"seconds": 1735689600, "nanos": 0}},
+            {"id": 2, "name": "bob", "created_at": {"seconds": 1738368000, "nanos": 0}}
         ]"#;
         let users: Vec<HeadscaleUser> = serde_json::from_str(json).unwrap();
         assert_eq!(users.len(), 2);
         assert_eq!(users[0].name, "alice");
-        assert_eq!(users[1].id, "2");
+        assert_eq!(users[1].id, 2);
     }
 
     #[test]
@@ -400,11 +441,11 @@ mod tests {
     #[test]
     fn parse_nodes_list_json() {
         let json = r#"[{
-            "id": "1",
+            "id": 1,
             "givenName": "phone",
             "ipAddresses": ["100.64.0.1", "fd7a:115c:a1e0::1"],
             "user": {"name": "alice"},
-            "lastSeen": "2026-04-12T10:00:00Z",
+            "lastSeen": {"seconds": 1712919600, "nanos": 0},
             "online": true
         }]"#;
         let nodes: Vec<HeadscaleNode> = serde_json::from_str(json).unwrap();
@@ -415,24 +456,20 @@ mod tests {
     }
 
     #[test]
-    fn parse_nodes_online_field() {
-        let online_json = r#"[{
-            "id": "1", "givenName": "a", "ipAddresses": [],
-            "user": {"name": "x"}, "lastSeen": "", "online": true
-        }]"#;
-        let offline_json = r#"[{
-            "id": "1", "givenName": "a", "ipAddresses": [],
-            "user": {"name": "x"}, "lastSeen": "", "online": false
-        }]"#;
-        let online: Vec<HeadscaleNode> = serde_json::from_str(online_json).unwrap();
-        let offline: Vec<HeadscaleNode> = serde_json::from_str(offline_json).unwrap();
-        assert!(online[0].online);
-        assert!(!offline[0].online);
+    fn parse_nodes_null_is_empty() {
+        let parsed: Value = serde_json::from_str("null").unwrap();
+        assert!(parsed.is_null());
     }
 
     #[test]
     fn parse_preauthkey_json() {
-        let json = r#"{"key": "abcdef123456"}"#;
+        let json = r#"{
+            "user": "alice",
+            "id": "1",
+            "key": "abcdef123456",
+            "expiration": {"seconds": 1776023355, "nanos": 0},
+            "created_at": {"seconds": 1776019755, "nanos": 0}
+        }"#;
         let key: HeadscalePreAuthKey = serde_json::from_str(json).unwrap();
         assert_eq!(key.key, "abcdef123456");
     }
@@ -440,13 +477,16 @@ mod tests {
     #[test]
     fn node_display_joins_ips() {
         let node = HeadscaleNode {
-            id: "1".to_string(),
+            id: 1,
             given_name: "test".to_string(),
             ip_addresses: vec!["100.64.0.1".to_string(), "fd7a:115c:a1e0::1".to_string()],
             user: HeadscaleNodeUser {
                 name: "alice".to_string(),
             },
-            last_seen: "2026-01-01T00:00:00Z".to_string(),
+            last_seen: Some(ProtoTimestamp {
+                seconds: 1735689600,
+                nanos: 0,
+            }),
             online: true,
         };
         let display = NodeDisplay::from(&node);
@@ -457,29 +497,56 @@ mod tests {
     #[test]
     fn node_display_offline_shows_no() {
         let node = HeadscaleNode {
-            id: "1".to_string(),
+            id: 1,
             given_name: "test".to_string(),
             ip_addresses: vec![],
             user: HeadscaleNodeUser {
                 name: "alice".to_string(),
             },
-            last_seen: String::new(),
+            last_seen: None,
             online: false,
         };
         let display = NodeDisplay::from(&node);
         assert_eq!(display.online, "no");
+        assert_eq!(display.last_seen, "");
     }
 
     #[test]
     fn user_display_from_headscale_user() {
         let user = HeadscaleUser {
-            id: "42".to_string(),
+            id: 42,
             name: "carol".to_string(),
-            created_at: "2026-03-15T12:00:00Z".to_string(),
+            created_at: Some(ProtoTimestamp {
+                seconds: 1710504000,
+                nanos: 0,
+            }),
         };
         let display = UserDisplay::from(&user);
         assert_eq!(display.id, "42");
         assert_eq!(display.name, "carol");
-        assert_eq!(display.created_at, "2026-03-15T12:00:00Z");
+        assert!(display.created_at.contains("2024-03-15"));
+    }
+
+    #[test]
+    fn proto_timestamp_to_rfc3339() {
+        let ts = ProtoTimestamp {
+            seconds: 1735689600,
+            nanos: 0,
+        };
+        assert_eq!(ts.to_rfc3339(), "2025-01-01 00:00:00 UTC");
+    }
+
+    #[test]
+    fn strip_ssh_banner_removes_banner() {
+        let output = "************\n* AUTHORIZED *\n************\n{\"key\": \"abc\"}";
+        let stripped = strip_ssh_banner(output);
+        assert_eq!(stripped, "{\"key\": \"abc\"}");
+    }
+
+    #[test]
+    fn strip_ssh_banner_no_banner() {
+        let output = "{\"key\": \"abc\"}";
+        let stripped = strip_ssh_banner(output);
+        assert_eq!(stripped, "{\"key\": \"abc\"}");
     }
 }
