@@ -13,11 +13,10 @@ auberge ansible run --tags headscale
 Headscale deploys to the infrastructure layer (before Tailscale). After initial deployment, generate a pre-auth key and configure the Tailscale role to use it:
 
 ```bash
-# On the server:
-headscale users create default
-headscale preauthkeys create --user default --reusable --expiration 24h
+# Create a user and pre-auth key locally:
+auberge headscale add-user --host myserver
 
-# Locally:
+# Configure Tailscale to use Headscale:
 auberge config set tailscale_authkey <HEADSCALE_PREAUTH_KEY>
 auberge config set tailscale_login_server https://hs.<your-domain>
 auberge ansible run --tags tailscale
@@ -57,15 +56,14 @@ Caddy reverse-proxies to `127.0.0.1:8080` with automatic HTTPS. UFW allows port 
 ## Migration from Tailscale SaaS
 
 1. Deploy Headscale: `auberge ansible run --tags headscale`
-2. Create a user: `headscale users create default`
-3. Generate pre-auth key: `headscale preauthkeys create --user default --reusable --expiration 24h`
-4. Update config:
+2. Create a user and pre-auth key: `auberge headscale add-user --host myserver`
+3. Update config:
    ```bash
    auberge config set tailscale_authkey <NEW_KEY>
    auberge config set tailscale_login_server https://hs.<domain>
    ```
-5. On each node: `tailscale logout`, then re-run `auberge ansible run --tags tailscale`
-6. Verify: `tailscale status` shows all nodes connected via Headscale
+4. On each node: `tailscale logout`, then re-run `auberge ansible run --tags tailscale`
+5. Verify: `tailscale status` shows all nodes connected via Headscale
 
 Existing services (Paperless, Bichon, OpenClaw) continue working unchanged — same Tailscale client, same WireGuard data plane.
 
@@ -81,3 +79,4 @@ See [Backup & Restore](../../backup-restore/overview.md).
 - [Environment Variables](../../configuration/environment-variables.md)
 - [Backup & Restore](../../backup-restore/overview.md)
 - [Applications Overview](../overview.md)
+- [CLI Reference: headscale](../../cli-reference/headscale/add-user.md)
