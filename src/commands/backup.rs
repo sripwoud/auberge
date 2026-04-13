@@ -1630,6 +1630,96 @@ fn default_backup_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
 
+struct ServiceGuard<'a> {
+    host: &'a Host,
+    ssh_key: &'a Path,
+    services: Vec<&'a str>,
+    remote_timer_unit: Option<String>,
+    armed: bool,
+}
+
+impl<'a> ServiceGuard<'a> {
+    fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
+        Self {
+            host,
+            ssh_key,
+            services: Vec::new(),
+            remote_timer_unit: None,
+            armed: false,
+        }
+    }
+
+    fn stop_service(&mut self, service: &'a str) -> Result<()> {
+        if let Err(e) = remote_systemctl(self.host, self.ssh_key, "stop", service) {
+            for previously_stopped in &self.services {
+                let _ = remote_systemctl(self.host, self.ssh_key, "start", previously_stopped);
+            }
+            return Err(e).wrap_err_with(|| format!("Failed to stop service {}", service));
+        }
+        self.services.push(service);
+        self.armed = true;
+        Ok(())
+    }
+
+    fn schedule_remote_failsafe(&mut self, app_name: &str) {
+        let unit = format!("auberge-backup-failsafe-{}", app_name);
+        let services_arg = self.services.join(" ");
+        let cmd = format!(
+            "sudo systemd-run --collect --unit={} --on-active=30min /bin/bash -c 'systemctl start {}'",
+            unit, services_arg
+        );
+        match remote_ssh_command(self.host, self.ssh_key, &cmd) {
+            Ok(_) => {
+                self.remote_timer_unit = Some(unit);
+            }
+            Err(e) => {
+                output::warn(&format!(
+                    "Failed to arm remote failsafe timer '{}' on '{}': {}",
+                    unit, self.host.name, e
+                ));
+            }
+        }
+    }
+
+    fn cancel_remote_failsafe(&mut self) {
+        if let Some(ref unit) = self.remote_timer_unit.take() {
+            let cmd = format!(
+                "sudo systemctl stop {u}.timer {u}.service 2>/dev/null; \
+                 sudo systemctl reset-failed {u}.timer {u}.service 2>/dev/null",
+                u = unit
+            );
+            let _ = remote_ssh_command_unchecked(self.host, self.ssh_key, &cmd);
+        }
+    }
+
+    fn restart_all(&mut self) -> Vec<String> {
+        self.services
+            .iter()
+            .filter_map(|service| {
+                remote_systemctl(self.host, self.ssh_key, "start", service)
+                    .err()
+                    .map(|e| format!("{}: {}", service, e))
+            })
+            .collect()
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+        self.cancel_remote_failsafe();
+    }
+}
+
+impl Drop for ServiceGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed && !self.services.is_empty() {
+            for service in &self.services {
+                let _ = remote_systemctl(self.host, self.ssh_key, "start", service);
+            }
+            self.cancel_remote_failsafe();
+        }
+    }
+}
+
 fn backup_app(
     host: &Host,
     config: &AppBackupConfig,
@@ -1650,28 +1740,23 @@ fn backup_app(
         )
     })?;
 
-    let mut stopped_services: Vec<&str> = Vec::new();
+    let mut guard = ServiceGuard::new(host, ssh_key);
+
     if !config.systemd_services.is_empty() {
         pb.set_message(format!("Backing up {} (stopping services)", config.name));
         for service in &config.systemd_services {
-            if let Err(e) = remote_systemctl(host, ssh_key, "stop", service) {
-                for previously_stopped in &stopped_services {
-                    let _ = remote_systemctl(host, ssh_key, "start", previously_stopped);
-                }
+            if let Err(e) = guard.stop_service(service) {
                 pb.finish_and_clear();
-                return Err(e).wrap_err_with(|| format!("Failed to stop service {}", service));
+                return Err(e);
             }
-            stopped_services.push(service);
         }
+        guard.schedule_remote_failsafe(config.name);
     }
 
     if let Some(db) = &config.db {
         pb.set_message(format!("Backing up {} (dumping database)", config.name));
         if let Err(e) = remote_pg_dump(host, ssh_key, db) {
             remote_pg_dump_cleanup(host, ssh_key, db);
-            for service in &stopped_services {
-                let _ = remote_systemctl(host, ssh_key, "start", service);
-            }
             pb.finish_and_clear();
             return Err(e).wrap_err("pg_dump failed");
         }
@@ -1698,15 +1783,17 @@ fn backup_app(
     }
 
     output::reset_to_spinner(&pb);
-    let mut start_failures: Vec<String> = Vec::new();
-    if !config.systemd_services.is_empty() {
+    let start_failures = if !config.systemd_services.is_empty() {
         pb.set_message(format!("Backing up {} (starting services)", config.name));
-        for service in &config.systemd_services {
-            if let Err(e) = remote_systemctl(host, ssh_key, "start", service) {
-                start_failures.push(format!("{}: {}", service, e));
-            }
+        let failures = guard.restart_all();
+        if failures.is_empty() {
+            guard.disarm();
         }
-    }
+        failures
+    } else {
+        guard.disarm();
+        Vec::new()
+    };
 
     match rsync_result {
         Ok(()) => {
@@ -2416,5 +2503,58 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_service_guard_tracks_stopped_services() {
+        let host = test_host();
+        let mut guard = ServiceGuard {
+            host: &host,
+            ssh_key: Path::new("/dev/null"),
+            services: Vec::new(),
+            remote_timer_unit: None,
+            armed: false,
+        };
+        guard.services.push("svc-a");
+        guard.services.push("svc-b");
+        assert_eq!(guard.services, vec!["svc-a", "svc-b"]);
+        assert!(!guard.armed);
+    }
+
+    #[test]
+    fn test_service_guard_disarm_prevents_restart() {
+        let host = test_host();
+        let mut guard = ServiceGuard {
+            host: &host,
+            ssh_key: Path::new("/dev/null"),
+            services: vec!["svc-a"],
+            remote_timer_unit: None,
+            armed: false,
+        };
+        assert!(!guard.armed);
+        guard.armed = false;
+        assert!(!guard.armed);
+    }
+
+    #[test]
+    fn test_service_guard_failsafe_timer_unit_name() {
+        let app_name = "paperless-ngx";
+        let unit = format!("auberge-backup-failsafe-{}", app_name);
+        assert_eq!(unit, "auberge-backup-failsafe-paperless-ngx");
+    }
+
+    #[test]
+    fn test_service_guard_empty_services_is_noop() {
+        let host = test_host();
+        let guard = ServiceGuard {
+            host: &host,
+            ssh_key: Path::new("/dev/null"),
+            services: Vec::new(),
+            remote_timer_unit: None,
+            armed: false,
+        };
+        assert!(guard.services.is_empty());
+        assert!(!guard.armed);
+        drop(guard);
     }
 }
