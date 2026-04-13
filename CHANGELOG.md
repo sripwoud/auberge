@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.5](https://github.com/sripwoud/auberge/compare/v0.8.4...v0.8.5) - 2026-04-13
+
+### Added
+
+- *(backup)* failsafe service restart during backup ([#233](https://github.com/sripwoud/auberge/pull/233))
+
 ## [0.8.4](https://github.com/sripwoud/auberge/compare/v0.8.3...v0.8.4) - 2026-04-12
 
 ### Added
