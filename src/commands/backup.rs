@@ -1665,7 +1665,7 @@ impl<'a> ServiceGuard<'a> {
         let unit = format!("auberge-backup-failsafe-{}", app_name);
         let services_arg = self.services.join(" ");
         let cmd = format!(
-            "systemd-run --unit={} --on-active=15min /bin/bash -c 'systemctl start {}'",
+            "sudo systemd-run --unit={} --on-active=15min /bin/bash -c 'systemctl start {}'",
             unit, services_arg
         );
         if remote_ssh_command(self.host, self.ssh_key, &cmd).is_ok() {
@@ -1676,10 +1676,10 @@ impl<'a> ServiceGuard<'a> {
     fn cancel_remote_failsafe(&mut self) {
         if let Some(ref unit) = self.remote_timer_unit.take() {
             let cmd = format!(
-                "systemctl stop {}.timer 2>/dev/null; systemctl reset-failed {}.timer 2>/dev/null",
+                "sudo systemctl stop {}.timer 2>/dev/null; sudo systemctl reset-failed {}.timer 2>/dev/null",
                 unit, unit
             );
-            let _ = remote_ssh_command(self.host, self.ssh_key, &cmd);
+            let _ = remote_ssh_command_unchecked(self.host, self.ssh_key, &cmd);
         }
     }
 
