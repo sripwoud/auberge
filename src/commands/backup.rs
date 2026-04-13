@@ -1634,6 +1634,7 @@ struct ServiceGuard<'a> {
     host: &'a Host,
     ssh_key: &'a Path,
     services: Vec<&'a str>,
+    remote_timer_unit: Option<String>,
     armed: bool,
 }
 
@@ -1643,6 +1644,7 @@ impl<'a> ServiceGuard<'a> {
             host,
             ssh_key,
             services: Vec::new(),
+            remote_timer_unit: None,
             armed: false,
         }
     }
@@ -1659,6 +1661,28 @@ impl<'a> ServiceGuard<'a> {
         Ok(())
     }
 
+    fn schedule_remote_failsafe(&mut self, app_name: &str) {
+        let unit = format!("auberge-backup-failsafe-{}", app_name);
+        let services_arg = self.services.join(" ");
+        let cmd = format!(
+            "systemd-run --unit={} --on-active=15min /bin/bash -c 'systemctl start {}'",
+            unit, services_arg
+        );
+        if remote_ssh_command(self.host, self.ssh_key, &cmd).is_ok() {
+            self.remote_timer_unit = Some(unit);
+        }
+    }
+
+    fn cancel_remote_failsafe(&mut self) {
+        if let Some(ref unit) = self.remote_timer_unit.take() {
+            let cmd = format!(
+                "systemctl stop {}.timer 2>/dev/null; systemctl reset-failed {}.timer 2>/dev/null",
+                unit, unit
+            );
+            let _ = remote_ssh_command(self.host, self.ssh_key, &cmd);
+        }
+    }
+
     fn restart_all(&mut self) -> Vec<String> {
         self.services
             .iter()
@@ -1672,6 +1696,7 @@ impl<'a> ServiceGuard<'a> {
 
     fn disarm(&mut self) {
         self.armed = false;
+        self.cancel_remote_failsafe();
     }
 }
 
@@ -1681,6 +1706,7 @@ impl Drop for ServiceGuard<'_> {
             for service in &self.services {
                 let _ = remote_systemctl(self.host, self.ssh_key, "start", service);
             }
+            self.cancel_remote_failsafe();
         }
     }
 }
@@ -1715,6 +1741,7 @@ fn backup_app(
                 return Err(e);
             }
         }
+        guard.schedule_remote_failsafe(config.name);
     }
 
     if let Some(db) = &config.db {
