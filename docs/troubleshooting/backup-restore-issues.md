@@ -51,6 +51,10 @@ auberge backup create --host my-vps
 # (already excluded by default)
 ```
 
+> **Note:** If a backup is interrupted (network drop, process killed), stopped services
+> are automatically restarted via a remote failsafe timer (30-minute timeout). You can
+> verify with `ssh ansible@vps "systemctl list-timers | grep auberge-backup-failsafe"`.
+
 ### "Permission denied" during backup
 
 **Problem:** Insufficient permissions to read service files.
