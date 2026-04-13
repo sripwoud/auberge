@@ -1786,7 +1786,9 @@ fn backup_app(
     let start_failures = if !config.systemd_services.is_empty() {
         pb.set_message(format!("Backing up {} (starting services)", config.name));
         let failures = guard.restart_all();
-        guard.disarm();
+        if failures.is_empty() {
+            guard.disarm();
+        }
         failures
     } else {
         guard.disarm();
