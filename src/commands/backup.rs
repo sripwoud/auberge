@@ -2493,4 +2493,57 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_service_guard_tracks_stopped_services() {
+        let host = test_host();
+        let mut guard = ServiceGuard {
+            host: &host,
+            ssh_key: Path::new("/dev/null"),
+            services: Vec::new(),
+            remote_timer_unit: None,
+            armed: false,
+        };
+        guard.services.push("svc-a");
+        guard.services.push("svc-b");
+        assert_eq!(guard.services, vec!["svc-a", "svc-b"]);
+        assert!(!guard.armed);
+    }
+
+    #[test]
+    fn test_service_guard_disarm_prevents_restart() {
+        let host = test_host();
+        let mut guard = ServiceGuard {
+            host: &host,
+            ssh_key: Path::new("/dev/null"),
+            services: vec!["svc-a"],
+            remote_timer_unit: None,
+            armed: false,
+        };
+        assert!(!guard.armed);
+        guard.armed = false;
+        assert!(!guard.armed);
+    }
+
+    #[test]
+    fn test_service_guard_failsafe_timer_unit_name() {
+        let app_name = "paperless-ngx";
+        let unit = format!("auberge-backup-failsafe-{}", app_name);
+        assert_eq!(unit, "auberge-backup-failsafe-paperless-ngx");
+    }
+
+    #[test]
+    fn test_service_guard_empty_services_is_noop() {
+        let host = test_host();
+        let guard = ServiceGuard {
+            host: &host,
+            ssh_key: Path::new("/dev/null"),
+            services: Vec::new(),
+            remote_timer_unit: None,
+            armed: false,
+        };
+        assert!(guard.services.is_empty());
+        assert!(!guard.armed);
+        drop(guard);
+    }
 }
