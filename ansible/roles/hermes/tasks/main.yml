@@ -182,7 +182,7 @@
     group: "{{ hermes_group }}"
     mode: "0644"
   notify:
-    - Reload systemd user
+    - Reload hermes systemd user
     - Restart hermes gateway
 
 - name: Enable and start Hermes gateway service
