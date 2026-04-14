@@ -72,6 +72,7 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
 fn tag_required_keys(tag: &str) -> &[&'static str] {
     match tag {
         "colporteur" => &["colporteur_subdomain"],
+        "hermes" => &["hermes_openrouter_api_key", "hermes_telegram_bot_token"],
         _ => &[],
     }
 }
@@ -89,6 +90,14 @@ pub fn required_config_keys(playbook_name: &str, tags: Option<&[String]>) -> Vec
         }
         "apps.yml" => {
             keys.extend(["admin_user_name", "domain", "cloudflare_dns_api_token"]);
+        }
+        "hermes.yml" => {
+            keys.extend([
+                "admin_user_name",
+                "domain",
+                "hermes_openrouter_api_key",
+                "hermes_telegram_bot_token",
+            ]);
         }
         "openclaw.yml" => {
             keys.extend([
@@ -285,6 +294,15 @@ mod tests {
     }
 
     #[test]
+    fn test_required_config_keys_apps_with_hermes_tag() {
+        let tags = vec!["hermes".to_string()];
+        let keys = required_config_keys("apps.yml", Some(&tags));
+        assert!(keys.contains(&"cloudflare_dns_api_token"));
+        assert!(keys.contains(&"hermes_openrouter_api_key"));
+        assert!(keys.contains(&"hermes_telegram_bot_token"));
+    }
+
+    #[test]
     fn test_required_config_keys_apps_with_unrelated_tag() {
         let tags = vec!["paperless".to_string()];
         let keys = required_config_keys("apps.yml", Some(&tags));
@@ -302,6 +320,15 @@ mod tests {
     fn test_required_config_keys_hardening_is_empty() {
         let keys = required_config_keys("hardening.yml", None);
         assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn test_required_config_keys_hermes() {
+        let keys = required_config_keys("hermes.yml", None);
+        assert!(keys.contains(&"admin_user_name"));
+        assert!(keys.contains(&"domain"));
+        assert!(keys.contains(&"hermes_openrouter_api_key"));
+        assert!(keys.contains(&"hermes_telegram_bot_token"));
     }
 
     #[test]
