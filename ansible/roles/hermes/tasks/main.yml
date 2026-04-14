@@ -36,7 +36,7 @@
 
 - name: Download uv install script
   ansible.builtin.get_url:
-    url: https://astral.sh/uv/install.sh
+    url: "https://astral.sh/uv/{{ hermes_uv_version }}/install.sh"
     dest: /tmp/uv-install.sh
     mode: "0755"
   when: hermes_uv_check.rc != 0
@@ -50,7 +50,7 @@
   environment:
     HOME: "{{ hermes_home }}"
 
-- name: Check if hermes is installed
+- name: Check installed hermes version
   become: true
   become_user: "{{ hermes_user }}"
   ansible.builtin.command: "{{ hermes_home }}/.local/bin/hermes version"
@@ -60,13 +60,24 @@
   environment:
     HOME: "{{ hermes_home }}"
 
-- name: Install hermes-agent
+- name: Remove outdated hermes-agent
+  become: true
+  become_user: "{{ hermes_user }}"
+  ansible.builtin.command: "{{ hermes_home }}/.local/bin/uv tool uninstall hermes-agent"
+  when:
+    - hermes_version_check.rc == 0
+    - hermes_version not in hermes_version_check.stdout
+  changed_when: true
+  environment:
+    HOME: "{{ hermes_home }}"
+
+- name: Install hermes-agent {{ hermes_version }}
   become: true
   become_user: "{{ hermes_user }}"
   ansible.builtin.command: >
     {{ hermes_home }}/.local/bin/uv tool install
-    'hermes-agent[{{ hermes_extras }}]'
-  when: hermes_version_check.rc != 0
+    'hermes-agent[{{ hermes_extras }}]=={{ hermes_version }}'
+  when: hermes_version_check.rc != 0 or hermes_version not in hermes_version_check.stdout
   changed_when: true
   environment:
     HOME: "{{ hermes_home }}"
@@ -136,7 +147,9 @@
     owner: "{{ hermes_user }}"
     group: "{{ hermes_group }}"
     mode: "0644"
-  notify: Reload systemd user
+  notify:
+    - Reload systemd user
+    - Restart hermes gateway
 
 - name: Enable and start Hermes gateway service
   become: true
