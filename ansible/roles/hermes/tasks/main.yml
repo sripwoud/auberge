@@ -69,45 +69,60 @@
     state: absent
   when: hermes_uv_tmpdir.path is defined
 
-- name: Check installed hermes version
+- name: Clone hermes-agent repository
   become: true
   become_user: "{{ hermes_user }}"
-  ansible.builtin.command: "{{ hermes_home }}/.local/bin/hermes version"
-  register: hermes_version_check
-  changed_when: false
-  failed_when: false
+  ansible.builtin.git:
+    repo: https://github.com/NousResearch/hermes-agent.git
+    dest: "{{ hermes_install_dir }}"
+    version: "{{ hermes_version }}"
+    recursive: true
+    force: false
   environment:
     HOME: "{{ hermes_home }}"
+  register: hermes_git_result
 
-- name: Remove outdated hermes-agent
-  become: true
-  become_user: "{{ hermes_user }}"
-  ansible.builtin.command: "{{ hermes_home }}/.local/bin/uv tool uninstall hermes-agent"
-  when:
-    - hermes_version_check.rc == 0
-    - hermes_version not in hermes_version_check.stdout
-  changed_when: true
-  environment:
-    HOME: "{{ hermes_home }}"
-
-- name: Install hermes-agent {{ hermes_version }}
+- name: Create Python venv
   become: true
   become_user: "{{ hermes_user }}"
   ansible.builtin.command: >
-    {{ hermes_home }}/.local/bin/uv tool install
-    'hermes-agent[{{ hermes_extras }}]=={{ hermes_version }}'
-  when: hermes_version_check.rc != 0 or hermes_version not in hermes_version_check.stdout
-  changed_when: true
+    {{ hermes_home }}/.local/bin/uv venv {{ hermes_venv_dir }} --python 3.11
+  args:
+    creates: "{{ hermes_venv_dir }}/bin/python"
   environment:
     HOME: "{{ hermes_home }}"
 
-- name: Verify hermes binary in PATH
+- name: Install hermes-agent into venv
+  become: true
+  become_user: "{{ hermes_user }}"
+  ansible.builtin.command: >
+    {{ hermes_home }}/.local/bin/uv pip install -e ".[{{ hermes_extras }}]"
+  args:
+    chdir: "{{ hermes_install_dir }}"
+  when: hermes_git_result.changed or not hermes_venv_dir ~ '/bin/hermes' is file
+  changed_when: true
+  environment:
+    HOME: "{{ hermes_home }}"
+    VIRTUAL_ENV: "{{ hermes_venv_dir }}"
+
+- name: Symlink hermes binary
+  become: true
+  become_user: "{{ hermes_user }}"
+  ansible.builtin.file:
+    src: "{{ hermes_venv_dir }}/bin/hermes"
+    dest: "{{ hermes_home }}/.local/bin/hermes"
+    state: link
+    force: true
+
+- name: Verify hermes binary
   become: true
   become_user: "{{ hermes_user }}"
   ansible.builtin.command: "{{ hermes_home }}/.local/bin/hermes version"
   register: hermes_installed_version
   changed_when: false
   failed_when: hermes_installed_version.rc != 0
+  environment:
+    HOME: "{{ hermes_home }}"
 
 - name: Display hermes version
   ansible.builtin.debug:
@@ -188,6 +203,7 @@
       - "Hermes Agent Deployment Complete!"
       - "==================================="
       - "Config Dir: {{ hermes_config_dir }}"
+      - "Install Dir: {{ hermes_install_dir }}"
       - "Model: {{ hermes_model }}"
       - "Provider: {{ hermes_model_provider }}"
       - "Platform: {{ hermes_gateway_platform }}"

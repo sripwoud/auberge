@@ -5,9 +5,10 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory={{ hermes_config_dir }}
-Environment="PATH={{ hermes_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PATH={{ hermes_venv_dir }}/bin:{{ hermes_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="VIRTUAL_ENV={{ hermes_venv_dir }}"
 EnvironmentFile={{ hermes_config_dir }}/.env
-ExecStart={{ hermes_home }}/.local/bin/hermes gateway
+ExecStart={{ hermes_venv_dir }}/bin/hermes gateway
 Restart=always
 RestartSec=10
 
