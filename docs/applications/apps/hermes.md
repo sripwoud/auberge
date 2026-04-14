@@ -172,7 +172,9 @@ Check for:
 
 ```bash
 ssh user@your-vps
-~/.local/bin/uv tool upgrade hermes-agent
+cd ~/.hermes/hermes-agent
+git fetch && git checkout <new-tag>
+VIRTUAL_ENV=~/.hermes/venv uv pip install -e ".[all]"
 systemctl --user restart hermes-gateway
 ```
 
@@ -188,9 +190,9 @@ auberge deploy hermes
 ssh user@your-vps
 systemctl --user stop hermes-gateway
 systemctl --user disable hermes-gateway
-~/.local/bin/uv tool uninstall hermes-agent
 rm -rf ~/.hermes
-rm ~/.config/systemd/user/hermes-gateway.service
+rm -f ~/.local/bin/hermes
+rm -f ~/.config/systemd/user/hermes-gateway.service
 systemctl --user daemon-reload
 ```
 

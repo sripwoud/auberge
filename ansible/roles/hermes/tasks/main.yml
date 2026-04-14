@@ -99,7 +99,7 @@
     {{ hermes_home }}/.local/bin/uv pip install -e ".[{{ hermes_extras }}]"
   args:
     chdir: "{{ hermes_install_dir }}"
-  when: hermes_git_result.changed or not hermes_venv_dir ~ '/bin/hermes' is file
+  when: hermes_git_result.changed or (hermes_venv_dir ~ '/bin/hermes') is not file
   changed_when: true
   environment:
     HOME: "{{ hermes_home }}"
