@@ -35,6 +35,8 @@
     HOME: "{{ hermes_home }}"
 
 - name: Create secure temp directory for uv installer
+  become: true
+  become_user: "{{ hermes_user }}"
   ansible.builtin.tempfile:
     state: directory
     suffix: _uv_install
@@ -42,6 +44,8 @@
   when: hermes_uv_check.rc != 0
 
 - name: Download uv install script
+  become: true
+  become_user: "{{ hermes_user }}"
   ansible.builtin.get_url:
     url: "https://astral.sh/uv/{{ hermes_uv_version }}/install.sh"
     dest: "{{ hermes_uv_tmpdir.path }}/install.sh"
@@ -58,6 +62,8 @@
     HOME: "{{ hermes_home }}"
 
 - name: Clean up uv installer
+  become: true
+  become_user: "{{ hermes_user }}"
   ansible.builtin.file:
     path: "{{ hermes_uv_tmpdir.path }}"
     state: absent
