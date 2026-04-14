@@ -36,6 +36,12 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | [WebDAV](apps/webdav.md)           | File sharing and synchronization        |
 | [YOURLS](apps/yourls.md)           | URL shortener                           |
 
+## AI
+
+| Application                    | Description                          |
+| ------------------------------ | ------------------------------------ |
+| [Hermes Agent](apps/hermes.md) | Self-improving personal AI assistant |
+
 ## Deployment
 
 All applications are deployed via Ansible playbooks. See [Running Playbooks](../deployment/running-playbooks.md) for details.

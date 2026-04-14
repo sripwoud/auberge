@@ -1,0 +1,171 @@
+---
+- name: Install system dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - git
+      - ripgrep
+      - ffmpeg
+    state: present
+
+- name: Get user UID
+  ansible.builtin.command: id -u {{ hermes_user }}
+  register: hermes_user_uid
+  changed_when: false
+
+- name: Check if linger is already enabled for user
+  ansible.builtin.stat:
+    path: "/var/lib/systemd/linger/{{ hermes_user }}"
+  register: hermes_linger_file
+
+- name: Enable linger for user
+  ansible.builtin.command: loginctl enable-linger {{ hermes_user }}
+  when: not hermes_linger_file.stat.exists
+  changed_when: true
+
+- name: Check if uv is installed
+  become: true
+  become_user: "{{ hermes_user }}"
+  ansible.builtin.command: "{{ hermes_home }}/.local/bin/uv --version"
+  register: hermes_uv_check
+  changed_when: false
+  failed_when: false
+  environment:
+    HOME: "{{ hermes_home }}"
+
+- name: Download uv install script
+  ansible.builtin.get_url:
+    url: https://astral.sh/uv/install.sh
+    dest: /tmp/uv-install.sh
+    mode: "0755"
+  when: hermes_uv_check.rc != 0
+
+- name: Install uv package manager
+  become: true
+  become_user: "{{ hermes_user }}"
+  ansible.builtin.command: /tmp/uv-install.sh
+  when: hermes_uv_check.rc != 0
+  changed_when: true
+  environment:
+    HOME: "{{ hermes_home }}"
+
+- name: Check if hermes is installed
+  become: true
+  become_user: "{{ hermes_user }}"
+  ansible.builtin.command: "{{ hermes_home }}/.local/bin/hermes version"
+  register: hermes_version_check
+  changed_when: false
+  failed_when: false
+  environment:
+    HOME: "{{ hermes_home }}"
+
+- name: Install hermes-agent
+  become: true
+  become_user: "{{ hermes_user }}"
+  ansible.builtin.command: >
+    {{ hermes_home }}/.local/bin/uv tool install
+    'hermes-agent[{{ hermes_extras }}]'
+  when: hermes_version_check.rc != 0
+  changed_when: true
+  environment:
+    HOME: "{{ hermes_home }}"
+
+- name: Verify hermes binary in PATH
+  become: true
+  become_user: "{{ hermes_user }}"
+  ansible.builtin.command: "{{ hermes_home }}/.local/bin/hermes version"
+  register: hermes_installed_version
+  changed_when: false
+  failed_when: hermes_installed_version.rc != 0
+
+- name: Display hermes version
+  ansible.builtin.debug:
+    msg: "Hermes version: {{ hermes_installed_version.stdout }}"
+
+- name: Create systemd user directory
+  ansible.builtin.file:
+    path: "{{ hermes_home }}/.config/systemd/user"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0755"
+
+- name: Create Hermes config directory
+  ansible.builtin.file:
+    path: "{{ hermes_config_dir }}"
+    state: directory
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0750"
+
+- name: Validate required Hermes secrets
+  ansible.builtin.assert:
+    that:
+      - hermes_openrouter_api_key | default('') | length > 0
+      - hermes_telegram_bot_token | default('') | length > 0
+    fail_msg: |
+      Required Hermes secrets are not set or empty.
+      Set them with:
+        auberge config set hermes_openrouter_api_key <VALUE>
+        auberge config set hermes_telegram_bot_token <VALUE>
+
+- name: Deploy Hermes environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ hermes_config_dir }}/.env"
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart hermes gateway
+
+- name: Deploy Hermes config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ hermes_config_dir }}/config.yaml"
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0640"
+  notify: Restart hermes gateway
+
+- name: Deploy Hermes gateway systemd service
+  ansible.builtin.template:
+    src: hermes-gateway.service.j2
+    dest: "{{ hermes_home }}/.config/systemd/user/hermes-gateway.service"
+    owner: "{{ hermes_user }}"
+    group: "{{ hermes_group }}"
+    mode: "0644"
+  notify: Reload systemd user
+
+- name: Enable and start Hermes gateway service
+  become: true
+  become_user: "{{ hermes_user }}"
+  ansible.builtin.systemd:
+    name: hermes-gateway
+    enabled: true
+    state: started
+    scope: user
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ hermes_user_uid.stdout }}"
+
+- name: Display deployment summary
+  ansible.builtin.debug:
+    msg:
+      - "==================================="
+      - "Hermes Agent Deployment Complete!"
+      - "==================================="
+      - "Config Dir: {{ hermes_config_dir }}"
+      - "Model: {{ hermes_model }}"
+      - "Provider: {{ hermes_model_provider }}"
+      - "Platform: {{ hermes_gateway_platform }}"
+      - ""
+      - "Next steps:"
+      - "1. Check service: systemctl --user status hermes-gateway"
+      - "2. View logs: journalctl --user -u hermes-gateway -f"
+      - "3. SSH to VPS: ssh {{ hermes_user }}@{{ inventory_hostname }}"
+      - "4. Test: send a message to your Telegram bot"
+      - ""
+      - "Optional post-deploy (via SSH):"
+      - "  hermes claw migrate    # migrate OpenClaw data"
+      - "  hermes skills           # browse available skills"

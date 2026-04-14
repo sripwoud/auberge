@@ -1,0 +1,8 @@
+---
+- name: Deploy Hermes Agent - Personal AI Assistant
+  hosts: vps
+  become: true
+
+  roles:
+    - role: hermes
+      tags: [hermes]

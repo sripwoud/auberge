@@ -1,0 +1,14 @@
+model:
+  default: {{ hermes_model }}
+  provider: {{ hermes_model_provider }}
+
+gateway:
+  platforms:
+    - {{ hermes_gateway_platform }}
+
+memory:
+  mode: {{ hermes_memory_mode }}
+
+terminal:
+  backend: local
+  timeout: 120
