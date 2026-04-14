@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.6](https://github.com/sripwoud/auberge/compare/v0.8.5...v0.8.6) - 2026-04-14
+
+### Added
+
+- add Hermes Agent deployment role ([#235](https://github.com/sripwoud/auberge/pull/235))
+
 ## [0.8.5](https://github.com/sripwoud/auberge/compare/v0.8.4...v0.8.5) - 2026-04-13
 
 ### Added
