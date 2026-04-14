@@ -34,21 +34,34 @@
   environment:
     HOME: "{{ hermes_home }}"
 
+- name: Create secure temp directory for uv installer
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: _uv_install
+  register: hermes_uv_tmpdir
+  when: hermes_uv_check.rc != 0
+
 - name: Download uv install script
   ansible.builtin.get_url:
     url: "https://astral.sh/uv/{{ hermes_uv_version }}/install.sh"
-    dest: /tmp/uv-install.sh
+    dest: "{{ hermes_uv_tmpdir.path }}/install.sh"
     mode: "0755"
   when: hermes_uv_check.rc != 0
 
 - name: Install uv package manager
   become: true
   become_user: "{{ hermes_user }}"
-  ansible.builtin.command: /tmp/uv-install.sh
+  ansible.builtin.command: "{{ hermes_uv_tmpdir.path }}/install.sh"
   when: hermes_uv_check.rc != 0
   changed_when: true
   environment:
     HOME: "{{ hermes_home }}"
+
+- name: Clean up uv installer
+  ansible.builtin.file:
+    path: "{{ hermes_uv_tmpdir.path }}"
+    state: absent
+  when: hermes_uv_tmpdir.path is defined
 
 - name: Check installed hermes version
   become: true
