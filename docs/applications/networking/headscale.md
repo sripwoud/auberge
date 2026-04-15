@@ -65,7 +65,7 @@ Caddy reverse-proxies to `127.0.0.1:8080` with automatic HTTPS. UFW allows port 
 4. On each node: `tailscale logout`, then re-run `auberge ansible run --tags tailscale`
 5. Verify: `tailscale status` shows all nodes connected via Headscale
 
-Existing services (Paperless, Bichon, OpenClaw) continue working unchanged — same Tailscale client, same WireGuard data plane.
+Existing services (Paperless, Bichon) continue working unchanged — same Tailscale client, same WireGuard data plane.
 
 ## Backup
 

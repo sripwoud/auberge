@@ -61,8 +61,9 @@ auberge deploy myapp --check
 
 ## Dependencies
 
-```
-bootstrap → hardening → infrastructure → apps
+```mermaid
+flowchart LR
+    A[bootstrap] --> B[hardening] --> C[infrastructure] --> D[apps]
 ```
 
 Bootstrap must run first. Other layers can be re-run independently.

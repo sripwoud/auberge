@@ -29,8 +29,6 @@
       tags: [apps, storage, media, music, navidrome]
     - role: paperless
       tags: [apps, storage, documents, paperless]
-    - role: openclaw
-      tags: [apps, ai, openclaw]
     - role: syncthing
       tags: [apps, sync, syncthing]
     - role: webdav
