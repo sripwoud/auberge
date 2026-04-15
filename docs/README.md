@@ -42,6 +42,7 @@ After deployment, your VPS will be running:
 - **Infrastructure**: Caddy (reverse proxy), fail2ban (intrusion prevention), UFW (firewall)
 - **Networking**: Blocky (DNS + ad-blocking), WireGuard, Tailscale
 - **Apps**: Baikal (calendar/contacts), Colporteur (newsletter-to-feed), FreshRSS (RSS reader), Navidrome (music), Grimmory (books), Paperless-ngx (documents), WebDAV (file sharing), YOURLS (URL shortener)
+- **AI Agents**: Hermes Agent (self-improving personal AI assistant via Telegram)
 
 ## Next Steps
 
