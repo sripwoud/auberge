@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "auberge"
-version = "0.8.6"
+version = "0.9.0"
 dependencies = [
  "ansible-rs",
  "chrono",

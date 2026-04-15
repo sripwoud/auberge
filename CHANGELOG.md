@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/sripwoud/auberge/compare/v0.8.6...v0.9.0) - 2026-04-15
+
+### Added
+
+- [**breaking**] remove openclaw feature ([#237](https://github.com/sripwoud/auberge/pull/237))
+
+### Other
+
+- add Hermes Agent to sidebar, READMEs, and fix 404
+
 ## [0.8.6](https://github.com/sripwoud/auberge/compare/v0.8.5...v0.8.6) - 2026-04-14
 
 ### Added
