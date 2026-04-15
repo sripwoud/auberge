@@ -58,7 +58,7 @@
         mode: "0755"
       when: syncthing_configure_workspace | default(false)
 
-    - name: Add OpenClaw workspace folder to Syncthing config
+    - name: Add workspace folder to Syncthing config
       ansible.builtin.blockinfile:
         path: "{{ syncthing_config_path }}/config.xml"
         marker: "<!-- {mark} ANSIBLE MANAGED WORKSPACE FOLDER -->"

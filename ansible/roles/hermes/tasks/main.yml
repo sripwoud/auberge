@@ -215,5 +215,4 @@
       - "4. Test: send a message to your Telegram bot"
       - ""
       - "Optional post-deploy (via SSH):"
-      - "  hermes claw migrate    # migrate OpenClaw data"
       - "  hermes skills           # browse available skills"

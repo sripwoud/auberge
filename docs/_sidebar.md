@@ -106,7 +106,7 @@
     - [Syncthing](applications/apps/syncthing.md)
     - [YOURLS](applications/apps/yourls.md)
     - [Paperless-ngx](applications/apps/paperless.md)
-  - AI Agents
+  - AI Agent
     - [Hermes Agent](applications/apps/hermes.md)
 
 - Development

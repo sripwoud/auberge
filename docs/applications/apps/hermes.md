@@ -12,7 +12,7 @@ Your VPS (Hermes Gateway)
 OpenRouter → Claude/GPT/etc
 ```
 
-Unlike OpenClaw, Hermes gateway connects **outbound** to Telegram's API. No inbound port exposure needed.
+Hermes gateway connects **outbound** to Telegram's API. No inbound port exposure needed.
 
 ## Prerequisites
 
@@ -87,15 +87,6 @@ systemctl --user status hermes-gateway
 ### 2. Test Telegram Bot
 
 Send a message to your bot on Telegram. It should respond.
-
-### 3. Migrate from OpenClaw (Optional)
-
-```bash
-ssh user@your-vps
-hermes claw migrate
-```
-
-This migrates SOUL.md, MEMORY.md, USER.md, and skills from OpenClaw.
 
 ## Service Management
 

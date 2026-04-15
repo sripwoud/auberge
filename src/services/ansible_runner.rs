@@ -99,14 +99,6 @@ pub fn required_config_keys(playbook_name: &str, tags: Option<&[String]>) -> Vec
                 "hermes_telegram_bot_token",
             ]);
         }
-        "openclaw.yml" => {
-            keys.extend([
-                "admin_user_name",
-                "domain",
-                "openclaw_gateway_token",
-                "openclaw_claude_ai_session_key",
-            ]);
-        }
         _ => {
             keys.extend(["admin_user_name", "domain"]);
         }
@@ -329,15 +321,6 @@ mod tests {
         assert!(keys.contains(&"domain"));
         assert!(keys.contains(&"hermes_openrouter_api_key"));
         assert!(keys.contains(&"hermes_telegram_bot_token"));
-    }
-
-    #[test]
-    fn test_required_config_keys_openclaw() {
-        let keys = required_config_keys("openclaw.yml", None);
-        assert!(keys.contains(&"admin_user_name"));
-        assert!(keys.contains(&"domain"));
-        assert!(keys.contains(&"openclaw_gateway_token"));
-        assert!(keys.contains(&"openclaw_claude_ai_session_key"));
     }
 
     #[test]

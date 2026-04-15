@@ -36,11 +36,6 @@ hermes_exa_api_key = ""
 hermes_openrouter_api_key = ""
 hermes_telegram_bot_token = ""
 
-openclaw_claude_ai_session_key = ""
-openclaw_claude_web_cookie = ""
-openclaw_claude_web_session_key = ""
-openclaw_gateway_token = ""
-
 paperless_admin_password = ""
 paperless_admin_user = ""
 paperless_db_password = ""
