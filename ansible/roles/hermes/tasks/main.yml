@@ -166,8 +166,8 @@
   notify: Restart hermes gateway
 
 - name: Deploy Hermes config
-  ansible.builtin.template:
-    src: config.yaml.j2
+  ansible.builtin.copy:
+    src: "{{ hermes_config_src }}"
     dest: "{{ hermes_config_dir }}/config.yaml"
     owner: "{{ hermes_user }}"
     group: "{{ hermes_group }}"
@@ -203,10 +203,8 @@
       - "Hermes Agent Deployment Complete!"
       - "==================================="
       - "Config Dir: {{ hermes_config_dir }}"
+      - "Config Src: {{ hermes_config_src }}"
       - "Install Dir: {{ hermes_install_dir }}"
-      - "Model: {{ hermes_model }}"
-      - "Provider: {{ hermes_model_provider }}"
-      - "Platform: {{ hermes_gateway_platform }}"
       - ""
       - "Next steps:"
       - "1. Check service: systemctl --user status hermes-gateway"
