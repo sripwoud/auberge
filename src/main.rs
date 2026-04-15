@@ -226,7 +226,8 @@ async fn main() -> Result<()> {
                 host,
                 source,
                 dry_run,
-            } => run_sync_hermes(host, source, dry_run),
+                pull,
+            } => run_sync_hermes(host, source, dry_run, pull),
         },
         Commands::Dns(cmd) => match cmd {
             DnsCommands::List {

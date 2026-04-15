@@ -32,6 +32,12 @@ pub enum SyncCommands {
         source: Option<PathBuf>,
         #[arg(short = 'n', long, help = "Dry run (don't actually sync)")]
         dry_run: bool,
+        #[arg(
+            short = 'p',
+            long,
+            help = "Pull config from remote to local instead of pushing"
+        )]
+        pull: bool,
     },
 }
 
@@ -129,6 +135,7 @@ pub fn run_sync_hermes(
     host_arg: Option<String>,
     source: Option<PathBuf>,
     dry_run: bool,
+    pull: bool,
 ) -> Result<()> {
     let xdg_host = match host_arg {
         Some(name) => HostManager::get_host(&name)?,
@@ -142,6 +149,33 @@ pub fn run_sync_hermes(
             .ok_or_else(|| eyre::eyre!("No host selected"))?
         }
     };
+
+    if pull {
+        let local_dest = match source {
+            Some(s) => s,
+            None => dirs::home_dir()
+                .map(|h| h.join(".config/hermes/config.yaml"))
+                .ok_or_else(|| {
+                    eyre::eyre!("Could not determine home directory for Hermes config")
+                })?,
+        };
+        let ssh_key = xdg_host
+            .ssh_key
+            .as_ref()
+            .map(PathBuf::from)
+            .ok_or_else(|| eyre::eyre!("No SSH key configured for host '{}'", xdg_host.name))?;
+        if !ssh_key.exists() {
+            eyre::bail!("SSH key not found: {}", ssh_key.display());
+        }
+        let session = SshSession::new(&xdg_host, &ssh_key);
+        output::info(&format!(
+            "Pulling hermes config from remote to {}",
+            local_dest.display()
+        ));
+        session.scp_from(".hermes/config.yaml", &local_dest)?;
+        output::success("Hermes config pulled");
+        return Ok(());
+    }
 
     let config_source = match source {
         Some(s) => s,
