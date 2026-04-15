@@ -35,7 +35,22 @@
         crossChapter: true,
         crossChapterText: true,
       },
-      themeColor: '#42b983'
+      themeColor: '#42b983',
+      plugins: [
+        function(hook) {
+          hook.doneEach(function() {
+            document.onkeydown = function(e) {
+              if (e.key === 'ArrowLeft') {
+                var prev = document.querySelector('.pagination-item--previous a');
+                if (prev) prev.click();
+              } else if (e.key === 'ArrowRight') {
+                var next = document.querySelector('.pagination-item--next a');
+                if (next) next.click();
+              }
+            };
+          });
+        }
+      ]
     }
   </script>
   <script src="//cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
