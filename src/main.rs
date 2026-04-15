@@ -35,7 +35,7 @@ use commands::host::{
 };
 use commands::select::{SelectCommands, run_select_host, run_select_playbook};
 use commands::ssh::{SshCommands, run_ssh_add_key, run_ssh_keygen};
-use commands::sync::{SyncCommands, run_sync_music};
+use commands::sync::{SyncCommands, run_sync_hermes, run_sync_music};
 use eyre::Result;
 
 #[derive(Parser)]
@@ -222,6 +222,11 @@ async fn main() -> Result<()> {
                 source,
                 dry_run,
             } => run_sync_music(host, source, dry_run),
+            SyncCommands::Hermes {
+                host,
+                source,
+                dry_run,
+            } => run_sync_hermes(host, source, dry_run),
         },
         Commands::Dns(cmd) => match cmd {
             DnsCommands::List {
