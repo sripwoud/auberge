@@ -4,26 +4,16 @@ Detailed breakdown of each infrastructure layer, their components, dependencies,
 
 ## Layer Dependencies
 
-```
-┌─────────────────────────────────────────┐
-│  Layer 4: Applications (apps.yml)       │
-│  - Blocky, Baikal, FreshRSS, etc.     │
-└─────────────────┬───────────────────────┘
-                  │ depends on
-┌─────────────────▼───────────────────────┐
-│  Layer 3: Infrastructure                │
-│  - APT, Bash, Caddy, Tailscale           │
-└─────────────────┬───────────────────────┘
-                  │ depends on
-┌─────────────────▼───────────────────────┐
-│  Layer 2: Hardening                     │
-│  - fail2ban, kernel hardening           │
-└─────────────────┬───────────────────────┘
-                  │ depends on
-┌─────────────────▼───────────────────────┐
-│  Layer 1: Bootstrap                     │
-│  - Users, SSH, UFW                      │
-└─────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    L4["Layer 4: Applications (apps.yml)\nBlocky, Baikal, FreshRSS, etc."]
+    L3["Layer 3: Infrastructure\nAPT, Bash, Caddy, Tailscale"]
+    L2["Layer 2: Hardening\nfail2ban, kernel hardening"]
+    L1["Layer 1: Bootstrap\nUsers, SSH, UFW"]
+
+    L4 -->|depends on| L3
+    L3 -->|depends on| L2
+    L2 -->|depends on| L1
 ```
 
 ## Layer 1: Bootstrap
@@ -478,30 +468,25 @@ Each application follows the same deployment pattern:
 
 ### Bootstrap → Hardening
 
-```
-ansible user created (bootstrap)
-    ↓
-Used for all subsequent plays (hardening)
+```mermaid
+flowchart TD
+    A[ansible user created - bootstrap] --> B[Used for all subsequent plays - hardening]
 ```
 
 ### Hardening → Infrastructure
 
-```
-System secured (hardening)
-    ↓
-Safe to install services (infrastructure)
+```mermaid
+flowchart TD
+    A[System secured - hardening] --> B[Safe to install services - infrastructure]
 ```
 
 ### Infrastructure → Applications
 
-```
-Caddy configured (infrastructure)
-    ↓
-Apps register routes with Caddy (applications)
-    ↓
-Caddy provisions SSL certs
-    ↓
-Apps accessible via HTTPS
+```mermaid
+flowchart TD
+    A[Caddy configured - infrastructure] --> B[Apps register routes with Caddy - applications]
+    B --> C[Caddy provisions SSL certs]
+    C --> D[Apps accessible via HTTPS]
 ```
 
 ### Caddy + Applications

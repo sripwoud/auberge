@@ -4,12 +4,11 @@ Hermes Agent is a self-improving personal AI assistant by Nous Research. It conn
 
 ## Architecture
 
-```
-Your Phone (Telegram)
-    ↓ (outbound HTTPS polling)
-Your VPS (Hermes Gateway)
-    ↓ (outbound API calls)
-OpenRouter → Claude/GPT/etc
+```mermaid
+flowchart TD
+    A[Your Phone - Telegram] -->|outbound HTTPS polling| B[Your VPS - Hermes Gateway]
+    B -->|outbound API calls| C[OpenRouter]
+    C --> D[Claude / GPT / etc]
 ```
 
 Hermes gateway connects **outbound** to Telegram's API. No inbound port exposure needed.
@@ -57,17 +56,11 @@ auberge config set hermes_exa_api_key <VALUE>
 
 ## Deployment
 
-### Deploy Hermes Only
-
 ```bash
 auberge deploy hermes
 ```
 
-### Deploy with Infrastructure
-
-```bash
-auberge deploy infrastructure hermes
-```
+Dependency layers (hardening, infrastructure) are resolved and run automatically.
 
 ### Check Mode (Dry Run)
 
