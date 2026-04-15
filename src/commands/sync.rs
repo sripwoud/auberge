@@ -143,11 +143,12 @@ pub fn run_sync_hermes(
         }
     };
 
-    let config_source = source.unwrap_or_else(|| {
-        dirs::home_dir()
+    let config_source = match source {
+        Some(s) => s,
+        None => dirs::home_dir()
             .map(|h| h.join(".config/hermes/config.yaml"))
-            .unwrap_or_else(|| PathBuf::from("~/.config/hermes/config.yaml"))
-    });
+            .ok_or_else(|| eyre::eyre!("Could not determine home directory for Hermes config"))?,
+    };
 
     if !config_source.exists() {
         eyre::bail!(
@@ -168,6 +169,14 @@ pub fn run_sync_hermes(
 
     let session = SshSession::new(&xdg_host, &ssh_key);
     let remote_dest = format!("{}@{}:.hermes/config.yaml", xdg_host.user, xdg_host.address);
+
+    output::info("Preparing remote ~/.hermes directory...");
+    let prepare = session
+        .run("mkdir -p ~/.hermes")
+        .wrap_err("Failed to prepare remote ~/.hermes directory")?;
+    if !prepare.status.success() {
+        eyre::bail!("Remote ~/.hermes directory is missing and could not be created");
+    }
 
     output::info(&format!("Syncing hermes config to {}", remote_dest));
 
