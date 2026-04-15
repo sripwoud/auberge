@@ -39,10 +39,10 @@ That's it! Auberge will configure your VPS with all infrastructure and applicati
 
 After deployment, your VPS will be running:
 
-- **Infrastructure**: Caddy (reverse proxy), fail2ban (intrusion prevention), UFW (firewall)
-- **Networking**: Blocky (DNS + ad-blocking), WireGuard, Tailscale
-- **Apps**: Baikal (calendar/contacts), Colporteur (newsletter-to-feed), FreshRSS (RSS reader), Navidrome (music), Grimmory (books), Paperless-ngx (documents), WebDAV (file sharing), YOURLS (URL shortener)
-- **AI Agent**: Hermes Agent (self-improving personal AI assistant via Telegram)
+- **Infrastructure**: [Caddy](applications/infrastructure/caddy.md) (reverse proxy), [fail2ban](applications/infrastructure/fail2ban.md) (intrusion prevention), [UFW](applications/infrastructure/ufw.md) (firewall)
+- **Networking**: [Blocky](applications/networking/blocky.md) (DNS + ad-blocking), [WireGuard](applications/networking/wireguard.md), [Tailscale](applications/networking/tailscale.md)
+- **Apps**: [Baikal](applications/apps/baikal.md) (calendar/contacts), [Colporteur](applications/apps/colporteur.md) (newsletter-to-feed), [FreshRSS](applications/apps/freshrss.md) (RSS reader), [Navidrome](applications/apps/navidrome.md) (music), [Grimmory](applications/apps/grimmory.md) (books), [Paperless-ngx](applications/apps/paperless.md) (documents), [WebDAV](applications/apps/webdav.md) (file sharing), [YOURLS](applications/apps/yourls.md) (URL shortener)
+- **AI Agent**: [Hermes Agent](applications/apps/hermes.md) (self-improving personal AI assistant via Telegram)
 
 ## Next Steps
 
