@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1](https://github.com/sripwoud/auberge/compare/v0.9.0...v0.9.1) - 2026-04-16
+
+### Added
+
+- *(hermes)* add TELEGRAM_ALLOWED_USERS env var support ([#244](https://github.com/sripwoud/auberge/pull/244))
+- *(hermes)* add --pull flag to `sync` command ([#241](https://github.com/sripwoud/auberge/pull/241))
+- *(hermes)* manage config locally and add sync command ([#239](https://github.com/sripwoud/auberge/pull/239))
+
+### Fixed
+
+- *(hermes)* add missing playwright chromium dependencies ([#243](https://github.com/sripwoud/auberge/pull/243))
+
+### Other
+
+- add arrow key navigation between pages
+- add mermaid rendering support
+- link tools to internal app pages on homepage
+
 ## [0.9.0](https://github.com/sripwoud/auberge/compare/v0.8.6...v0.9.0) - 2026-04-15
 
 ### Added
