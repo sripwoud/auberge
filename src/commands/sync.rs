@@ -27,10 +27,15 @@ pub enum SyncCommands {
         #[arg(
             short,
             long,
-            help = "Source config file [default: ~/.config/hermes/config.yaml]"
+            help = "Config file path: source when pushing, destination when pulling [default: ~/.config/hermes/config.yaml]"
         )]
         source: Option<PathBuf>,
-        #[arg(short = 'n', long, help = "Dry run (don't actually sync)")]
+        #[arg(
+            short = 'n',
+            long,
+            help = "Dry run (don't actually sync)",
+            conflicts_with = "pull"
+        )]
         dry_run: bool,
         #[arg(
             short = 'p',
@@ -166,6 +171,10 @@ pub fn run_sync_hermes(
             .ok_or_else(|| eyre::eyre!("No SSH key configured for host '{}'", xdg_host.name))?;
         if !ssh_key.exists() {
             eyre::bail!("SSH key not found: {}", ssh_key.display());
+        }
+        if let Some(parent) = local_dest.parent() {
+            std::fs::create_dir_all(parent)
+                .wrap_err_with(|| format!("Failed to create directory: {}", parent.display()))?;
         }
         let session = SshSession::new(&xdg_host, &ssh_key);
         output::info(&format!(
