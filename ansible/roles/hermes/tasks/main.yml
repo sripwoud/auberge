@@ -7,6 +7,8 @@
       - git
       - ripgrep
       - ffmpeg
+      - libnspr4
+      - libnss3
     state: present
 
 - name: Get user UID
