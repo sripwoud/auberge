@@ -66,6 +66,7 @@
     - [keygen](cli-reference/ssh/keygen.md)
     - [add-key](cli-reference/ssh/add-key.md)
   - Sync
+    - [hermes](cli-reference/sync/hermes.md)
     - [music](cli-reference/sync/music.md)
   - DNS
     - [list](cli-reference/dns/list.md)

@@ -32,7 +32,10 @@ auberge config set hermes_telegram_bot_token <VALUE>
 
 ```bash
 auberge config set hermes_exa_api_key <VALUE>
+auberge config set hermes_telegram_allowed_users <YOUR_TELEGRAM_USER_ID>
 ```
+
+`hermes_telegram_allowed_users` restricts bot access to the specified Telegram user IDs (comma-separated). Without this, any Telegram user who knows the bot token can interact with it. Get your user ID by messaging @userinfobot on Telegram.
 
 ### Get API Keys
 
@@ -121,6 +124,7 @@ Message your Telegram bot. Hermes:
 
 - **No public ports**: Gateway polls Telegram outbound only
 - **Secrets**: Stored in `~/.hermes/.env` with mode `0600`
+- **User allowlist**: Set `hermes_telegram_allowed_users` to restrict bot access to specific Telegram user IDs
 - **Command approval**: Hermes prompts before running dangerous commands (133 patterns)
 - **Prompt injection scanning**: Detects hidden content and Unicode tricks
 
