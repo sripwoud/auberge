@@ -172,7 +172,18 @@ impl UserConfig {
             .collect()
     }
 
-    pub fn flatten_for_ansible(&self) -> Result<BTreeMap<String, String>> {
+    pub fn validate_required_resolved(&self, keys: &[&str]) -> Result<()> {
+        let missing = self.validate_required(keys);
+        if !missing.is_empty() {
+            eyre::bail!("Missing required config values: {}", missing.join(", "));
+        }
+        for &key in keys {
+            self.get_resolved(key)?;
+        }
+        Ok(())
+    }
+
+    pub fn flatten_for_ansible(&self) -> BTreeMap<String, String> {
         flatten_toml(&self.table)
     }
 
@@ -232,21 +243,29 @@ fn resolve_value(v: &str) -> Result<String> {
     Ok(v.to_string())
 }
 
-fn flatten_toml(table: &toml::Table) -> Result<BTreeMap<String, String>> {
+fn flatten_toml(table: &toml::Table) -> BTreeMap<String, String> {
     let mut result = BTreeMap::new();
     for (key, value) in table {
         match value {
-            toml::Value::Table(inner) => result.extend(flatten_toml(inner)?),
+            toml::Value::Table(inner) => result.extend(flatten_toml(inner)),
             other => {
                 if let Some(s) = value_to_string(other) {
-                    let resolved = resolve_value(&s)
-                        .wrap_err_with(|| format!("Failed to resolve config key '{key}'"))?;
-                    result.insert(key.clone(), resolved);
+                    match resolve_value(&s) {
+                        Ok(resolved) => {
+                            result.insert(key.clone(), resolved);
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "Warning: skipping config key '{}' (resolution failed: {})",
+                                key, e
+                            );
+                        }
+                    }
                 }
             }
         }
     }
-    Ok(result)
+    result
 }
 
 #[cfg(test)]
@@ -279,7 +298,7 @@ mod tests {
             admin_user_name = "alice"
         "#;
         let table: toml::Table = toml::from_str(toml_str).unwrap();
-        let flat = flatten_toml(&table).unwrap();
+        let flat = flatten_toml(&table);
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
         assert_eq!(flat.get("admin_user_name").unwrap(), "alice");
@@ -457,6 +476,58 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_required_resolved_passes_when_all_set() {
+        let toml_str = r#"
+            domain = "example.com"
+            admin_user_name = "alice"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        assert!(
+            config
+                .validate_required_resolved(&["domain", "admin_user_name"])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_validate_required_resolved_fails_on_missing_key() {
+        let toml_str = r#"
+            domain = "example.com"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let err = config
+            .validate_required_resolved(&["domain", "admin_user_name"])
+            .unwrap_err();
+        assert!(err.to_string().contains("admin_user_name"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_required_resolved_fails_on_broken_shell_command() {
+        let toml_str = r#"
+            domain = "example.com"
+            bot_token = "!false"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let err = config
+            .validate_required_resolved(&["domain", "bot_token"])
+            .unwrap_err();
+        assert!(err.to_string().contains("bot_token"));
+    }
+
+    #[test]
     fn test_flatten_for_ansible() {
         let toml_str = r#"
             domain = "example.com"
@@ -468,7 +539,7 @@ mod tests {
             path: PathBuf::from("/tmp/fake"),
             table,
         };
-        let flat = config.flatten_for_ansible().unwrap();
+        let flat = config.flatten_for_ansible();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "secret");
@@ -583,7 +654,7 @@ mod tests {
             path: PathBuf::from("/tmp/fake"),
             table,
         };
-        let flat = config.flatten_for_ansible().unwrap();
+        let flat = config.flatten_for_ansible();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "cmdpassword");
     }
@@ -599,7 +670,24 @@ mod tests {
             path: PathBuf::from("/tmp/fake"),
             table,
         };
-        let flat = config.flatten_for_ansible().unwrap();
+        let flat = config.flatten_for_ansible();
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "!literal");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_flatten_for_ansible_skips_failed_shell_commands() {
+        let toml_str = r#"
+            domain = "example.com"
+            broken_key = "!false"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let flat = config.flatten_for_ansible();
+        assert_eq!(flat.get("domain").unwrap(), "example.com");
+        assert!(flat.get("broken_key").is_none());
     }
 }

@@ -106,20 +106,7 @@ fn validate_config_for_deploy(apps: &[String]) -> Result<UserConfig> {
         }
     }
 
-    let missing = config.validate_required(&all_keys);
-    if !missing.is_empty() {
-        output::error("Missing required config values:");
-        for key in &missing {
-            output::error(&format!(
-                "  '{}' is required. Run: auberge config set {} <VALUE>",
-                key, key
-            ));
-        }
-        eyre::bail!(
-            "{} required config value(s) missing in config.toml",
-            missing.len()
-        );
-    }
+    config.validate_required_resolved(&all_keys)?;
     Ok(config)
 }
 

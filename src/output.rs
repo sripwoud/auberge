@@ -30,7 +30,6 @@ fn should_use_colors() -> bool {
     std::io::stderr().is_terminal()
 }
 
-const RED: &str = "\x1b[31m";
 const YELLOW: &str = "\x1b[33m";
 const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
@@ -42,14 +41,6 @@ pub fn success(msg: &str) {
         eprintln!("{}✓{} {}", GREEN, RESET, msg);
     } else {
         eprintln!("✓ {}", msg);
-    }
-}
-
-pub fn error(msg: &str) {
-    if should_use_colors() {
-        eprintln!("{}✗{} {}", RED, RESET, msg);
-    } else {
-        eprintln!("✗ {}", msg);
     }
 }
 
