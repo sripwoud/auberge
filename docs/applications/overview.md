@@ -36,6 +36,12 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | [WebDAV](apps/webdav.md)           | File sharing and synchronization        |
 | [YOURLS](apps/yourls.md)           | URL shortener                           |
 
+## Notifications
+
+| Application              | Description                               |
+| ------------------------ | ----------------------------------------- |
+| [TGTG Bot](apps/tgtg.md) | Too Good To Go availability notifications |
+
 ## AI
 
 | Application                    | Description                          |

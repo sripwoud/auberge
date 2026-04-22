@@ -63,6 +63,8 @@ tailscale_api_key = ""
 tailscale_authkey = ""
 tailscale_login_server = ""
 
+tgtg_telegram_bot_token = ""
+
 webdav_password = ""
 webdav_subdomain = ""
 

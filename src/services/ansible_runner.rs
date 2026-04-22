@@ -71,6 +71,7 @@ fn tag_required_keys(tag: &str) -> &[&'static str] {
     match tag {
         "colporteur" => &["colporteur_subdomain"],
         "hermes" => &["hermes_openrouter_api_key", "hermes_telegram_bot_token"],
+        "tgtg" => &["tgtg_telegram_bot_token"],
         _ => &[],
     }
 }
