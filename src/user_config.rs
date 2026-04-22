@@ -172,6 +172,17 @@ impl UserConfig {
             .collect()
     }
 
+    pub fn validate_required_resolved(&self, keys: &[&str]) -> Result<()> {
+        let missing = self.validate_required(keys);
+        if !missing.is_empty() {
+            eyre::bail!("Missing required config values: {}", missing.join(", "));
+        }
+        for &key in keys {
+            self.get_resolved(key)?;
+        }
+        Ok(())
+    }
+
     pub fn flatten_for_ansible(&self) -> BTreeMap<String, String> {
         flatten_toml(&self.table)
     }
@@ -462,6 +473,58 @@ mod tests {
         };
         let missing = config.validate_required(&["domain", "admin_user_name"]);
         assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn test_validate_required_resolved_passes_when_all_set() {
+        let toml_str = r#"
+            domain = "example.com"
+            admin_user_name = "alice"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        assert!(
+            config
+                .validate_required_resolved(&["domain", "admin_user_name"])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_validate_required_resolved_fails_on_missing_key() {
+        let toml_str = r#"
+            domain = "example.com"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let err = config
+            .validate_required_resolved(&["domain", "admin_user_name"])
+            .unwrap_err();
+        assert!(err.to_string().contains("admin_user_name"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_required_resolved_fails_on_broken_shell_command() {
+        let toml_str = r#"
+            domain = "example.com"
+            bot_token = "!false"
+        "#;
+        let table: toml::Table = toml::from_str(toml_str).unwrap();
+        let config = UserConfig {
+            path: PathBuf::from("/tmp/fake"),
+            table,
+        };
+        let err = config
+            .validate_required_resolved(&["domain", "bot_token"])
+            .unwrap_err();
+        assert!(err.to_string().contains("bot_token"));
     }
 
     #[test]
