@@ -1,0 +1,26 @@
+[Unit]
+Description=TooGoodToGo Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User={{ tgtg_sys_user }}
+Group={{ tgtg_sys_group }}
+WorkingDirectory={{ tgtg_data_dir }}
+Environment="PATH={{ tgtg_venv_dir }}/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="VIRTUAL_ENV={{ tgtg_venv_dir }}"
+ExecStart={{ tgtg_venv_dir }}/bin/python {{ tgtg_install_dir }}/Telegram.py
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths={{ tgtg_data_dir }}
+ReadOnlyPaths={{ tgtg_install_dir }}
+
+[Install]
+WantedBy=multi-user.target

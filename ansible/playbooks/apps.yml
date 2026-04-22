@@ -31,6 +31,8 @@
       tags: [apps, storage, documents, paperless]
     - role: syncthing
       tags: [apps, sync, syncthing]
+    - role: tgtg
+      tags: [apps, notifications, tgtg]
     - role: webdav
       tags: [apps, storage, webdav]
     - role: wireguard

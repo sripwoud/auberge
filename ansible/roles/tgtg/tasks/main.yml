@@ -1,0 +1,155 @@
+---
+- name: Create tgtg system group
+  ansible.builtin.group:
+    name: "{{ tgtg_sys_group }}"
+    system: true
+
+- name: Create tgtg system user
+  ansible.builtin.user:
+    name: "{{ tgtg_sys_user }}"
+    group: "{{ tgtg_sys_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ tgtg_data_dir }}"
+    create_home: false
+
+- name: Create data directory
+  ansible.builtin.file:
+    path: "{{ tgtg_data_dir }}"
+    state: directory
+    owner: "{{ tgtg_sys_user }}"
+    group: "{{ tgtg_sys_group }}"
+    mode: "0750"
+
+- name: Install system dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - git
+    state: present
+
+- name: Check if uv is installed
+  ansible.builtin.command: /usr/local/bin/uv --version
+  register: tgtg_uv_check
+  changed_when: false
+  failed_when: false
+
+- name: Create secure temp directory for uv installer
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: _uv_install
+  register: tgtg_uv_tmpdir
+  when: tgtg_uv_check.rc != 0
+
+- name: Download uv install script
+  ansible.builtin.get_url:
+    url: "https://astral.sh/uv/{{ tgtg_uv_version }}/install.sh"
+    dest: "{{ tgtg_uv_tmpdir.path }}/install.sh"
+    mode: "0755"
+  when: tgtg_uv_check.rc != 0
+
+- name: Install uv package manager
+  ansible.builtin.command: "{{ tgtg_uv_tmpdir.path }}/install.sh"
+  when: tgtg_uv_check.rc != 0
+  changed_when: true
+  environment:
+    UV_INSTALL_DIR: /usr/local/bin
+
+- name: Clean up uv installer
+  ansible.builtin.file:
+    path: "{{ tgtg_uv_tmpdir.path }}"
+    state: absent
+  when: tgtg_uv_tmpdir.path is defined
+
+- name: Mark install directory as git safe
+  community.general.git_config:
+    name: safe.directory
+    value: "{{ tgtg_install_dir }}"
+    scope: global
+    add_mode: add
+
+- name: Clone TooGoodToGo-TelegramBot repository
+  ansible.builtin.git:
+    repo: "{{ tgtg_repo }}"
+    dest: "{{ tgtg_install_dir }}"
+    version: "{{ tgtg_version }}"
+    force: false
+  register: tgtg_git_result
+
+- name: Set install directory ownership
+  ansible.builtin.file:
+    path: "{{ tgtg_install_dir }}"
+    state: directory
+    owner: "{{ tgtg_sys_user }}"
+    group: "{{ tgtg_sys_group }}"
+    recurse: true
+
+- name: Create Python venv
+  ansible.builtin.command: /usr/local/bin/uv venv {{ tgtg_venv_dir }} --python 3.11
+  args:
+    creates: "{{ tgtg_venv_dir }}/bin/python"
+  environment:
+    UV_PYTHON_INSTALL_DIR: "{{ tgtg_python_dir }}"
+
+- name: Install Python dependencies
+  ansible.builtin.command: /usr/local/bin/uv pip install -r {{ tgtg_install_dir }}/requirements.txt
+  when: tgtg_git_result.changed or (tgtg_venv_dir ~ '/lib') is not directory
+  changed_when: true
+  environment:
+    VIRTUAL_ENV: "{{ tgtg_venv_dir }}"
+    UV_PYTHON_INSTALL_DIR: "{{ tgtg_python_dir }}"
+
+- name: Set venv ownership
+  ansible.builtin.file:
+    path: "{{ tgtg_venv_dir }}"
+    state: directory
+    owner: "{{ tgtg_sys_user }}"
+    group: "{{ tgtg_sys_group }}"
+    recurse: true
+
+- name: Validate required secrets
+  ansible.builtin.assert:
+    that:
+      - tgtg_telegram_bot_token | default('') | length > 0
+    fail_msg: |
+      Required TGTG secret is not set.
+      Set it with:
+        auberge config set tgtg_telegram_bot_token <VALUE>
+
+- name: Deploy config.ini
+  ansible.builtin.template:
+    src: config.ini.j2
+    dest: "{{ tgtg_data_dir }}/config.ini"
+    owner: "{{ tgtg_sys_user }}"
+    group: "{{ tgtg_sys_group }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart tgtg
+
+- name: Deploy tgtg systemd service
+  ansible.builtin.template:
+    src: tgtg.service.j2
+    dest: /etc/systemd/system/tgtg.service
+    mode: "0644"
+  notify: Restart tgtg
+
+- name: Enable and start tgtg service
+  ansible.builtin.systemd_service:
+    name: tgtg
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Display deployment summary
+  ansible.builtin.debug:
+    msg:
+      - "==================================="
+      - "TooGoodToGo Bot Deployment Complete!"
+      - "==================================="
+      - "Install Dir: {{ tgtg_install_dir }}"
+      - "Data Dir: {{ tgtg_data_dir }}"
+      - ""
+      - "Next steps:"
+      - "1. Check service: systemctl status tgtg"
+      - "2. View logs: journalctl -u tgtg -f"
+      - "3. Message your Telegram bot with /start"

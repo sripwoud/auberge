@@ -107,6 +107,8 @@
     - [Syncthing](applications/apps/syncthing.md)
     - [YOURLS](applications/apps/yourls.md)
     - [Paperless-ngx](applications/apps/paperless.md)
+  - Notifications
+    - [TGTG Bot](applications/apps/tgtg.md)
   - AI Agent
     - [Hermes Agent](applications/apps/hermes.md)
 

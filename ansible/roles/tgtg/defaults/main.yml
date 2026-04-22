@@ -1,0 +1,13 @@
+---
+tgtg_repo: "https://github.com/TorbenStriegel/TooGoodToGo-TelegramBot.git"
+tgtg_version: "c8bfe46"
+tgtg_uv_version: "0.7.0"
+
+tgtg_sys_user: tgtg
+tgtg_sys_group: tgtg
+tgtg_install_dir: /opt/tgtg
+tgtg_data_dir: /var/lib/tgtg
+tgtg_venv_dir: /opt/tgtg/.venv
+tgtg_python_dir: /opt/tgtg/.python
+
+tgtg_proxy: ""

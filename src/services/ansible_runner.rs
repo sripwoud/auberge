@@ -71,6 +71,7 @@ fn tag_required_keys(tag: &str) -> &[&'static str] {
     match tag {
         "colporteur" => &["colporteur_subdomain"],
         "hermes" => &["hermes_openrouter_api_key", "hermes_telegram_bot_token"],
+        "tgtg" => &["tgtg_telegram_bot_token"],
         _ => &[],
     }
 }
@@ -290,6 +291,14 @@ mod tests {
         assert!(keys.contains(&"cloudflare_dns_api_token"));
         assert!(keys.contains(&"hermes_openrouter_api_key"));
         assert!(keys.contains(&"hermes_telegram_bot_token"));
+    }
+
+    #[test]
+    fn test_required_config_keys_apps_with_tgtg_tag() {
+        let tags = vec!["tgtg".to_string()];
+        let keys = required_config_keys("apps.yml", Some(&tags));
+        assert!(keys.contains(&"cloudflare_dns_api_token"));
+        assert!(keys.contains(&"tgtg_telegram_bot_token"));
     }
 
     #[test]
