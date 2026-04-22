@@ -7,8 +7,8 @@ Hermes Agent is a self-improving personal AI assistant by Nous Research. It conn
 ```mermaid
 flowchart TD
     A[Your Phone - Telegram] -->|outbound HTTPS polling| B[Your VPS - Hermes Gateway]
-    B -->|outbound API calls| C[OpenRouter]
-    C --> D[Claude / GPT / etc]
+    B -->|outbound API calls| C[LLM Provider]
+    C --> D[Kimi / Claude / DeepSeek / etc]
 ```
 
 Hermes gateway connects **outbound** to Telegram's API. No inbound port exposure needed.
@@ -24,9 +24,22 @@ Hermes gateway connects **outbound** to Telegram's API. No inbound port exposure
 ### Required Config Values
 
 ```bash
-auberge config set hermes_openrouter_api_key <VALUE>
+auberge config set hermes_llm_provider <anthropic|deepseek|gemini|kimi|openrouter|xai|zai>
+auberge config set hermes_llm_api_key <VALUE>
 auberge config set hermes_telegram_bot_token <VALUE>
 ```
+
+Supported providers and their env var mapping:
+
+| Provider           | Slug         | API Key Platform                                       |
+| ------------------ | ------------ | ------------------------------------------------------ |
+| Anthropic          | `anthropic`  | [console.anthropic.com](https://console.anthropic.com) |
+| DeepSeek           | `deepseek`   | [platform.deepseek.com](https://platform.deepseek.com) |
+| Google Gemini      | `gemini`     | [aistudio.google.dev](https://aistudio.google.dev)     |
+| Kimi (Moonshot AI) | `kimi`       | [platform.moonshot.ai](https://platform.moonshot.ai)   |
+| OpenRouter         | `openrouter` | [openrouter.ai/keys](https://openrouter.ai/keys)       |
+| xAI (Grok)         | `xai`        | [console.x.ai](https://console.x.ai)                   |
+| Zhipu AI (GLM)     | `zai`        | [open.bigmodel.cn](https://open.bigmodel.cn)           |
 
 ### Optional Config Values
 
@@ -37,25 +50,9 @@ auberge config set hermes_telegram_allowed_users <YOUR_TELEGRAM_USER_ID>
 
 `hermes_telegram_allowed_users` restricts bot access to the specified Telegram user IDs (comma-separated). Without this, any Telegram user who knows the bot token can interact with it. Get your user ID by messaging @userinfobot on Telegram.
 
-### Get API Keys
+### Hermes Config
 
-**OpenRouter:**
-
-1. Sign up at https://openrouter.ai
-2. Go to https://openrouter.ai/keys
-3. Create API key and add credits
-
-**Telegram Bot:**
-
-1. Message @BotFather on Telegram
-2. Send `/newbot` and follow prompts
-3. Copy the bot token
-
-**Exa (optional, free tier):**
-
-1. Sign up at https://exa.ai
-2. Go to dashboard → API keys
-3. Copy API key (1,000 free searches/month)
+The LLM model and provider are configured in `~/.config/hermes/config.yaml`, which is synced to the VPS. The `hermes_llm_provider` in auberge config must match the provider set in `config.yaml`.
 
 ## Deployment
 
@@ -138,7 +135,7 @@ journalctl --user -u hermes-gateway -n 50
 
 Check for:
 
-- Missing API keys (OpenRouter, Telegram)
+- Missing API keys
 - Python/uv not installed
 - Network connectivity
 
@@ -151,7 +148,7 @@ journalctl --user -u hermes-gateway -f
 Check for:
 
 - Invalid Telegram bot token
-- OpenRouter API key out of credits
+- LLM API key out of credits or expired
 - Rate limiting
 
 ## Updates
@@ -188,5 +185,4 @@ systemctl --user daemon-reload
 
 - [Hermes Agent Docs](https://hermes-agent.nousresearch.com/docs)
 - [GitHub](https://github.com/NousResearch/hermes-agent)
-- [OpenRouter](https://openrouter.ai)
 - [Telegram BotFather](https://t.me/BotFather)

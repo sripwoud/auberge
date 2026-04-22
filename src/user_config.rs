@@ -44,7 +44,8 @@ headscale_subdomain = ""
 navidrome_subdomain = ""
 
 hermes_exa_api_key = ""
-hermes_openrouter_api_key = ""
+hermes_llm_api_key = ""
+hermes_llm_provider = ""
 hermes_telegram_bot_token = ""
 
 paperless_admin_password = ""

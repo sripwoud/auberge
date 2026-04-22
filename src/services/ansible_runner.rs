@@ -70,7 +70,11 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
 fn tag_required_keys(tag: &str) -> &[&'static str] {
     match tag {
         "colporteur" => &["colporteur_subdomain"],
-        "hermes" => &["hermes_openrouter_api_key", "hermes_telegram_bot_token"],
+        "hermes" => &[
+            "hermes_llm_provider",
+            "hermes_llm_api_key",
+            "hermes_telegram_bot_token",
+        ],
         "tgtg" => &["tgtg_telegram_bot_token"],
         _ => &[],
     }
@@ -94,7 +98,8 @@ pub fn required_config_keys(playbook_name: &str, tags: Option<&[String]>) -> Vec
             keys.extend([
                 "admin_user_name",
                 "domain",
-                "hermes_openrouter_api_key",
+                "hermes_llm_provider",
+                "hermes_llm_api_key",
                 "hermes_telegram_bot_token",
             ]);
         }
@@ -289,7 +294,8 @@ mod tests {
         let tags = vec!["hermes".to_string()];
         let keys = required_config_keys("apps.yml", Some(&tags));
         assert!(keys.contains(&"cloudflare_dns_api_token"));
-        assert!(keys.contains(&"hermes_openrouter_api_key"));
+        assert!(keys.contains(&"hermes_llm_provider"));
+        assert!(keys.contains(&"hermes_llm_api_key"));
         assert!(keys.contains(&"hermes_telegram_bot_token"));
     }
 
@@ -326,7 +332,8 @@ mod tests {
         let keys = required_config_keys("hermes.yml", None);
         assert!(keys.contains(&"admin_user_name"));
         assert!(keys.contains(&"domain"));
-        assert!(keys.contains(&"hermes_openrouter_api_key"));
+        assert!(keys.contains(&"hermes_llm_provider"));
+        assert!(keys.contains(&"hermes_llm_api_key"));
         assert!(keys.contains(&"hermes_telegram_bot_token"));
     }
 
