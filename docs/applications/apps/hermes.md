@@ -29,17 +29,17 @@ auberge config set hermes_llm_api_key <VALUE>
 auberge config set hermes_telegram_bot_token <VALUE>
 ```
 
-Supported providers and their env var mapping:
+Supported providers:
 
-| Provider           | Slug         | API Key Platform                                       |
-| ------------------ | ------------ | ------------------------------------------------------ |
-| Anthropic          | `anthropic`  | [console.anthropic.com](https://console.anthropic.com) |
-| DeepSeek           | `deepseek`   | [platform.deepseek.com](https://platform.deepseek.com) |
-| Google Gemini      | `gemini`     | [aistudio.google.dev](https://aistudio.google.dev)     |
-| Kimi (Moonshot AI) | `kimi`       | [platform.moonshot.ai](https://platform.moonshot.ai)   |
-| OpenRouter         | `openrouter` | [openrouter.ai/keys](https://openrouter.ai/keys)       |
-| xAI (Grok)         | `xai`        | [console.x.ai](https://console.x.ai)                   |
-| Zhipu AI (GLM)     | `zai`        | [open.bigmodel.cn](https://open.bigmodel.cn)           |
+| Provider           | Slug         | Env Var              | API Key Platform                                       |
+| ------------------ | ------------ | -------------------- | ------------------------------------------------------ |
+| Anthropic          | `anthropic`  | `ANTHROPIC_API_KEY`  | [console.anthropic.com](https://console.anthropic.com) |
+| DeepSeek           | `deepseek`   | `DEEPSEEK_API_KEY`   | [platform.deepseek.com](https://platform.deepseek.com) |
+| Google Gemini      | `gemini`     | `GOOGLE_API_KEY`     | [aistudio.google.dev](https://aistudio.google.dev)     |
+| Kimi (Moonshot AI) | `kimi`       | `KIMI_API_KEY`       | [platform.moonshot.ai](https://platform.moonshot.ai)   |
+| OpenRouter         | `openrouter` | `OPENROUTER_API_KEY` | [openrouter.ai/keys](https://openrouter.ai/keys)       |
+| xAI (Grok)         | `xai`        | `XAI_API_KEY`        | [console.x.ai](https://console.x.ai)                   |
+| Zhipu AI (GLM)     | `zai`        | `GLM_API_KEY`        | [open.bigmodel.cn](https://open.bigmodel.cn)           |
 
 ### Optional Config Values
 
