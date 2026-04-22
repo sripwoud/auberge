@@ -81,6 +81,8 @@
   ansible.builtin.command: /usr/local/bin/uv venv {{ tgtg_venv_dir }} --python 3.11
   args:
     creates: "{{ tgtg_venv_dir }}/bin/python"
+  environment:
+    UV_PYTHON_INSTALL_DIR: "{{ tgtg_python_dir }}"
 
 - name: Install Python dependencies
   ansible.builtin.command: /usr/local/bin/uv pip install -r {{ tgtg_install_dir }}/requirements.txt
@@ -88,6 +90,7 @@
   changed_when: true
   environment:
     VIRTUAL_ENV: "{{ tgtg_venv_dir }}"
+    UV_PYTHON_INSTALL_DIR: "{{ tgtg_python_dir }}"
 
 - name: Set venv ownership
   ansible.builtin.file:
