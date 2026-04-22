@@ -251,18 +251,10 @@ fn flatten_toml(table: &toml::Table) -> BTreeMap<String, String> {
         match value {
             toml::Value::Table(inner) => result.extend(flatten_toml(inner)),
             other => {
-                if let Some(s) = value_to_string(other) {
-                    match resolve_value(&s) {
-                        Ok(resolved) => {
-                            result.insert(key.clone(), resolved);
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "Warning: skipping config key '{}' (resolution failed: {})",
-                                key, e
-                            );
-                        }
-                    }
+                if let Some(s) = value_to_string(other)
+                    && let Ok(resolved) = resolve_value(&s)
+                {
+                    result.insert(key.clone(), resolved);
                 }
             }
         }
