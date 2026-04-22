@@ -1,6 +1,6 @@
 ---
 tgtg_repo: "https://github.com/TorbenStriegel/TooGoodToGo-TelegramBot.git"
-tgtg_version: "main"
+tgtg_version: "c8bfe46"
 tgtg_uv_version: "0.7.0"
 
 tgtg_sys_user: tgtg

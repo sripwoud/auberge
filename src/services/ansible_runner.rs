@@ -294,6 +294,14 @@ mod tests {
     }
 
     #[test]
+    fn test_required_config_keys_apps_with_tgtg_tag() {
+        let tags = vec!["tgtg".to_string()];
+        let keys = required_config_keys("apps.yml", Some(&tags));
+        assert!(keys.contains(&"cloudflare_dns_api_token"));
+        assert!(keys.contains(&"tgtg_telegram_bot_token"));
+    }
+
+    #[test]
     fn test_required_config_keys_apps_with_unrelated_tag() {
         let tags = vec!["paperless".to_string()];
         let keys = required_config_keys("apps.yml", Some(&tags));
