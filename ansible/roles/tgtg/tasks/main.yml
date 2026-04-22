@@ -61,6 +61,13 @@
     state: absent
   when: tgtg_uv_tmpdir.path is defined
 
+- name: Mark install directory as git safe
+  community.general.git_config:
+    name: safe.directory
+    value: "{{ tgtg_install_dir }}"
+    scope: global
+    add_mode: add
+
 - name: Clone TooGoodToGo-TelegramBot repository
   ansible.builtin.git:
     repo: "{{ tgtg_repo }}"
