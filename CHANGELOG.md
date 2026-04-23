@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3](https://github.com/sripwoud/auberge/compare/v0.9.2...v0.9.3) - 2026-04-23
+
+### Added
+
+- *(hermes)* make LLM provider configurable and compress context ([#248](https://github.com/sripwoud/auberge/pull/248))
+
+### Other
+
+- update README
+
 ## [0.9.2](https://github.com/sripwoud/auberge/compare/v0.9.1...v0.9.2) - 2026-04-22
 
 ### Added
