@@ -10,3 +10,12 @@ hermes_venv_dir: "{{ hermes_config_dir }}/venv"
 
 hermes_config_src: "~/.config/hermes/config.yaml"
 hermes_extras: "all"
+
+hermes_provider_env_vars:
+  anthropic: ANTHROPIC_API_KEY
+  deepseek: DEEPSEEK_API_KEY
+  gemini: GOOGLE_API_KEY
+  kimi: KIMI_API_KEY
+  openrouter: OPENROUTER_API_KEY
+  xai: XAI_API_KEY
+  zai: GLM_API_KEY

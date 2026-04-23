@@ -149,12 +149,15 @@
 - name: Validate required Hermes secrets
   ansible.builtin.assert:
     that:
-      - hermes_openrouter_api_key | default('') | length > 0
+      - hermes_llm_provider | default('') | trim | length > 0
+      - hermes_llm_provider | trim | lower in hermes_provider_env_vars
+      - hermes_llm_api_key | default('') | trim | length > 0
       - hermes_telegram_bot_token | default('') | length > 0
     fail_msg: |
       Required Hermes secrets are not set or empty.
       Set them with:
-        auberge config set hermes_openrouter_api_key <VALUE>
+        auberge config set hermes_llm_provider <anthropic|deepseek|gemini|kimi|openrouter|xai|zai>
+        auberge config set hermes_llm_api_key <VALUE>
         auberge config set hermes_telegram_bot_token <VALUE>
 
 - name: Deploy Hermes environment file
