@@ -17,6 +17,7 @@
       tags: [apps, storage, media, books, grimmory]
     - role: hermes
       tags: [apps, ai, hermes]
+      when: "'hermes' in group_names"
     - role: cockpit
       tags: [apps, monitoring, cockpit]
       vars:
