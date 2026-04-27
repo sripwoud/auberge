@@ -13,6 +13,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
+    concurrency:
+      group: release-plz-release-${{ github.ref }}
+      cancel-in-progress: false
     outputs:
       releases_created: ${{ steps.outputs.outputs.releases_created }}
       tag: ${{ steps.outputs.outputs.tag }}
@@ -50,16 +53,26 @@ jobs:
           version=$(awk -F'"' '/^version = / { print $2; exit }' Cargo.toml)
           tag="v${version}"
           if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-            echo "Tag ${tag} already exists on remote; nothing to recover."
+            echo "Tag ${tag} already exists on remote; enabling downstream binary upload."
+            {
+              echo "tag_present=true"
+              echo "tag=${tag}"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "::warning::release-plz skipped tagging ${tag} (likely already published on crates.io). Creating tag now."
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${tag}" -m "${tag}"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${tag}"
+          head_sha=$(git rev-parse HEAD)
+          tag_sha=$(gh api -X POST "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="${tag}" \
+            -f message="${tag}" \
+            -f object="${head_sha}" \
+            -f type=commit \
+            --jq '.sha')
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${tag}" \
+            -f sha="${tag_sha}" >/dev/null
           {
-            echo "created=true"
+            echo "tag_present=true"
             echo "tag=${tag}"
           } >> "$GITHUB_OUTPUT"
 
@@ -68,7 +81,7 @@ jobs:
         env:
           RELEASES_CREATED: ${{ steps.release.outputs.releases_created }}
           RELEASES_JSON: ${{ steps.release.outputs.releases }}
-          RECOVERY_CREATED: ${{ steps.recovery.outputs.created }}
+          RECOVERY_TAG_PRESENT: ${{ steps.recovery.outputs.tag_present }}
           RECOVERY_TAG: ${{ steps.recovery.outputs.tag }}
         run: |
           set -euo pipefail
@@ -76,7 +89,7 @@ jobs:
             tag=$(echo "$RELEASES_JSON" | jq -r '.[0].tag')
             echo "releases_created=true" >> "$GITHUB_OUTPUT"
             echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          elif [[ "$RECOVERY_CREATED" == "true" ]]; then
+          elif [[ "$RECOVERY_TAG_PRESENT" == "true" ]]; then
             echo "releases_created=true" >> "$GITHUB_OUTPUT"
             echo "tag=${RECOVERY_TAG}" >> "$GITHUB_OUTPUT"
           else
