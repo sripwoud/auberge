@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
 
 jobs:
   release-plz-release:
@@ -12,9 +13,12 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
+    concurrency:
+      group: release-plz-release-${{ github.ref }}
+      cancel-in-progress: false
     outputs:
-      releases_created: ${{ steps.release.outputs.releases_created }}
-      tag: ${{ steps.get-tag.outputs.tag }}
+      releases_created: ${{ steps.outputs.outputs.releases_created }}
+      tag: ${{ steps.outputs.outputs.tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,10 +38,63 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - name: Get release tag
-        id: get-tag
-        if: steps.release.outputs.releases_created == 'true'
-        run: echo "tag=${{ fromJSON(steps.release.outputs.releases)[0].tag }}" >> "$GITHUB_OUTPUT"
+      - name: Recover skipped release tag
+        id: recovery
+        if: steps.release.outputs.releases_created != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          head_subject=$(git log -1 --pretty=%s)
+          if [[ ! "$head_subject" =~ ^chore:\ release\ v ]]; then
+            echo "HEAD ($head_subject) is not a release commit; nothing to recover."
+            exit 0
+          fi
+          version=$(awk -F'"' '/^version = / { print $2; exit }' Cargo.toml)
+          tag="v${version}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists on remote; enabling downstream binary upload."
+            {
+              echo "tag_present=true"
+              echo "tag=${tag}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::warning::release-plz skipped tagging ${tag} (likely already published on crates.io). Creating tag now."
+          head_sha=$(git rev-parse HEAD)
+          tag_sha=$(gh api -X POST "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="${tag}" \
+            -f message="${tag}" \
+            -f object="${head_sha}" \
+            -f type=commit \
+            --jq '.sha')
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${tag}" \
+            -f sha="${tag_sha}" >/dev/null
+          {
+            echo "tag_present=true"
+            echo "tag=${tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve job outputs
+        id: outputs
+        env:
+          RELEASES_CREATED: ${{ steps.release.outputs.releases_created }}
+          RELEASES_JSON: ${{ steps.release.outputs.releases }}
+          RECOVERY_TAG_PRESENT: ${{ steps.recovery.outputs.tag_present }}
+          RECOVERY_TAG: ${{ steps.recovery.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASES_CREATED" == "true" ]]; then
+            tag=$(echo "$RELEASES_JSON" | jq -r '.[0].tag')
+            echo "releases_created=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          elif [[ "$RECOVERY_TAG_PRESENT" == "true" ]]; then
+            echo "releases_created=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${RECOVERY_TAG}" >> "$GITHUB_OUTPUT"
+          else
+            echo "releases_created=false" >> "$GITHUB_OUTPUT"
+          fi
 
   release-plz-pr:
     name: Release-plz PR
