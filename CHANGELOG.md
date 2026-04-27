@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4](https://github.com/sripwoud/auberge/compare/v0.9.3...v0.9.4) - 2026-04-27
+
+### Fixed
+
+- *(hermes)* gate role on host membership in 'hermes' group ([#254](https://github.com/sripwoud/auberge/pull/254))
+- *(tailscale)* run status probe in check mode
+
+### Other
+
+- *(release)* add workflow_dispatch and recover from silent tag skip ([#255](https://github.com/sripwoud/auberge/pull/255))
+
 ## [0.9.3](https://github.com/sripwoud/auberge/compare/v0.9.2...v0.9.3) - 2026-04-26
 
 ### Added
