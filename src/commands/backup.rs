@@ -522,7 +522,12 @@ pub fn run_backup_sync(
         return Ok(());
     }
 
+    let staging_dir = default_backup_dir()
+        .join(&host_name)
+        .join(&outcome.timestamp);
+
     if outcome.successful_apps.is_empty() {
+        let _ = fs::remove_dir_all(&staging_dir);
         eyre::bail!(
             "All {} app(s) failed; nothing to push",
             outcome.failed_apps.len()
@@ -542,10 +547,6 @@ pub fn run_backup_sync(
             names.join(", ")
         ));
     }
-
-    let staging_dir = default_backup_dir()
-        .join(&host_name)
-        .join(&outcome.timestamp);
 
     run_backup_push(Some(host_name), Some(outcome.timestamp.clone()))?;
 
