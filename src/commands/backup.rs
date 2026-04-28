@@ -1793,98 +1793,106 @@ fn backup_app(
         )
     })?;
 
-    let mut guard = ServiceGuard::new(host, ssh_key);
+    let result = (|| -> Result<u64> {
+        let mut guard = ServiceGuard::new(host, ssh_key);
 
-    if !config.systemd_services.is_empty() {
-        pb.set_message(format!("Backing up {} (stopping services)", config.name));
-        for service in &config.systemd_services {
-            if let Err(e) = guard.stop_service(service) {
+        if !config.systemd_services.is_empty() {
+            pb.set_message(format!("Backing up {} (stopping services)", config.name));
+            for service in &config.systemd_services {
+                if let Err(e) = guard.stop_service(service) {
+                    pb.finish_and_clear();
+                    return Err(e);
+                }
+            }
+            guard.schedule_remote_failsafe(config.name);
+        }
+
+        if let Some(db) = &config.db {
+            pb.set_message(format!("Backing up {} (dumping database)", config.name));
+            if let Err(e) = remote_pg_dump(host, ssh_key, db) {
+                remote_pg_dump_cleanup(host, ssh_key, db);
                 pb.finish_and_clear();
+                return Err(e).wrap_err("pg_dump failed");
+            }
+        }
+
+        pb.set_message(format!("Backing up {} (copying files)", config.name));
+        let rsync_result = (|| -> Result<()> {
+            for path in &config.paths {
+                rsync_from_remote(host, ssh_key, path, &app_backup_dir, &pb)?;
+            }
+            if let Some(db) = &config.db {
+                scp_from_remote(
+                    host,
+                    ssh_key,
+                    db.remote_dump_path,
+                    &app_backup_dir.join("db.dump"),
+                )?;
+            }
+            Ok(())
+        })();
+
+        if let Some(db) = &config.db {
+            remote_pg_dump_cleanup(host, ssh_key, db);
+        }
+
+        output::reset_to_spinner(&pb);
+        let start_failures = if !config.systemd_services.is_empty() {
+            pb.set_message(format!("Backing up {} (starting services)", config.name));
+            let failures = guard.restart_all();
+            if failures.is_empty() {
+                guard.disarm();
+            }
+            failures
+        } else {
+            guard.disarm();
+            Vec::new()
+        };
+
+        match rsync_result {
+            Ok(()) => {
+                if !start_failures.is_empty() {
+                    pb.finish_and_clear();
+                    eyre::bail!(
+                        "Backup of {} succeeded but failed to restart services:\n  {}",
+                        config.name,
+                        start_failures.join("\n  ")
+                    );
+                }
+            }
+            Err(e) => {
+                pb.finish_and_clear();
+                if !start_failures.is_empty() {
+                    eyre::bail!(
+                        "Backup of {} failed during file copy: {}\nAdditionally, failed to restart services:\n  {}",
+                        config.name,
+                        e,
+                        start_failures.join("\n  ")
+                    );
+                }
                 return Err(e);
             }
         }
-        guard.schedule_remote_failsafe(config.name);
-    }
 
-    if let Some(db) = &config.db {
-        pb.set_message(format!("Backing up {} (dumping database)", config.name));
-        if let Err(e) = remote_pg_dump(host, ssh_key, db) {
-            remote_pg_dump_cleanup(host, ssh_key, db);
-            pb.finish_and_clear();
-            return Err(e).wrap_err("pg_dump failed");
-        }
-    }
+        let backup_size = calculate_dir_size(&app_backup_dir)?;
 
-    pb.set_message(format!("Backing up {} (copying files)", config.name));
-    let rsync_result = (|| -> Result<()> {
-        for path in &config.paths {
-            rsync_from_remote(host, ssh_key, path, &app_backup_dir, &pb)?;
+        pb.finish_and_clear();
+        if !output::is_verbose() {
+            output::success(&format!(
+                "{} ({})",
+                config.name,
+                output::format_size(backup_size)
+            ));
         }
-        if let Some(db) = &config.db {
-            scp_from_remote(
-                host,
-                ssh_key,
-                db.remote_dump_path,
-                &app_backup_dir.join("db.dump"),
-            )?;
-        }
-        Ok(())
+
+        Ok(backup_size)
     })();
 
-    if let Some(db) = &config.db {
-        remote_pg_dump_cleanup(host, ssh_key, db);
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&app_backup_dir);
     }
 
-    output::reset_to_spinner(&pb);
-    let start_failures = if !config.systemd_services.is_empty() {
-        pb.set_message(format!("Backing up {} (starting services)", config.name));
-        let failures = guard.restart_all();
-        if failures.is_empty() {
-            guard.disarm();
-        }
-        failures
-    } else {
-        guard.disarm();
-        Vec::new()
-    };
-
-    match rsync_result {
-        Ok(()) => {
-            if !start_failures.is_empty() {
-                pb.finish_and_clear();
-                eyre::bail!(
-                    "Backup of {} succeeded but failed to restart services:\n  {}",
-                    config.name,
-                    start_failures.join("\n  ")
-                );
-            }
-        }
-        Err(e) => {
-            pb.finish_and_clear();
-            if !start_failures.is_empty() {
-                eyre::bail!(
-                    "Backup of {} failed during file copy: {}\nAdditionally, failed to restart services:\n  {}",
-                    config.name,
-                    e,
-                    start_failures.join("\n  ")
-                );
-            }
-            return Err(e);
-        }
-    }
-
-    let backup_size = calculate_dir_size(&app_backup_dir)?;
-
-    pb.finish_and_clear();
-    if !output::is_verbose() {
-        output::success(&format!(
-            "{} ({})",
-            config.name,
-            output::format_size(backup_size)
-        ));
-    }
-
-    Ok(backup_size)
+    result
 }
 
 fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
