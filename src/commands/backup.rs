@@ -203,6 +203,14 @@ pub struct AppBackupConfig {
     pub db: Option<DbBackupConfig>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CreateOutcome {
+    pub successful_apps: Vec<String>,
+    pub failed_apps: Vec<(String, String)>,
+    pub total_size: u64,
+    pub timestamp: String,
+}
+
 pub struct RestoreOptions {
     pub backup_id: String,
     pub host_arg: Option<String>,
@@ -356,7 +364,7 @@ pub fn run_backup_create(
     ssh_key: Option<PathBuf>,
     include_music: bool,
     dry_run: bool,
-) -> Result<()> {
+) -> Result<CreateOutcome> {
     let host = get_host_or_select(host_arg)?;
     let backup_dest = dest.unwrap_or_else(default_backup_dir);
 
@@ -394,7 +402,12 @@ pub fn run_backup_create(
 
     if dry_run {
         eprintln!("\n✓ Dry run completed (no changes made)");
-        return Ok(());
+        return Ok(CreateOutcome {
+            successful_apps: Vec::new(),
+            failed_apps: Vec::new(),
+            total_size: 0,
+            timestamp: String::new(),
+        });
     }
     let start_time = Instant::now();
     let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
@@ -469,11 +482,22 @@ pub fn run_backup_create(
         ));
     }
 
-    if failed > 0 {
-        eyre::bail!("{} backup(s) failed", failed);
-    }
+    let outcome = CreateOutcome {
+        successful_apps: results
+            .iter()
+            .filter(|(_, ok, _, _)| *ok)
+            .map(|(name, _, _, _)| name.to_string())
+            .collect(),
+        failed_apps: results
+            .into_iter()
+            .filter(|(_, ok, _, _)| !*ok)
+            .map(|(name, _, _, err)| (name.to_string(), err.unwrap_or_default()))
+            .collect(),
+        total_size,
+        timestamp,
+    };
 
-    Ok(())
+    Ok(outcome)
 }
 
 pub fn run_backup_sync(
@@ -487,7 +511,7 @@ pub fn run_backup_sync(
     let host_name = resolved.name.clone();
     output::info(&format!("Starting backup sync pipeline for {}", host_name));
 
-    run_backup_create(
+    let outcome = run_backup_create(
         Some(host_name.clone()),
         apps,
         None,
@@ -499,6 +523,10 @@ pub fn run_backup_sync(
     if dry_run {
         output::info("Dry run: would next push to restic, prune, and clean up local staging");
         return Ok(());
+    }
+
+    if !outcome.failed_apps.is_empty() {
+        eyre::bail!("{} backup(s) failed", outcome.failed_apps.len());
     }
 
     let backup_root = default_backup_dir();
@@ -918,14 +946,23 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         let emergency_timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
         let emergency_backup_name = format!("pre-migration-{}", emergency_timestamp);
 
-        match run_backup_create(
+        let emergency_result = run_backup_create(
             Some(host.name.clone()),
             Some(app_names.clone()),
             Some(backup_root.clone()),
             Some(ssh_key_path.clone()),
             false,
             false,
-        ) {
+        )
+        .and_then(|outcome| {
+            if outcome.failed_apps.is_empty() {
+                Ok(())
+            } else {
+                eyre::bail!("{} backup(s) failed", outcome.failed_apps.len());
+            }
+        });
+
+        match emergency_result {
             Ok(_) => {
                 eprintln!("  ✓ Emergency backup created: {}", emergency_backup_name);
                 eprintln!(
@@ -2258,6 +2295,21 @@ mod tests {
 
         let with = AppBackupConfig::navidrome(true);
         assert!(with.paths.contains(&"/srv/music"));
+    }
+
+    #[test]
+    fn create_outcome_records_partial_success() {
+        let outcome = CreateOutcome {
+            successful_apps: vec!["paperless".to_string(), "freshrss".to_string()],
+            failed_apps: vec![("bichon".to_string(), "Unit not loaded".to_string())],
+            total_size: 1024,
+            timestamp: "2026-04-28_03-00-00".to_string(),
+        };
+        assert_eq!(outcome.successful_apps.len(), 2);
+        assert_eq!(outcome.failed_apps.len(), 1);
+        assert_eq!(outcome.failed_apps[0].0, "bichon");
+        assert_eq!(outcome.total_size, 1024);
+        assert_eq!(outcome.timestamp, "2026-04-28_03-00-00");
     }
 
     #[test]
