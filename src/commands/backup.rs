@@ -207,7 +207,6 @@ pub struct AppBackupConfig {
 pub struct CreateOutcome {
     pub successful_apps: Vec<String>,
     pub failed_apps: Vec<(String, String)>,
-    pub total_size: u64,
     pub timestamp: String,
 }
 
@@ -405,7 +404,6 @@ pub fn run_backup_create(
         return Ok(CreateOutcome {
             successful_apps: Vec::new(),
             failed_apps: Vec::new(),
-            total_size: 0,
             timestamp: String::new(),
         });
     }
@@ -493,7 +491,6 @@ pub fn run_backup_create(
             .filter(|(_, ok, _, _)| !*ok)
             .map(|(name, _, _, err)| (name.to_string(), err.unwrap_or_default()))
             .collect(),
-        total_size,
         timestamp,
     };
 
@@ -2302,13 +2299,11 @@ mod tests {
         let outcome = CreateOutcome {
             successful_apps: vec!["paperless".to_string(), "freshrss".to_string()],
             failed_apps: vec![("bichon".to_string(), "Unit not loaded".to_string())],
-            total_size: 1024,
             timestamp: "2026-04-28_03-00-00".to_string(),
         };
         assert_eq!(outcome.successful_apps.len(), 2);
         assert_eq!(outcome.failed_apps.len(), 1);
         assert_eq!(outcome.failed_apps[0].0, "bichon");
-        assert_eq!(outcome.total_size, 1024);
         assert_eq!(outcome.timestamp, "2026-04-28_03-00-00");
     }
 
