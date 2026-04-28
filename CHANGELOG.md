@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.5](https://github.com/sripwoud/auberge/compare/v0.9.4...v0.9.5) - 2026-04-28
+
+### Fixed
+
+- *(backup)* keep push/prune running when some apps fail ([#256](https://github.com/sripwoud/auberge/pull/256))
+
 ## [0.9.4](https://github.com/sripwoud/auberge/compare/v0.9.3...v0.9.4) - 2026-04-27
 
 ### Fixed
