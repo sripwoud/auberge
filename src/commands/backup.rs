@@ -556,8 +556,6 @@ pub fn run_backup_sync(
 
     cleanup_staging_dir(&staging_dir)?;
 
-    output::success("Sync complete: create \u{2192} push \u{2192} prune \u{2192} cleanup");
-
     if !outcome.failed_apps.is_empty() {
         eyre::bail!(
             "Sync completed with {} app failure(s); push/prune ran on {} successful app(s)",
@@ -565,6 +563,8 @@ pub fn run_backup_sync(
             outcome.successful_apps.len()
         );
     }
+
+    output::success("Sync complete: create \u{2192} push \u{2192} prune \u{2192} cleanup");
 
     Ok(())
 }
