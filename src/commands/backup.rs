@@ -522,21 +522,32 @@ pub fn run_backup_sync(
         return Ok(());
     }
 
-    if !outcome.failed_apps.is_empty() {
-        eyre::bail!("{} backup(s) failed", outcome.failed_apps.len());
+    if outcome.successful_apps.is_empty() {
+        eyre::bail!(
+            "All {} app(s) failed; nothing to push",
+            outcome.failed_apps.len()
+        );
     }
 
-    let backup_root = default_backup_dir();
-    let staging_dir = resolve_backup_dir(&backup_root, Some(&host_name), None)
-        .wrap_err("No staging directory found after create")?;
+    if !outcome.failed_apps.is_empty() {
+        let names: Vec<&str> = outcome
+            .failed_apps
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        output::warn(&format!(
+            "Continuing push/prune with {} succeeded, {} failed: {}",
+            outcome.successful_apps.len(),
+            outcome.failed_apps.len(),
+            names.join(", ")
+        ));
+    }
 
-    let backup_id = staging_dir
-        .file_name()
-        .ok_or_else(|| eyre::eyre!("Staging directory has no final path component"))?
-        .to_string_lossy()
-        .into_owned();
+    let staging_dir = default_backup_dir()
+        .join(&host_name)
+        .join(&outcome.timestamp);
 
-    run_backup_push(Some(host_name), Some(backup_id))?;
+    run_backup_push(Some(host_name), Some(outcome.timestamp.clone()))?;
 
     if let Err(e) = run_backup_prune(false) {
         output::warn(&format!("Prune failed (push succeeded): {}", e));
@@ -545,6 +556,14 @@ pub fn run_backup_sync(
     cleanup_staging_dir(&staging_dir)?;
 
     output::success("Sync complete: create \u{2192} push \u{2192} prune \u{2192} cleanup");
+
+    if !outcome.failed_apps.is_empty() {
+        eyre::bail!(
+            "Sync completed with {} app failure(s); push/prune ran on {} successful app(s)",
+            outcome.failed_apps.len(),
+            outcome.successful_apps.len()
+        );
+    }
 
     Ok(())
 }
