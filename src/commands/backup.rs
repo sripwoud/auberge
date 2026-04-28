@@ -203,6 +203,13 @@ pub struct AppBackupConfig {
     pub db: Option<DbBackupConfig>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CreateOutcome {
+    pub successful_apps: Vec<String>,
+    pub failed_apps: Vec<(String, String)>,
+    pub timestamp: String,
+}
+
 pub struct RestoreOptions {
     pub backup_id: String,
     pub host_arg: Option<String>,
@@ -356,7 +363,7 @@ pub fn run_backup_create(
     ssh_key: Option<PathBuf>,
     include_music: bool,
     dry_run: bool,
-) -> Result<()> {
+) -> Result<CreateOutcome> {
     let host = get_host_or_select(host_arg)?;
     let backup_dest = dest.unwrap_or_else(default_backup_dir);
 
@@ -394,7 +401,11 @@ pub fn run_backup_create(
 
     if dry_run {
         eprintln!("\n✓ Dry run completed (no changes made)");
-        return Ok(());
+        return Ok(CreateOutcome {
+            successful_apps: Vec::new(),
+            failed_apps: Vec::new(),
+            timestamp: String::new(),
+        });
     }
     let start_time = Instant::now();
     let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
@@ -469,11 +480,21 @@ pub fn run_backup_create(
         ));
     }
 
-    if failed > 0 {
-        eyre::bail!("{} backup(s) failed", failed);
-    }
+    let outcome = CreateOutcome {
+        successful_apps: results
+            .iter()
+            .filter(|(_, ok, _, _)| *ok)
+            .map(|(name, _, _, _)| name.to_string())
+            .collect(),
+        failed_apps: results
+            .into_iter()
+            .filter(|(_, ok, _, _)| !*ok)
+            .map(|(name, _, _, err)| (name.to_string(), err.unwrap_or_default()))
+            .collect(),
+        timestamp,
+    };
 
-    Ok(())
+    Ok(outcome)
 }
 
 pub fn run_backup_sync(
@@ -487,7 +508,7 @@ pub fn run_backup_sync(
     let host_name = resolved.name.clone();
     output::info(&format!("Starting backup sync pipeline for {}", host_name));
 
-    run_backup_create(
+    let outcome = run_backup_create(
         Some(host_name.clone()),
         apps,
         None,
@@ -501,23 +522,47 @@ pub fn run_backup_sync(
         return Ok(());
     }
 
-    let backup_root = default_backup_dir();
-    let staging_dir = resolve_backup_dir(&backup_root, Some(&host_name), None)
-        .wrap_err("No staging directory found after create")?;
+    let staging_dir = default_backup_dir()
+        .join(&host_name)
+        .join(&outcome.timestamp);
 
-    let backup_id = staging_dir
-        .file_name()
-        .ok_or_else(|| eyre::eyre!("Staging directory has no final path component"))?
-        .to_string_lossy()
-        .into_owned();
+    if outcome.successful_apps.is_empty() {
+        let _ = fs::remove_dir_all(&staging_dir);
+        eyre::bail!(
+            "All {} app(s) failed; nothing to push",
+            outcome.failed_apps.len()
+        );
+    }
 
-    run_backup_push(Some(host_name), Some(backup_id))?;
+    if !outcome.failed_apps.is_empty() {
+        let names: Vec<&str> = outcome
+            .failed_apps
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        output::warn(&format!(
+            "Continuing push/prune with {} succeeded, {} failed: {}",
+            outcome.successful_apps.len(),
+            outcome.failed_apps.len(),
+            names.join(", ")
+        ));
+    }
+
+    run_backup_push(Some(host_name), Some(outcome.timestamp.clone()))?;
 
     if let Err(e) = run_backup_prune(false) {
         output::warn(&format!("Prune failed (push succeeded): {}", e));
     }
 
     cleanup_staging_dir(&staging_dir)?;
+
+    if !outcome.failed_apps.is_empty() {
+        eyre::bail!(
+            "Sync completed with {} app failure(s); push/prune ran on {} successful app(s)",
+            outcome.failed_apps.len(),
+            outcome.successful_apps.len()
+        );
+    }
 
     output::success("Sync complete: create \u{2192} push \u{2192} prune \u{2192} cleanup");
 
@@ -918,14 +963,23 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         let emergency_timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
         let emergency_backup_name = format!("pre-migration-{}", emergency_timestamp);
 
-        match run_backup_create(
+        let emergency_result = run_backup_create(
             Some(host.name.clone()),
             Some(app_names.clone()),
             Some(backup_root.clone()),
             Some(ssh_key_path.clone()),
             false,
             false,
-        ) {
+        )
+        .and_then(|outcome| {
+            if outcome.failed_apps.is_empty() {
+                Ok(())
+            } else {
+                eyre::bail!("{} backup(s) failed", outcome.failed_apps.len());
+            }
+        });
+
+        match emergency_result {
             Ok(_) => {
                 eprintln!("  ✓ Emergency backup created: {}", emergency_backup_name);
                 eprintln!(
@@ -1740,98 +1794,106 @@ fn backup_app(
         )
     })?;
 
-    let mut guard = ServiceGuard::new(host, ssh_key);
+    let result = (|| -> Result<u64> {
+        let mut guard = ServiceGuard::new(host, ssh_key);
 
-    if !config.systemd_services.is_empty() {
-        pb.set_message(format!("Backing up {} (stopping services)", config.name));
-        for service in &config.systemd_services {
-            if let Err(e) = guard.stop_service(service) {
+        if !config.systemd_services.is_empty() {
+            pb.set_message(format!("Backing up {} (stopping services)", config.name));
+            for service in &config.systemd_services {
+                if let Err(e) = guard.stop_service(service) {
+                    pb.finish_and_clear();
+                    return Err(e);
+                }
+            }
+            guard.schedule_remote_failsafe(config.name);
+        }
+
+        if let Some(db) = &config.db {
+            pb.set_message(format!("Backing up {} (dumping database)", config.name));
+            if let Err(e) = remote_pg_dump(host, ssh_key, db) {
+                remote_pg_dump_cleanup(host, ssh_key, db);
                 pb.finish_and_clear();
+                return Err(e).wrap_err("pg_dump failed");
+            }
+        }
+
+        pb.set_message(format!("Backing up {} (copying files)", config.name));
+        let rsync_result = (|| -> Result<()> {
+            for path in &config.paths {
+                rsync_from_remote(host, ssh_key, path, &app_backup_dir, &pb)?;
+            }
+            if let Some(db) = &config.db {
+                scp_from_remote(
+                    host,
+                    ssh_key,
+                    db.remote_dump_path,
+                    &app_backup_dir.join("db.dump"),
+                )?;
+            }
+            Ok(())
+        })();
+
+        if let Some(db) = &config.db {
+            remote_pg_dump_cleanup(host, ssh_key, db);
+        }
+
+        output::reset_to_spinner(&pb);
+        let start_failures = if !config.systemd_services.is_empty() {
+            pb.set_message(format!("Backing up {} (starting services)", config.name));
+            let failures = guard.restart_all();
+            if failures.is_empty() {
+                guard.disarm();
+            }
+            failures
+        } else {
+            guard.disarm();
+            Vec::new()
+        };
+
+        match rsync_result {
+            Ok(()) => {
+                if !start_failures.is_empty() {
+                    pb.finish_and_clear();
+                    eyre::bail!(
+                        "Backup of {} succeeded but failed to restart services:\n  {}",
+                        config.name,
+                        start_failures.join("\n  ")
+                    );
+                }
+            }
+            Err(e) => {
+                pb.finish_and_clear();
+                if !start_failures.is_empty() {
+                    eyre::bail!(
+                        "Backup of {} failed during file copy: {}\nAdditionally, failed to restart services:\n  {}",
+                        config.name,
+                        e,
+                        start_failures.join("\n  ")
+                    );
+                }
                 return Err(e);
             }
         }
-        guard.schedule_remote_failsafe(config.name);
-    }
 
-    if let Some(db) = &config.db {
-        pb.set_message(format!("Backing up {} (dumping database)", config.name));
-        if let Err(e) = remote_pg_dump(host, ssh_key, db) {
-            remote_pg_dump_cleanup(host, ssh_key, db);
-            pb.finish_and_clear();
-            return Err(e).wrap_err("pg_dump failed");
-        }
-    }
+        let backup_size = calculate_dir_size(&app_backup_dir)?;
 
-    pb.set_message(format!("Backing up {} (copying files)", config.name));
-    let rsync_result = (|| -> Result<()> {
-        for path in &config.paths {
-            rsync_from_remote(host, ssh_key, path, &app_backup_dir, &pb)?;
+        pb.finish_and_clear();
+        if !output::is_verbose() {
+            output::success(&format!(
+                "{} ({})",
+                config.name,
+                output::format_size(backup_size)
+            ));
         }
-        if let Some(db) = &config.db {
-            scp_from_remote(
-                host,
-                ssh_key,
-                db.remote_dump_path,
-                &app_backup_dir.join("db.dump"),
-            )?;
-        }
-        Ok(())
+
+        Ok(backup_size)
     })();
 
-    if let Some(db) = &config.db {
-        remote_pg_dump_cleanup(host, ssh_key, db);
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&app_backup_dir);
     }
 
-    output::reset_to_spinner(&pb);
-    let start_failures = if !config.systemd_services.is_empty() {
-        pb.set_message(format!("Backing up {} (starting services)", config.name));
-        let failures = guard.restart_all();
-        if failures.is_empty() {
-            guard.disarm();
-        }
-        failures
-    } else {
-        guard.disarm();
-        Vec::new()
-    };
-
-    match rsync_result {
-        Ok(()) => {
-            if !start_failures.is_empty() {
-                pb.finish_and_clear();
-                eyre::bail!(
-                    "Backup of {} succeeded but failed to restart services:\n  {}",
-                    config.name,
-                    start_failures.join("\n  ")
-                );
-            }
-        }
-        Err(e) => {
-            pb.finish_and_clear();
-            if !start_failures.is_empty() {
-                eyre::bail!(
-                    "Backup of {} failed during file copy: {}\nAdditionally, failed to restart services:\n  {}",
-                    config.name,
-                    e,
-                    start_failures.join("\n  ")
-                );
-            }
-            return Err(e);
-        }
-    }
-
-    let backup_size = calculate_dir_size(&app_backup_dir)?;
-
-    pb.finish_and_clear();
-    if !output::is_verbose() {
-        output::success(&format!(
-            "{} ({})",
-            config.name,
-            output::format_size(backup_size)
-        ));
-    }
-
-    Ok(backup_size)
+    result
 }
 
 fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
@@ -2258,6 +2320,19 @@ mod tests {
 
         let with = AppBackupConfig::navidrome(true);
         assert!(with.paths.contains(&"/srv/music"));
+    }
+
+    #[test]
+    fn create_outcome_records_partial_success() {
+        let outcome = CreateOutcome {
+            successful_apps: vec!["paperless".to_string(), "freshrss".to_string()],
+            failed_apps: vec![("bichon".to_string(), "Unit not loaded".to_string())],
+            timestamp: "2026-04-28_03-00-00".to_string(),
+        };
+        assert_eq!(outcome.successful_apps.len(), 2);
+        assert_eq!(outcome.failed_apps.len(), 1);
+        assert_eq!(outcome.failed_apps[0].0, "bichon");
+        assert_eq!(outcome.timestamp, "2026-04-28_03-00-00");
     }
 
     #[test]
