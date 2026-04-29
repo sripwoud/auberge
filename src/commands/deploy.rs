@@ -341,6 +341,7 @@ mod tests {
         assert!(apps.contains(&"baikal".to_string()));
         assert!(apps.contains(&"freshrss".to_string()));
         assert!(apps.contains(&"blocky".to_string()));
+        assert!(apps.contains(&"ladder".to_string()));
         assert!(!apps.contains(&"caddy".to_string()));
     }
 }

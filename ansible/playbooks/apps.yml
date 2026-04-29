@@ -26,6 +26,8 @@
       tags: [apps, web, rss, colporteur]
     - role: freshrss
       tags: [apps, web, rss, freshrss]
+    - role: ladder
+      tags: [apps, web, proxy, ladder]
     - role: navidrome
       tags: [apps, storage, media, music, navidrome]
     - role: paperless
