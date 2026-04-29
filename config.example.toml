@@ -30,6 +30,9 @@ hostname = ""
 
 headscale_subdomain = ""
 
+ladder_basic_auth_password = ""
+ladder_subdomain = ""
+
 navidrome_subdomain = ""
 
 hermes_exa_api_key = ""

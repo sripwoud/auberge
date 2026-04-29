@@ -46,6 +46,7 @@ const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
     "colporteur_subdomain",
     "freshrss_subdomain",
     "headscale_subdomain",
+    "ladder_subdomain",
     "navidrome_subdomain",
     "paperless_subdomain",
     "webdav_subdomain",
@@ -295,5 +296,15 @@ impl DnsService {
             active_records,
             missing_subdomains,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_known_subdomain_keys_includes_ladder() {
+        assert!(KNOWN_SUBDOMAIN_KEYS.contains(&"ladder_subdomain"));
     }
 }

@@ -41,6 +41,9 @@ hostname = ""
 
 headscale_subdomain = ""
 
+ladder_basic_auth_password = ""
+ladder_subdomain = ""
+
 navidrome_subdomain = ""
 
 hermes_exa_api_key = ""
@@ -343,6 +346,13 @@ mod tests {
         assert!(table.contains_key("admin_user_name"));
         assert!(table.contains_key("cloudflare_dns_api_token"));
         assert!(table.contains_key("tailscale_authkey"));
+    }
+
+    #[test]
+    fn test_template_includes_ladder_keys() {
+        let table: toml::Table = toml::from_str(TEMPLATE).unwrap();
+        assert!(table.contains_key("ladder_basic_auth_password"));
+        assert!(table.contains_key("ladder_subdomain"));
     }
 
     #[test]
