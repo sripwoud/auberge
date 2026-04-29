@@ -30,6 +30,7 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | [Calibre](apps/calibre.md)         | Ebook library (alternative to Grimmory) |
 | [Colporteur](apps/colporteur.md)   | Newsletter-to-feed converter            |
 | [FreshRSS](apps/freshrss.md)       | RSS feed aggregator                     |
+| [Ladder](apps/ladder.md)           | HTTP web proxy for paywall analysis     |
 | [Navidrome](apps/navidrome.md)     | Music streaming server                  |
 | [Paperless-ngx](apps/paperless.md) | Document management system              |
 | [Syncthing](apps/syncthing.md)     | Continuous file synchronization         |

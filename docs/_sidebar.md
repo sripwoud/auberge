@@ -100,6 +100,7 @@
     - [Bichon](applications/apps/bichon.md)
     - [Colporteur](applications/apps/colporteur.md)
     - [FreshRSS](applications/apps/freshrss.md)
+    - [Ladder](applications/apps/ladder.md)
     - [Navidrome](applications/apps/navidrome.md)
     - [Calibre](applications/apps/calibre.md)
     - [Grimmory](applications/apps/grimmory.md)
