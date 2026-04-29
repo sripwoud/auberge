@@ -53,6 +53,7 @@
       when: ladder_installed_version != ladder_version
       become: false
       delegate_to: localhost
+      check_mode: false
       register: ladder_checksum_content
       ansible.builtin.uri:
         url: "{{ ladder_checksum_url }}"
