@@ -14,11 +14,29 @@ auberge deploy ladder
 
 Ladder runs as a long-lived systemd service bound to `127.0.0.1:8086`. Caddy fronts it on `https://ladder.<domain>` with HTTP basic auth, proxying authenticated requests through to ladder. Ladder applies a ruleset (a YAML file that maps domain rules to header overrides, cookie injection, regex replacements, and DOM modifications) and forwards requests to the target site, returning a modified response.
 
-The frontpage at `https://ladder.<domain>/` accepts a URL to proxy. You can also use a bookmarklet:
+## Usage
+
+### Three ways to proxy a URL
+
+- **Form**: open `https://ladder.<domain>/`, paste a URL, submit.
+- **URL append**: navigate directly to `https://ladder.<domain>/<full-url>` (the target URL must include its scheme, e.g. `https://`).
+- **Bookmarklet**: drop this in the bookmarks bar; clicking it on any page reloads through ladder.
 
 ```javascript
 javascript:window.location.href="https://ladder.<domain>/"+location.href
 ```
+
+### Authentication
+
+The first request to `https://ladder.<domain>/` triggers Caddy's basic-auth dialog. Browsers cache credentials per-origin for the session, so subsequent clicks (including via the bookmarklet) are silent until the cache expires.
+
+Do **not** bake credentials into the bookmarklet URL as `https://user:pass@ladder.<domain>/...` — Chrome and Edge silently strip the userinfo prefix from navigations (since 2018), and Firefox warns. Only Safari honors it. Rely on the browser's saved-password store instead.
+
+### Verifying your deploy
+
+- **Smoke test**: open `https://ladder.<domain>/https://example.com/`. After authenticating, you should see the standard "Example Domain" page rendered through ladder.
+- **Ruleset coverage**: try a recent article from any site in the [upstream ruleset](https://github.com/everywall/ladder-rules) (Bloomberg, NYT, FT, Medium, Substack-paywalled posts).
+- **What won't work**: sites behind Cloudflare's "Just a moment…" challenge. FlareSolverr is intentionally not bundled — see the FlareSolverr section below if you want to wire one up separately.
 
 ## Configuration
 
