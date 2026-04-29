@@ -65,7 +65,16 @@
         ladder_checksum_sha256: >-
           {{ (ladder_checksum_content.content.splitlines()
               | select('search', 'ladder_linux_amd64.tar.gz$')
-              | first).split() | first }}
+              | first | default('')).split() | first | default('') }}
+
+    - name: Assert Ladder checksum was extracted
+      when: ladder_installed_version != ladder_version
+      ansible.builtin.assert:
+        that: ladder_checksum_sha256 | length == 64
+        fail_msg: >-
+          Could not extract sha256 for ladder_linux_amd64.tar.gz from
+          {{ ladder_checksum_url }}. Check the upstream release assets
+          and update ladder_version in defaults/main.yml.
 
     - name: Download Ladder binary archive
       when: ladder_installed_version != ladder_version
