@@ -63,4 +63,4 @@ auberge deploy baikal
 
 ## Backup Support
 
-All applications support backup and restore. See [Backup & Restore](../backup-restore/overview.md) for details.
+Stateful applications (Baikal, Bichon, FreshRSS, Headscale, Navidrome, Calibre, WebDAV, YOURLS, Paperless-ngx) support backup and restore. Stateless apps such as Ladder, Colporteur, the TGTG bot, and the Hermes Agent are reprovisioned from config on deploy and have no backup integration. See [Backup & Restore](../backup-restore/overview.md) for details.
