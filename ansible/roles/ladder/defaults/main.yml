@@ -1,0 +1,18 @@
+ladder_install_path: /opt/ladder
+ladder_config_dir: /etc/ladder
+ladder_sys_user: ladder
+ladder_sys_group: ladder
+ladder_port: 8086
+ladder_domain: "{{ ladder_subdomain }}.{{ domain }}"
+ladder_version: "0.0.22"
+ladder_binary_url: "https://github.com/everywall/ladder/releases/download/v{{ ladder_version }}/ladder_linux_amd64.tar.gz"
+ladder_checksum_url: "https://github.com/everywall/ladder/releases/download/v{{ ladder_version }}/checksums.txt"
+ladder_ruleset_url: "https://raw.githubusercontent.com/everywall/ladder-rules/main/ruleset.yaml"
+ladder_user_agent: "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+ladder_x_forwarded_for: "66.249.66.1"
+ladder_log_urls: true
+ladder_disable_form: false
+ladder_expose_ruleset: false
+ladder_allowed_domains: ""
+ladder_allowed_domains_ruleset: false
+ladder_flaresolverr_host: ""

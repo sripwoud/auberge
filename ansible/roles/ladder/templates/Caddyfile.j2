@@ -1,0 +1,18 @@
+{{ ladder_domain }} {
+	basic_auth {
+		{{ admin_user_name }} {{ ladder_hashed_password }}
+	}
+
+	reverse_proxy 127.0.0.1:{{ ladder_port }} {
+		header_up Host {host}
+		header_up X-Real-IP {remote_ip}
+		header_up X-Forwarded-For {remote_ip}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	encode gzip
+
+	log {
+		output file /var/log/caddy/{{ ladder_domain }}.log
+	}
+}

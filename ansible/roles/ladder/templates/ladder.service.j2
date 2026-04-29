@@ -1,0 +1,39 @@
+[Unit]
+Description=Ladder HTTP web proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ ladder_sys_user }}
+Group={{ ladder_sys_group }}
+Environment=PORT={{ ladder_port }}
+Environment=USER_AGENT={{ ladder_user_agent }}
+Environment=X_FORWARDED_FOR={{ ladder_x_forwarded_for }}
+Environment=RULESET={{ ladder_effective_ruleset }}
+Environment=LOG_URLS={{ ladder_log_urls | string | lower }}
+Environment=DISABLE_FORM={{ ladder_disable_form | string | lower }}
+Environment=EXPOSE_RULESET={{ ladder_expose_ruleset | string | lower }}
+Environment=ALLOWED_DOMAINS={{ ladder_allowed_domains }}
+Environment=ALLOWED_DOMAINS_RULESET={{ ladder_allowed_domains_ruleset | string | lower }}
+{% if ladder_flaresolverr_host | length > 0 %}
+Environment=FLARESOLVERR_HOST={{ ladder_flaresolverr_host }}
+{% endif %}
+ExecStart={{ ladder_install_path }}/ladder
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ReadOnlyPaths={{ ladder_config_dir }}
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

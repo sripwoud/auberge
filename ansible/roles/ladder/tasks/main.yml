@@ -1,0 +1,173 @@
+- name: Install and configure Ladder
+  block:
+    - name: Create Ladder system group
+      ansible.builtin.group:
+        name: "{{ ladder_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create Ladder system user
+      ansible.builtin.user:
+        name: "{{ ladder_sys_user }}"
+        group: "{{ ladder_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ ladder_install_path }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create Ladder installation directory
+      ansible.builtin.file:
+        path: "{{ ladder_install_path }}"
+        state: directory
+        owner: "{{ ladder_sys_user }}"
+        group: "{{ ladder_sys_group }}"
+        mode: "0755"
+
+    - name: Create Ladder config directory
+      ansible.builtin.file:
+        path: "{{ ladder_config_dir }}"
+        state: directory
+        owner: root
+        group: "{{ ladder_sys_group }}"
+        mode: "0750"
+
+    - name: Check if Ladder version file exists
+      ansible.builtin.stat:
+        path: "{{ ladder_install_path }}/version"
+      register: ladder_version_file
+
+    - name: Read installed Ladder version
+      when: ladder_version_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ ladder_install_path }}/version"
+      register: ladder_installed_version_raw
+
+    - name: Set installed Ladder version fact
+      ansible.builtin.set_fact:
+        ladder_installed_version: >-
+          {{ ladder_installed_version_raw.content | b64decode | trim
+             if ladder_version_file.stat.exists else '' }}
+
+    - name: Fetch Ladder checksums file
+      when: ladder_installed_version != ladder_version
+      become: false
+      delegate_to: localhost
+      register: ladder_checksum_content
+      ansible.builtin.uri:
+        url: "{{ ladder_checksum_url }}"
+        return_content: true
+
+    - name: Set Ladder checksum fact
+      when: ladder_installed_version != ladder_version
+      ansible.builtin.set_fact:
+        ladder_checksum_sha256: >-
+          {{ (ladder_checksum_content.content.splitlines()
+              | select('search', 'ladder_linux_amd64.tar.gz$')
+              | first).split() | first }}
+
+    - name: Download Ladder binary archive
+      when: ladder_installed_version != ladder_version
+      ansible.builtin.get_url:
+        url: "{{ ladder_binary_url }}"
+        dest: "/tmp/ladder-{{ ladder_version }}.tar.gz"
+        mode: "0644"
+        checksum: "sha256:{{ ladder_checksum_sha256 }}"
+
+    - name: Extract Ladder binary archive
+      when: ladder_installed_version != ladder_version
+      ansible.builtin.unarchive:
+        src: "/tmp/ladder-{{ ladder_version }}.tar.gz"
+        dest: "{{ ladder_install_path }}"
+        remote_src: true
+        owner: "{{ ladder_sys_user }}"
+        group: "{{ ladder_sys_group }}"
+        mode: "0755"
+      notify: Restart ladder
+
+    - name: Ensure Ladder binary permissions
+      when: ladder_installed_version != ladder_version
+      ansible.builtin.file:
+        path: "{{ ladder_install_path }}/ladder"
+        owner: "{{ ladder_sys_user }}"
+        group: "{{ ladder_sys_group }}"
+        mode: "0755"
+
+    - name: Write installed Ladder version file
+      when: ladder_installed_version != ladder_version
+      ansible.builtin.copy:
+        content: "{{ ladder_version }}"
+        dest: "{{ ladder_install_path }}/version"
+        owner: "{{ ladder_sys_user }}"
+        group: "{{ ladder_sys_group }}"
+        mode: "0644"
+
+    - name: Determine whether to use a local Ladder ruleset override
+      ansible.builtin.set_fact:
+        ladder_use_local_ruleset: >-
+          {{ ladder_ruleset_src is defined
+             and (ladder_ruleset_src | default('') | length) > 0 }}
+
+    - name: Deploy local Ladder ruleset
+      when: ladder_use_local_ruleset
+      ansible.builtin.copy:
+        src: "{{ ladder_ruleset_src }}"
+        dest: "{{ ladder_config_dir }}/ruleset.yaml"
+        owner: root
+        group: "{{ ladder_sys_group }}"
+        mode: "0640"
+      notify: Restart ladder
+
+    - name: Set Ladder effective ruleset fact
+      ansible.builtin.set_fact:
+        ladder_effective_ruleset: >-
+          {{ (ladder_config_dir + '/ruleset.yaml')
+             if ladder_use_local_ruleset else ladder_ruleset_url }}
+
+    - name: Hash Ladder basic auth password
+      ansible.builtin.command:
+        argv:
+          - caddy
+          - hash-password
+          - --plaintext
+          - "{{ ladder_basic_auth_password }}"
+      register: ladder_hash_result
+      changed_when: false
+      no_log: true
+
+    - name: Set Ladder hashed password fact
+      ansible.builtin.set_fact:
+        ladder_hashed_password: "{{ ladder_hash_result.stdout | trim }}"
+
+    - name: Deploy Ladder systemd service file
+      ansible.builtin.template:
+        src: templates/ladder.service.j2
+        dest: /etc/systemd/system/ladder.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart ladder
+
+    - name: Enable and start Ladder service
+      ansible.builtin.systemd_service:
+        name: ladder
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Deploy Ladder Caddyfile
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ ladder_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
+    - name: Ensure Cloudflare DNS A record exists for {{ ladder_subdomain + '.' + domain }}
+      ansible.builtin.include_role:
+        name: dns_record
+      vars:
+        dns_record_subdomain: "{{ ladder_subdomain }}"
+        dns_record_domain: "{{ domain }}"
+        dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"
