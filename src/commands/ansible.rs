@@ -1,12 +1,12 @@
 use crate::models::inventory::Host;
 use crate::models::playbook::Playbook;
 use crate::output;
-use crate::selector::select_item;
+use crate::prompt::select_item;
 use crate::services::ansible_runner::{
     InventoryHost, required_config_keys, run_bootstrap, run_playbook,
 };
 use crate::services::dependency_resolver::resolve_tags_to_playbook_runs;
-use crate::services::inventory::{get_host, get_hosts, get_playbooks};
+use crate::services::inventory::{get_host, get_playbooks, select_or_arg};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use regex::Regex;
@@ -66,23 +66,7 @@ pub enum AnsibleCommands {
 }
 
 fn select_or_use_host(host_arg: Option<String>) -> Result<Host> {
-    match host_arg {
-        Some(name) => get_host(&name, None),
-        None => {
-            let hosts = get_hosts(None, None)?;
-            select_item(
-                &hosts,
-                |h: &Host| {
-                    format!(
-                        "{} ({}:{})",
-                        h.name, h.vars.ansible_host, h.vars.ansible_port
-                    )
-                },
-                "Select host",
-            )?
-            .ok_or_else(|| eyre::eyre!("No host selected"))
-        }
-    }
+    select_or_arg(host_arg)
 }
 
 fn validate_config_for_playbook(

@@ -1,7 +1,7 @@
 use crate::hosts::HostManager;
+use crate::hosts::select_or_arg as hosts_select_or_arg;
 use crate::models::inventory::Host;
 use crate::output;
-use crate::selector::select_item;
 use crate::services::inventory::get_hosts;
 use crate::ssh_session::SshSession;
 use clap::Subcommand;
@@ -57,7 +57,7 @@ pub fn run_sync_music(
         Some(name) => crate::services::inventory::get_host(&name, None)?,
         None => {
             let hosts = get_hosts(Some("auberge"), None)?;
-            select_item(
+            crate::prompt::select_item(
                 &hosts,
                 |h: &Host| {
                     format!(
@@ -144,15 +144,7 @@ pub fn run_sync_hermes(
 ) -> Result<()> {
     let xdg_host = match host_arg {
         Some(name) => HostManager::get_host(&name)?,
-        None => {
-            let hosts = HostManager::load_hosts()?;
-            select_item(
-                &hosts,
-                |h: &crate::hosts::Host| format!("{} ({}:{})", h.name, h.address, h.port),
-                "Select host",
-            )?
-            .ok_or_else(|| eyre::eyre!("No host selected"))?
-        }
+        None => hosts_select_or_arg(None)?,
     };
 
     if pull {

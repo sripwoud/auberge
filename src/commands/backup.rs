@@ -1,6 +1,6 @@
-use crate::hosts::{Host, HostManager};
+use crate::hosts::{Host, select_or_arg as hosts_select_or_arg};
 use crate::output;
-use crate::selector::select_item;
+use crate::prompt::confirm;
 use crate::ssh_session::SshSession;
 use crate::user_config::UserConfig;
 use chrono::Utc;
@@ -937,11 +937,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         }
     } else if !opts.yes {
         eprintln!("\n⚠ WARNING: This will overwrite existing data on the remote host!");
-        if !dialoguer::Confirm::new()
-            .with_prompt("Continue with restore?")
-            .default(false)
-            .interact()?
-        {
+        if !confirm("Continue with restore?", opts.yes) {
             eprintln!("Restore cancelled");
             return Ok(());
         }
@@ -993,11 +989,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                 eprintln!("  ⚠ Failed to create emergency backup: {}", e);
                 eprintln!("    Continue without emergency backup? This is DANGEROUS!");
 
-                if !dialoguer::Confirm::new()
-                    .with_prompt("Continue without emergency backup?")
-                    .default(false)
-                    .interact()?
-                {
+                if !confirm("Continue without emergency backup?", false) {
                     eprintln!("Restore cancelled");
                     return Ok(());
                 }
@@ -1624,7 +1616,7 @@ fn resolve_backup_dir(
                     .iter()
                     .map(|e| e.file_name().to_string_lossy().to_string())
                     .collect();
-                let selection = select_item(
+                let selection = crate::prompt::select_item(
                     &host_names,
                     |h: &String| h.clone(),
                     "Select host backup to push",
@@ -1664,18 +1656,7 @@ fn resolve_backup_dir(
 }
 
 fn get_host_or_select(host_arg: Option<String>) -> Result<Host> {
-    match host_arg {
-        Some(name) => HostManager::get_host(&name),
-        None => {
-            let hosts = HostManager::load_hosts()?;
-            select_item(
-                &hosts,
-                |h: &Host| format!("{} ({}:{})", h.name, h.address, h.port),
-                "Select host",
-            )?
-            .ok_or_else(|| eyre::eyre!("No host selected"))
-        }
-    }
+    hosts_select_or_arg(host_arg)
 }
 
 fn default_backup_dir() -> PathBuf {

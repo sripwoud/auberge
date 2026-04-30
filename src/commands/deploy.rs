@@ -2,16 +2,15 @@ use crate::ansible_assets::AnsibleAssets;
 use crate::models::inventory::Host;
 use crate::models::playbook::Playbook;
 use crate::output;
-use crate::selector::{select_item, select_multi};
+use crate::prompt::{confirm, select_multi};
 use crate::services::ansible_runner::{InventoryHost, required_config_keys, run_playbook};
 use crate::services::dependency_resolver::{
     PlaybookRun, get_app_names, resolve_tags_to_playbook_runs,
 };
-use crate::services::inventory::get_hosts;
+use crate::services::inventory::select_or_arg;
 use crate::user_config::UserConfig;
 use clap::Args;
 use eyre::Result;
-use std::io::{self, Write};
 
 const ALL_ENTRY: &str = "[all]";
 
@@ -30,23 +29,7 @@ pub struct DeployCmd {
 }
 
 fn select_host(host_arg: Option<String>) -> Result<Host> {
-    match host_arg {
-        Some(name) => crate::services::inventory::get_host(&name, None),
-        None => {
-            let hosts = get_hosts(None, None)?;
-            select_item(
-                &hosts,
-                |h: &Host| {
-                    format!(
-                        "{} ({}:{})",
-                        h.name, h.vars.ansible_host, h.vars.ansible_port
-                    )
-                },
-                "Select host",
-            )?
-            .ok_or_else(|| eyre::eyre!("No host selected"))
-        }
-    }
+    select_or_arg(host_arg)
 }
 
 fn select_apps(available: &[String]) -> Result<Vec<String>> {
@@ -172,16 +155,7 @@ fn warn_apps_prerequisites(runs: &[PlaybookRun]) {
 }
 
 fn confirm_deploy(force: bool) -> Result<()> {
-    if force {
-        return Ok(());
-    }
-
-    print!("Proceed with deployment? [y/N]: ");
-    io::stdout().flush()?;
-    let mut response = String::new();
-    io::stdin().read_line(&mut response)?;
-
-    if !response.trim().eq_ignore_ascii_case("y") {
+    if !confirm("Proceed with deployment?", force) {
         eprintln!("Aborted.");
         std::process::exit(1);
     }

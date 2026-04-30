@@ -152,6 +152,21 @@ impl HostManager {
     }
 }
 
+pub fn select_or_arg(arg: Option<String>) -> eyre::Result<Host> {
+    match arg {
+        Some(name) => HostManager::get_host(&name),
+        None => {
+            let hosts = HostManager::load_hosts()?;
+            crate::prompt::select_item(
+                &hosts,
+                |h: &Host| format!("{} ({}:{})", h.name, h.address, h.port),
+                "Select host",
+            )?
+            .ok_or_else(|| eyre::eyre!("No host selected"))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -200,11 +200,12 @@ pub fn spinner(msg: &str) -> ProgressBar {
 
     spinner.set_message(msg.to_string());
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+    crate::signal::register_progress_bar(&spinner);
     spinner
 }
 
 pub fn progress_bar(msg: &str, total_bytes: Option<u64>) -> ProgressBar {
-    match total_bytes {
+    let pb = match total_bytes {
         Some(total) => {
             let pb = ProgressBar::with_draw_target(Some(total), ProgressDrawTarget::stderr());
             if should_use_colors() {
@@ -247,7 +248,9 @@ pub fn progress_bar(msg: &str, total_bytes: Option<u64>) -> ProgressBar {
             pb.enable_steady_tick(std::time::Duration::from_millis(100));
             pb
         }
-    }
+    };
+    crate::signal::register_progress_bar(&pb);
+    pb
 }
 
 pub fn set_bytes_style(pb: &ProgressBar) {
