@@ -1,6 +1,7 @@
+use crate::config::Preflight;
 use crate::output;
-use crate::user_config::UserConfig;
 use eyre::{Result, WrapErr};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
@@ -18,10 +19,8 @@ pub struct InventoryHost {
     pub user: String,
 }
 
-fn write_extra_vars_file() -> Result<tempfile::NamedTempFile> {
-    let config = UserConfig::load()?;
-    let flat = config.flatten_for_ansible();
-    let yaml = serde_yaml::to_string(&flat).wrap_err("Failed to serialize config to YAML")?;
+fn write_extra_vars_file(flat_vars: &HashMap<String, String>) -> Result<tempfile::NamedTempFile> {
+    let yaml = serde_yaml::to_string(flat_vars).wrap_err("Failed to serialize config to YAML")?;
     let mut tmpfile = tempfile::NamedTempFile::new().wrap_err("Failed to create temp file")?;
     tmpfile
         .write_all(yaml.as_bytes())
@@ -67,63 +66,9 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
     Ok(tmpfile)
 }
 
-fn tag_required_keys(tag: &str) -> &[&'static str] {
-    match tag {
-        "colporteur" => &["colporteur_subdomain"],
-        "hermes" => &[
-            "hermes_llm_provider",
-            "hermes_llm_api_key",
-            "hermes_telegram_bot_token",
-        ],
-        "tgtg" => &["tgtg_telegram_bot_token"],
-        _ => &[],
-    }
-}
-
-pub fn required_config_keys(playbook_name: &str, tags: Option<&[String]>) -> Vec<&'static str> {
-    let mut keys: Vec<&'static str> = Vec::new();
-
-    match playbook_name {
-        "bootstrap.yml" => {
-            keys.extend(["admin_user_name", "ssh_port", "hostname"]);
-        }
-        "hardening.yml" => {}
-        "infrastructure.yml" => {
-            keys.extend(["admin_user_name", "domain", "tailscale_authkey"]);
-        }
-        "apps.yml" => {
-            keys.extend(["admin_user_name", "domain", "cloudflare_dns_api_token"]);
-        }
-        "hermes.yml" => {
-            keys.extend([
-                "admin_user_name",
-                "domain",
-                "hermes_llm_provider",
-                "hermes_llm_api_key",
-                "hermes_telegram_bot_token",
-            ]);
-        }
-        _ => {
-            keys.extend(["admin_user_name", "domain"]);
-        }
-    }
-
-    if playbook_name == "apps.yml"
-        && let Some(tags) = tags
-    {
-        for tag in tags {
-            for key in tag_required_keys(tag) {
-                if !keys.contains(key) {
-                    keys.push(key);
-                }
-            }
-        }
-    }
-
-    keys
-}
 
 pub fn run_playbook(
+    preflight: &Preflight,
     playbook: &Path,
     host: &InventoryHost,
     check: bool,
@@ -136,7 +81,7 @@ pub fn run_playbook(
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     assets.ensure_collections()?;
     let ansible_dir = assets.ansible_dir().to_path_buf();
-    let vars_file = write_extra_vars_file()?;
+    let vars_file = write_extra_vars_file(preflight.flat_vars())?;
     let inventory_file = write_inventory_file(host)?;
 
     let mut cmd = Command::new("ansible-playbook");
@@ -221,11 +166,15 @@ pub fn run_playbook(
     })
 }
 
-pub fn run_bootstrap(playbook: &Path, host: &InventoryHost) -> Result<AnsibleResult> {
+pub fn run_bootstrap(
+    preflight: &Preflight,
+    playbook: &Path,
+    host: &InventoryHost,
+) -> Result<AnsibleResult> {
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     assets.ensure_collections()?;
     let ansible_dir = assets.ansible_dir().to_path_buf();
-    let vars_file = write_extra_vars_file()?;
+    let vars_file = write_extra_vars_file(preflight.flat_vars())?;
     let inventory_file = write_inventory_file(host)?;
 
     let status = Command::new("ansible-playbook")
@@ -257,92 +206,6 @@ pub fn run_bootstrap(playbook: &Path, host: &InventoryHost) -> Result<AnsibleRes
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_required_config_keys_bootstrap() {
-        let keys = required_config_keys("bootstrap.yml", None);
-        assert!(keys.contains(&"admin_user_name"));
-        assert!(keys.contains(&"ssh_port"));
-        assert!(keys.contains(&"hostname"));
-    }
-
-    #[test]
-    fn test_required_config_keys_infrastructure() {
-        let keys = required_config_keys("infrastructure.yml", None);
-        assert!(keys.contains(&"admin_user_name"));
-        assert!(keys.contains(&"domain"));
-        assert!(keys.contains(&"tailscale_authkey"));
-    }
-
-    #[test]
-    fn test_required_config_keys_apps() {
-        let keys = required_config_keys("apps.yml", None);
-        assert!(keys.contains(&"cloudflare_dns_api_token"));
-        assert!(!keys.contains(&"colporteur_subdomain"));
-    }
-
-    #[test]
-    fn test_required_config_keys_apps_with_colporteur_tag() {
-        let tags = vec!["colporteur".to_string()];
-        let keys = required_config_keys("apps.yml", Some(&tags));
-        assert!(keys.contains(&"cloudflare_dns_api_token"));
-        assert!(keys.contains(&"colporteur_subdomain"));
-    }
-
-    #[test]
-    fn test_required_config_keys_apps_with_hermes_tag() {
-        let tags = vec!["hermes".to_string()];
-        let keys = required_config_keys("apps.yml", Some(&tags));
-        assert!(keys.contains(&"cloudflare_dns_api_token"));
-        assert!(keys.contains(&"hermes_llm_provider"));
-        assert!(keys.contains(&"hermes_llm_api_key"));
-        assert!(keys.contains(&"hermes_telegram_bot_token"));
-    }
-
-    #[test]
-    fn test_required_config_keys_apps_with_tgtg_tag() {
-        let tags = vec!["tgtg".to_string()];
-        let keys = required_config_keys("apps.yml", Some(&tags));
-        assert!(keys.contains(&"cloudflare_dns_api_token"));
-        assert!(keys.contains(&"tgtg_telegram_bot_token"));
-    }
-
-    #[test]
-    fn test_required_config_keys_apps_with_unrelated_tag() {
-        let tags = vec!["paperless".to_string()];
-        let keys = required_config_keys("apps.yml", Some(&tags));
-        assert!(!keys.contains(&"colporteur_subdomain"));
-    }
-
-    #[test]
-    fn test_required_config_keys_ignores_tags_for_non_apps_playbooks() {
-        let tags = vec!["colporteur".to_string()];
-        let keys = required_config_keys("infrastructure.yml", Some(&tags));
-        assert!(!keys.contains(&"colporteur_subdomain"));
-    }
-
-    #[test]
-    fn test_required_config_keys_hardening_is_empty() {
-        let keys = required_config_keys("hardening.yml", None);
-        assert!(keys.is_empty());
-    }
-
-    #[test]
-    fn test_required_config_keys_hermes() {
-        let keys = required_config_keys("hermes.yml", None);
-        assert!(keys.contains(&"admin_user_name"));
-        assert!(keys.contains(&"domain"));
-        assert!(keys.contains(&"hermes_llm_provider"));
-        assert!(keys.contains(&"hermes_llm_api_key"));
-        assert!(keys.contains(&"hermes_telegram_bot_token"));
-    }
-
-    #[test]
-    fn test_required_config_keys_unknown_playbook_returns_defaults() {
-        let keys = required_config_keys("custom.yml", None);
-        assert!(keys.contains(&"admin_user_name"));
-        assert!(keys.contains(&"domain"));
-    }
 
     #[test]
     fn test_write_inventory_file_generates_valid_yaml() {

@@ -1,8 +1,8 @@
+use crate::config::Config;
 use crate::hosts::{Host, select_or_arg as hosts_select_or_arg};
 use crate::output;
 use crate::prompt::confirm;
 use crate::ssh_session::SshSession;
-use crate::user_config::UserConfig;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
@@ -1030,39 +1030,54 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                 user: host.user.clone(),
             };
 
-            match crate::services::ansible_runner::run_playbook(
-                &apps_playbook,
-                &inventory_host,
-                false,
-                Some(&tags),
-                None,
-                None,
-                false,
-                false,
-            ) {
-                Ok(result) if result.success => {
-                    eprintln!("✓ Ansible playbooks completed successfully");
-                    eprintln!("  File permissions have been corrected");
-                }
-                Ok(result) => {
-                    eprintln!(
-                        "⚠ Ansible playbook failed (exit code: {})",
-                        result.exit_code
-                    );
-                    eprintln!("  Services may fail due to incorrect file ownership!");
-                    eprintln!(
-                        "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
-                        tags.join(",")
-                    );
-                }
+            // Build a Preflight — best-effort; if config is incomplete we warn and skip.
+            let preflight_result =
+                Config::load().and_then(|cfg| cfg.preflight_for("apps.yml", Some(&tags)));
+
+            match preflight_result {
                 Err(e) => {
-                    eprintln!("⚠ Failed to run Ansible playbook: {}", e);
+                    eprintln!("⚠ Skipping Ansible playbook (config validation failed): {}", e);
                     eprintln!("  Services may fail due to incorrect file ownership!");
                     eprintln!(
                         "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
                         tags.join(",")
                     );
                 }
+                Ok(preflight) => match crate::services::ansible_runner::run_playbook(
+                    &preflight,
+                    &apps_playbook,
+                    &inventory_host,
+                    false,
+                    Some(&tags),
+                    None,
+                    None,
+                    false,
+                    false,
+                ) {
+                    Ok(result) if result.success => {
+                        eprintln!("✓ Ansible playbooks completed successfully");
+                        eprintln!("  File permissions have been corrected");
+                    }
+                    Ok(result) => {
+                        eprintln!(
+                            "⚠ Ansible playbook failed (exit code: {})",
+                            result.exit_code
+                        );
+                        eprintln!("  Services may fail due to incorrect file ownership!");
+                        eprintln!(
+                            "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                            tags.join(",")
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("⚠ Failed to run Ansible playbook: {}", e);
+                        eprintln!("  Services may fail due to incorrect file ownership!");
+                        eprintln!(
+                            "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                            tags.join(",")
+                        );
+                    }
+                },
             }
         }
     } else if opts.skip_playbook_unsafe && !opts.dry_run {
@@ -1399,7 +1414,7 @@ pub fn run_import_opml(
 }
 
 fn load_restic_config() -> Result<(String, String)> {
-    let config = UserConfig::load()?;
+    let config = Config::load()?;
     let missing = config.validate_required(&["restic_repository", "restic_password"]);
     if !missing.is_empty() {
         eyre::bail!(
