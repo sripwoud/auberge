@@ -1,6 +1,6 @@
 use eyre::Result;
 use indicatif::ProgressBar;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 static ACTIVE_BAR: Mutex<Option<ProgressBar>> = Mutex::new(None);
 
@@ -26,11 +26,7 @@ fn cleanup_progress_bar() {
 }
 
 pub fn with_ctrlc<F: FnOnce() -> Result<()>>(f: F) -> Result<()> {
-    let interrupted = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let interrupted_clone = Arc::clone(&interrupted);
-
-    let handler_result = ctrlc::set_handler(move || {
-        interrupted_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+    let handler_result = ctrlc::set_handler(|| {
         cleanup_progress_bar();
         std::process::exit(130);
     });

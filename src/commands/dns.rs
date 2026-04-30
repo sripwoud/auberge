@@ -216,7 +216,7 @@ fn resolve_subdomain(subdomain: Option<String>) -> Result<String> {
             items.sort();
             items.dedup();
             select_item(&items, |s: &String| s.clone(), "Select subdomain")?
-                .ok_or_else(|| eyre::eyre!("Subdomain argument required in non-interactive mode"))
+                .ok_or_else(|| eyre::eyre!("No subdomain selected"))
         }
     }
 }
