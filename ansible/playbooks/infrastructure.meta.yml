@@ -1,0 +1,4 @@
+required_keys:
+  - admin_user_name
+  - domain
+  - tailscale_authkey
