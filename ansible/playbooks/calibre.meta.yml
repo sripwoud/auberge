@@ -1,1 +1,5 @@
 required_keys: [admin_user_name, domain]
+backup:
+  systemd_services: [calibre]
+  paths: [/srv/calibre, /opt/calibre, /home/calibre]
+  owner: [calibre, calibre]

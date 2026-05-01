@@ -1,0 +1,9 @@
+required_keys: []
+backup:
+  systemd_services: [navidrome]
+  paths: [/var/lib/navidrome, /etc/navidrome]
+  owner: [navidrome, navidrome]
+  parameters:
+    include_music:
+      default: false
+      adds_paths: [/srv/music]

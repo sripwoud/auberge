@@ -1,0 +1,15 @@
+required_keys: []
+backup:
+  systemd_services:
+    - paperless-webserver
+    - paperless-consumer
+    - paperless-task-queue
+    - paperless-scheduler
+  paths:
+    - /opt/paperless/data
+    - /opt/paperless/media
+  owner: [paperless, paperless]
+  db:
+    name: paperless
+    dump_path: /tmp/paperless_db.dump
+  post_restore_command: "cd /opt/paperless/src && PAPERLESS_CONFIGURATION_PATH=/opt/paperless/paperless.conf sudo -u paperless /opt/paperless/src/venv/bin/python3 manage.py migrate --no-input"

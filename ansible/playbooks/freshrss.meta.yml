@@ -1,0 +1,5 @@
+required_keys: []
+backup:
+  systemd_services: [freshrss]
+  paths: [/var/lib/freshrss, /opt/freshrss/data]
+  owner: [freshrss, freshrss]

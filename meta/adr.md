@@ -1,6 +1,6 @@
 # Architecture Decisions
 
-Why Auberge is built the way it is.
+Why Auberge is built the way it is. This file is the curated overview of foundational decisions. Granular per-decision ADRs live in [`meta/adr/`](./adr/).
 
 ## No Docker
 
