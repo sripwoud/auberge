@@ -157,3 +157,17 @@ jobs:
           ref: refs/tags/${{ needs.release-plz-release.outputs.tag }}
           checksum: sha256
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-release:
+    name: Publish draft release
+    needs: [release-plz-release, upload-binaries]
+    if: needs.release-plz-release.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Flip draft to published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-plz-release.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
