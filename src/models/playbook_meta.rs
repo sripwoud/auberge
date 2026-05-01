@@ -31,8 +31,7 @@ mod tests {
 
     fn load_meta(name: &str) -> PlaybookMeta {
         let path = playbooks_dir().join(format!("{name}.meta.yml"));
-        PlaybookMeta::load(&path)
-            .unwrap_or_else(|e| panic!("Failed to load {name}.meta.yml: {e}"))
+        PlaybookMeta::load(&path).unwrap_or_else(|e| panic!("Failed to load {name}.meta.yml: {e}"))
     }
 
     #[test]
@@ -54,7 +53,10 @@ mod tests {
         let meta = load_meta("infrastructure");
         assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
         assert!(meta.required_keys.contains(&"domain".to_string()));
-        assert!(meta.required_keys.contains(&"tailscale_authkey".to_string()));
+        assert!(
+            meta.required_keys
+                .contains(&"tailscale_authkey".to_string())
+        );
     }
 
     #[test]

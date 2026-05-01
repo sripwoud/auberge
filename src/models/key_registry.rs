@@ -31,9 +31,7 @@ impl KeyRegistry {
             .wrap_err_with(|| format!("Failed to read Key Registry from {}", path.display()))?;
         let file: KeyRegistryFile = serde_yaml::from_str(&contents)
             .wrap_err_with(|| format!("Failed to parse Key Registry from {}", path.display()))?;
-        Ok(Self {
-            entries: file.keys,
-        })
+        Ok(Self { entries: file.keys })
     }
 
     /// Returns the entry for a key by name, if it exists.
@@ -117,7 +115,9 @@ mod tests {
             "tailscale_api_key",
         ];
         for key in &secret_keys {
-            let entry = registry.get(key).unwrap_or_else(|| panic!("missing key: {key}"));
+            let entry = registry
+                .get(key)
+                .unwrap_or_else(|| panic!("missing key: {key}"));
             assert!(entry.secret, "Expected {key} to be marked as secret");
         }
 
@@ -129,7 +129,9 @@ mod tests {
             "hermes_llm_provider",
         ];
         for key in &public_keys {
-            let entry = registry.get(key).unwrap_or_else(|| panic!("missing key: {key}"));
+            let entry = registry
+                .get(key)
+                .unwrap_or_else(|| panic!("missing key: {key}"));
             assert!(!entry.secret, "Expected {key} to NOT be marked as secret");
         }
     }

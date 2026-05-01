@@ -3,7 +3,7 @@ import "package://github.com/jdx/hk/releases/download/v1.32.0/hk@1.32.0#/Builtin
 
 local linters  = new Mapping<String, Step> {
   ["ansible"] {
-    check = "ansible-lint {{files}}"
+    check = "ansible-lint --exclude 'playbooks/*.meta.yml' {{files}}"
     dir = "ansible"
     glob = List("**/*.yml", "**/*.yaml")
   }
