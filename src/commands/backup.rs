@@ -18,26 +18,6 @@ use std::process::Command;
 use std::time::Instant;
 use tabled::Tabled;
 
-const RSYNC_EXCLUDES: &[&str] = &[
-    ".git",
-    ".git/",
-    "venv",
-    "venv/",
-    "node_modules",
-    "node_modules/",
-    "__pycache__",
-    "__pycache__/",
-    "*.pyc",
-    "*.pyo",
-    ".cache",
-    ".cache/",
-    ".Radicale.cache",
-    ".Radicale.cache/",
-    "*.tmp",
-    "*.log",
-    ".DS_Store",
-];
-
 #[derive(Subcommand)]
 pub enum BackupCommands {
     #[command(alias = "c", about = "Create backup of application data")]
