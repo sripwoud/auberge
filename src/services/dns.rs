@@ -1,5 +1,4 @@
 use crate::config::Config;
-use crate::user_config::UserConfig;
 use cloudflare::endpoints::dns::dns::{
     CreateDnsRecord, CreateDnsRecordParams, DnsContent, DnsRecord, ListDnsRecords, UpdateDnsRecord,
     UpdateDnsRecordParams,
@@ -53,7 +52,7 @@ const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
 ];
 
 pub fn discover_subdomains() -> HashMap<String, SubdomainEntry> {
-    let config = match UserConfig::load() {
+    let config = match Config::load() {
         Ok(c) => c,
         Err(_) => return HashMap::new(),
     };
@@ -86,10 +85,9 @@ fn is_tailscale_ip(ip: &str) -> bool {
 
 impl DnsService {
     pub async fn new_with_production(_production_override: Option<bool>) -> Result<Self> {
-        let app_config = Config::load()?;
-        let user_config = UserConfig::load()?;
+        let config = Config::load()?;
 
-        let api_token = user_config
+        let api_token = config
             .get("cloudflare_dns_api_token")
             .filter(|v| !v.is_empty())
             .ok_or_else(|| eyre::eyre!("cloudflare_dns_api_token not set in config"))?;
@@ -102,12 +100,14 @@ impl DnsService {
             Environment::Production,
         )?;
 
-        let zone_id = Self::discover_zone_id(&client, &app_config.domain).await?;
+        let domain = config.domain();
+        let default_ttl = config.ttl();
+        let zone_id = Self::discover_zone_id(&client, &domain).await?;
 
         Ok(Self {
             client,
-            domain: app_config.domain,
-            default_ttl: app_config.default_ttl,
+            domain,
+            default_ttl,
             zone_id,
         })
     }

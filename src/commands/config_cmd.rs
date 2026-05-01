@@ -1,6 +1,6 @@
+use crate::config::Config;
 use crate::output;
 use crate::prompt::select_item;
-use crate::user_config::UserConfig;
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::Result;
@@ -37,7 +37,7 @@ pub enum ConfigCommands {
     Path,
 }
 
-fn select_key(config: &UserConfig, prompt: &str) -> Result<String> {
+fn select_key(config: &Config, prompt: &str) -> Result<String> {
     let keys = config.keys();
     if keys.is_empty() {
         eyre::bail!("No config keys found");
@@ -46,7 +46,7 @@ fn select_key(config: &UserConfig, prompt: &str) -> Result<String> {
         .ok_or_else(|| eyre::eyre!("No key selected"))
 }
 
-fn resolve_key(key: Option<String>, config: &UserConfig, prompt: &str) -> Result<String> {
+fn resolve_key(key: Option<String>, config: &Config, prompt: &str) -> Result<String> {
     match key {
         Some(k) => Ok(k),
         None => select_key(config, prompt),
@@ -54,13 +54,13 @@ fn resolve_key(key: Option<String>, config: &UserConfig, prompt: &str) -> Result
 }
 
 pub fn run_config_init() -> Result<()> {
-    let path = UserConfig::init()?;
+    let path = Config::init()?;
     output::success(&format!("Created config at {}", path.display()));
     Ok(())
 }
 
 pub fn run_config_set(key: Option<String>, value: Option<String>) -> Result<()> {
-    let mut config = UserConfig::load()?;
+    let mut config = Config::load()?;
     let key = resolve_key(key, &config, "Select key to set")?;
     let value = match value {
         Some(v) => v,
@@ -79,7 +79,7 @@ pub fn run_config_set(key: Option<String>, value: Option<String>) -> Result<()> 
 }
 
 pub fn run_config_get(key: Option<String>) -> Result<()> {
-    let config = UserConfig::load()?;
+    let config = Config::load()?;
     let key = resolve_key(key, &config, "Select key to get")?;
     match config.get(&key) {
         Some(value) => println!("{}", value),
@@ -89,7 +89,7 @@ pub fn run_config_get(key: Option<String>) -> Result<()> {
 }
 
 pub fn run_config_list() -> Result<()> {
-    let config = UserConfig::load()?;
+    let config = Config::load()?;
     for (key, value) in config.keys_redacted() {
         println!("{} = {}", key, value);
     }
@@ -97,7 +97,7 @@ pub fn run_config_list() -> Result<()> {
 }
 
 pub fn run_config_remove(key: Option<String>) -> Result<()> {
-    let mut config = UserConfig::load()?;
+    let mut config = Config::load()?;
     let key = resolve_key(key, &config, "Select key to remove")?;
     if config.remove(&key)? {
         output::success(&format!("Removed '{}'", key));
@@ -108,7 +108,7 @@ pub fn run_config_remove(key: Option<String>) -> Result<()> {
 }
 
 pub fn run_config_edit() -> Result<()> {
-    let path = UserConfig::path()?;
+    let path = Config::path()?;
     if !path.exists() {
         eyre::bail!(
             "Config not found at {}. Run `auberge config init` first.",
@@ -124,6 +124,6 @@ pub fn run_config_edit() -> Result<()> {
 }
 
 pub fn run_config_path() -> Result<()> {
-    println!("{}", UserConfig::path()?.display());
+    println!("{}", Config::path()?.display());
     Ok(())
 }

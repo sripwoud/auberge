@@ -207,7 +207,7 @@ fn resolve_subdomain(subdomain: Option<String>) -> Result<String> {
     match subdomain {
         Some(s) => Ok(s),
         None => {
-            crate::user_config::UserConfig::load()?;
+            crate::config::Config::load()?;
             let subdomains = crate::services::dns::discover_subdomains();
             let mut items: Vec<String> = subdomains.values().map(|e| e.subdomain.clone()).collect();
             if items.is_empty() {

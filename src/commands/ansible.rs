@@ -1,10 +1,9 @@
+use crate::config::{Config, Preflight};
 use crate::models::inventory::Host;
 use crate::models::playbook::Playbook;
 use crate::output;
 use crate::prompt::select_item;
-use crate::services::ansible_runner::{
-    InventoryHost, required_config_keys, run_bootstrap, run_playbook,
-};
+use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::dependency_resolver::resolve_tags_to_playbook_runs;
 use crate::services::inventory::{get_host, get_playbooks, select_or_arg};
 use clap::Subcommand;
@@ -69,14 +68,9 @@ fn select_or_use_host(host_arg: Option<String>) -> Result<Host> {
     select_or_arg(host_arg)
 }
 
-fn validate_config_for_playbook(
-    playbook_name: &str,
-    tags: Option<&[String]>,
-) -> Result<crate::user_config::UserConfig> {
-    let config = crate::user_config::UserConfig::load()?;
-    let required_keys = required_config_keys(playbook_name, tags);
-    config.validate_required_resolved(&required_keys)?;
-    Ok(config)
+fn validate_config_for_playbook(playbook_name: &str, tags: Option<&[String]>) -> Result<Preflight> {
+    let config = Config::load()?;
+    config.preflight_for(playbook_name, tags)
 }
 
 fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<Playbook> {
@@ -190,7 +184,7 @@ fn run_auto_resolved(
             Some(run.tags.as_slice())
         };
 
-        validate_config_for_playbook(playbook_name, run_tags_ref)?;
+        let preflight = validate_config_for_playbook(playbook_name, run_tags_ref)?;
         show_playbook_warnings(playbook_name, force)?;
 
         let run_tags = if run.tags.is_empty() {
@@ -216,6 +210,7 @@ fn run_auto_resolved(
         let extra_vars = user.map(|u| vec![("ansible_user", u)]);
 
         let result = run_playbook(
+            &preflight,
             &playbook.path,
             &inventory_host,
             check,
@@ -266,7 +261,7 @@ fn run_single_playbook(
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    let config = validate_config_for_playbook(playbook_name, tags)?;
+    let preflight = validate_config_for_playbook(playbook_name, tags)?;
     let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
 
     if is_fresh_bootstrap {
@@ -275,8 +270,10 @@ fn run_single_playbook(
         output::info("Before running bootstrap, ensure your VPS provider's firewall");
         output::info("allows your custom SSH port (separate from UFW on the VPS)");
         eprintln!();
-        let ssh_port = config
+        let ssh_port = preflight
+            .flat_vars()
             .get("ssh_port")
+            .cloned()
             .unwrap_or_else(|| "not configured".to_string());
         output::info("Required steps:");
         output::info(&format!("  1. Your target SSH port: {}", ssh_port));
@@ -316,6 +313,7 @@ fn run_single_playbook(
     let extra_vars = user.map(|u| vec![("ansible_user", u)]);
 
     let result = run_playbook(
+        &preflight,
         &playbook.path,
         &inventory_host,
         check,
@@ -448,7 +446,7 @@ pub fn run_ansible_bootstrap(
     user: Option<String>,
     force: bool,
 ) -> Result<()> {
-    validate_config_for_playbook("bootstrap.yml", None)?;
+    let preflight = validate_config_for_playbook("bootstrap.yml", None)?;
 
     let host = get_host(&host_name, None)?;
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
@@ -489,7 +487,7 @@ pub fn run_ansible_bootstrap(
         user: bootstrap_user,
     };
 
-    let result = run_bootstrap(&bootstrap_playbook, &inventory_host)?;
+    let result = run_bootstrap(&preflight, &bootstrap_playbook, &inventory_host)?;
 
     if result.success {
         output::success("Bootstrap completed successfully");

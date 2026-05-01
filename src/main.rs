@@ -10,7 +10,6 @@ mod services;
 mod signal;
 mod ssh_config;
 mod ssh_session;
-mod user_config;
 
 use clap::{Parser, Subcommand};
 use commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ansible_run};
