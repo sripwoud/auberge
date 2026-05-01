@@ -1146,7 +1146,8 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
 
     output::info(&format!("Pushing {} to restic", backup_dir.display()));
 
-    let spinner = output::spinner("Checking restic repository");
+    use crate::services::progress::{Progress, TerminalProgress};
+    let mut progress = TerminalProgress::new("Checking restic repository");
     let snapshots_check = Command::new("restic")
         .arg("snapshots")
         .arg("--json")
@@ -1175,7 +1176,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     };
 
     if needs_init {
-        spinner.set_message("Initializing restic repository".to_string());
+        progress.task_started("Initializing restic repository");
         let init_output = Command::new("restic")
             .arg("init")
             .env("RESTIC_REPOSITORY", &restic_repo)
@@ -1197,9 +1198,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         }
     }
 
-    spinner.finish_and_clear();
-
-    let pb = output::progress_bar(&format!("Pushing {}", backup_dir.display()), None);
+    progress.task_started(&format!("Pushing {}", backup_dir.display()));
     let mut snapshot_id: Option<String> = None;
 
     let result = output::stream_command_stdout(
@@ -1214,17 +1213,11 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         |line| match parse_restic_message(line) {
             Some(ResticMessage::Status(s)) => {
                 if let (Some(total), Some(done)) = (s.total_bytes, s.bytes_done) {
-                    if pb.length() != Some(total) {
-                        output::set_bytes_style(&pb);
-                        pb.set_length(total);
-                    }
-                    pb.set_position(done);
+                    progress.set_total(Some(total));
+                    progress.bytes_transferred(done);
                 } else {
-                    if pb.length() != Some(100) {
-                        output::set_percent_style(&pb);
-                        pb.set_length(100);
-                    }
-                    pb.set_position((s.percent_done * 100.0) as u64);
+                    progress.set_total(Some(100));
+                    progress.bytes_transferred((s.percent_done * 100.0) as u64);
                 }
             }
             Some(ResticMessage::Summary(s)) => {
@@ -1235,7 +1228,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     )
     .wrap_err("Failed to run restic backup")?;
 
-    pb.finish_and_clear();
+    progress.task_done();
 
     if !result.status.success() {
         if result.last_stderr.is_empty() {
@@ -1256,7 +1249,8 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
 pub fn run_backup_prune(dry_run: bool) -> Result<()> {
     let (restic_repo, restic_password) = load_restic_config()?;
 
-    let spinner = output::spinner("Pruning restic snapshots");
+    use crate::services::progress::{Progress, TerminalProgress};
+    let mut progress = TerminalProgress::new("Pruning restic snapshots");
 
     let mut cmd = Command::new("restic");
     cmd.arg("forget")
@@ -1277,7 +1271,7 @@ pub fn run_backup_prune(dry_run: bool) -> Result<()> {
 
     let prune_output = cmd.output().wrap_err("Failed to run restic forget")?;
 
-    spinner.finish_and_clear();
+    progress.task_done();
 
     let stderr_text = String::from_utf8_lossy(&prune_output.stderr);
     let lines = output::subprocess_output("restic", &stderr_text);
