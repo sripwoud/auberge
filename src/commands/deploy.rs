@@ -1,14 +1,12 @@
 use crate::ansible_assets::AnsibleAssets;
 use crate::config::Config;
-use crate::models::inventory::Host;
-use crate::models::playbook::Playbook;
 use crate::output;
 use crate::prompt::{confirm, select_multi};
 use crate::services::ansible_runner::{InventoryHost, run_playbook};
 use crate::services::dependency_resolver::{
     PlaybookRun, get_app_names, resolve_tags_to_playbook_runs,
 };
-use crate::services::inventory::select_or_arg;
+use crate::services::inventory::{Host, select_or_arg};
 use clap::Args;
 use eyre::Result;
 
@@ -199,7 +197,11 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
     };
 
     for (run, preflight) in runs.iter().zip(preflights.iter()) {
-        let playbook = Playbook::from_path(run.path.clone());
+        let playbook_name = run
+            .path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
         let run_tags = if run.tags.is_empty() {
             None
         } else {
@@ -208,14 +210,14 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
 
         output::info(&format!(
             "Running {} on {}{}",
-            playbook.name,
+            playbook_name,
             host.name,
             run_tags.map_or(String::new(), |t| format!(" (tags: {})", t.join(", ")))
         ));
 
         let result = run_playbook(
             preflight,
-            &playbook.path,
+            &run.path,
             &inventory_host,
             cmd.check,
             run_tags,
@@ -229,20 +231,20 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
             if result.last_output.is_empty() {
                 eyre::bail!(
                     "{} failed with exit code {}",
-                    playbook.name,
+                    playbook_name,
                     result.exit_code
                 );
             } else {
                 eyre::bail!(
                     "{} failed with exit code {}:\n{}",
-                    playbook.name,
+                    playbook_name,
                     result.exit_code,
                     result.last_output.trim()
                 );
             }
         }
 
-        output::success(&format!("{} completed successfully", playbook.name));
+        output::success(&format!("{} completed successfully", playbook_name));
     }
 
     output::success("Deployment completed successfully");

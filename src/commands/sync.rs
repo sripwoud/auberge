@@ -1,8 +1,7 @@
 use crate::hosts::HostManager;
 use crate::hosts::select_or_arg as hosts_select_or_arg;
-use crate::models::inventory::Host;
 use crate::output;
-use crate::services::inventory::get_hosts;
+use crate::services::inventory::{Host, get_hosts};
 use crate::ssh_session::SshSession;
 use clap::Subcommand;
 use eyre::{Result, WrapErr};

@@ -1,7 +1,6 @@
-use crate::models::inventory::Host;
 use crate::output;
 use crate::prompt::select_item;
-use crate::services::inventory::get_hosts;
+use crate::services::inventory::{Host, get_hosts};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use std::process::Command;
