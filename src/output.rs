@@ -317,11 +317,10 @@ pub fn format_duration(seconds: u64) -> String {
     }
 }
 
-pub fn run_with_stdout_progress(
+pub fn stream_command_stdout(
     label: &str,
     cmd: &mut Command,
-    pb: &ProgressBar,
-    mut line_handler: impl FnMut(&str, &ProgressBar),
+    mut line_handler: impl FnMut(&str),
 ) -> Result<ProgressResult> {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
@@ -329,7 +328,6 @@ pub fn run_with_stdout_progress(
     let stderr = child.stderr.take().unwrap();
     let verbose = is_verbose();
 
-    let mut last_stdout: Vec<String> = Vec::new();
     const MAX_LINES: usize = 20;
 
     let stderr_tail: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -356,11 +354,7 @@ pub fn run_with_stdout_progress(
             if verbose {
                 emit_subprocess_line(label, &line);
             }
-            last_stdout.push(line.clone());
-            if last_stdout.len() > MAX_LINES {
-                last_stdout.remove(0);
-            }
-            line_handler(&line, pb);
+            line_handler(&line);
         }
     });
 
@@ -470,18 +464,16 @@ mod tests {
     }
 
     #[test]
-    fn run_with_stdout_progress_invokes_handler_for_each_line() {
-        let pb = ProgressBar::hidden();
+    fn stream_command_stdout_invokes_handler_for_each_line() {
         let lines_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let lines_clone = std::sync::Arc::clone(&lines_seen);
 
-        let result = run_with_stdout_progress(
+        let result = stream_command_stdout(
             "test",
             Command::new("sh")
                 .arg("-c")
                 .arg("echo line1; echo line2; echo line3"),
-            &pb,
-            move |line, _pb| {
+            move |line| {
                 lines_clone.lock().unwrap().push(line.to_string());
             },
         )
@@ -493,16 +485,13 @@ mod tests {
     }
 
     #[test]
-    fn run_with_stdout_progress_captures_last_lines_on_failure() {
-        let pb = ProgressBar::hidden();
-
-        let result = run_with_stdout_progress(
+    fn stream_command_stdout_captures_last_lines_on_failure() {
+        let result = stream_command_stdout(
             "test",
             Command::new("sh")
                 .arg("-c")
                 .arg("echo output details >&2; exit 1"),
-            &pb,
-            |_line, _pb| {},
+            |_line| {},
         )
         .unwrap();
 

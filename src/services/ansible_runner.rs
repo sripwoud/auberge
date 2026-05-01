@@ -1,5 +1,6 @@
 use crate::config::Preflight;
 use crate::output;
+use crate::services::progress::Progress;
 use eyre::{Result, WrapErr};
 use std::collections::HashMap;
 use std::io::Write;
@@ -97,6 +98,7 @@ pub fn run_playbook(
     extra_vars: Option<&[(&str, &str)]>,
     ask_vault_pass: bool,
     ask_pass: bool,
+    progress: &mut dyn Progress,
 ) -> Result<AnsibleResult> {
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     assets.ensure_collections()?;
@@ -170,14 +172,14 @@ pub fn run_playbook(
         .file_stem()
         .and_then(|n| n.to_str())
         .unwrap_or("ansible");
-    let spinner = output::spinner(&format!("Running {}...", playbook_label));
-    let result = output::run_with_stdout_progress("ansible", &mut cmd, &spinner, |line, pb| {
+    progress.task_started(&format!("Running {}...", playbook_label));
+    let result = output::stream_command_stdout("ansible", &mut cmd, |line| {
         if let Some(task) = parse_ansible_task(line) {
-            pb.set_message(format!("Running: {}", format_ansible_task(&task)));
+            progress.task_started(&format!("Running: {}", format_ansible_task(&task)));
         }
     })
     .wrap_err("Failed to execute ansible-playbook")?;
-    spinner.finish_and_clear();
+    progress.task_done();
 
     Ok(AnsibleResult {
         success: result.status.success(),

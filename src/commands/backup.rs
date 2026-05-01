@@ -899,41 +899,45 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                         tags.join(",")
                     );
                 }
-                Ok(preflight) => match crate::services::ansible_runner::run_playbook(
-                    &preflight,
-                    &apps_playbook,
-                    &inventory_host,
-                    false,
-                    Some(&tags),
-                    None,
-                    None,
-                    false,
-                    false,
-                ) {
-                    Ok(result) if result.success => {
-                        eprintln!("✓ Ansible playbooks completed successfully");
-                        eprintln!("  File permissions have been corrected");
+                Ok(preflight) => {
+                    let mut progress = crate::services::progress::TerminalProgress::new("");
+                    match crate::services::ansible_runner::run_playbook(
+                        &preflight,
+                        &apps_playbook,
+                        &inventory_host,
+                        false,
+                        Some(&tags),
+                        None,
+                        None,
+                        false,
+                        false,
+                        &mut progress,
+                    ) {
+                        Ok(result) if result.success => {
+                            eprintln!("✓ Ansible playbooks completed successfully");
+                            eprintln!("  File permissions have been corrected");
+                        }
+                        Ok(result) => {
+                            eprintln!(
+                                "⚠ Ansible playbook failed (exit code: {})",
+                                result.exit_code
+                            );
+                            eprintln!("  Services may fail due to incorrect file ownership!");
+                            eprintln!(
+                                "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                                tags.join(",")
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("⚠ Failed to run Ansible playbook: {}", e);
+                            eprintln!("  Services may fail due to incorrect file ownership!");
+                            eprintln!(
+                                "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                                tags.join(",")
+                            );
+                        }
                     }
-                    Ok(result) => {
-                        eprintln!(
-                            "⚠ Ansible playbook failed (exit code: {})",
-                            result.exit_code
-                        );
-                        eprintln!("  Services may fail due to incorrect file ownership!");
-                        eprintln!(
-                            "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
-                            tags.join(",")
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("⚠ Failed to run Ansible playbook: {}", e);
-                        eprintln!("  Services may fail due to incorrect file ownership!");
-                        eprintln!(
-                            "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
-                            tags.join(",")
-                        );
-                    }
-                },
+                }
             }
         }
     } else if opts.skip_playbook_unsafe && !opts.dry_run {
@@ -1198,7 +1202,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     let pb = output::progress_bar(&format!("Pushing {}", backup_dir.display()), None);
     let mut snapshot_id: Option<String> = None;
 
-    let result = output::run_with_stdout_progress(
+    let result = output::stream_command_stdout(
         "restic",
         Command::new("restic")
             .arg("backup")
@@ -1207,18 +1211,17 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
             .env("RESTIC_REPOSITORY", &restic_repo)
             .env("RESTIC_PASSWORD", &restic_password)
             .env_remove("RESTIC_PASSWORD_COMMAND"),
-        &pb,
-        |line, pb| match parse_restic_message(line) {
+        |line| match parse_restic_message(line) {
             Some(ResticMessage::Status(s)) => {
                 if let (Some(total), Some(done)) = (s.total_bytes, s.bytes_done) {
                     if pb.length() != Some(total) {
-                        output::set_bytes_style(pb);
+                        output::set_bytes_style(&pb);
                         pb.set_length(total);
                     }
                     pb.set_position(done);
                 } else {
                     if pb.length() != Some(100) {
-                        output::set_percent_style(pb);
+                        output::set_percent_style(&pb);
                         pb.set_length(100);
                     }
                     pb.set_position((s.percent_done * 100.0) as u64);
