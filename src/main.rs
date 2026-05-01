@@ -168,10 +168,11 @@ async fn main() -> Result<()> {
             } => signal::with_ctrlc(|| {
                 run_backup_create(host, apps, dest, ssh_key, include_music, dry_run).and_then(
                     |outcome| {
-                        if outcome.failed_apps.is_empty() {
+                        let failed = outcome.failed_apps();
+                        if failed.is_empty() {
                             Ok(())
                         } else {
-                            eyre::bail!("{} backup(s) failed", outcome.failed_apps.len());
+                            eyre::bail!("{} backup(s) failed", failed.len());
                         }
                     },
                 )

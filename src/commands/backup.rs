@@ -6,7 +6,9 @@ use crate::services::backup::executor::RecipeExecutor;
 use crate::services::backup::recipe::{
     assets_playbooks_dir, discover_backuppable_apps, load_app_recipe,
 };
-use crate::services::backup::restic::{ResticMessage, parse_restic_message};
+use crate::services::backup::session::{
+    BackupSession, CreateOutcome, SessionOpts, restic_prune, restic_push,
+};
 use crate::services::backup::ssh::LiveSshSession;
 use crate::ssh_session::SshSession;
 use chrono::Utc;
@@ -175,13 +177,6 @@ pub enum OutputFormat {
     Yaml,
 }
 
-#[derive(Debug, Clone)]
-pub struct CreateOutcome {
-    pub successful_apps: Vec<String>,
-    pub failed_apps: Vec<(String, String)>,
-    pub timestamp: String,
-}
-
 pub struct RestoreOptions {
     pub backup_id: String,
     pub host_arg: Option<String>,
@@ -191,12 +186,6 @@ pub struct RestoreOptions {
     pub dry_run: bool,
     pub yes: bool,
     pub skip_playbook_unsafe: bool,
-}
-
-fn parameter_map(include_music: bool) -> HashMap<String, bool> {
-    let mut params = HashMap::new();
-    params.insert("include_music".to_string(), include_music);
-    params
 }
 
 pub fn run_backup_create(
@@ -242,42 +231,50 @@ pub fn run_backup_create(
         output::info(&format!("Apps: {}", app_names.join(", ")));
     }
 
-    let parameters = parameter_map(include_music);
-
     if dry_run {
         eprintln!("\n✓ Dry run completed (no changes made)");
         return Ok(CreateOutcome {
-            successful_apps: Vec::new(),
-            failed_apps: Vec::new(),
+            results: Vec::new(),
             timestamp: String::new(),
         });
     }
+
+    let mut parameters = HashMap::new();
+    parameters.insert("include_music".to_string(), include_music);
+
+    let recipes: Vec<(String, _)> = app_names
+        .iter()
+        .map(|name| Ok::<_, eyre::Report>((name.clone(), load_app_recipe(&playbooks_dir, name)?)))
+        .collect::<Result<_>>()?;
+
     let start_time = Instant::now();
     let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
 
-    let mut results = Vec::new();
-    for app in &app_names {
-        match backup_app(
-            &host,
-            app,
-            &backup_dest,
-            &ssh_key_path,
-            &timestamp,
-            &parameters,
-            &playbooks_dir,
-        ) {
-            Ok(size) => results.push((app.clone(), true, Some(size), None)),
-            Err(e) => {
-                eprintln!("✗ {} backup failed: {}", app, e);
-                results.push((app.clone(), false, None, Some(e.to_string())));
-            }
-        }
-    }
+    let opts = SessionOpts {
+        host_name: host.name.clone(),
+        dest: backup_dest.clone(),
+        timestamp: timestamp.clone(),
+        parameters,
+    };
+    let ssh = LiveSshSession::new(&host, &ssh_key_path);
+    let session = BackupSession::new(&ssh, recipes, opts);
+    let outcome = session.create()?;
 
+    render_create_outcome(&outcome, &backup_dest, &host.name, start_time);
+
+    Ok(outcome)
+}
+
+fn render_create_outcome(
+    outcome: &CreateOutcome,
+    backup_dest: &Path,
+    host_name: &str,
+    start_time: Instant,
+) {
     let elapsed = start_time.elapsed().as_secs();
-    let total_size: u64 = results.iter().filter_map(|(_, _, size, _)| *size).sum();
-    let successful = results.iter().filter(|(_, ok, _, _)| *ok).count();
-    let failed = results.iter().filter(|(_, ok, _, _)| !*ok).count();
+    let successful = outcome.successful_apps().len();
+    let failed = outcome.failed_apps().len();
+    let total_size = outcome.total_size();
 
     eprintln!();
 
@@ -292,16 +289,16 @@ pub fn run_backup_create(
             size: String,
         }
 
-        let table_data: Vec<BackupResult> = results
+        let table_data: Vec<BackupResult> = outcome
+            .results
             .iter()
-            .map(|(app, ok, size, err)| BackupResult {
-                app: app.to_string(),
-                status: if *ok {
-                    "✓".to_string()
-                } else {
-                    format!("✗ {}", err.as_ref().unwrap())
+            .map(|r| BackupResult {
+                app: r.app.clone(),
+                status: match &r.error {
+                    None => "✓".to_string(),
+                    Some(err) => format!("✗ {}", err),
                 },
-                size: size.map(output::format_size).unwrap_or_default(),
+                size: r.size_bytes.map(output::format_size).unwrap_or_default(),
             })
             .collect();
 
@@ -328,26 +325,10 @@ pub fn run_backup_create(
     if output::is_verbose() {
         output::info(&format!(
             "Location: {}/{}/",
-            backup_dest.join(&host.name).display(),
-            timestamp
+            backup_dest.join(host_name).display(),
+            outcome.timestamp
         ));
     }
-
-    let outcome = CreateOutcome {
-        successful_apps: results
-            .iter()
-            .filter(|(_, ok, _, _)| *ok)
-            .map(|(name, _, _, _)| name.to_string())
-            .collect(),
-        failed_apps: results
-            .into_iter()
-            .filter(|(_, ok, _, _)| !*ok)
-            .map(|(name, _, _, err)| (name.to_string(), err.unwrap_or_default()))
-            .collect(),
-        timestamp,
-    };
-
-    Ok(outcome)
 }
 
 pub fn run_backup_sync(
@@ -379,24 +360,20 @@ pub fn run_backup_sync(
         .join(&host_name)
         .join(&outcome.timestamp);
 
-    if outcome.successful_apps.is_empty() {
+    let successful = outcome.successful_apps();
+    let failed = outcome.failed_apps();
+
+    if successful.is_empty() {
         let _ = fs::remove_dir_all(&staging_dir);
-        eyre::bail!(
-            "All {} app(s) failed; nothing to push",
-            outcome.failed_apps.len()
-        );
+        eyre::bail!("All {} app(s) failed; nothing to push", failed.len());
     }
 
-    if !outcome.failed_apps.is_empty() {
-        let names: Vec<&str> = outcome
-            .failed_apps
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .collect();
+    if !failed.is_empty() {
+        let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
         output::warn(&format!(
             "Continuing push/prune with {} succeeded, {} failed: {}",
-            outcome.successful_apps.len(),
-            outcome.failed_apps.len(),
+            successful.len(),
+            failed.len(),
             names.join(", ")
         ));
     }
@@ -409,11 +386,11 @@ pub fn run_backup_sync(
 
     cleanup_staging_dir(&staging_dir)?;
 
-    if !outcome.failed_apps.is_empty() {
+    if !failed.is_empty() {
         eyre::bail!(
             "Sync completed with {} app failure(s); push/prune ran on {} successful app(s)",
-            outcome.failed_apps.len(),
-            outcome.successful_apps.len()
+            failed.len(),
+            successful.len()
         );
     }
 
@@ -821,10 +798,11 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             false,
         )
         .and_then(|outcome| {
-            if outcome.failed_apps.is_empty() {
+            let failed = outcome.failed_apps();
+            if failed.is_empty() {
                 Ok(())
             } else {
-                eyre::bail!("{} backup(s) failed", outcome.failed_apps.len());
+                eyre::bail!("{} backup(s) failed", failed.len());
             }
         });
 
@@ -1144,157 +1122,12 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     let backup_dir =
         resolve_backup_dir(&backup_root, host_filter.as_deref(), backup_id.as_deref())?;
 
-    output::info(&format!("Pushing {} to restic", backup_dir.display()));
-
-    use crate::services::progress::{Progress, TerminalProgress};
-    let mut progress = TerminalProgress::new("Checking restic repository");
-    let snapshots_check = Command::new("restic")
-        .arg("snapshots")
-        .arg("--json")
-        .env("RESTIC_REPOSITORY", &restic_repo)
-        .env("RESTIC_PASSWORD", &restic_password)
-        .env_remove("RESTIC_PASSWORD_COMMAND")
-        .output();
-
-    let needs_init = match snapshots_check {
-        Ok(out) => {
-            let stderr_text = String::from_utf8_lossy(&out.stderr);
-            let lines = output::subprocess_output("restic", &stderr_text);
-            if out.status.success() {
-                output::clear_subprocess_lines(lines);
-                false
-            } else if stderr_text.contains("Is there a repository at the following location")
-                || stderr_text.contains("unable to open config file")
-            {
-                output::clear_subprocess_lines(lines);
-                true
-            } else {
-                eyre::bail!("restic snapshots failed: {}", stderr_text.trim());
-            }
-        }
-        Err(_) => eyre::bail!("restic not found. Install restic: https://restic.net"),
-    };
-
-    if needs_init {
-        progress.task_started("Initializing restic repository");
-        let init_output = Command::new("restic")
-            .arg("init")
-            .env("RESTIC_REPOSITORY", &restic_repo)
-            .env("RESTIC_PASSWORD", &restic_password)
-            .env_remove("RESTIC_PASSWORD_COMMAND")
-            .output()
-            .wrap_err("Failed to initialize restic repository")?;
-        let stderr_text = String::from_utf8_lossy(&init_output.stderr);
-        let lines = output::subprocess_output("restic", &stderr_text);
-        if init_output.status.success() {
-            output::clear_subprocess_lines(lines);
-        }
-
-        if !init_output.status.success() {
-            eyre::bail!(
-                "Failed to initialize restic repository: {}",
-                stderr_text.trim()
-            );
-        }
-    }
-
-    progress.task_started(&format!("Pushing {}", backup_dir.display()));
-    let mut snapshot_id: Option<String> = None;
-
-    let result = output::stream_command_stdout(
-        "restic",
-        Command::new("restic")
-            .arg("backup")
-            .arg("--json")
-            .arg(&backup_dir)
-            .env("RESTIC_REPOSITORY", &restic_repo)
-            .env("RESTIC_PASSWORD", &restic_password)
-            .env_remove("RESTIC_PASSWORD_COMMAND"),
-        |line| match parse_restic_message(line) {
-            Some(ResticMessage::Status(s)) => {
-                if let (Some(total), Some(done)) = (s.total_bytes, s.bytes_done) {
-                    progress.set_total(Some(total));
-                    progress.bytes_transferred(done);
-                } else {
-                    progress.set_total(Some(100));
-                    progress.bytes_transferred((s.percent_done * 100.0) as u64);
-                }
-            }
-            Some(ResticMessage::Summary(s)) => {
-                snapshot_id = Some(s.snapshot_id);
-            }
-            None => {}
-        },
-    )
-    .wrap_err("Failed to run restic backup")?;
-
-    progress.task_done();
-
-    if !result.status.success() {
-        if result.last_stderr.is_empty() {
-            eyre::bail!("restic backup failed");
-        } else {
-            eyre::bail!("restic backup failed: {}", result.last_stderr.trim());
-        }
-    }
-
-    match snapshot_id {
-        Some(id) => output::success(&format!("Push complete: snapshot {}", id)),
-        None => output::success("Push complete"),
-    };
-
-    Ok(())
+    restic_push(&restic_repo, &restic_password, &backup_dir)
 }
 
 pub fn run_backup_prune(dry_run: bool) -> Result<()> {
     let (restic_repo, restic_password) = load_restic_config()?;
-
-    use crate::services::progress::{Progress, TerminalProgress};
-    let mut progress = TerminalProgress::new("Pruning restic snapshots");
-
-    let mut cmd = Command::new("restic");
-    cmd.arg("forget")
-        .arg("--keep-daily")
-        .arg("7")
-        .arg("--keep-weekly")
-        .arg("4")
-        .arg("--keep-monthly")
-        .arg("12")
-        .arg("--prune")
-        .env("RESTIC_REPOSITORY", &restic_repo)
-        .env("RESTIC_PASSWORD", &restic_password)
-        .env_remove("RESTIC_PASSWORD_COMMAND");
-
-    if dry_run {
-        cmd.arg("--dry-run");
-    }
-
-    let prune_output = cmd.output().wrap_err("Failed to run restic forget")?;
-
-    progress.task_done();
-
-    let stderr_text = String::from_utf8_lossy(&prune_output.stderr);
-    let lines = output::subprocess_output("restic", &stderr_text);
-    if prune_output.status.success() {
-        output::clear_subprocess_lines(lines);
-    }
-
-    if !prune_output.status.success() {
-        eyre::bail!("restic prune failed: {}", stderr_text.trim());
-    }
-
-    let stdout = String::from_utf8_lossy(&prune_output.stdout);
-    if !stdout.is_empty() {
-        eprintln!("{}", stdout.trim());
-    }
-
-    if dry_run {
-        output::info("Dry run completed (no changes made)");
-    } else {
-        output::success("Prune complete");
-    }
-
-    Ok(())
+    restic_prune(&restic_repo, &restic_password, dry_run)
 }
 
 fn resolve_backup_dir(
@@ -1372,47 +1205,6 @@ fn default_backup_dir() -> PathBuf {
     dirs::data_local_dir()
         .map(|d| d.join("auberge").join("backups"))
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
-}
-
-fn backup_app(
-    host: &Host,
-    app_name: &str,
-    backup_dest: &Path,
-    ssh_key: &Path,
-    timestamp: &str,
-    parameters: &HashMap<String, bool>,
-    playbooks_dir: &Path,
-) -> Result<u64> {
-    let recipe = load_app_recipe(playbooks_dir, app_name)?;
-    let mut progress =
-        crate::services::progress::TerminalProgress::new(&format!("Backing up {}", app_name));
-    let app_backup_dir = backup_dest.join(&host.name).join(timestamp).join(app_name);
-
-    fs::create_dir_all(&app_backup_dir).wrap_err_with(|| {
-        format!(
-            "Failed to create backup directory: {}",
-            app_backup_dir.display()
-        )
-    })?;
-
-    let session = LiveSshSession::new(host, ssh_key);
-    let executor = RecipeExecutor::new(&session);
-    let exec_result = executor.backup(&recipe, &app_backup_dir, parameters, &mut progress);
-
-    if let Err(e) = exec_result {
-        let _ = fs::remove_dir_all(&app_backup_dir);
-        return Err(e);
-    }
-
-    let backup_size = calculate_dir_size(&app_backup_dir)?;
-    if !output::is_verbose() {
-        output::success(&format!(
-            "{} ({})",
-            app_name,
-            output::format_size(backup_size)
-        ));
-    }
-    Ok(backup_size)
 }
 
 fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
@@ -1622,27 +1414,6 @@ mod tests {
     #[test]
     fn test_prune_variant_exists() {
         let _prune = BackupCommands::Prune { dry_run: true };
-    }
-
-    #[test]
-    fn test_parameter_map_carries_include_music_flag() {
-        let p = parameter_map(true);
-        assert_eq!(p.get("include_music").copied(), Some(true));
-        let p = parameter_map(false);
-        assert_eq!(p.get("include_music").copied(), Some(false));
-    }
-
-    #[test]
-    fn create_outcome_records_partial_success() {
-        let outcome = CreateOutcome {
-            successful_apps: vec!["paperless".to_string(), "freshrss".to_string()],
-            failed_apps: vec![("bichon".to_string(), "Unit not loaded".to_string())],
-            timestamp: "2026-04-28_03-00-00".to_string(),
-        };
-        assert_eq!(outcome.successful_apps.len(), 2);
-        assert_eq!(outcome.failed_apps.len(), 1);
-        assert_eq!(outcome.failed_apps[0].0, "bichon");
-        assert_eq!(outcome.timestamp, "2026-04-28_03-00-00");
     }
 
     #[test]
