@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/sripwoud/auberge/compare/v0.9.5...v0.10.0) - 2026-05-01
+
+### Added
+
+- *(progress)* add Progress trait, relocate parsers, slim output.rs ([#270](https://github.com/sripwoud/auberge/pull/270)) ([#275](https://github.com/sripwoud/auberge/pull/275))
+- *(config)* [**breaking**] generate config init scaffold from Key Registry ([#274](https://github.com/sripwoud/auberge/pull/274))
+- *(backup)* declarative Backup Recipe schema + RecipeExecutor + SshSession trait ([#271](https://github.com/sripwoud/auberge/pull/271))
+
+### Other
+
+- *(deps)* bump openssl from 0.10.75 to 0.10.78 in the cargo group across 1 directory ([#249](https://github.com/sripwoud/auberge/pull/249))
+- *(backup)* add BackupSession multi-recipe orchestrator ([#269](https://github.com/sripwoud/auberge/pull/269)) ([#278](https://github.com/sripwoud/auberge/pull/278))
+- *(models)* delete vestigial models module ([#266](https://github.com/sripwoud/auberge/pull/266)) ([#272](https://github.com/sripwoud/auberge/pull/272))
+- *(config)* merge Config+UserConfig, add Preflight+PlaybookMeta, slim AnsibleRunner ([#267](https://github.com/sripwoud/auberge/pull/267))
+- extract prompt and signal utilities, delete selector module ([#264](https://github.com/sripwoud/auberge/pull/264))
+- *(config)* add key registry and playbook meta yaml loaders ([#263](https://github.com/sripwoud/auberge/pull/263))
+- *(meta)* add mattpocock agent skill config
+
 ## [0.9.5](https://github.com/sripwoud/auberge/compare/v0.9.4...v0.9.5) - 2026-04-28
 
 ### Fixed
