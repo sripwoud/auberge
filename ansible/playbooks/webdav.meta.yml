@@ -1,0 +1,3 @@
+required_keys: []
+backup:
+  paths: [/var/www/webdav-files]

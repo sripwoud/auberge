@@ -141,6 +141,106 @@ mod tests {
         let meta = load_meta("calibre");
         assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
         assert!(meta.required_keys.contains(&"domain".to_string()));
+        let backup = meta.backup.expect("calibre.meta.yml should declare backup");
+        assert_eq!(backup.systemd_services, vec!["calibre"]);
+        assert_eq!(
+            backup.paths,
+            vec!["/srv/calibre", "/opt/calibre", "/home/calibre"]
+        );
+        assert_eq!(
+            backup.owner,
+            Some(("calibre".to_string(), "calibre".to_string()))
+        );
+        assert!(backup.db.is_none());
+    }
+
+    #[test]
+    fn test_baikal_meta_backup_recipe() {
+        let backup = load_meta("baikal").backup.unwrap();
+        assert_eq!(backup.paths, vec!["/opt/baikal/Specific"]);
+        assert_eq!(
+            backup.owner,
+            Some(("baikal".to_string(), "baikal".to_string()))
+        );
+        assert!(backup.systemd_services.is_empty());
+    }
+
+    #[test]
+    fn test_bichon_meta_backup_recipe() {
+        let backup = load_meta("bichon").backup.unwrap();
+        assert_eq!(backup.systemd_services, vec!["bichon"]);
+        assert_eq!(backup.paths, vec!["/opt/bichon/data"]);
+    }
+
+    #[test]
+    fn test_freshrss_meta_backup_recipe() {
+        let backup = load_meta("freshrss").backup.unwrap();
+        assert_eq!(backup.systemd_services, vec!["freshrss"]);
+        assert_eq!(
+            backup.paths,
+            vec!["/var/lib/freshrss", "/opt/freshrss/data"]
+        );
+    }
+
+    #[test]
+    fn test_headscale_meta_backup_recipe() {
+        let backup = load_meta("headscale").backup.unwrap();
+        assert_eq!(backup.systemd_services, vec!["headscale"]);
+        assert_eq!(backup.paths, vec!["/var/lib/headscale"]);
+    }
+
+    #[test]
+    fn test_navidrome_meta_backup_recipe() {
+        let backup = load_meta("navidrome").backup.unwrap();
+        assert_eq!(backup.systemd_services, vec!["navidrome"]);
+        assert_eq!(backup.paths, vec!["/var/lib/navidrome", "/etc/navidrome"]);
+        let parameter = backup.parameters.get("include_music").unwrap();
+        assert!(!parameter.default);
+        assert_eq!(parameter.adds_paths, vec!["/srv/music"]);
+    }
+
+    #[test]
+    fn test_webdav_meta_backup_recipe() {
+        let backup = load_meta("webdav").backup.unwrap();
+        assert_eq!(backup.paths, vec!["/var/www/webdav-files"]);
+        assert!(backup.owner.is_none());
+        assert!(backup.systemd_services.is_empty());
+    }
+
+    #[test]
+    fn test_yourls_meta_backup_recipe() {
+        let backup = load_meta("yourls").backup.unwrap();
+        assert_eq!(backup.paths, vec!["/var/www/yourls"]);
+        assert_eq!(
+            backup.owner,
+            Some(("www-data".to_string(), "www-data".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_paperless_meta_backup_recipe() {
+        let backup = load_meta("paperless").backup.unwrap();
+        assert_eq!(
+            backup.systemd_services,
+            vec![
+                "paperless-webserver",
+                "paperless-consumer",
+                "paperless-task-queue",
+                "paperless-scheduler",
+            ]
+        );
+        assert_eq!(
+            backup.paths,
+            vec!["/opt/paperless/data", "/opt/paperless/media"]
+        );
+        let db = backup.db.expect("paperless declares db");
+        assert_eq!(db.name, "paperless");
+        assert_eq!(db.dump_path, "/tmp/paperless_db.dump");
+        let cmd = backup
+            .post_restore_command
+            .expect("paperless declares post_restore_command");
+        assert!(cmd.contains("manage.py migrate"));
+        assert!(cmd.contains("PAPERLESS_CONFIGURATION_PATH"));
     }
 
     #[test]

@@ -1,0 +1,4 @@
+required_keys: []
+backup:
+  paths: [/var/www/yourls]
+  owner: [www-data, www-data]

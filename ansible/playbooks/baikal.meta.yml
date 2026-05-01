@@ -1,0 +1,4 @@
+required_keys: []
+backup:
+  paths: [/opt/baikal/Specific]
+  owner: [baikal, baikal]

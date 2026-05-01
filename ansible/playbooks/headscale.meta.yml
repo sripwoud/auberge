@@ -1,0 +1,5 @@
+required_keys: []
+backup:
+  systemd_services: [headscale]
+  paths: [/var/lib/headscale]
+  owner: [headscale, headscale]

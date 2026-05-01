@@ -1,0 +1,5 @@
+required_keys: []
+backup:
+  systemd_services: [bichon]
+  paths: [/opt/bichon/data]
+  owner: [bichon, bichon]
