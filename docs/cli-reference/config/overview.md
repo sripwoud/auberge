@@ -11,15 +11,23 @@ auberge config <COMMAND>
 
 ## Subcommands
 
-| Command | Alias | Description                                      |
-| ------- | ----- | ------------------------------------------------ |
-| init    | i     | Create template config.toml with all keys        |
-| set     | s     | Set a config value                               |
-| get     | g     | Get a config value                               |
-| list    | l     | List all config keys (sensitive values redacted) |
-| remove  | rm    | Remove a key from config                         |
-| edit    | e     | Open config in $EDITOR                           |
-| path    | p     | Print config file path                           |
+| Command | Alias | Description                                                |
+| ------- | ----- | ---------------------------------------------------------- |
+| init    | i     | Print a config.toml scaffold derived from the Key Registry |
+| set     | s     | Set a config value                                         |
+| get     | g     | Get a config value                                         |
+| list    | l     | List all config keys (sensitive values redacted)           |
+| remove  | rm    | Remove a key from config                                   |
+| edit    | e     | Open config in $EDITOR                                     |
+| path    | p     | Print config file path                                     |
+
+### `init` flags
+
+| Flag                  | Description                                                              |
+| --------------------- | ------------------------------------------------------------------------ |
+| `--playbooks <a,b,c>` | Emit only keys in the union of the named Playbook Metas' `required_keys` |
+| `--output, -o <path>` | Write the scaffold to a file (refuses to overwrite without `--force`)    |
+| `--force, -f`         | Overwrite the output file if it exists                                   |
 
 ## Interactive Selection
 
@@ -30,8 +38,17 @@ In non-interactive mode (pipes, scripts), a key argument is required for `get` a
 ## Examples
 
 ```bash
-# Initialize config
+# Print full scaffold to stdout
 auberge config init
+
+# Generate config.toml at the XDG config path
+auberge config init --output "$(auberge config path)"
+
+# Scope the scaffold to specific playbooks
+auberge config init --playbooks paperless,navidrome
+
+# Overwrite an existing file
+auberge config init --output config.toml --force
 
 # Set a value directly
 auberge c s admin_user_name myuser

@@ -1,6 +1,7 @@
 use eyre::{Result, WrapErr};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 use std::path::Path;
 
 /// A single entry in the Key Registry describing one configuration key.
@@ -52,6 +53,36 @@ impl KeyRegistry {
     /// Returns `true` if the registry contains no keys.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+
+    /// Render a TOML scaffold containing every key in the registry, sorted by name.
+    pub fn scaffold(&self) -> String {
+        self.render(self.entries.keys().map(String::as_str))
+    }
+
+    /// Render a TOML scaffold containing only keys whose name is in `selected`.
+    /// Keys in `selected` that are absent from the registry are silently skipped.
+    pub fn scaffold_filtered(&self, selected: &HashSet<String>) -> String {
+        self.render(
+            selected
+                .iter()
+                .filter(|k| self.entries.contains_key(*k))
+                .map(String::as_str),
+        )
+    }
+
+    fn render<'a>(&self, names: impl Iterator<Item = &'a str>) -> String {
+        let mut sorted: Vec<&str> = names.collect();
+        sorted.sort_unstable();
+        let mut out = String::new();
+        for name in sorted {
+            let entry = &self.entries[name];
+            let marker = if entry.secret { " (secret)" } else { "" };
+            let _ = writeln!(out, "# {}{marker}", entry.doc);
+            let _ = writeln!(out, "{name} = \"\"");
+            let _ = writeln!(out);
+        }
+        out
     }
 }
 
@@ -151,5 +182,107 @@ mod tests {
     fn test_key_registry_load_nonexistent_file_returns_error() {
         let result = KeyRegistry::load(Path::new("/nonexistent/keys.yml"));
         assert!(result.is_err());
+    }
+
+    fn fixture_registry() -> KeyRegistry {
+        let mut entries = HashMap::new();
+        entries.insert(
+            "domain".into(),
+            KeyEntry {
+                secret: false,
+                doc: "Primary domain name".into(),
+            },
+        );
+        entries.insert(
+            "tailscale_authkey".into(),
+            KeyEntry {
+                secret: true,
+                doc: "Tailscale auth key".into(),
+            },
+        );
+        entries.insert(
+            "admin_user_name".into(),
+            KeyEntry {
+                secret: false,
+                doc: "Admin username".into(),
+            },
+        );
+        KeyRegistry { entries }
+    }
+
+    #[test]
+    fn test_scaffold_emits_alphabetically_sorted_keys() {
+        let scaffold = fixture_registry().scaffold();
+        let admin_pos = scaffold.find("admin_user_name").unwrap();
+        let domain_pos = scaffold.find("domain").unwrap();
+        let tailscale_pos = scaffold.find("tailscale_authkey").unwrap();
+        assert!(admin_pos < domain_pos);
+        assert!(domain_pos < tailscale_pos);
+    }
+
+    #[test]
+    fn test_scaffold_emits_doc_as_comment() {
+        let scaffold = fixture_registry().scaffold();
+        assert!(scaffold.contains("# Primary domain name\n"));
+        assert!(scaffold.contains("# Admin username\n"));
+    }
+
+    #[test]
+    fn test_scaffold_marks_secret_keys() {
+        let scaffold = fixture_registry().scaffold();
+        assert!(scaffold.contains("# Tailscale auth key (secret)\n"));
+        assert!(!scaffold.contains("# Primary domain name (secret)"));
+    }
+
+    #[test]
+    fn test_scaffold_emits_empty_string_placeholders() {
+        let scaffold = fixture_registry().scaffold();
+        assert!(scaffold.contains("admin_user_name = \"\""));
+        assert!(scaffold.contains("domain = \"\""));
+        assert!(scaffold.contains("tailscale_authkey = \"\""));
+    }
+
+    #[test]
+    fn test_scaffold_output_parses_as_toml() {
+        let scaffold = fixture_registry().scaffold();
+        let parsed: toml::Table = toml::from_str(&scaffold).unwrap();
+        assert!(parsed.contains_key("domain"));
+        assert!(parsed.contains_key("admin_user_name"));
+        assert!(parsed.contains_key("tailscale_authkey"));
+    }
+
+    #[test]
+    fn test_scaffold_filtered_emits_only_selected_keys() {
+        let mut selected = HashSet::new();
+        selected.insert("domain".to_string());
+        selected.insert("tailscale_authkey".to_string());
+        let scaffold = fixture_registry().scaffold_filtered(&selected);
+        assert!(scaffold.contains("domain = \"\""));
+        assert!(scaffold.contains("tailscale_authkey = \"\""));
+        assert!(!scaffold.contains("admin_user_name"));
+    }
+
+    #[test]
+    fn test_scaffold_filtered_skips_unknown_keys() {
+        let mut selected = HashSet::new();
+        selected.insert("domain".to_string());
+        selected.insert("does_not_exist".to_string());
+        let scaffold = fixture_registry().scaffold_filtered(&selected);
+        assert!(scaffold.contains("domain = \"\""));
+        assert!(!scaffold.contains("does_not_exist"));
+    }
+
+    #[test]
+    fn test_scaffold_filtered_empty_selection_emits_nothing() {
+        let scaffold = fixture_registry().scaffold_filtered(&HashSet::new());
+        assert!(scaffold.is_empty());
+    }
+
+    #[test]
+    fn test_real_registry_scaffold_parses_as_toml() {
+        let registry = KeyRegistry::load(&registry_path()).unwrap();
+        let scaffold = registry.scaffold();
+        let parsed: toml::Table = toml::from_str(&scaffold).unwrap();
+        assert_eq!(parsed.len(), registry.len());
     }
 }

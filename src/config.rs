@@ -4,74 +4,6 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-pub const TEMPLATE: &str = r#"admin_user_email = ""
-admin_user_name = ""
-admin_user_password = ""
-
-baikal_admin_password = ""
-baikal_subdomain = ""
-
-bichon_encryption_password = ""
-bichon_subdomain = ""
-bichon_tailscale_ip = ""
-
-blocky_subdomain = ""
-
-grimmory_admin_password = ""
-grimmory_admin_user = ""
-grimmory_db_password = ""
-grimmory_subdomain = ""
-
-cloudflare_dns_api_token = ""
-
-colporteur_feeds_password = ""
-colporteur_freshrss_sync = false
-colporteur_subdomain = ""
-
-domain = ""
-
-freshrss_subdomain = ""
-
-hostname = ""
-
-headscale_subdomain = ""
-
-navidrome_subdomain = ""
-
-hermes_exa_api_key = ""
-hermes_llm_api_key = ""
-hermes_llm_provider = ""
-hermes_telegram_bot_token = ""
-
-paperless_admin_password = ""
-paperless_admin_user = ""
-paperless_db_password = ""
-paperless_secret_key = ""
-paperless_subdomain = ""
-paperless_tailscale_ip = ""
-
-restic_password = ""
-restic_repository = ""
-
-ssh_port = 22022
-
-tailscale_api_key = ""
-tailscale_authkey = ""
-tailscale_login_server = ""
-
-tgtg_telegram_bot_token = ""
-
-webdav_password = ""
-webdav_subdomain = ""
-
-yourls_admin_password = ""
-yourls_admin_user = ""
-yourls_api_signature = ""
-yourls_cookiekey = ""
-yourls_db_password = ""
-yourls_subdomain = ""
-"#;
-
 const SENSITIVE_SUFFIXES: &[&str] = &["password", "key", "token", "secret", "cookie", "signature"];
 
 const DEFAULT_TTL: u32 = 300;
@@ -189,8 +121,8 @@ impl Config {
         let path = Self::path()?;
         if !path.exists() {
             eyre::bail!(
-                "Config file not found at {}. Run `auberge config init` to create it.",
-                path.display()
+                "Config file not found at {p}. Generate one with `auberge config init --output {p}`.",
+                p = path.display()
             );
         }
         let contents = fs::read_to_string(&path)
@@ -198,20 +130,6 @@ impl Config {
         let values: toml::Table =
             toml::from_str(&contents).wrap_err("Failed to parse config.toml")?;
         Ok(Self { path, values })
-    }
-
-    pub fn init() -> Result<PathBuf> {
-        let path = Self::path()?;
-        if path.exists() {
-            eyre::bail!("Config already exists at {}", path.display());
-        }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .wrap_err_with(|| format!("Failed to create {}", parent.display()))?;
-        }
-        fs::write(&path, TEMPLATE).wrap_err("Failed to write config template")?;
-        Self::enforce_permissions(&path)?;
-        Ok(path)
     }
 
     // ── Directory helpers ─────────────────────────────────────────────────────
@@ -501,7 +419,7 @@ mod tests {
 
     #[test]
     fn test_get_nonexistent_key() {
-        let config = make_config(TEMPLATE);
+        let config = make_config(r#"domain = "example.com""#);
         assert!(config.get("nonexistent_key").is_none());
     }
 
@@ -768,17 +686,23 @@ mod tests {
 
     // ── round-trip / file operations ──────────────────────────────────────────
 
+    const SAMPLE_TOML: &str = r#"
+admin_user_name = ""
+domain = ""
+ssh_port = 22022
+"#;
+
     #[test]
     fn test_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("auberge/config.toml");
         fs::create_dir_all(config_path.parent().unwrap()).unwrap();
-        fs::write(&config_path, TEMPLATE).unwrap();
+        fs::write(&config_path, SAMPLE_TOML).unwrap();
         fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).unwrap();
 
         let mut config = Config {
             path: config_path.clone(),
-            values: toml::from_str(TEMPLATE).unwrap(),
+            values: toml::from_str(SAMPLE_TOML).unwrap(),
         };
 
         config.set("admin_user_name", "bob").unwrap();
@@ -798,7 +722,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("auberge/config.toml");
         fs::create_dir_all(config_path.parent().unwrap()).unwrap();
-        fs::write(&config_path, TEMPLATE).unwrap();
+        fs::write(&config_path, SAMPLE_TOML).unwrap();
 
         Config::enforce_permissions(&config_path).unwrap();
         let perms = fs::metadata(&config_path).unwrap().permissions();
@@ -806,25 +730,16 @@ mod tests {
     }
 
     #[test]
-    fn test_template_parses() {
-        let values: toml::Table = toml::from_str(TEMPLATE).unwrap();
-        assert!(values.contains_key("domain"));
-        assert!(values.contains_key("admin_user_name"));
-        assert!(values.contains_key("cloudflare_dns_api_token"));
-        assert!(values.contains_key("tailscale_authkey"));
-    }
-
-    #[test]
     fn test_remove_key() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("auberge/config.toml");
         fs::create_dir_all(config_path.parent().unwrap()).unwrap();
-        fs::write(&config_path, TEMPLATE).unwrap();
+        fs::write(&config_path, SAMPLE_TOML).unwrap();
         fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).unwrap();
 
         let mut config = Config {
             path: config_path,
-            values: toml::from_str(TEMPLATE).unwrap(),
+            values: toml::from_str(SAMPLE_TOML).unwrap(),
         };
         config.set("admin_user_name", "test").unwrap();
         assert!(config.remove("admin_user_name").unwrap());
@@ -836,12 +751,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("auberge/config.toml");
         fs::create_dir_all(config_path.parent().unwrap()).unwrap();
-        fs::write(&config_path, TEMPLATE).unwrap();
+        fs::write(&config_path, SAMPLE_TOML).unwrap();
         fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).unwrap();
 
         let mut config = Config {
             path: config_path,
-            values: toml::from_str(TEMPLATE).unwrap(),
+            values: toml::from_str(SAMPLE_TOML).unwrap(),
         };
 
         assert!(config.get("brand_new_key").is_none());
