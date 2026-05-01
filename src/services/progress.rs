@@ -7,13 +7,19 @@ pub trait Progress {
     fn task_done(&mut self);
     fn bytes_transferred(&mut self, n: u64);
     fn set_total(&mut self, n: Option<u64>);
+    #[allow(dead_code)]
     fn info(&mut self, msg: &str);
+    #[allow(dead_code)]
     fn warn(&mut self, msg: &str);
+    #[allow(dead_code)]
     fn cancel(&mut self);
 }
 
+#[allow(dead_code)]
 const YELLOW: &str = "\x1b[33m";
+#[allow(dead_code)]
 const CYAN: &str = "\x1b[36m";
+#[allow(dead_code)]
 const RESET: &str = "\x1b[0m";
 
 fn should_use_colors() -> bool {
@@ -54,10 +60,6 @@ impl TerminalProgress {
             pb,
             has_total: false,
         }
-    }
-
-    pub fn bar(&self) -> &ProgressBar {
-        &self.pb
     }
 }
 
