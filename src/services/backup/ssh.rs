@@ -151,18 +151,18 @@ pub enum SshOp {
     },
     ScpFrom {
         remote: String,
-        local: PathBuf,
+        local: std::path::PathBuf,
     },
     ScpTo {
-        local: PathBuf,
+        local: std::path::PathBuf,
         remote: String,
     },
     RsyncFrom {
         remote: String,
-        local: PathBuf,
+        local: std::path::PathBuf,
     },
     RsyncTo {
-        local: PathBuf,
+        local: std::path::PathBuf,
         remote: String,
     },
     SetOwnership {
@@ -308,7 +308,7 @@ mod tests {
             mock.calls(),
             vec![SshOp::RsyncFrom {
                 remote: "/var/lib/freshrss".to_string(),
-                local: PathBuf::from("/tmp/staging"),
+                local: std::path::PathBuf::from("/tmp/staging"),
             }]
         );
     }
