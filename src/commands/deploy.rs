@@ -1,14 +1,12 @@
 use crate::ansible_assets::AnsibleAssets;
-use crate::models::inventory::Host;
-use crate::models::playbook::Playbook;
+use crate::config::Config;
 use crate::output;
 use crate::prompt::{confirm, select_multi};
-use crate::services::ansible_runner::{InventoryHost, required_config_keys, run_playbook};
+use crate::services::ansible_runner::{InventoryHost, run_playbook};
 use crate::services::dependency_resolver::{
     PlaybookRun, get_app_names, resolve_tags_to_playbook_runs,
 };
-use crate::services::inventory::select_or_arg;
-use crate::user_config::UserConfig;
+use crate::services::inventory::{Host, select_or_arg};
 use clap::Args;
 use eyre::Result;
 
@@ -71,26 +69,6 @@ fn validate_apps(requested: &[String], available: &[String]) -> Result<()> {
         );
     }
     Ok(())
-}
-
-fn validate_config_for_deploy(apps: &[String]) -> Result<UserConfig> {
-    let config = UserConfig::load()?;
-    let mut all_keys = Vec::new();
-    let playbooks: [(&str, Option<&[String]>); 3] = [
-        ("hardening.yml", None),
-        ("infrastructure.yml", None),
-        ("apps.yml", Some(apps)),
-    ];
-    for (playbook, tags) in &playbooks {
-        for key in required_config_keys(playbook, *tags) {
-            if !all_keys.contains(&key) {
-                all_keys.push(key);
-            }
-        }
-    }
-
-    config.validate_required_resolved(&all_keys)?;
-    Ok(config)
 }
 
 fn show_execution_plan(runs: &[PlaybookRun], host: &Host, check: bool) -> Result<()> {
@@ -179,8 +157,6 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
 
     let host = select_host(cmd.host)?;
 
-    validate_config_for_deploy(&apps)?;
-
     let (resolved_runs, unknown_tags) = resolve_tags_to_playbook_runs(&apps)?;
 
     if !unknown_tags.is_empty() {
@@ -193,6 +169,22 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
 
     let runs = prepend_hardening(resolved_runs)?;
 
+    // Validate config and build preflights for all runs upfront so we fail
+    // fast before executing any playbook.
+    let config = Config::load()?;
+    let preflights: Vec<_> = runs
+        .iter()
+        .map(|run| {
+            let name = run.path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let tags = if run.tags.is_empty() {
+                None
+            } else {
+                Some(run.tags.as_slice())
+            };
+            config.preflight_for(name, tags)
+        })
+        .collect::<Result<_>>()?;
+
     show_execution_plan(&runs, &host, cmd.check)?;
     warn_apps_prerequisites(&runs);
     confirm_deploy(cmd.force)?;
@@ -204,8 +196,12 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         user: host.vars.bootstrap_user.clone(),
     };
 
-    for run in &runs {
-        let playbook = Playbook::from_path(run.path.clone());
+    for (run, preflight) in runs.iter().zip(preflights.iter()) {
+        let playbook_name = run
+            .path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
         let run_tags = if run.tags.is_empty() {
             None
         } else {
@@ -214,13 +210,15 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
 
         output::info(&format!(
             "Running {} on {}{}",
-            playbook.name,
+            playbook_name,
             host.name,
             run_tags.map_or(String::new(), |t| format!(" (tags: {})", t.join(", ")))
         ));
 
+        let mut progress = crate::services::progress::TerminalProgress::new("");
         let result = run_playbook(
-            &playbook.path,
+            preflight,
+            &run.path,
             &inventory_host,
             cmd.check,
             run_tags,
@@ -228,26 +226,27 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
             None,
             false,
             false,
+            &mut progress,
         )?;
 
         if !result.success {
             if result.last_output.is_empty() {
                 eyre::bail!(
                     "{} failed with exit code {}",
-                    playbook.name,
+                    playbook_name,
                     result.exit_code
                 );
             } else {
                 eyre::bail!(
                     "{} failed with exit code {}:\n{}",
-                    playbook.name,
+                    playbook_name,
                     result.exit_code,
                     result.last_output.trim()
                 );
             }
         }
 
-        output::success(&format!("{} completed successfully", playbook.name));
+        output::success(&format!("{} completed successfully", playbook_name));
     }
 
     output::success("Deployment completed successfully");

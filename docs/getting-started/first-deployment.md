@@ -35,10 +35,10 @@ This creates a key at `~/.ssh/identities/root_my-vps`.
 
 ## Step 3: Bootstrap VPS
 
-Before bootstrapping, set the required values:
+Before bootstrapping, generate `config.toml` and set the required values:
 
 ```bash
-auberge config init
+auberge config init --output "$(auberge config path)"
 auberge config set hostname my-vps
 auberge config set admin_user_name yourname
 auberge config set admin_user_email you@example.com
@@ -65,17 +65,18 @@ This:
 
 ## Step 4: Configure
 
-Initialize config and set required values:
+Set the remaining required values (the file already exists from Step 3):
 
 ```bash
-auberge config init
 auberge config set domain example.com
 auberge config set cloudflare_dns_api_token your-token
 auberge config set baikal_admin_password your-password
 auberge config set webdav_password your-password
 ```
 
-See `config.example.toml` for all available options.
+Run `auberge config init` (no flags) to print the full list of known keys.
+Use `auberge config init --playbooks <a,b,c>` to scope the scaffold to
+specific playbooks.
 
 ## Step 5: Deploy Full Stack
 

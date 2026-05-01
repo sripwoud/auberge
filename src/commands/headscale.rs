@@ -1,8 +1,8 @@
+use crate::config::Config;
 use crate::hosts::{Host, HostManager, select_or_arg};
 use crate::output;
 use crate::prompt::{confirm, select_item};
 use crate::ssh_session::SshSession;
-use crate::user_config::UserConfig;
 use clap::Subcommand;
 use dialoguer::{Input, Select, theme::ColorfulTheme};
 use eyre::{Context, Result};
@@ -159,7 +159,7 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
     let host = match host_arg {
         Some(name) => HostManager::get_host(&name)?,
         None => {
-            let config = UserConfig::load()?;
+            let config = Config::load()?;
             match config.get("hostname") {
                 Some(name) if !name.is_empty() => HostManager::get_host(&name)?,
                 _ => select_or_arg(None)?,
@@ -295,7 +295,7 @@ pub fn run_headscale_add_user(
     let key: HeadscalePreAuthKey = serde_json::from_str(key_output.trim())
         .wrap_err("Failed to parse pre-auth key response")?;
 
-    let config = UserConfig::load()?;
+    let config = Config::load()?;
     let subdomain = config
         .get("headscale_subdomain")
         .unwrap_or_else(|| "hs".to_string());

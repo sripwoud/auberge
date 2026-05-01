@@ -4,11 +4,16 @@ Auberge stores all configuration, including sensitive values, in `config.toml`.
 
 ## Setup
 
-Initialize the config file at the XDG config path:
+Generate a `config.toml` scaffold at the XDG config path:
 
 ```bash
-auberge config init
+auberge config init --output "$(auberge config path)"
 ```
+
+`auberge config init` derives the scaffold from the Key Registry
+(`ansible/keys.yml`). Without `--output`, the scaffold is printed to stdout —
+useful for piping or inspecting available keys. Pass `--playbooks <a,b,c>`
+to emit only the keys required by the named playbooks.
 
 ## Setting Config Values
 
@@ -34,7 +39,8 @@ auberge config set ssh_port 22022
 auberge config set admin_user_password your-linux-password
 ```
 
-See `config.example.toml` for the complete list.
+Run `auberge config init` to print the full list of known keys, each with
+its documentation string from the Key Registry.
 
 ## Password Commands
 
@@ -68,7 +74,7 @@ auberge config list
 
 - Never commit `config.toml` to version control - it contains plaintext secrets
 - `config.toml` is listed in `.gitignore`
-- Use `config.example.toml` (committed) as a reference for required keys
+- Run `auberge config init` to print a fresh scaffold derived from the Key Registry
 
 ## Troubleshooting
 

@@ -1,17 +1,14 @@
-use crate::models::inventory::Host;
-use crate::models::playbook::Playbook;
+use crate::config::{Config, Preflight};
 use crate::output;
 use crate::prompt::select_item;
-use crate::services::ansible_runner::{
-    InventoryHost, required_config_keys, run_bootstrap, run_playbook,
-};
+use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::dependency_resolver::resolve_tags_to_playbook_runs;
-use crate::services::inventory::{get_host, get_playbooks, select_or_arg};
+use crate::services::inventory::{Host, get_host, get_playbooks, select_or_arg};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use regex::Regex;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Subcommand)]
 pub enum AnsibleCommands {
@@ -69,29 +66,22 @@ fn select_or_use_host(host_arg: Option<String>) -> Result<Host> {
     select_or_arg(host_arg)
 }
 
-fn validate_config_for_playbook(
-    playbook_name: &str,
-    tags: Option<&[String]>,
-) -> Result<crate::user_config::UserConfig> {
-    let config = crate::user_config::UserConfig::load()?;
-    let required_keys = required_config_keys(playbook_name, tags);
-    config.validate_required_resolved(&required_keys)?;
-    Ok(config)
+fn validate_config_for_playbook(playbook_name: &str, tags: Option<&[String]>) -> Result<Preflight> {
+    let config = Config::load()?;
+    config.preflight_for(playbook_name, tags)
 }
 
-fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<Playbook> {
+fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<PathBuf> {
     match playbook_arg {
-        Some(path) => Ok(Playbook::from_path(path)),
+        Some(path) => Ok(path),
         None => {
             let playbooks = get_playbooks(None)?;
             select_item(
                 &playbooks,
-                |p: &Playbook| {
-                    format!(
-                        "{} ({})",
-                        p.name,
-                        p.path.file_name().unwrap_or_default().to_string_lossy()
-                    )
+                |p: &PathBuf| {
+                    let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+                    let file = p.file_name().unwrap_or_default().to_string_lossy();
+                    format!("{} ({})", name, file)
                 },
                 "Select playbook",
             )?
@@ -177,12 +167,12 @@ fn run_auto_resolved(
     ));
 
     for run in &runs {
-        let playbook = Playbook::from_path(run.path.clone());
-        let playbook_name = playbook
+        let playbook_file = run.path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let playbook_stem = run
             .path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
 
         let run_tags_ref = if run.tags.is_empty() {
             None
@@ -190,8 +180,8 @@ fn run_auto_resolved(
             Some(run.tags.as_slice())
         };
 
-        validate_config_for_playbook(playbook_name, run_tags_ref)?;
-        show_playbook_warnings(playbook_name, force)?;
+        let preflight = validate_config_for_playbook(playbook_file, run_tags_ref)?;
+        show_playbook_warnings(playbook_file, force)?;
 
         let run_tags = if run.tags.is_empty() {
             None
@@ -201,7 +191,7 @@ fn run_auto_resolved(
 
         output::info(&format!(
             "Running {} on {}{}",
-            playbook.name,
+            playbook_stem,
             host.name,
             run_tags.map_or(String::new(), |t| format!(" (tags: {})", t.join(", ")))
         ));
@@ -215,8 +205,10 @@ fn run_auto_resolved(
 
         let extra_vars = user.map(|u| vec![("ansible_user", u)]);
 
+        let mut progress = crate::services::progress::TerminalProgress::new("");
         let result = run_playbook(
-            &playbook.path,
+            &preflight,
+            &run.path,
             &inventory_host,
             check,
             run_tags,
@@ -224,26 +216,27 @@ fn run_auto_resolved(
             extra_vars.as_deref(),
             false,
             ask_pass,
+            &mut progress,
         )?;
 
         if !result.success {
             if result.last_output.is_empty() {
                 eyre::bail!(
                     "{} failed with exit code {}",
-                    playbook.name,
+                    playbook_stem,
                     result.exit_code
                 );
             } else {
                 eyre::bail!(
                     "{} failed with exit code {}:\n{}",
-                    playbook.name,
+                    playbook_stem,
                     result.exit_code,
                     result.last_output.trim()
                 );
             }
         }
 
-        output::success(&format!("{} completed successfully", playbook.name));
+        output::success(&format!("{} completed successfully", playbook_stem));
     }
 
     output::success("All playbook runs completed successfully");
@@ -252,7 +245,7 @@ fn run_auto_resolved(
 
 fn run_single_playbook(
     host: &Host,
-    playbook: &Playbook,
+    playbook: &Path,
     check: bool,
     tags: Option<&[String]>,
     skip_tags: Option<&[String]>,
@@ -260,14 +253,14 @@ fn run_single_playbook(
     ask_pass: bool,
     force: bool,
 ) -> Result<()> {
-    let playbook_name = playbook
-        .path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let playbook_file = playbook.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let playbook_stem = playbook
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
 
-    let config = validate_config_for_playbook(playbook_name, tags)?;
-    let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
+    let preflight = validate_config_for_playbook(playbook_file, tags)?;
+    let is_fresh_bootstrap = playbook_file == "bootstrap.yml";
 
     if is_fresh_bootstrap {
         eprintln!();
@@ -275,8 +268,10 @@ fn run_single_playbook(
         output::info("Before running bootstrap, ensure your VPS provider's firewall");
         output::info("allows your custom SSH port (separate from UFW on the VPS)");
         eprintln!();
-        let ssh_port = config
+        let ssh_port = preflight
+            .flat_vars()
             .get("ssh_port")
+            .cloned()
             .unwrap_or_else(|| "not configured".to_string());
         output::info("Required steps:");
         output::info(&format!("  1. Your target SSH port: {}", ssh_port));
@@ -302,9 +297,9 @@ fn run_single_playbook(
         }
     }
 
-    show_playbook_warnings(playbook_name, force)?;
+    show_playbook_warnings(playbook_file, force)?;
 
-    output::info(&format!("Running {} on {}", playbook.name, host.name));
+    output::info(&format!("Running {} on {}", playbook_stem, host.name));
 
     let inventory_host = InventoryHost {
         name: host.name.clone(),
@@ -315,8 +310,10 @@ fn run_single_playbook(
 
     let extra_vars = user.map(|u| vec![("ansible_user", u)]);
 
+    let mut progress = crate::services::progress::TerminalProgress::new("");
     let result = run_playbook(
-        &playbook.path,
+        &preflight,
+        playbook,
         &inventory_host,
         check,
         tags,
@@ -324,6 +321,7 @@ fn run_single_playbook(
         extra_vars.as_deref(),
         false,
         ask_pass,
+        &mut progress,
     )?;
 
     if result.success {
@@ -448,7 +446,7 @@ pub fn run_ansible_bootstrap(
     user: Option<String>,
     force: bool,
 ) -> Result<()> {
-    validate_config_for_playbook("bootstrap.yml", None)?;
+    let preflight = validate_config_for_playbook("bootstrap.yml", None)?;
 
     let host = get_host(&host_name, None)?;
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
@@ -489,7 +487,7 @@ pub fn run_ansible_bootstrap(
         user: bootstrap_user,
     };
 
-    let result = run_bootstrap(&bootstrap_playbook, &inventory_host)?;
+    let result = run_bootstrap(&preflight, &bootstrap_playbook, &inventory_host)?;
 
     if result.success {
         output::success("Bootstrap completed successfully");

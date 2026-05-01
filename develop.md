@@ -24,11 +24,16 @@ This installs:
 
 ## Configuration
 
-All configuration is managed via `config.toml`. Initialize the config file:
+All configuration is managed via `config.toml`. Generate one from the Key Registry:
 
 ```bash
-auberge config init
+auberge config init --output "$(auberge config path)"
 ```
+
+`auberge config init` prints a TOML scaffold to stdout by default, derived
+from `ansible/keys.yml` (the Key Registry). Pass `--playbooks <a,b,c>` to
+emit only the keys required by specific playbooks, or `--output <path>` to
+write to a file (refuses to overwrite without `--force`).
 
 Key values to set:
 
@@ -43,7 +48,8 @@ auberge config set tailscale_authkey your-authkey
 auberge config set ssh_port 22022
 ```
 
-See `config.example.toml` for all available options including subdomain overrides.
+Run `auberge config init` to inspect the full list of known keys with their
+documentation strings.
 
 ## Host Management
 

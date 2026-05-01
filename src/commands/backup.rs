@@ -1,37 +1,25 @@
+use crate::config::Config;
 use crate::hosts::{Host, select_or_arg as hosts_select_or_arg};
 use crate::output;
 use crate::prompt::confirm;
+use crate::services::backup::executor::RecipeExecutor;
+use crate::services::backup::recipe::{
+    assets_playbooks_dir, discover_backuppable_apps, load_app_recipe,
+};
+use crate::services::backup::session::{
+    BackupSession, CreateOutcome, SessionOpts, restic_prune, restic_push,
+};
+use crate::services::backup::ssh::LiveSshSession;
 use crate::ssh_session::SshSession;
-use crate::user_config::UserConfig;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
+use std::collections::HashMap;
 use std::fs;
-use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 use tabled::Tabled;
-
-const RSYNC_EXCLUDES: &[&str] = &[
-    ".git",
-    ".git/",
-    "venv",
-    "venv/",
-    "node_modules",
-    "node_modules/",
-    "__pycache__",
-    "__pycache__/",
-    "*.pyc",
-    "*.pyo",
-    ".cache",
-    ".cache/",
-    ".Radicale.cache",
-    ".Radicale.cache/",
-    "*.tmp",
-    "*.log",
-    ".DS_Store",
-];
 
 #[derive(Subcommand)]
 pub enum BackupCommands {
@@ -189,27 +177,6 @@ pub enum OutputFormat {
     Yaml,
 }
 
-#[derive(Debug)]
-pub struct DbBackupConfig {
-    pub db_name: &'static str,
-    pub remote_dump_path: &'static str,
-}
-
-pub struct AppBackupConfig {
-    pub name: &'static str,
-    pub systemd_services: Vec<&'static str>,
-    pub paths: Vec<&'static str>,
-    pub owner: Option<(&'static str, &'static str)>,
-    pub db: Option<DbBackupConfig>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CreateOutcome {
-    pub successful_apps: Vec<String>,
-    pub failed_apps: Vec<(String, String)>,
-    pub timestamp: String,
-}
-
 pub struct RestoreOptions {
     pub backup_id: String,
     pub host_arg: Option<String>,
@@ -219,141 +186,6 @@ pub struct RestoreOptions {
     pub dry_run: bool,
     pub yes: bool,
     pub skip_playbook_unsafe: bool,
-}
-
-impl AppBackupConfig {
-    pub fn all() -> Vec<Self> {
-        vec![
-            Self::baikal(),
-            Self::bichon(),
-            Self::freshrss(),
-            Self::headscale(),
-            Self::navidrome(false),
-            Self::calibre(),
-            Self::webdav(),
-            Self::yourls(),
-            Self::paperless(),
-        ]
-    }
-
-    pub fn by_name(name: &str, include_music: bool) -> Option<Self> {
-        match name {
-            "baikal" => Some(Self::baikal()),
-            "bichon" => Some(Self::bichon()),
-            "freshrss" => Some(Self::freshrss()),
-            "headscale" => Some(Self::headscale()),
-            "navidrome" => Some(Self::navidrome(include_music)),
-            "calibre" => Some(Self::calibre()),
-            "webdav" => Some(Self::webdav()),
-            "yourls" => Some(Self::yourls()),
-            "paperless" => Some(Self::paperless()),
-            _ => None,
-        }
-    }
-
-    fn baikal() -> Self {
-        Self {
-            name: "baikal",
-            systemd_services: vec![],
-            paths: vec!["/opt/baikal/Specific"],
-            owner: Some(("baikal", "baikal")),
-            db: None,
-        }
-    }
-
-    fn bichon() -> Self {
-        Self {
-            name: "bichon",
-            systemd_services: vec!["bichon"],
-            paths: vec!["/opt/bichon/data"],
-            owner: Some(("bichon", "bichon")),
-            db: None,
-        }
-    }
-
-    fn headscale() -> Self {
-        Self {
-            name: "headscale",
-            systemd_services: vec!["headscale"],
-            paths: vec!["/var/lib/headscale"],
-            owner: Some(("headscale", "headscale")),
-            db: None,
-        }
-    }
-
-    fn freshrss() -> Self {
-        Self {
-            name: "freshrss",
-            systemd_services: vec!["freshrss"],
-            paths: vec!["/var/lib/freshrss", "/opt/freshrss/data"],
-            owner: Some(("freshrss", "freshrss")),
-            db: None,
-        }
-    }
-
-    fn navidrome(include_music: bool) -> Self {
-        let mut paths = vec!["/var/lib/navidrome", "/etc/navidrome"];
-
-        if include_music {
-            paths.push("/srv/music");
-        }
-
-        Self {
-            name: "navidrome",
-            systemd_services: vec!["navidrome"],
-            paths,
-            owner: Some(("navidrome", "navidrome")),
-            db: None,
-        }
-    }
-
-    fn calibre() -> Self {
-        Self {
-            name: "calibre",
-            systemd_services: vec!["calibre"],
-            paths: vec!["/srv/calibre", "/opt/calibre", "/home/calibre"],
-            owner: Some(("calibre", "calibre")),
-            db: None,
-        }
-    }
-
-    fn webdav() -> Self {
-        Self {
-            name: "webdav",
-            systemd_services: vec![],
-            paths: vec!["/var/www/webdav-files"],
-            owner: None,
-            db: None,
-        }
-    }
-
-    fn yourls() -> Self {
-        Self {
-            name: "yourls",
-            systemd_services: vec![],
-            paths: vec!["/var/www/yourls"],
-            owner: Some(("www-data", "www-data")),
-            db: None,
-        }
-    }
-
-    fn paperless() -> Self {
-        Self {
-            name: "paperless",
-            systemd_services: vec![
-                "paperless-webserver",
-                "paperless-consumer",
-                "paperless-task-queue",
-                "paperless-scheduler",
-            ],
-            paths: vec!["/opt/paperless/data", "/opt/paperless/media"],
-            owner: Some(("paperless", "paperless")),
-            db: Some(DbBackupConfig {
-                db_name: "paperless",
-                remote_dump_path: "/tmp/paperless_db.dump",
-            }),
-        }
-    }
 }
 
 pub fn run_backup_create(
@@ -382,49 +214,67 @@ pub fn run_backup_create(
         eprintln!("Backing up {} → {}", host.name, short_dest);
     }
 
-    let app_configs = match apps {
-        Some(app_names) => app_names
-            .iter()
-            .filter_map(|name| AppBackupConfig::by_name(name, include_music))
+    let playbooks_dir = assets_playbooks_dir()?;
+    let app_names: Vec<String> = match apps {
+        Some(names) => names
+            .into_iter()
+            .filter(|name| load_app_recipe(&playbooks_dir, name).is_ok())
             .collect(),
-        None => AppBackupConfig::all(),
+        None => discover_backuppable_apps(&playbooks_dir)?,
     };
 
-    if app_configs.is_empty() {
+    if app_names.is_empty() {
         eyre::bail!("No valid apps specified for backup");
     }
 
     if output::is_verbose() {
-        let app_names: Vec<&str> = app_configs.iter().map(|c| c.name).collect();
         output::info(&format!("Apps: {}", app_names.join(", ")));
     }
 
     if dry_run {
         eprintln!("\n✓ Dry run completed (no changes made)");
         return Ok(CreateOutcome {
-            successful_apps: Vec::new(),
-            failed_apps: Vec::new(),
+            results: Vec::new(),
             timestamp: String::new(),
         });
     }
+
+    let mut parameters = HashMap::new();
+    parameters.insert("include_music".to_string(), include_music);
+
+    let recipes: Vec<(String, _)> = app_names
+        .iter()
+        .map(|name| Ok::<_, eyre::Report>((name.clone(), load_app_recipe(&playbooks_dir, name)?)))
+        .collect::<Result<_>>()?;
+
     let start_time = Instant::now();
     let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
 
-    let mut results = Vec::new();
-    for config in app_configs {
-        match backup_app(&host, &config, &backup_dest, &ssh_key_path, &timestamp) {
-            Ok(size) => results.push((config.name, true, Some(size), None)),
-            Err(e) => {
-                eprintln!("✗ {} backup failed: {}", config.name, e);
-                results.push((config.name, false, None, Some(e.to_string())));
-            }
-        }
-    }
+    let opts = SessionOpts {
+        host_name: host.name.clone(),
+        dest: backup_dest.clone(),
+        timestamp: timestamp.clone(),
+        parameters,
+    };
+    let ssh = LiveSshSession::new(&host, &ssh_key_path);
+    let session = BackupSession::new(&ssh, recipes, opts);
+    let outcome = session.create()?;
 
+    render_create_outcome(&outcome, &backup_dest, &host.name, start_time);
+
+    Ok(outcome)
+}
+
+fn render_create_outcome(
+    outcome: &CreateOutcome,
+    backup_dest: &Path,
+    host_name: &str,
+    start_time: Instant,
+) {
     let elapsed = start_time.elapsed().as_secs();
-    let total_size: u64 = results.iter().filter_map(|(_, _, size, _)| *size).sum();
-    let successful = results.iter().filter(|(_, ok, _, _)| *ok).count();
-    let failed = results.iter().filter(|(_, ok, _, _)| !*ok).count();
+    let successful = outcome.successful_apps().len();
+    let failed = outcome.failed_apps().len();
+    let total_size = outcome.total_size();
 
     eprintln!();
 
@@ -439,16 +289,16 @@ pub fn run_backup_create(
             size: String,
         }
 
-        let table_data: Vec<BackupResult> = results
+        let table_data: Vec<BackupResult> = outcome
+            .results
             .iter()
-            .map(|(app, ok, size, err)| BackupResult {
-                app: app.to_string(),
-                status: if *ok {
-                    "✓".to_string()
-                } else {
-                    format!("✗ {}", err.as_ref().unwrap())
+            .map(|r| BackupResult {
+                app: r.app.clone(),
+                status: match &r.error {
+                    None => "✓".to_string(),
+                    Some(err) => format!("✗ {}", err),
                 },
-                size: size.map(output::format_size).unwrap_or_default(),
+                size: r.size_bytes.map(output::format_size).unwrap_or_default(),
             })
             .collect();
 
@@ -475,26 +325,10 @@ pub fn run_backup_create(
     if output::is_verbose() {
         output::info(&format!(
             "Location: {}/{}/",
-            backup_dest.join(&host.name).display(),
-            timestamp
+            backup_dest.join(host_name).display(),
+            outcome.timestamp
         ));
     }
-
-    let outcome = CreateOutcome {
-        successful_apps: results
-            .iter()
-            .filter(|(_, ok, _, _)| *ok)
-            .map(|(name, _, _, _)| name.to_string())
-            .collect(),
-        failed_apps: results
-            .into_iter()
-            .filter(|(_, ok, _, _)| !*ok)
-            .map(|(name, _, _, err)| (name.to_string(), err.unwrap_or_default()))
-            .collect(),
-        timestamp,
-    };
-
-    Ok(outcome)
 }
 
 pub fn run_backup_sync(
@@ -526,24 +360,20 @@ pub fn run_backup_sync(
         .join(&host_name)
         .join(&outcome.timestamp);
 
-    if outcome.successful_apps.is_empty() {
+    let successful = outcome.successful_apps();
+    let failed = outcome.failed_apps();
+
+    if successful.is_empty() {
         let _ = fs::remove_dir_all(&staging_dir);
-        eyre::bail!(
-            "All {} app(s) failed; nothing to push",
-            outcome.failed_apps.len()
-        );
+        eyre::bail!("All {} app(s) failed; nothing to push", failed.len());
     }
 
-    if !outcome.failed_apps.is_empty() {
-        let names: Vec<&str> = outcome
-            .failed_apps
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .collect();
+    if !failed.is_empty() {
+        let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
         output::warn(&format!(
             "Continuing push/prune with {} succeeded, {} failed: {}",
-            outcome.successful_apps.len(),
-            outcome.failed_apps.len(),
+            successful.len(),
+            failed.len(),
             names.join(", ")
         ));
     }
@@ -556,11 +386,11 @@ pub fn run_backup_sync(
 
     cleanup_staging_dir(&staging_dir)?;
 
-    if !outcome.failed_apps.is_empty() {
+    if !failed.is_empty() {
         eyre::bail!(
             "Sync completed with {} app failure(s); push/prune ran on {} successful app(s)",
-            outcome.failed_apps.len(),
-            outcome.successful_apps.len()
+            failed.len(),
+            successful.len()
         );
     }
 
@@ -968,10 +798,11 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             false,
         )
         .and_then(|outcome| {
-            if outcome.failed_apps.is_empty() {
+            let failed = outcome.failed_apps();
+            if failed.is_empty() {
                 Ok(())
             } else {
-                eyre::bail!("{} backup(s) failed", outcome.failed_apps.len());
+                eyre::bail!("{} backup(s) failed", failed.len());
             }
         });
 
@@ -1030,38 +861,60 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                 user: host.user.clone(),
             };
 
-            match crate::services::ansible_runner::run_playbook(
-                &apps_playbook,
-                &inventory_host,
-                false,
-                Some(&tags),
-                None,
-                None,
-                false,
-                false,
-            ) {
-                Ok(result) if result.success => {
-                    eprintln!("✓ Ansible playbooks completed successfully");
-                    eprintln!("  File permissions have been corrected");
-                }
-                Ok(result) => {
-                    eprintln!(
-                        "⚠ Ansible playbook failed (exit code: {})",
-                        result.exit_code
-                    );
-                    eprintln!("  Services may fail due to incorrect file ownership!");
-                    eprintln!(
-                        "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
-                        tags.join(",")
-                    );
-                }
+            // Build a Preflight — best-effort; if config is incomplete we warn and skip.
+            let preflight_result =
+                Config::load().and_then(|cfg| cfg.preflight_for("apps.yml", Some(&tags)));
+
+            match preflight_result {
                 Err(e) => {
-                    eprintln!("⚠ Failed to run Ansible playbook: {}", e);
+                    eprintln!(
+                        "⚠ Skipping Ansible playbook (config validation failed): {}",
+                        e
+                    );
                     eprintln!("  Services may fail due to incorrect file ownership!");
                     eprintln!(
                         "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
                         tags.join(",")
                     );
+                }
+                Ok(preflight) => {
+                    let mut progress = crate::services::progress::TerminalProgress::new("");
+                    match crate::services::ansible_runner::run_playbook(
+                        &preflight,
+                        &apps_playbook,
+                        &inventory_host,
+                        false,
+                        Some(&tags),
+                        None,
+                        None,
+                        false,
+                        false,
+                        &mut progress,
+                    ) {
+                        Ok(result) if result.success => {
+                            eprintln!("✓ Ansible playbooks completed successfully");
+                            eprintln!("  File permissions have been corrected");
+                        }
+                        Ok(result) => {
+                            eprintln!(
+                                "⚠ Ansible playbook failed (exit code: {})",
+                                result.exit_code
+                            );
+                            eprintln!("  Services may fail due to incorrect file ownership!");
+                            eprintln!(
+                                "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                                tags.join(",")
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("⚠ Failed to run Ansible playbook: {}", e);
+                            eprintln!("  Services may fail due to incorrect file ownership!");
+                            eprintln!(
+                                "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                                tags.join(",")
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -1077,10 +930,21 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     if is_cross_host {
         eprintln!("\n=== Post-Restore Actions Required ===");
         eprintln!("  Cross-host restore completed. Manual verification needed:\n");
-        let all_services: Vec<&str> = app_names
+        let cross_host_dir = assets_playbooks_dir().ok();
+        let recipes_for_apps: Vec<(String, Vec<String>)> = match &cross_host_dir {
+            Some(dir) => app_names
+                .iter()
+                .filter_map(|name| {
+                    load_app_recipe(dir, name)
+                        .ok()
+                        .map(|r| (name.clone(), r.systemd_services))
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        let all_services: Vec<&str> = recipes_for_apps
             .iter()
-            .filter_map(|name| AppBackupConfig::by_name(name, false))
-            .flat_map(|cfg| cfg.systemd_services)
+            .flat_map(|(_, services)| services.iter().map(String::as_str))
             .collect();
         if !all_services.is_empty() {
             eprintln!("  1. Verify services are running:");
@@ -1092,14 +956,12 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             );
         }
         eprintln!("\n  2. Check service logs for errors:");
-        for app_name in &app_names {
-            if let Some(cfg) = AppBackupConfig::by_name(app_name, false) {
-                for service in &cfg.systemd_services {
-                    eprintln!(
-                        "     ssh {}@{} 'journalctl -u {} --since \"5 minutes ago\" | grep -i error'",
-                        host.user, host.address, service
-                    );
-                }
+        for (_app_name, services) in &recipes_for_apps {
+            for service in services {
+                eprintln!(
+                    "     ssh {}@{} 'journalctl -u {} --since \"5 minutes ago\" | grep -i error'",
+                    host.user, host.address, service
+                );
             }
         }
         eprintln!("\n  3. Update DNS records if hostnames changed");
@@ -1128,186 +990,18 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
 fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) -> Result<()> {
     eprintln!("\n--- Restoring {} ---", app_name);
 
-    let config = AppBackupConfig::by_name(app_name, false)
-        .ok_or_else(|| eyre::eyre!("Unknown app: {}", app_name))?;
+    let playbooks_dir = assets_playbooks_dir()?;
+    let recipe = load_app_recipe(&playbooks_dir, app_name)
+        .wrap_err_with(|| format!("Unknown or non-backuppable app: {}", app_name))?;
 
-    let mut stopped_services: Vec<&str> = Vec::new();
-    for service in &config.systemd_services {
-        eprintln!("  Stopping service: {}", service);
-        if let Err(e) = remote_systemctl(host, ssh_key, "stop", service) {
-            for previously_stopped in &stopped_services {
-                let _ = remote_systemctl(host, ssh_key, "start", previously_stopped);
-            }
-            return Err(e).wrap_err_with(|| format!("Failed to stop service {}", service));
-        }
-        stopped_services.push(service);
-    }
-
-    let pb = output::progress_bar(&format!("Restoring {}", app_name), None);
-
-    let restore_result = (|| -> Result<()> {
-        for remote_path in &config.paths {
-            pb.set_message(format!("Restoring {} → {}", app_name, remote_path));
-            if !std::io::stderr().is_terminal() {
-                eprintln!("  Restoring to: {}", remote_path);
-            }
-            rsync_to_remote(host, ssh_key, backup_path, remote_path, &pb)?;
-        }
-
-        output::reset_to_spinner(&pb);
-
-        if let Some((user, group)) = config.owner {
-            eprintln!("  Setting ownership to {}:{}", user, group);
-            for remote_path in &config.paths {
-                set_remote_ownership(host, ssh_key, remote_path, user, group)?;
-            }
-        }
-
-        if let Some(db) = &config.db {
-            let local_dump = backup_path.join("db.dump");
-            if local_dump.exists() {
-                eprintln!("  Restoring database: {}", db.db_name);
-                scp_to_remote(host, ssh_key, &local_dump, db.remote_dump_path)?;
-                remote_ssh_command(host, ssh_key, &format!("chmod 644 {}", db.remote_dump_path))?;
-                let pg_result = remote_pg_restore(host, ssh_key, db);
-                remote_pg_dump_cleanup(host, ssh_key, db);
-                pg_result?;
-
-                if config.name == "paperless" {
-                    eprintln!("  Running database migrations");
-                    let migrate_cmd = "sudo -u paperless /opt/paperless/src/venv/bin/python3 manage.py migrate --no-input";
-                    let migrate_result = remote_ssh_command(
-                        host,
-                        ssh_key,
-                        &format!(
-                            "cd /opt/paperless/src && PAPERLESS_CONFIGURATION_PATH=/opt/paperless/paperless.conf {}",
-                            migrate_cmd
-                        ),
-                    );
-                    if let Err(e) = migrate_result {
-                        output::warn(&format!("Migration warning: {}", e));
-                    }
-                }
-            } else {
-                output::warn(&format!(
-                    "No database dump found at {}, skipping db restore",
-                    local_dump.display()
-                ));
-            }
-        }
-
-        Ok(())
-    })();
-
-    pb.finish_and_clear();
-
-    let mut start_failures: Vec<String> = Vec::new();
-    for service in &config.systemd_services {
-        eprintln!("  Starting service: {}", service);
-        if let Err(e) = remote_systemctl(host, ssh_key, "start", service) {
-            start_failures.push(format!("{}: {}", service, e));
-        }
-    }
-
-    match restore_result {
-        Ok(()) => {
-            if !start_failures.is_empty() {
-                eyre::bail!(
-                    "Restore of {} succeeded but failed to restart services:\n  {}",
-                    app_name,
-                    start_failures.join("\n  ")
-                );
-            }
-        }
-        Err(e) => {
-            if !start_failures.is_empty() {
-                eyre::bail!(
-                    "Restore of {} failed: {}\nAdditionally, failed to restart services:\n  {}",
-                    app_name,
-                    e,
-                    start_failures.join("\n  ")
-                );
-            }
-            return Err(e);
-        }
-    }
+    let session = LiveSshSession::new(host, ssh_key);
+    let executor = RecipeExecutor::new(&session);
+    let mut progress =
+        crate::services::progress::TerminalProgress::new(&format!("Restoring {}", app_name));
+    let result = executor.restore(&recipe, backup_path, &HashMap::new(), &mut progress);
+    result?;
 
     eprintln!("✓ {} restore completed", app_name);
-    Ok(())
-}
-
-fn rsync_to_remote(
-    host: &Host,
-    ssh_key: &Path,
-    local_path: &Path,
-    remote_path: &str,
-    pb: &indicatif::ProgressBar,
-) -> Result<()> {
-    pb.set_position(0);
-    pb.set_prefix(String::new());
-    let local_source = local_path.join(remote_path.trim_start_matches('/'));
-
-    if !local_source.exists() {
-        eprintln!("    (skipping {} - not in backup)", remote_path);
-        return Ok(());
-    }
-
-    let parent_dir = std::path::Path::new(remote_path)
-        .parent()
-        .ok_or_else(|| eyre::eyre!("Invalid remote path: {}", remote_path))?;
-
-    let session = SshSession::new(host, ssh_key);
-    let _ = output::run_piped(
-        "ssh",
-        Command::new("ssh")
-            .args(session.ssh_args())
-            .arg("sudo")
-            .arg("mkdir")
-            .arg("-p")
-            .arg(parent_dir),
-    );
-
-    let mut cmd = Command::new("stdbuf");
-    cmd.arg("-o0")
-        .arg("rsync")
-        .arg("-az")
-        .arg("--delete")
-        .arg("--info=progress2")
-        .arg("--rsync-path=sudo rsync");
-
-    for pattern in RSYNC_EXCLUDES {
-        cmd.arg(format!("--exclude={}", pattern));
-    }
-
-    cmd.arg("-e")
-        .arg(session.rsync_e_arg())
-        .arg(format!("{}/", local_source.display()))
-        .arg(format!("{}@{}:{}", host.user, host.address, remote_path));
-
-    let result = output::run_with_cr_stdout_progress("rsync", &mut cmd, pb, |line, pb| {
-        if let Some(p) = output::parse_rsync_progress(line) {
-            if pb.length().is_none() {
-                output::set_percent_style(pb);
-                pb.set_length(100);
-            }
-            pb.set_position(p.percent as u64);
-            pb.set_prefix(format!("{} ETA {}", p.speed, p.eta));
-        }
-    })
-    .wrap_err("Failed to execute rsync")?;
-
-    if !result.status.success() {
-        if result.last_stderr.is_empty() {
-            eyre::bail!("rsync failed for {}", remote_path);
-        } else {
-            eyre::bail!(
-                "rsync failed for {}: {}",
-                remote_path,
-                result.last_stderr.trim()
-            );
-        }
-    }
-
     Ok(())
 }
 
@@ -1399,7 +1093,7 @@ pub fn run_import_opml(
 }
 
 fn load_restic_config() -> Result<(String, String)> {
-    let config = UserConfig::load()?;
+    let config = Config::load()?;
     let missing = config.validate_required(&["restic_repository", "restic_password"]);
     if !missing.is_empty() {
         eyre::bail!(
@@ -1428,164 +1122,12 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     let backup_dir =
         resolve_backup_dir(&backup_root, host_filter.as_deref(), backup_id.as_deref())?;
 
-    output::info(&format!("Pushing {} to restic", backup_dir.display()));
-
-    let spinner = output::spinner("Checking restic repository");
-    let snapshots_check = Command::new("restic")
-        .arg("snapshots")
-        .arg("--json")
-        .env("RESTIC_REPOSITORY", &restic_repo)
-        .env("RESTIC_PASSWORD", &restic_password)
-        .env_remove("RESTIC_PASSWORD_COMMAND")
-        .output();
-
-    let needs_init = match snapshots_check {
-        Ok(out) => {
-            let stderr_text = String::from_utf8_lossy(&out.stderr);
-            let lines = output::subprocess_output("restic", &stderr_text);
-            if out.status.success() {
-                output::clear_subprocess_lines(lines);
-                false
-            } else if stderr_text.contains("Is there a repository at the following location")
-                || stderr_text.contains("unable to open config file")
-            {
-                output::clear_subprocess_lines(lines);
-                true
-            } else {
-                eyre::bail!("restic snapshots failed: {}", stderr_text.trim());
-            }
-        }
-        Err(_) => eyre::bail!("restic not found. Install restic: https://restic.net"),
-    };
-
-    if needs_init {
-        spinner.set_message("Initializing restic repository".to_string());
-        let init_output = Command::new("restic")
-            .arg("init")
-            .env("RESTIC_REPOSITORY", &restic_repo)
-            .env("RESTIC_PASSWORD", &restic_password)
-            .env_remove("RESTIC_PASSWORD_COMMAND")
-            .output()
-            .wrap_err("Failed to initialize restic repository")?;
-        let stderr_text = String::from_utf8_lossy(&init_output.stderr);
-        let lines = output::subprocess_output("restic", &stderr_text);
-        if init_output.status.success() {
-            output::clear_subprocess_lines(lines);
-        }
-
-        if !init_output.status.success() {
-            eyre::bail!(
-                "Failed to initialize restic repository: {}",
-                stderr_text.trim()
-            );
-        }
-    }
-
-    spinner.finish_and_clear();
-
-    let pb = output::progress_bar(&format!("Pushing {}", backup_dir.display()), None);
-    let mut snapshot_id: Option<String> = None;
-
-    let result = output::run_with_stdout_progress(
-        "restic",
-        Command::new("restic")
-            .arg("backup")
-            .arg("--json")
-            .arg(&backup_dir)
-            .env("RESTIC_REPOSITORY", &restic_repo)
-            .env("RESTIC_PASSWORD", &restic_password)
-            .env_remove("RESTIC_PASSWORD_COMMAND"),
-        &pb,
-        |line, pb| match output::parse_restic_message(line) {
-            Some(output::ResticMessage::Status(s)) => {
-                if let (Some(total), Some(done)) = (s.total_bytes, s.bytes_done) {
-                    if pb.length() != Some(total) {
-                        output::set_bytes_style(pb);
-                        pb.set_length(total);
-                    }
-                    pb.set_position(done);
-                } else {
-                    if pb.length() != Some(100) {
-                        output::set_percent_style(pb);
-                        pb.set_length(100);
-                    }
-                    pb.set_position((s.percent_done * 100.0) as u64);
-                }
-            }
-            Some(output::ResticMessage::Summary(s)) => {
-                snapshot_id = Some(s.snapshot_id);
-            }
-            None => {}
-        },
-    )
-    .wrap_err("Failed to run restic backup")?;
-
-    pb.finish_and_clear();
-
-    if !result.status.success() {
-        if result.last_stderr.is_empty() {
-            eyre::bail!("restic backup failed");
-        } else {
-            eyre::bail!("restic backup failed: {}", result.last_stderr.trim());
-        }
-    }
-
-    match snapshot_id {
-        Some(id) => output::success(&format!("Push complete: snapshot {}", id)),
-        None => output::success("Push complete"),
-    };
-
-    Ok(())
+    restic_push(&restic_repo, &restic_password, &backup_dir)
 }
 
 pub fn run_backup_prune(dry_run: bool) -> Result<()> {
     let (restic_repo, restic_password) = load_restic_config()?;
-
-    let spinner = output::spinner("Pruning restic snapshots");
-
-    let mut cmd = Command::new("restic");
-    cmd.arg("forget")
-        .arg("--keep-daily")
-        .arg("7")
-        .arg("--keep-weekly")
-        .arg("4")
-        .arg("--keep-monthly")
-        .arg("12")
-        .arg("--prune")
-        .env("RESTIC_REPOSITORY", &restic_repo)
-        .env("RESTIC_PASSWORD", &restic_password)
-        .env_remove("RESTIC_PASSWORD_COMMAND");
-
-    if dry_run {
-        cmd.arg("--dry-run");
-    }
-
-    let prune_output = cmd.output().wrap_err("Failed to run restic forget")?;
-
-    spinner.finish_and_clear();
-
-    let stderr_text = String::from_utf8_lossy(&prune_output.stderr);
-    let lines = output::subprocess_output("restic", &stderr_text);
-    if prune_output.status.success() {
-        output::clear_subprocess_lines(lines);
-    }
-
-    if !prune_output.status.success() {
-        eyre::bail!("restic prune failed: {}", stderr_text.trim());
-    }
-
-    let stdout = String::from_utf8_lossy(&prune_output.stdout);
-    if !stdout.is_empty() {
-        eprintln!("{}", stdout.trim());
-    }
-
-    if dry_run {
-        output::info("Dry run completed (no changes made)");
-    } else {
-        output::success("Prune complete");
-    }
-
-    Ok(())
+    restic_prune(&restic_repo, &restic_password, dry_run)
 }
 
 fn resolve_backup_dir(
@@ -1665,218 +1207,6 @@ fn default_backup_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
 
-struct ServiceGuard<'a> {
-    host: &'a Host,
-    ssh_key: &'a Path,
-    services: Vec<&'a str>,
-    remote_timer_unit: Option<String>,
-    armed: bool,
-}
-
-impl<'a> ServiceGuard<'a> {
-    fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
-        Self {
-            host,
-            ssh_key,
-            services: Vec::new(),
-            remote_timer_unit: None,
-            armed: false,
-        }
-    }
-
-    fn stop_service(&mut self, service: &'a str) -> Result<()> {
-        if let Err(e) = remote_systemctl(self.host, self.ssh_key, "stop", service) {
-            for previously_stopped in &self.services {
-                let _ = remote_systemctl(self.host, self.ssh_key, "start", previously_stopped);
-            }
-            return Err(e).wrap_err_with(|| format!("Failed to stop service {}", service));
-        }
-        self.services.push(service);
-        self.armed = true;
-        Ok(())
-    }
-
-    fn schedule_remote_failsafe(&mut self, app_name: &str) {
-        let unit = format!("auberge-backup-failsafe-{}", app_name);
-        let services_arg = self.services.join(" ");
-        let cmd = format!(
-            "sudo systemd-run --collect --unit={} --on-active=30min /bin/bash -c 'systemctl start {}'",
-            unit, services_arg
-        );
-        match remote_ssh_command(self.host, self.ssh_key, &cmd) {
-            Ok(_) => {
-                self.remote_timer_unit = Some(unit);
-            }
-            Err(e) => {
-                output::warn(&format!(
-                    "Failed to arm remote failsafe timer '{}' on '{}': {}",
-                    unit, self.host.name, e
-                ));
-            }
-        }
-    }
-
-    fn cancel_remote_failsafe(&mut self) {
-        if let Some(ref unit) = self.remote_timer_unit.take() {
-            let cmd = format!(
-                "sudo systemctl stop {u}.timer {u}.service 2>/dev/null; \
-                 sudo systemctl reset-failed {u}.timer {u}.service 2>/dev/null",
-                u = unit
-            );
-            let _ = remote_ssh_command_unchecked(self.host, self.ssh_key, &cmd);
-        }
-    }
-
-    fn restart_all(&mut self) -> Vec<String> {
-        self.services
-            .iter()
-            .filter_map(|service| {
-                remote_systemctl(self.host, self.ssh_key, "start", service)
-                    .err()
-                    .map(|e| format!("{}: {}", service, e))
-            })
-            .collect()
-    }
-
-    fn disarm(&mut self) {
-        self.armed = false;
-        self.cancel_remote_failsafe();
-    }
-}
-
-impl Drop for ServiceGuard<'_> {
-    fn drop(&mut self) {
-        if self.armed && !self.services.is_empty() {
-            for service in &self.services {
-                let _ = remote_systemctl(self.host, self.ssh_key, "start", service);
-            }
-            self.cancel_remote_failsafe();
-        }
-    }
-}
-
-fn backup_app(
-    host: &Host,
-    config: &AppBackupConfig,
-    backup_dest: &Path,
-    ssh_key: &Path,
-    timestamp: &str,
-) -> Result<u64> {
-    let pb = output::progress_bar(&format!("Backing up {}", config.name), None);
-    let app_backup_dir = backup_dest
-        .join(&host.name)
-        .join(timestamp)
-        .join(config.name);
-
-    fs::create_dir_all(&app_backup_dir).wrap_err_with(|| {
-        format!(
-            "Failed to create backup directory: {}",
-            app_backup_dir.display()
-        )
-    })?;
-
-    let result = (|| -> Result<u64> {
-        let mut guard = ServiceGuard::new(host, ssh_key);
-
-        if !config.systemd_services.is_empty() {
-            pb.set_message(format!("Backing up {} (stopping services)", config.name));
-            for service in &config.systemd_services {
-                if let Err(e) = guard.stop_service(service) {
-                    pb.finish_and_clear();
-                    return Err(e);
-                }
-            }
-            guard.schedule_remote_failsafe(config.name);
-        }
-
-        if let Some(db) = &config.db {
-            pb.set_message(format!("Backing up {} (dumping database)", config.name));
-            if let Err(e) = remote_pg_dump(host, ssh_key, db) {
-                remote_pg_dump_cleanup(host, ssh_key, db);
-                pb.finish_and_clear();
-                return Err(e).wrap_err("pg_dump failed");
-            }
-        }
-
-        pb.set_message(format!("Backing up {} (copying files)", config.name));
-        let rsync_result = (|| -> Result<()> {
-            for path in &config.paths {
-                rsync_from_remote(host, ssh_key, path, &app_backup_dir, &pb)?;
-            }
-            if let Some(db) = &config.db {
-                scp_from_remote(
-                    host,
-                    ssh_key,
-                    db.remote_dump_path,
-                    &app_backup_dir.join("db.dump"),
-                )?;
-            }
-            Ok(())
-        })();
-
-        if let Some(db) = &config.db {
-            remote_pg_dump_cleanup(host, ssh_key, db);
-        }
-
-        output::reset_to_spinner(&pb);
-        let start_failures = if !config.systemd_services.is_empty() {
-            pb.set_message(format!("Backing up {} (starting services)", config.name));
-            let failures = guard.restart_all();
-            if failures.is_empty() {
-                guard.disarm();
-            }
-            failures
-        } else {
-            guard.disarm();
-            Vec::new()
-        };
-
-        match rsync_result {
-            Ok(()) => {
-                if !start_failures.is_empty() {
-                    pb.finish_and_clear();
-                    eyre::bail!(
-                        "Backup of {} succeeded but failed to restart services:\n  {}",
-                        config.name,
-                        start_failures.join("\n  ")
-                    );
-                }
-            }
-            Err(e) => {
-                pb.finish_and_clear();
-                if !start_failures.is_empty() {
-                    eyre::bail!(
-                        "Backup of {} failed during file copy: {}\nAdditionally, failed to restart services:\n  {}",
-                        config.name,
-                        e,
-                        start_failures.join("\n  ")
-                    );
-                }
-                return Err(e);
-            }
-        }
-
-        let backup_size = calculate_dir_size(&app_backup_dir)?;
-
-        pb.finish_and_clear();
-        if !output::is_verbose() {
-            output::success(&format!(
-                "{} ({})",
-                config.name,
-                output::format_size(backup_size)
-            ));
-        }
-
-        Ok(backup_size)
-    })();
-
-    if result.is_err() {
-        let _ = fs::remove_dir_all(&app_backup_dir);
-    }
-
-    result
-}
-
 fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(key_path) = override_key {
         if !key_path.exists() {
@@ -1939,181 +1269,6 @@ fn validate_key_file(key_path: &Path) -> Result<()> {
                 mode
             );
             eprintln!("  Consider running: chmod 600 {}", key_path.display());
-        }
-    }
-
-    Ok(())
-}
-
-fn remote_ssh_command(host: &Host, ssh_key: &Path, command: &str) -> Result<std::process::Output> {
-    let output = SshSession::new(host, ssh_key).run(command)?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eyre::bail!("Remote command failed: {}", stderr.trim());
-    }
-
-    Ok(output)
-}
-
-fn remote_ssh_command_unchecked(
-    host: &Host,
-    ssh_key: &Path,
-    command: &str,
-) -> Result<std::process::Output> {
-    SshSession::new(host, ssh_key).run(command)
-}
-
-fn remote_pg_dump(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result<()> {
-    let cmd = format!(
-        "sudo -u postgres pg_dump -Fc {} > {}",
-        db.db_name, db.remote_dump_path
-    );
-    remote_ssh_command(host, ssh_key, &cmd)?;
-    Ok(())
-}
-
-fn remote_pg_dump_cleanup(host: &Host, ssh_key: &Path, db: &DbBackupConfig) {
-    let cmd = format!("rm -f {}", db.remote_dump_path);
-    let _ = remote_ssh_command(host, ssh_key, &cmd);
-}
-
-fn remote_pg_restore(host: &Host, ssh_key: &Path, db: &DbBackupConfig) -> Result<()> {
-    let cmd = format!(
-        "sudo -u postgres pg_restore --clean --if-exists -d {} {} 2>&1",
-        db.db_name, db.remote_dump_path
-    );
-    let output = remote_ssh_command_unchecked(host, ssh_key, &cmd)?;
-
-    if !output.status.success() {
-        let combined_output = String::from_utf8_lossy(&output.stdout);
-        let ssh_stderr = String::from_utf8_lossy(&output.stderr);
-
-        if !ssh_stderr.trim().is_empty() {
-            eyre::bail!("pg_restore SSH error: {}", ssh_stderr.trim());
-        }
-
-        if combined_output.trim().is_empty() {
-            eyre::bail!(
-                "pg_restore failed with exit code {}",
-                output.status.code().unwrap_or(-1)
-            );
-        }
-
-        let warnings_only = combined_output.lines().all(|line| {
-            let trimmed = line.trim().to_lowercase();
-            trimmed.is_empty()
-                || trimmed.contains("warning")
-                || trimmed.starts_with("pg_restore: warning")
-        });
-        if !warnings_only {
-            eyre::bail!("pg_restore failed: {}", combined_output.trim());
-        }
-    }
-
-    Ok(())
-}
-
-fn scp_from_remote(
-    host: &Host,
-    ssh_key: &Path,
-    remote_path: &str,
-    local_path: &Path,
-) -> Result<()> {
-    SshSession::new(host, ssh_key).scp_from(remote_path, local_path)
-}
-
-fn scp_to_remote(host: &Host, ssh_key: &Path, local_path: &Path, remote_path: &str) -> Result<()> {
-    SshSession::new(host, ssh_key).scp_to(local_path, remote_path)
-}
-
-fn remote_systemctl(host: &Host, ssh_key: &Path, action: &str, service: &str) -> Result<()> {
-    SshSession::new(host, ssh_key).systemctl(action, service)
-}
-
-fn set_remote_ownership(
-    host: &Host,
-    ssh_key: &Path,
-    remote_path: &str,
-    user: &str,
-    group: &str,
-) -> Result<()> {
-    let session = SshSession::new(host, ssh_key);
-    let result = output::run_piped(
-        "ssh",
-        Command::new("ssh")
-            .args(session.ssh_args())
-            .arg("sudo")
-            .arg("chown")
-            .arg("-R")
-            .arg(format!("{}:{}", user, group))
-            .arg(remote_path),
-    )
-    .wrap_err_with(|| {
-        format!(
-            "Failed to set ownership of {} to {}:{}",
-            remote_path, user, group
-        )
-    })?;
-    if result.status.success() {
-        output::clear_subprocess_lines(result.lines_written);
-    }
-
-    if !result.status.success() {
-        eyre::bail!("chown -R {}:{} {} failed", user, group, remote_path);
-    }
-
-    Ok(())
-}
-
-fn rsync_from_remote(
-    host: &Host,
-    ssh_key: &Path,
-    remote_path: &str,
-    local_dest: &Path,
-    pb: &indicatif::ProgressBar,
-) -> Result<()> {
-    pb.set_position(0);
-    pb.set_prefix(String::new());
-    let session = SshSession::new(host, ssh_key);
-    let mut cmd = Command::new("stdbuf");
-    cmd.arg("-o0")
-        .arg("rsync")
-        .arg("-az")
-        .arg("--relative")
-        .arg("--info=progress2")
-        .arg("--rsync-path=sudo rsync");
-
-    for pattern in RSYNC_EXCLUDES {
-        cmd.arg(format!("--exclude={}", pattern));
-    }
-
-    cmd.arg("-e")
-        .arg(session.rsync_e_arg())
-        .arg(format!("{}@{}:{}", host.user, host.address, remote_path))
-        .arg(local_dest);
-
-    let result = output::run_with_cr_stdout_progress("rsync", &mut cmd, pb, |line, pb| {
-        if let Some(p) = output::parse_rsync_progress(line) {
-            if pb.length().is_none() {
-                output::set_percent_style(pb);
-                pb.set_length(100);
-            }
-            pb.set_position(p.percent as u64);
-            pb.set_prefix(format!("{} ETA {}", p.speed, p.eta));
-        }
-    })
-    .wrap_err("Failed to execute rsync")?;
-
-    if !result.status.success() {
-        if result.last_stderr.is_empty() {
-            eyre::bail!("rsync failed for {}", remote_path);
-        } else {
-            eyre::bail!(
-                "rsync failed for {}: {}",
-                remote_path,
-                result.last_stderr.trim()
-            );
         }
     }
 
@@ -2186,25 +1341,30 @@ fn validate_cross_host_restore(
     }
 
     eprintln!("  Checking services on target...");
+    let playbooks_dir = assets_playbooks_dir().ok();
     for app in apps {
-        let config = AppBackupConfig::by_name(app, false);
-        if let Some(cfg) = config {
-            for service in &cfg.systemd_services {
-                match check_remote_service_exists(host, ssh_key, service) {
-                    Ok(true) => {
-                        eprintln!("    ✓ {} service exists", service);
-                    }
-                    Ok(false) => {
-                        eprintln!("    ⚠ {} service not found on target", service);
-                        eprintln!(
-                            "      Run 'auberge ansible run --host {}' to install services",
-                            host.name
-                        );
-                        eyre::bail!("Required service {} not found on target host", service);
-                    }
-                    Err(e) => {
-                        eprintln!("    ⚠ Failed to check {}: {}", service, e);
-                    }
+        let recipe = match playbooks_dir
+            .as_ref()
+            .and_then(|d| load_app_recipe(d, app).ok())
+        {
+            Some(r) => r,
+            None => continue,
+        };
+        for service in &recipe.systemd_services {
+            match check_remote_service_exists(host, ssh_key, service) {
+                Ok(true) => {
+                    eprintln!("    ✓ {} service exists", service);
+                }
+                Ok(false) => {
+                    eprintln!("    ⚠ {} service not found on target", service);
+                    eprintln!(
+                        "      Run 'auberge ansible run --host {}' to install services",
+                        host.name
+                    );
+                    eyre::bail!("Required service {} not found on target host", service);
+                }
+                Err(e) => {
+                    eprintln!("    ⚠ Failed to check {}: {}", service, e);
                 }
             }
         }
@@ -2244,33 +1404,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_paperless_has_db_config() {
-        let config = AppBackupConfig::paperless();
-        assert!(config.db.is_some());
-    }
-
-    #[test]
-    fn test_other_apps_have_no_db_config() {
-        assert!(AppBackupConfig::baikal().db.is_none());
-        assert!(AppBackupConfig::bichon().db.is_none());
-        assert!(AppBackupConfig::freshrss().db.is_none());
-        assert!(AppBackupConfig::headscale().db.is_none());
-        assert!(AppBackupConfig::navidrome(false).db.is_none());
-        assert!(AppBackupConfig::navidrome(true).db.is_none());
-        assert!(AppBackupConfig::calibre().db.is_none());
-        assert!(AppBackupConfig::webdav().db.is_none());
-        assert!(AppBackupConfig::yourls().db.is_none());
-    }
-
-    #[test]
-    fn test_db_backup_config_fields() {
-        let config = AppBackupConfig::paperless();
-        let db = config.db.unwrap();
-        assert_eq!(db.db_name, "paperless");
-        assert_eq!(db.remote_dump_path, "/tmp/paperless_db.dump");
-    }
-
-    #[test]
     fn test_push_variant_exists() {
         let _push = BackupCommands::Push {
             host: None,
@@ -2281,39 +1414,6 @@ mod tests {
     #[test]
     fn test_prune_variant_exists() {
         let _prune = BackupCommands::Prune { dry_run: true };
-    }
-
-    #[test]
-    fn test_all_apps_count() {
-        let all = AppBackupConfig::all();
-        assert_eq!(all.len(), 9);
-    }
-
-    #[test]
-    fn test_by_name_unknown_returns_none() {
-        assert!(AppBackupConfig::by_name("nonexistent", false).is_none());
-    }
-
-    #[test]
-    fn test_navidrome_music_paths() {
-        let without = AppBackupConfig::navidrome(false);
-        assert!(!without.paths.contains(&"/srv/music"));
-
-        let with = AppBackupConfig::navidrome(true);
-        assert!(with.paths.contains(&"/srv/music"));
-    }
-
-    #[test]
-    fn create_outcome_records_partial_success() {
-        let outcome = CreateOutcome {
-            successful_apps: vec!["paperless".to_string(), "freshrss".to_string()],
-            failed_apps: vec![("bichon".to_string(), "Unit not loaded".to_string())],
-            timestamp: "2026-04-28_03-00-00".to_string(),
-        };
-        assert_eq!(outcome.successful_apps.len(), 2);
-        assert_eq!(outcome.failed_apps.len(), 1);
-        assert_eq!(outcome.failed_apps[0].0, "bichon");
-        assert_eq!(outcome.timestamp, "2026-04-28_03-00-00");
     }
 
     #[test]
@@ -2559,58 +1659,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn test_service_guard_tracks_stopped_services() {
-        let host = test_host();
-        let mut guard = ServiceGuard {
-            host: &host,
-            ssh_key: Path::new("/dev/null"),
-            services: Vec::new(),
-            remote_timer_unit: None,
-            armed: false,
-        };
-        guard.services.push("svc-a");
-        guard.services.push("svc-b");
-        assert_eq!(guard.services, vec!["svc-a", "svc-b"]);
-        assert!(!guard.armed);
-    }
-
-    #[test]
-    fn test_service_guard_disarm_prevents_restart() {
-        let host = test_host();
-        let mut guard = ServiceGuard {
-            host: &host,
-            ssh_key: Path::new("/dev/null"),
-            services: vec!["svc-a"],
-            remote_timer_unit: None,
-            armed: false,
-        };
-        assert!(!guard.armed);
-        guard.armed = false;
-        assert!(!guard.armed);
-    }
-
-    #[test]
-    fn test_service_guard_failsafe_timer_unit_name() {
-        let app_name = "paperless-ngx";
-        let unit = format!("auberge-backup-failsafe-{}", app_name);
-        assert_eq!(unit, "auberge-backup-failsafe-paperless-ngx");
-    }
-
-    #[test]
-    fn test_service_guard_empty_services_is_noop() {
-        let host = test_host();
-        let guard = ServiceGuard {
-            host: &host,
-            ssh_key: Path::new("/dev/null"),
-            services: Vec::new(),
-            remote_timer_unit: None,
-            armed: false,
-        };
-        assert!(guard.services.is_empty());
-        assert!(!guard.armed);
-        drop(guard);
     }
 }

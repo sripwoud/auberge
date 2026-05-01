@@ -2,15 +2,14 @@ mod ansible_assets;
 mod commands;
 mod config;
 mod hosts;
-mod models;
+mod key_registry;
 mod output;
-
+mod playbook_meta;
 mod prompt;
 mod services;
 mod signal;
 mod ssh_config;
 mod ssh_session;
-mod user_config;
 
 use clap::{Parser, Subcommand};
 use commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ansible_run};
@@ -169,10 +168,11 @@ async fn main() -> Result<()> {
             } => signal::with_ctrlc(|| {
                 run_backup_create(host, apps, dest, ssh_key, include_music, dry_run).and_then(
                     |outcome| {
-                        if outcome.failed_apps.is_empty() {
+                        let failed = outcome.failed_apps();
+                        if failed.is_empty() {
                             Ok(())
                         } else {
-                            eyre::bail!("{} backup(s) failed", outcome.failed_apps.len());
+                            eyre::bail!("{} backup(s) failed", failed.len());
                         }
                     },
                 )
@@ -292,7 +292,7 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Config(cmd) => match cmd {
-            ConfigCommands::Init => run_config_init(),
+            ConfigCommands::Init(args) => run_config_init(args),
             ConfigCommands::Set { key, value } => run_config_set(key, value),
             ConfigCommands::Get { key } => run_config_get(key),
             ConfigCommands::List => run_config_list(),
