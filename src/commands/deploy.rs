@@ -177,11 +177,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
     let preflights: Vec<_> = runs
         .iter()
         .map(|run| {
-            let name = run
-                .path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let name = run.path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let tags = if run.tags.is_empty() {
                 None
             } else {

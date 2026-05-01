@@ -3,9 +3,7 @@ use crate::models::inventory::Host;
 use crate::models::playbook::Playbook;
 use crate::output;
 use crate::prompt::select_item;
-use crate::services::ansible_runner::{
-    InventoryHost, run_bootstrap, run_playbook,
-};
+use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::dependency_resolver::resolve_tags_to_playbook_runs;
 use crate::services::inventory::{get_host, get_playbooks, select_or_arg};
 use clap::Subcommand;
@@ -70,10 +68,7 @@ fn select_or_use_host(host_arg: Option<String>) -> Result<Host> {
     select_or_arg(host_arg)
 }
 
-fn validate_config_for_playbook(
-    playbook_name: &str,
-    tags: Option<&[String]>,
-) -> Result<Preflight> {
+fn validate_config_for_playbook(playbook_name: &str, tags: Option<&[String]>) -> Result<Preflight> {
     let config = Config::load()?;
     config.preflight_for(playbook_name, tags)
 }

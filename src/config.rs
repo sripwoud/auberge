@@ -117,14 +117,14 @@ impl PlaybookMeta {
         };
 
         // For apps.yml, add tag-specific required keys
-        if name == "apps.yml" {
-            if let Some(tags) = tags {
-                for tag in tags {
-                    for key in tag_required_keys(tag) {
-                        let key = key.to_string();
-                        if !required_keys.contains(&key) {
-                            required_keys.push(key);
-                        }
+        if name == "apps.yml"
+            && let Some(tags) = tags
+        {
+            for tag in tags {
+                for key in tag_required_keys(tag) {
+                    let key = key.to_string();
+                    if !required_keys.contains(&key) {
+                        required_keys.push(key);
                     }
                 }
             }
@@ -356,11 +356,7 @@ impl Config {
     /// This is the **only** constructor for `Preflight`.  It looks up the
     /// playbook's requirements in the Key Registry (`PlaybookMeta`), validates
     /// the config, and returns a capability value that unlocks `AnsibleRunner`.
-    pub fn preflight_for(
-        &self,
-        playbook: &str,
-        tags: Option<&[String]>,
-    ) -> Result<Preflight> {
+    pub fn preflight_for(&self, playbook: &str, tags: Option<&[String]>) -> Result<Preflight> {
         let meta = PlaybookMeta::for_playbook(playbook, tags);
         self.validate_for(&meta)?;
         let flat_vars = self.flatten_for_ansible();
@@ -370,8 +366,7 @@ impl Config {
     // ── Private helpers ───────────────────────────────────────────────────────
 
     fn save(&self) -> Result<()> {
-        let contents =
-            toml::to_string_pretty(&self.values).wrap_err("Failed to serialize TOML")?;
+        let contents = toml::to_string_pretty(&self.values).wrap_err("Failed to serialize TOML")?;
         fs::write(&self.path, contents)
             .wrap_err_with(|| format!("Failed to write {}", self.path.display()))?;
         Self::enforce_permissions(&self.path)?;
@@ -869,7 +864,10 @@ mod tests {
         let meta = PlaybookMeta::for_playbook("infrastructure.yml", None);
         assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
         assert!(meta.required_keys.contains(&"domain".to_string()));
-        assert!(meta.required_keys.contains(&"tailscale_authkey".to_string()));
+        assert!(
+            meta.required_keys
+                .contains(&"tailscale_authkey".to_string())
+        );
     }
 
     #[test]
@@ -1001,10 +999,7 @@ mod tests {
         assert!(result.is_ok());
         let preflight = result.unwrap();
         assert_eq!(preflight.meta().name, "infrastructure.yml");
-        assert_eq!(
-            preflight.flat_vars().get("domain").unwrap(),
-            "example.com"
-        );
+        assert_eq!(preflight.flat_vars().get("domain").unwrap(), "example.com");
     }
 
     #[test]
@@ -1079,9 +1074,7 @@ mod tests {
         "#,
         );
         // Missing colporteur_subdomain
-        let err = config
-            .preflight_for("apps.yml", Some(&tags))
-            .unwrap_err();
+        let err = config.preflight_for("apps.yml", Some(&tags)).unwrap_err();
         assert!(
             err.to_string().contains("colporteur_subdomain"),
             "error should mention missing tag key: {}",

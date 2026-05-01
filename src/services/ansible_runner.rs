@@ -66,7 +66,6 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
     Ok(tmpfile)
 }
 
-
 pub fn run_playbook(
     preflight: &Preflight,
     playbook: &Path,

@@ -1036,7 +1036,10 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
 
             match preflight_result {
                 Err(e) => {
-                    eprintln!("⚠ Skipping Ansible playbook (config validation failed): {}", e);
+                    eprintln!(
+                        "⚠ Skipping Ansible playbook (config validation failed): {}",
+                        e
+                    );
                     eprintln!("  Services may fail due to incorrect file ownership!");
                     eprintln!(
                         "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
