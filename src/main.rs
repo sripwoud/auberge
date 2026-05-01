@@ -291,7 +291,7 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Config(cmd) => match cmd {
-            ConfigCommands::Init => run_config_init(),
+            ConfigCommands::Init(args) => run_config_init(args),
             ConfigCommands::Set { key, value } => run_config_set(key, value),
             ConfigCommands::Get { key } => run_config_get(key),
             ConfigCommands::List => run_config_list(),
