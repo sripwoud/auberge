@@ -1,11 +1,10 @@
-use crate::hosts::{Host, HostManager};
+use crate::hosts::{Host, HostManager, select_or_arg};
 use crate::output;
-use crate::selector::select_item;
+use crate::prompt::{confirm, select_item};
 use crate::ssh_session::SshSession;
 use crate::user_config::UserConfig;
 use clap::Subcommand;
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::{Confirm, Input, Select};
+use dialoguer::{Input, Select, theme::ColorfulTheme};
 use eyre::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -163,20 +162,7 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
             let config = UserConfig::load()?;
             match config.get("hostname") {
                 Some(name) if !name.is_empty() => HostManager::get_host(&name)?,
-                _ => {
-                    let hosts = HostManager::load_hosts()?;
-                    if hosts.is_empty() {
-                        eyre::bail!(
-                            "No hosts configured. Run 'auberge host add' to add a host first"
-                        );
-                    }
-                    select_item(
-                        &hosts,
-                        |h| format!("{} ({})", h.name, h.address),
-                        "Select host",
-                    )?
-                    .ok_or_else(|| eyre::eyre!("No host selected"))?
-                }
+                _ => select_or_arg(None)?,
             }
         }
     };
@@ -429,15 +415,9 @@ pub fn run_headscale_remove_user(
         None => eyre::bail!("Username is required (pass as argument or run interactively)"),
     };
 
-    if !yes && is_tty {
-        let confirm = Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!("Remove user '{}'?", username))
-            .default(false)
-            .interact()?;
-        if !confirm {
-            output::info("Cancelled");
-            return Ok(());
-        }
+    if !confirm(&format!("Remove user '{}'?", username), yes) {
+        output::info("Cancelled");
+        return Ok(());
     }
 
     run_headscale_cmd(

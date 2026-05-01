@@ -1,9 +1,9 @@
-use dialoguer::{MultiSelect, Select, theme::ColorfulTheme};
+use dialoguer::{Confirm, MultiSelect, Select, theme::ColorfulTheme};
 use eyre::Result;
 use skim::prelude::*;
 use std::io::{Cursor, IsTerminal, Write};
 
-pub fn has_skim_support() -> bool {
+fn has_skim_support() -> bool {
     std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
 }
 
@@ -61,7 +61,7 @@ fn select_with_dialoguer(items: &[String], prompt: &str) -> Option<String> {
     Some(items[selection].clone())
 }
 
-pub fn select(items: &[String], prompt: &str) -> Option<String> {
+fn select(items: &[String], prompt: &str) -> Option<String> {
     if items.is_empty() {
         return None;
     }
@@ -175,4 +175,20 @@ pub fn select_multi(items: &[String], prompt: &str) -> Option<Vec<String>> {
     }
 
     select_multi_with_dialoguer(items, prompt)
+}
+
+pub fn confirm(msg: &str, yes_flag: bool) -> bool {
+    if yes_flag {
+        return true;
+    }
+
+    if !std::io::stdin().is_terminal() {
+        return false;
+    }
+
+    Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(msg)
+        .default(false)
+        .interact()
+        .unwrap_or(false)
 }

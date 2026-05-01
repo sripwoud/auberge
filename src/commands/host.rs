@@ -1,8 +1,8 @@
 use crate::hosts::{Host, HostManager};
 use crate::output;
-use crate::selector::select_item;
+use crate::prompt::{confirm, select_item};
 use clap::Subcommand;
-use dialoguer::{Confirm, Input, theme::ColorfulTheme};
+use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::Result;
 use std::path::PathBuf;
 use tabled::Tabled;
@@ -279,18 +279,9 @@ pub fn run_host_list(tags: Option<String>, output: Option<String>) -> Result<()>
 }
 
 pub fn run_host_remove(name: String, yes: bool) -> Result<()> {
-    let is_tty = HostManager::is_tty();
-
-    if !yes && is_tty {
-        let confirm = Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!("Remove host '{}'?", name))
-            .default(false)
-            .interact()?;
-
-        if !confirm {
-            println!("Cancelled.");
-            return Ok(());
-        }
+    if !confirm(&format!("Remove host '{}'?", name), yes) {
+        println!("Cancelled.");
+        return Ok(());
     }
 
     HostManager::remove_host(&name)?;

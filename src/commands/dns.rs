@@ -1,5 +1,5 @@
 use crate::output;
-use crate::selector;
+use crate::prompt::select_item;
 use crate::services::dns::DnsService;
 use clap::{Subcommand, ValueEnum};
 use dialoguer::{Input, theme::ColorfulTheme};
@@ -206,7 +206,7 @@ pub async fn run_dns_status(production: bool) -> Result<()> {
 fn resolve_subdomain(subdomain: Option<String>) -> Result<String> {
     match subdomain {
         Some(s) => Ok(s),
-        None if selector::has_skim_support() => {
+        None => {
             crate::user_config::UserConfig::load()?;
             let subdomains = crate::services::dns::discover_subdomains();
             let mut items: Vec<String> = subdomains.values().map(|e| e.subdomain.clone()).collect();
@@ -215,17 +215,16 @@ fn resolve_subdomain(subdomain: Option<String>) -> Result<String> {
             }
             items.sort();
             items.dedup();
-            selector::select(&items, "Select subdomain")
+            select_item(&items, |s: &String| s.clone(), "Select subdomain")?
                 .ok_or_else(|| eyre::eyre!("No subdomain selected"))
         }
-        None => eyre::bail!("Subdomain argument required in non-interactive mode"),
     }
 }
 
 fn resolve_ip(ip: Option<String>) -> Result<String> {
     match ip {
         Some(i) => Ok(i),
-        None if selector::has_skim_support() => {
+        None => {
             let value = Input::<String>::with_theme(&ColorfulTheme::default())
                 .with_prompt("IP address")
                 .interact_text()?;
@@ -235,7 +234,6 @@ fn resolve_ip(ip: Option<String>) -> Result<String> {
                 .map_err(|_| eyre::eyre!("Invalid IPv4 address: {}", value))?;
             Ok(value)
         }
-        None => eyre::bail!("IP argument required in non-interactive mode"),
     }
 }
 

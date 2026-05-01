@@ -5,8 +5,9 @@ mod hosts;
 mod models;
 mod output;
 
-mod selector;
+mod prompt;
 mod services;
+mod signal;
 mod ssh_config;
 mod ssh_session;
 mod user_config;
@@ -92,7 +93,7 @@ async fn main() -> Result<()> {
     output::set_verbose(cli.verbose);
 
     match cli.command {
-        Commands::Deploy(cmd) => run_deploy(cmd),
+        Commands::Deploy(cmd) => signal::with_ctrlc(|| run_deploy(cmd)),
         Commands::Select(cmd) => match cmd {
             SelectCommands::Host { group } => run_select_host(group),
             SelectCommands::Playbook => run_select_playbook(),
@@ -144,9 +145,11 @@ async fn main() -> Result<()> {
                 user,
                 ask_pass,
                 force,
-            } => run_ansible_run(
-                host, playbook, check, tags, skip_tags, user, ask_pass, force,
-            ),
+            } => signal::with_ctrlc(|| {
+                run_ansible_run(
+                    host, playbook, check, tags, skip_tags, user, ask_pass, force,
+                )
+            }),
             AnsibleCommands::Bootstrap {
                 host,
                 port,
@@ -163,22 +166,26 @@ async fn main() -> Result<()> {
                 ssh_key,
                 include_music,
                 dry_run,
-            } => run_backup_create(host, apps, dest, ssh_key, include_music, dry_run).and_then(
-                |outcome| {
-                    if outcome.failed_apps.is_empty() {
-                        Ok(())
-                    } else {
-                        eyre::bail!("{} backup(s) failed", outcome.failed_apps.len());
-                    }
-                },
-            ),
+            } => signal::with_ctrlc(|| {
+                run_backup_create(host, apps, dest, ssh_key, include_music, dry_run).and_then(
+                    |outcome| {
+                        if outcome.failed_apps.is_empty() {
+                            Ok(())
+                        } else {
+                            eyre::bail!("{} backup(s) failed", outcome.failed_apps.len());
+                        }
+                    },
+                )
+            }),
             BackupCommands::Sync {
                 host,
                 apps,
                 ssh_key,
                 include_music,
                 dry_run,
-            } => run_backup_sync(host, apps, ssh_key, include_music, dry_run),
+            } => {
+                signal::with_ctrlc(|| run_backup_sync(host, apps, ssh_key, include_music, dry_run))
+            }
             BackupCommands::List { host, app, format } => run_backup_list(host, app, format),
             BackupCommands::Restore {
                 backup_id,
@@ -189,18 +196,22 @@ async fn main() -> Result<()> {
                 dry_run,
                 yes,
                 skip_playbook_unsafe,
-            } => run_backup_restore(RestoreOptions {
-                backup_id,
-                host_arg: host,
-                from_host_arg: from_host,
-                apps,
-                ssh_key,
-                dry_run,
-                yes,
-                skip_playbook_unsafe,
+            } => signal::with_ctrlc(|| {
+                run_backup_restore(RestoreOptions {
+                    backup_id,
+                    host_arg: host,
+                    from_host_arg: from_host,
+                    apps,
+                    ssh_key,
+                    dry_run,
+                    yes,
+                    skip_playbook_unsafe,
+                })
             }),
-            BackupCommands::Push { host, backup_id } => run_backup_push(host, backup_id),
-            BackupCommands::Prune { dry_run } => run_backup_prune(dry_run),
+            BackupCommands::Push { host, backup_id } => {
+                signal::with_ctrlc(|| run_backup_push(host, backup_id))
+            }
+            BackupCommands::Prune { dry_run } => signal::with_ctrlc(|| run_backup_prune(dry_run)),
             BackupCommands::ExportOpml {
                 host,
                 output,
@@ -229,13 +240,13 @@ async fn main() -> Result<()> {
                 host,
                 source,
                 dry_run,
-            } => run_sync_music(host, source, dry_run),
+            } => signal::with_ctrlc(|| run_sync_music(host, source, dry_run)),
             SyncCommands::Hermes {
                 host,
                 source,
                 dry_run,
                 pull,
-            } => run_sync_hermes(host, source, dry_run, pull),
+            } => signal::with_ctrlc(|| run_sync_hermes(host, source, dry_run, pull)),
         },
         Commands::Dns(cmd) => match cmd {
             DnsCommands::List {

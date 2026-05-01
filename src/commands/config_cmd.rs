@@ -1,5 +1,5 @@
 use crate::output;
-use crate::selector;
+use crate::prompt::select_item;
 use crate::user_config::UserConfig;
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
@@ -42,14 +42,14 @@ fn select_key(config: &UserConfig, prompt: &str) -> Result<String> {
     if keys.is_empty() {
         eyre::bail!("No config keys found");
     }
-    selector::select(&keys, prompt).ok_or_else(|| eyre::eyre!("No key selected"))
+    select_item(&keys, |s: &String| s.clone(), prompt)?
+        .ok_or_else(|| eyre::eyre!("No key selected"))
 }
 
 fn resolve_key(key: Option<String>, config: &UserConfig, prompt: &str) -> Result<String> {
     match key {
         Some(k) => Ok(k),
-        None if selector::has_skim_support() => select_key(config, prompt),
-        None => eyre::bail!("Key argument required in non-interactive mode"),
+        None => select_key(config, prompt),
     }
 }
 
@@ -64,7 +64,7 @@ pub fn run_config_set(key: Option<String>, value: Option<String>) -> Result<()> 
     let key = resolve_key(key, &config, "Select key to set")?;
     let value = match value {
         Some(v) => v,
-        None if selector::has_skim_support() => {
+        None => {
             let current = config.get(&key).unwrap_or_default();
             Input::<String>::with_theme(&ColorfulTheme::default())
                 .with_prompt(format!("Value for '{}'", key))
@@ -72,7 +72,6 @@ pub fn run_config_set(key: Option<String>, value: Option<String>) -> Result<()> 
                 .allow_empty(true)
                 .interact_text()?
         }
-        None => eyre::bail!("Value argument required in non-interactive mode"),
     };
     config.set(&key, &value)?;
     output::success(&format!("{} = {}", key, value));

@@ -1,6 +1,6 @@
 use crate::models::inventory::Host;
 use crate::models::playbook::Playbook;
-use crate::selector::select_item;
+use crate::prompt::select_item;
 use crate::services::inventory::{get_hosts, get_playbooks};
 use clap::Subcommand;
 use eyre::Result;
