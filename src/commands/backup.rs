@@ -6,6 +6,7 @@ use crate::services::backup::executor::RecipeExecutor;
 use crate::services::backup::recipe::{
     assets_playbooks_dir, discover_backuppable_apps, load_app_recipe,
 };
+use crate::services::backup::restic::{ResticMessage, parse_restic_message};
 use crate::services::backup::ssh::LiveSshSession;
 use crate::ssh_session::SshSession;
 use chrono::Utc;
@@ -1207,8 +1208,8 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
             .env("RESTIC_PASSWORD", &restic_password)
             .env_remove("RESTIC_PASSWORD_COMMAND"),
         &pb,
-        |line, pb| match output::parse_restic_message(line) {
-            Some(output::ResticMessage::Status(s)) => {
+        |line, pb| match parse_restic_message(line) {
+            Some(ResticMessage::Status(s)) => {
                 if let (Some(total), Some(done)) = (s.total_bytes, s.bytes_done) {
                     if pb.length() != Some(total) {
                         output::set_bytes_style(pb);
@@ -1223,7 +1224,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
                     pb.set_position((s.percent_done * 100.0) as u64);
                 }
             }
-            Some(output::ResticMessage::Summary(s)) => {
+            Some(ResticMessage::Summary(s)) => {
                 snapshot_id = Some(s.snapshot_id);
             }
             None => {}
