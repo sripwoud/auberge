@@ -1,11 +1,10 @@
 use crate::ansible_assets::AnsibleAssets;
 use crate::hosts::HostManager;
 use crate::models::inventory::{Host, HostVars, Inventory, RawInventory};
-use crate::models::playbook::Playbook;
 use eyre::{Result, WrapErr};
 use minijinja::Environment;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn load_inventory(inventory_path: Option<&Path>) -> Result<Inventory> {
     let path = match inventory_path {
@@ -140,7 +139,7 @@ pub fn select_or_arg(arg: Option<String>) -> Result<Host> {
     }
 }
 
-pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<Playbook>> {
+pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<PathBuf>> {
     let path = match playbooks_path {
         Some(p) => p.to_path_buf(),
         None => AnsibleAssets::prepare()?.playbooks_dir(),
@@ -150,7 +149,7 @@ pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<Playbook>> {
         eyre::bail!("Playbooks directory not found: {}", path.display());
     }
 
-    let mut playbooks: Vec<Playbook> = std::fs::read_dir(&path)
+    let mut playbooks: Vec<PathBuf> = std::fs::read_dir(&path)
         .wrap_err_with(|| format!("Failed to read {}", path.display()))?
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
@@ -159,14 +158,10 @@ pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<Playbook>> {
                 .extension()
                 .is_some_and(|ext| ext == "yml" || ext == "yaml")
         })
-        .filter_map(|entry| {
-            std::fs::canonicalize(entry.path())
-                .ok()
-                .map(Playbook::from_path)
-        })
+        .filter_map(|entry| std::fs::canonicalize(entry.path()).ok())
         .collect();
 
-    playbooks.sort_by(|a, b| a.name.cmp(&b.name));
+    playbooks.sort_by(|a, b| a.file_stem().cmp(&b.file_stem()));
 
     if playbooks.is_empty() {
         eyre::bail!("No playbooks found in: {}", path.display());

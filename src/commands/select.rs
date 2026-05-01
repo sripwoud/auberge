@@ -1,9 +1,9 @@
 use crate::models::inventory::Host;
-use crate::models::playbook::Playbook;
 use crate::prompt::select_item;
 use crate::services::inventory::{get_hosts, get_playbooks};
 use clap::Subcommand;
 use eyre::Result;
+use std::path::PathBuf;
 
 #[derive(Subcommand)]
 pub enum SelectCommands {
@@ -48,19 +48,17 @@ pub fn run_select_playbook() -> Result<()> {
 
     let selected = select_item(
         &playbooks,
-        |p: &Playbook| {
-            format!(
-                "{} ({})",
-                p.name,
-                p.path.file_name().unwrap_or_default().to_string_lossy()
-            )
+        |p: &PathBuf| {
+            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+            let file = p.file_name().unwrap_or_default().to_string_lossy();
+            format!("{} ({})", name, file)
         },
         "Select playbook",
     )?;
 
     match selected {
-        Some(playbook) => {
-            println!("{}", playbook.path.display());
+        Some(path) => {
+            println!("{}", path.display());
             Ok(())
         }
         None => eyre::bail!("No playbook selected"),

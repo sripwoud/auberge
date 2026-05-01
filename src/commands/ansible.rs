@@ -1,6 +1,5 @@
 use crate::config::{Config, Preflight};
 use crate::models::inventory::Host;
-use crate::models::playbook::Playbook;
 use crate::output;
 use crate::prompt::select_item;
 use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
@@ -10,7 +9,7 @@ use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use regex::Regex;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Subcommand)]
 pub enum AnsibleCommands {
@@ -73,19 +72,17 @@ fn validate_config_for_playbook(playbook_name: &str, tags: Option<&[String]>) ->
     config.preflight_for(playbook_name, tags)
 }
 
-fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<Playbook> {
+fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<PathBuf> {
     match playbook_arg {
-        Some(path) => Ok(Playbook::from_path(path)),
+        Some(path) => Ok(path),
         None => {
             let playbooks = get_playbooks(None)?;
             select_item(
                 &playbooks,
-                |p: &Playbook| {
-                    format!(
-                        "{} ({})",
-                        p.name,
-                        p.path.file_name().unwrap_or_default().to_string_lossy()
-                    )
+                |p: &PathBuf| {
+                    let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+                    let file = p.file_name().unwrap_or_default().to_string_lossy();
+                    format!("{} ({})", name, file)
                 },
                 "Select playbook",
             )?
@@ -171,12 +168,12 @@ fn run_auto_resolved(
     ));
 
     for run in &runs {
-        let playbook = Playbook::from_path(run.path.clone());
-        let playbook_name = playbook
+        let playbook_file = run.path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let playbook_stem = run
             .path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
 
         let run_tags_ref = if run.tags.is_empty() {
             None
@@ -184,8 +181,8 @@ fn run_auto_resolved(
             Some(run.tags.as_slice())
         };
 
-        let preflight = validate_config_for_playbook(playbook_name, run_tags_ref)?;
-        show_playbook_warnings(playbook_name, force)?;
+        let preflight = validate_config_for_playbook(playbook_file, run_tags_ref)?;
+        show_playbook_warnings(playbook_file, force)?;
 
         let run_tags = if run.tags.is_empty() {
             None
@@ -195,7 +192,7 @@ fn run_auto_resolved(
 
         output::info(&format!(
             "Running {} on {}{}",
-            playbook.name,
+            playbook_stem,
             host.name,
             run_tags.map_or(String::new(), |t| format!(" (tags: {})", t.join(", ")))
         ));
@@ -211,7 +208,7 @@ fn run_auto_resolved(
 
         let result = run_playbook(
             &preflight,
-            &playbook.path,
+            &run.path,
             &inventory_host,
             check,
             run_tags,
@@ -225,20 +222,20 @@ fn run_auto_resolved(
             if result.last_output.is_empty() {
                 eyre::bail!(
                     "{} failed with exit code {}",
-                    playbook.name,
+                    playbook_stem,
                     result.exit_code
                 );
             } else {
                 eyre::bail!(
                     "{} failed with exit code {}:\n{}",
-                    playbook.name,
+                    playbook_stem,
                     result.exit_code,
                     result.last_output.trim()
                 );
             }
         }
 
-        output::success(&format!("{} completed successfully", playbook.name));
+        output::success(&format!("{} completed successfully", playbook_stem));
     }
 
     output::success("All playbook runs completed successfully");
@@ -247,7 +244,7 @@ fn run_auto_resolved(
 
 fn run_single_playbook(
     host: &Host,
-    playbook: &Playbook,
+    playbook: &Path,
     check: bool,
     tags: Option<&[String]>,
     skip_tags: Option<&[String]>,
@@ -255,14 +252,14 @@ fn run_single_playbook(
     ask_pass: bool,
     force: bool,
 ) -> Result<()> {
-    let playbook_name = playbook
-        .path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let playbook_file = playbook.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let playbook_stem = playbook
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
 
-    let preflight = validate_config_for_playbook(playbook_name, tags)?;
-    let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
+    let preflight = validate_config_for_playbook(playbook_file, tags)?;
+    let is_fresh_bootstrap = playbook_file == "bootstrap.yml";
 
     if is_fresh_bootstrap {
         eprintln!();
@@ -299,9 +296,9 @@ fn run_single_playbook(
         }
     }
 
-    show_playbook_warnings(playbook_name, force)?;
+    show_playbook_warnings(playbook_file, force)?;
 
-    output::info(&format!("Running {} on {}", playbook.name, host.name));
+    output::info(&format!("Running {} on {}", playbook_stem, host.name));
 
     let inventory_host = InventoryHost {
         name: host.name.clone(),
@@ -314,7 +311,7 @@ fn run_single_playbook(
 
     let result = run_playbook(
         &preflight,
-        &playbook.path,
+        playbook,
         &inventory_host,
         check,
         tags,
