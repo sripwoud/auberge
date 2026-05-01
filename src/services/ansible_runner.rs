@@ -6,6 +6,27 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
+const DIM: &str = "\x1b[2m";
+const RESET: &str = "\x1b[0m";
+
+fn parse_ansible_task(line: &str) -> Option<String> {
+    let rest = line.trim().strip_prefix("TASK [")?;
+    let end = rest.find(']')?;
+    Some(rest[..end].to_string())
+}
+
+fn format_ansible_task(task: &str) -> String {
+    if let Some((role, name)) = task.split_once(" : ") {
+        if std::io::IsTerminal::is_terminal(&std::io::stderr()) {
+            format!("{DIM}{}:{RESET} {}", role, name)
+        } else {
+            format!("{}: {}", role, name)
+        }
+    } else {
+        task.to_string()
+    }
+}
+
 pub struct AnsibleResult {
     pub success: bool,
     pub exit_code: i32,
@@ -151,8 +172,8 @@ pub fn run_playbook(
         .unwrap_or("ansible");
     let spinner = output::spinner(&format!("Running {}...", playbook_label));
     let result = output::run_with_stdout_progress("ansible", &mut cmd, &spinner, |line, pb| {
-        if let Some(task) = output::parse_ansible_task(line) {
-            pb.set_message(format!("Running: {}", output::format_ansible_task(&task)));
+        if let Some(task) = parse_ansible_task(line) {
+            pb.set_message(format!("Running: {}", format_ansible_task(&task)));
         }
     })
     .wrap_err("Failed to execute ansible-playbook")?;
@@ -238,6 +259,73 @@ mod tests {
 
         let parsed: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();
         assert!(parsed["all"]["children"]["vps"]["hosts"]["myserver"].is_mapping());
+    }
+
+    #[test]
+    fn parse_ansible_task_extracts_name() {
+        assert_eq!(
+            parse_ansible_task("TASK [Install nginx] ***************************"),
+            Some("Install nginx".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ansible_task_with_role_prefix() {
+        assert_eq!(
+            parse_ansible_task("TASK [role : subtask name] ****"),
+            Some("role : subtask name".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ansible_task_gathering_facts() {
+        assert_eq!(
+            parse_ansible_task("TASK [Gathering Facts] *****"),
+            Some("Gathering Facts".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ansible_task_strips_leading_whitespace() {
+        assert_eq!(
+            parse_ansible_task("  TASK [Install nginx] ****"),
+            Some("Install nginx".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ansible_task_play_line_returns_none() {
+        assert!(parse_ansible_task("PLAY [all] ****").is_none());
+    }
+
+    #[test]
+    fn parse_ansible_task_ok_line_returns_none() {
+        assert!(parse_ansible_task("ok: [hostname]").is_none());
+    }
+
+    #[test]
+    fn parse_ansible_task_empty_returns_none() {
+        assert!(parse_ansible_task("").is_none());
+    }
+
+    #[test]
+    fn format_ansible_task_dims_role_prefix() {
+        let formatted = format_ansible_task("nginx : Install package");
+        assert!(formatted.contains("nginx:"));
+        assert!(formatted.contains("Install package"));
+    }
+
+    #[test]
+    fn format_ansible_task_no_role_returns_unchanged() {
+        let formatted = format_ansible_task("Gathering Facts");
+        assert_eq!(formatted, "Gathering Facts");
+    }
+
+    #[test]
+    fn format_ansible_task_nested_role_splits_on_first_separator() {
+        let formatted = format_ansible_task("role : sub : detail");
+        assert!(formatted.contains("role:"));
+        assert!(formatted.contains("sub : detail"));
     }
 
     #[test]

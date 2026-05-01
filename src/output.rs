@@ -355,24 +355,6 @@ pub fn parse_restic_message(line: &str) -> Option<ResticMessage> {
     serde_json::from_str(line).ok()
 }
 
-pub fn parse_ansible_task(line: &str) -> Option<String> {
-    let rest = line.trim().strip_prefix("TASK [")?;
-    let end = rest.find(']')?;
-    Some(rest[..end].to_string())
-}
-
-pub fn format_ansible_task(task: &str) -> String {
-    if let Some((role, name)) = task.split_once(" : ") {
-        if should_use_colors() {
-            format!("{DIM}{}:{RESET} {}", role, name)
-        } else {
-            format!("{}: {}", role, name)
-        }
-    } else {
-        task.to_string()
-    }
-}
-
 pub fn run_with_stdout_progress(
     label: &str,
     cmd: &mut Command,
@@ -670,75 +652,6 @@ mod tests {
             ResticMessage::Status(s) => assert!((s.percent_done - 1.0).abs() < f64::EPSILON),
             _ => panic!("expected Status"),
         }
-    }
-
-    #[test]
-    fn parse_ansible_task_extracts_name() {
-        assert_eq!(
-            parse_ansible_task("TASK [Install nginx] ***************************"),
-            Some("Install nginx".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_ansible_task_with_role_prefix() {
-        assert_eq!(
-            parse_ansible_task("TASK [role : subtask name] ****"),
-            Some("role : subtask name".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_ansible_task_gathering_facts() {
-        assert_eq!(
-            parse_ansible_task("TASK [Gathering Facts] *****"),
-            Some("Gathering Facts".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_ansible_task_strips_leading_whitespace() {
-        assert_eq!(
-            parse_ansible_task("  TASK [Install nginx] ****"),
-            Some("Install nginx".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_ansible_task_play_line_returns_none() {
-        assert!(parse_ansible_task("PLAY [all] ****").is_none());
-    }
-
-    #[test]
-    fn parse_ansible_task_ok_line_returns_none() {
-        assert!(parse_ansible_task("ok: [hostname]").is_none());
-    }
-
-    #[test]
-    fn parse_ansible_task_empty_returns_none() {
-        assert!(parse_ansible_task("").is_none());
-    }
-
-    #[test]
-    fn format_ansible_task_dims_role_prefix() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        set_verbose(false);
-        let formatted = format_ansible_task("nginx : Install package");
-        assert!(formatted.contains("nginx:"));
-        assert!(formatted.contains("Install package"));
-    }
-
-    #[test]
-    fn format_ansible_task_no_role_returns_unchanged() {
-        let formatted = format_ansible_task("Gathering Facts");
-        assert_eq!(formatted, "Gathering Facts");
-    }
-
-    #[test]
-    fn format_ansible_task_nested_role_splits_on_first_separator() {
-        let formatted = format_ansible_task("role : sub : detail");
-        assert!(formatted.contains("role:"));
-        assert!(formatted.contains("sub : detail"));
     }
 
     #[test]
