@@ -2,9 +2,9 @@ mod ansible_assets;
 mod commands;
 mod config;
 mod hosts;
-mod models;
+mod key_registry;
 mod output;
-
+mod playbook_meta;
 mod prompt;
 mod services;
 mod signal;

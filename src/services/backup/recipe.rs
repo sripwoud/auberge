@@ -1,5 +1,5 @@
 use crate::ansible_assets::AnsibleAssets;
-use crate::models::playbook_meta::{BackupRecipe, PlaybookMeta};
+use crate::playbook_meta::{BackupRecipe, PlaybookMeta};
 use eyre::{Result, WrapErr};
 use std::path::Path;
 

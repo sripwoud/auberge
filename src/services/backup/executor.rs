@@ -1,4 +1,4 @@
-use crate::models::playbook_meta::BackupRecipe;
+use crate::playbook_meta::BackupRecipe;
 use crate::services::backup::ssh::SshSession;
 use eyre::Result;
 use std::collections::HashMap;
@@ -177,7 +177,7 @@ fn is_warnings_only(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::playbook_meta::{BackupParameter, DbRecipe};
+    use crate::playbook_meta::{BackupParameter, DbRecipe};
     use crate::services::backup::ssh::{MockSshSession, SshOp};
 
     fn baikal_recipe() -> BackupRecipe {
