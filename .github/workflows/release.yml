@@ -19,6 +19,7 @@ jobs:
     outputs:
       releases_created: ${{ steps.outputs.outputs.releases_created }}
       tag: ${{ steps.outputs.outputs.tag }}
+      draft_release_created: ${{ steps.outputs.outputs.draft_release_created }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -89,11 +90,14 @@ jobs:
             tag=$(echo "$RELEASES_JSON" | jq -r '.[0].tag')
             echo "releases_created=true" >> "$GITHUB_OUTPUT"
             echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+            echo "draft_release_created=true" >> "$GITHUB_OUTPUT"
           elif [[ "$RECOVERY_TAG_PRESENT" == "true" ]]; then
             echo "releases_created=true" >> "$GITHUB_OUTPUT"
             echo "tag=${RECOVERY_TAG}" >> "$GITHUB_OUTPUT"
+            echo "draft_release_created=false" >> "$GITHUB_OUTPUT"
           else
             echo "releases_created=false" >> "$GITHUB_OUTPUT"
+            echo "draft_release_created=false" >> "$GITHUB_OUTPUT"
           fi
 
   release-plz-pr:
@@ -157,3 +161,17 @@ jobs:
           ref: refs/tags/${{ needs.release-plz-release.outputs.tag }}
           checksum: sha256
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-release:
+    name: Publish draft release
+    needs: [release-plz-release, upload-binaries]
+    if: needs.release-plz-release.outputs.draft_release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Flip draft to published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-plz-release.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
