@@ -1,13 +1,12 @@
 use crate::ansible_assets::AnsibleAssets;
 use crate::config::Config;
-use crate::models::inventory::Host;
 use crate::output;
 use crate::prompt::{confirm, select_multi};
 use crate::services::ansible_runner::{InventoryHost, run_playbook};
 use crate::services::dependency_resolver::{
     PlaybookRun, get_app_names, resolve_tags_to_playbook_runs,
 };
-use crate::services::inventory::select_or_arg;
+use crate::services::inventory::{Host, select_or_arg};
 use clap::Args;
 use eyre::Result;
 

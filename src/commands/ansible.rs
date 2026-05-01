@@ -1,10 +1,9 @@
 use crate::config::{Config, Preflight};
-use crate::models::inventory::Host;
 use crate::output;
 use crate::prompt::select_item;
 use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::dependency_resolver::resolve_tags_to_playbook_runs;
-use crate::services::inventory::{get_host, get_playbooks, select_or_arg};
+use crate::services::inventory::{Host, get_host, get_playbooks, select_or_arg};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use regex::Regex;
