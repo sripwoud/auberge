@@ -1018,9 +1018,9 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
 
     let session = LiveSshSession::new(host, ssh_key);
     let executor = RecipeExecutor::new(&session);
-    let pb = output::progress_bar(&format!("Restoring {}", app_name), None);
-    let result = executor.restore(&recipe, backup_path, &HashMap::new());
-    pb.finish_and_clear();
+    let mut progress =
+        crate::services::progress::TerminalProgress::new(&format!("Restoring {}", app_name));
+    let result = executor.restore(&recipe, backup_path, &HashMap::new(), &mut progress);
     result?;
 
     eprintln!("✓ {} restore completed", app_name);
@@ -1390,7 +1390,8 @@ fn backup_app(
     playbooks_dir: &Path,
 ) -> Result<u64> {
     let recipe = load_app_recipe(playbooks_dir, app_name)?;
-    let pb = output::progress_bar(&format!("Backing up {}", app_name), None);
+    let mut progress =
+        crate::services::progress::TerminalProgress::new(&format!("Backing up {}", app_name));
     let app_backup_dir = backup_dest.join(&host.name).join(timestamp).join(app_name);
 
     fs::create_dir_all(&app_backup_dir).wrap_err_with(|| {
@@ -1402,9 +1403,7 @@ fn backup_app(
 
     let session = LiveSshSession::new(host, ssh_key);
     let executor = RecipeExecutor::new(&session);
-    let exec_result = executor.backup(&recipe, &app_backup_dir, parameters);
-
-    pb.finish_and_clear();
+    let exec_result = executor.backup(&recipe, &app_backup_dir, parameters, &mut progress);
 
     if let Err(e) = exec_result {
         let _ = fs::remove_dir_all(&app_backup_dir);

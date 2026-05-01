@@ -1,5 +1,6 @@
 use crate::playbook_meta::BackupRecipe;
 use crate::services::backup::ssh::SshSession;
+use crate::services::progress::Progress;
 use eyre::Result;
 use std::collections::HashMap;
 use std::path::Path;
@@ -44,9 +45,11 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
         recipe: &BackupRecipe,
         dest_dir: &Path,
         parameters: &HashMap<String, bool>,
+        progress: &mut dyn Progress,
     ) -> Result<()> {
         let mut stopped: Vec<&str> = Vec::new();
         for service in &recipe.systemd_services {
+            progress.task_started(&format!("Stopping {}", service));
             if let Err(e) = self.session.systemctl("stop", service) {
                 self.restart_all(&stopped);
                 return Err(e);
@@ -56,6 +59,7 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
 
         let result = (|| -> Result<()> {
             if let Some(db) = &recipe.db {
+                progress.task_started(&format!("pg_dump {}", db.name));
                 let cmd = format!(
                     "sudo -u postgres pg_dump -Fc {} > {}",
                     db.name, db.dump_path
@@ -73,10 +77,12 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
 
             let paths = recipe.effective_paths(parameters);
             for path in &paths {
+                progress.task_started(&format!("rsync {}", path));
                 self.session.rsync_from(path, dest_dir)?;
             }
 
             if let Some(db) = &recipe.db {
+                progress.task_started("Fetching database dump");
                 let local_dump = dest_dir.join("db.dump");
                 self.session.scp_from(&db.dump_path, &local_dump)?;
                 let _ = self.session.run(&format!("rm -f {}", db.dump_path));
@@ -85,7 +91,11 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
             Ok(())
         })();
 
+        for service in &stopped {
+            progress.task_started(&format!("Starting {}", service));
+        }
         let restart_failures = self.restart_all_collecting(&stopped);
+        progress.task_done();
 
         match result {
             Ok(()) if restart_failures.is_empty() => Ok(()),
@@ -106,9 +116,11 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
         recipe: &BackupRecipe,
         source_dir: &Path,
         parameters: &HashMap<String, bool>,
+        progress: &mut dyn Progress,
     ) -> Result<()> {
         let mut stopped: Vec<&str> = Vec::new();
         for service in &recipe.systemd_services {
+            progress.task_started(&format!("Stopping {}", service));
             if let Err(e) = self.session.systemctl("stop", service) {
                 self.restart_all(&stopped);
                 return Err(e);
@@ -119,12 +131,14 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
         let result = (|| -> Result<()> {
             let paths = recipe.effective_paths(parameters);
             for path in &paths {
+                progress.task_started(&format!("rsync {}", path));
                 let local_source = source_dir.join(path.trim_start_matches('/'));
                 self.session.rsync_to(&local_source, path)?;
             }
 
             if let Some((user, group)) = &recipe.owner {
                 for path in &paths {
+                    progress.task_started(&format!("chown {}", path));
                     self.session.set_ownership(path, user, group)?;
                 }
             }
@@ -132,6 +146,7 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
             if let Some(db) = &recipe.db {
                 let local_dump = source_dir.join("db.dump");
                 if local_dump.exists() {
+                    progress.task_started(&format!("pg_restore {}", db.name));
                     self.session.scp_to(&local_dump, &db.dump_path)?;
                     self.session.run(&format!("chmod 644 {}", db.dump_path))?;
                     let cmd = format!(
@@ -147,6 +162,7 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
             }
 
             if let Some(cmd) = &recipe.post_restore_command {
+                progress.task_started("Running post_restore_command");
                 let post = self.session.run(cmd)?;
                 if !post.success {
                     eyre::bail!("post_restore_command failed: {}", post.stderr_str().trim());
@@ -156,7 +172,11 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
             Ok(())
         })();
 
+        for service in &stopped {
+            progress.task_started(&format!("Starting {}", service));
+        }
         let restart_failures = self.restart_all_collecting(&stopped);
+        progress.task_done();
 
         match result {
             Ok(()) if restart_failures.is_empty() => Ok(()),
@@ -302,8 +322,14 @@ mod tests {
     fn test_backup_no_services_just_rsyncs_paths() {
         let mock = MockSshSession::new();
         let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .backup(&baikal_recipe(), Path::new("/tmp/dest"), &HashMap::new())
+            .backup(
+                &baikal_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
             .unwrap();
 
         let calls = mock.calls();
@@ -326,8 +352,14 @@ mod tests {
             parameters: HashMap::new(),
         };
         let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .backup(&recipe, Path::new("/tmp/dest"), &HashMap::new())
+            .backup(
+                &recipe,
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
             .unwrap();
 
         let calls = mock.calls();
@@ -352,8 +384,14 @@ mod tests {
     fn test_backup_with_db_runs_pg_dump_before_rsync_then_scps_dump() {
         let mock = MockSshSession::new();
         let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .backup(&paperless_recipe(), Path::new("/tmp/dest"), &HashMap::new())
+            .backup(
+                &paperless_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
             .unwrap();
 
         let calls = mock.calls();
@@ -396,8 +434,14 @@ mod tests {
         let executor = RecipeExecutor::new(&mock);
         let mut params = HashMap::new();
         params.insert("include_music".to_string(), true);
+        let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .backup(&navidrome_recipe(), Path::new("/tmp/dest"), &params)
+            .backup(
+                &navidrome_recipe(),
+                Path::new("/tmp/dest"),
+                &params,
+                &mut progress,
+            )
             .unwrap();
 
         let rsync_remotes: Vec<String> = mock
@@ -416,8 +460,14 @@ mod tests {
     fn test_backup_omits_optional_path_when_parameter_absent() {
         let mock = MockSshSession::new();
         let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .backup(&navidrome_recipe(), Path::new("/tmp/dest"), &HashMap::new())
+            .backup(
+                &navidrome_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
             .unwrap();
 
         let rsync_remotes: Vec<String> = mock
@@ -444,8 +494,14 @@ mod tests {
             post_restore_command: None,
             parameters: HashMap::new(),
         };
+        let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .restore(&recipe, Path::new("/tmp/source"), &HashMap::new())
+            .restore(
+                &recipe,
+                Path::new("/tmp/source"),
+                &HashMap::new(),
+                &mut progress,
+            )
             .unwrap();
 
         let calls = mock.calls();
@@ -485,8 +541,14 @@ mod tests {
 
         let mock = MockSshSession::new();
         let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .restore(&paperless_recipe(), tmp.path(), &HashMap::new())
+            .restore(
+                &paperless_recipe(),
+                tmp.path(),
+                &HashMap::new(),
+                &mut progress,
+            )
             .unwrap();
 
         let calls = mock.calls();
@@ -514,8 +576,14 @@ mod tests {
 
         let mock = MockSshSession::new();
         let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .restore(&paperless_recipe(), tmp.path(), &HashMap::new())
+            .restore(
+                &paperless_recipe(),
+                tmp.path(),
+                &HashMap::new(),
+                &mut progress,
+            )
             .unwrap();
 
         let calls = mock.calls();
@@ -534,6 +602,40 @@ mod tests {
     }
 
     #[test]
+    fn backup_emits_task_started_per_step_via_progress() {
+        use crate::services::progress::ProgressEvent;
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .backup(
+                &paperless_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
+            .unwrap();
+
+        let names: Vec<String> = progress
+            .events()
+            .iter()
+            .filter_map(|e| match e {
+                ProgressEvent::TaskStarted(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(names.iter().any(|n| n == "Stopping paperless-webserver"));
+        assert!(names.iter().any(|n| n == "pg_dump paperless"));
+        assert!(names.iter().any(|n| n.starts_with("rsync ")));
+        assert!(names.iter().any(|n| n == "Fetching database dump"));
+        assert!(names.iter().any(|n| n == "Starting paperless-webserver"));
+        assert!(matches!(
+            progress.events().last(),
+            Some(ProgressEvent::TaskDone)
+        ));
+    }
+
+    #[test]
     fn test_backup_failed_pg_dump_still_restarts_services() {
         let mock = MockSshSession::new();
         mock.stage_run_result(crate::services::backup::ssh::CommandResult {
@@ -543,7 +645,13 @@ mod tests {
             stderr: b"connection refused".to_vec(),
         });
         let executor = RecipeExecutor::new(&mock);
-        let result = executor.backup(&paperless_recipe(), Path::new("/tmp/dest"), &HashMap::new());
+        let mut progress = crate::services::progress::MockProgress::new();
+        let result = executor.backup(
+            &paperless_recipe(),
+            Path::new("/tmp/dest"),
+            &HashMap::new(),
+            &mut progress,
+        );
         assert!(result.is_err());
 
         let starts: Vec<_> = mock
