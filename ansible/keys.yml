@@ -1,0 +1,192 @@
+keys:
+  admin_user_email:
+    secret: false
+    doc: "Email address for the admin user account"
+
+  admin_user_name:
+    secret: false
+    doc: "Username for the admin user account"
+
+  admin_user_password:
+    secret: true
+    doc: "Password for the admin user account"
+
+  baikal_admin_password:
+    secret: true
+    doc: "Password for the Baïkal CalDAV/CardDAV admin interface"
+
+  baikal_subdomain:
+    secret: false
+    doc: "Subdomain for the Baïkal CalDAV/CardDAV server"
+
+  bichon_encryption_password:
+    secret: true
+    doc: "Encryption password for Bichon data-at-rest"
+
+  bichon_subdomain:
+    secret: false
+    doc: "Subdomain for the Bichon service"
+
+  bichon_tailscale_ip:
+    secret: false
+    doc: "Tailscale IP address of the Bichon host"
+
+  blocky_subdomain:
+    secret: false
+    doc: "Subdomain for the Blocky DNS server"
+
+  cloudflare_dns_api_token:
+    secret: true
+    doc: "Cloudflare API token with DNS edit permissions for ACME/Let's Encrypt challenges"
+
+  colporteur_feeds_password:
+    secret: true
+    doc: "Password used to protect Colporteur feed endpoints"
+
+  colporteur_freshrss_sync:
+    secret: false
+    doc: "Whether Colporteur should sync feeds to FreshRSS (true/false)"
+
+  colporteur_subdomain:
+    secret: false
+    doc: "Subdomain for the Colporteur feed aggregator"
+
+  domain:
+    secret: false
+    doc: "Primary domain name used for all services (e.g. example.com)"
+
+  freshrss_subdomain:
+    secret: false
+    doc: "Subdomain for the FreshRSS feed reader"
+
+  grimmory_admin_password:
+    secret: true
+    doc: "Password for the Grimmory admin account"
+
+  grimmory_admin_user:
+    secret: false
+    doc: "Username for the Grimmory admin account"
+
+  grimmory_db_password:
+    secret: true
+    doc: "Database password for Grimmory"
+
+  grimmory_subdomain:
+    secret: false
+    doc: "Subdomain for the Grimmory service"
+
+  headscale_subdomain:
+    secret: false
+    doc: "Subdomain for the Headscale control server"
+
+  hermes_exa_api_key:
+    secret: true
+    doc: "Exa search API key used by Hermes"
+
+  hermes_llm_api_key:
+    secret: true
+    doc: "API key for the LLM provider used by Hermes"
+
+  hermes_llm_provider:
+    secret: false
+    doc: "LLM provider identifier for Hermes (e.g. openai, anthropic)"
+
+  hermes_telegram_allowed_users:
+    secret: false
+    doc: "Comma-separated list of Telegram usernames allowed to interact with Hermes"
+
+  hermes_telegram_bot_token:
+    secret: true
+    doc: "Telegram bot token for the Hermes bot"
+
+  hostname:
+    secret: false
+    doc: "Hostname to set on the remote server during bootstrap"
+
+  navidrome_subdomain:
+    secret: false
+    doc: "Subdomain for the Navidrome music server"
+
+  paperless_admin_password:
+    secret: true
+    doc: "Password for the Paperless-ngx admin account"
+
+  paperless_admin_user:
+    secret: false
+    doc: "Username for the Paperless-ngx admin account"
+
+  paperless_db_password:
+    secret: true
+    doc: "Database password for Paperless-ngx"
+
+  paperless_secret_key:
+    secret: true
+    doc: "Django secret key for Paperless-ngx"
+
+  paperless_subdomain:
+    secret: false
+    doc: "Subdomain for the Paperless-ngx document management service"
+
+  paperless_tailscale_ip:
+    secret: false
+    doc: "Tailscale IP address of the Paperless-ngx host"
+
+  restic_password:
+    secret: true
+    doc: "Encryption password for the restic backup repository"
+
+  restic_repository:
+    secret: false
+    doc: "Restic repository URL (e.g. s3:https://... or /path/to/repo)"
+
+  ssh_port:
+    secret: false
+    doc: "SSH port to configure on the remote server during bootstrap"
+
+  tailscale_api_key:
+    secret: true
+    doc: "Tailscale API key used for node management"
+
+  tailscale_authkey:
+    secret: true
+    doc: "Tailscale auth key used to register new nodes"
+
+  tailscale_login_server:
+    secret: false
+    doc: "URL of the Tailscale/Headscale login server (leave empty for official Tailscale)"
+
+  tgtg_telegram_bot_token:
+    secret: true
+    doc: "Telegram bot token for the Too Good To Go notifier bot"
+
+  webdav_password:
+    secret: true
+    doc: "Password for the WebDAV server"
+
+  webdav_subdomain:
+    secret: false
+    doc: "Subdomain for the WebDAV server"
+
+  yourls_admin_password:
+    secret: true
+    doc: "Password for the YOURLS admin account"
+
+  yourls_admin_user:
+    secret: false
+    doc: "Username for the YOURLS admin account"
+
+  yourls_api_signature:
+    secret: true
+    doc: "YOURLS API signature token"
+
+  yourls_cookiekey:
+    secret: true
+    doc: "Secret cookie key for YOURLS session security"
+
+  yourls_db_password:
+    secret: true
+    doc: "Database password for YOURLS"
+
+  yourls_subdomain:
+    secret: false
+    doc: "Subdomain for the YOURLS URL shortener"
