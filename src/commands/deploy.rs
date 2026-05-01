@@ -215,6 +215,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
             run_tags.map_or(String::new(), |t| format!(" (tags: {})", t.join(", ")))
         ));
 
+        let mut progress = crate::services::progress::TerminalProgress::new("");
         let result = run_playbook(
             preflight,
             &run.path,
@@ -225,6 +226,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
             None,
             false,
             false,
+            &mut progress,
         )?;
 
         if !result.success {

@@ -6,6 +6,7 @@ use crate::services::backup::executor::RecipeExecutor;
 use crate::services::backup::recipe::{
     assets_playbooks_dir, discover_backuppable_apps, load_app_recipe,
 };
+use crate::services::backup::restic::{ResticMessage, parse_restic_message};
 use crate::services::backup::ssh::LiveSshSession;
 use crate::ssh_session::SshSession;
 use chrono::Utc;
@@ -898,41 +899,45 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                         tags.join(",")
                     );
                 }
-                Ok(preflight) => match crate::services::ansible_runner::run_playbook(
-                    &preflight,
-                    &apps_playbook,
-                    &inventory_host,
-                    false,
-                    Some(&tags),
-                    None,
-                    None,
-                    false,
-                    false,
-                ) {
-                    Ok(result) if result.success => {
-                        eprintln!("✓ Ansible playbooks completed successfully");
-                        eprintln!("  File permissions have been corrected");
+                Ok(preflight) => {
+                    let mut progress = crate::services::progress::TerminalProgress::new("");
+                    match crate::services::ansible_runner::run_playbook(
+                        &preflight,
+                        &apps_playbook,
+                        &inventory_host,
+                        false,
+                        Some(&tags),
+                        None,
+                        None,
+                        false,
+                        false,
+                        &mut progress,
+                    ) {
+                        Ok(result) if result.success => {
+                            eprintln!("✓ Ansible playbooks completed successfully");
+                            eprintln!("  File permissions have been corrected");
+                        }
+                        Ok(result) => {
+                            eprintln!(
+                                "⚠ Ansible playbook failed (exit code: {})",
+                                result.exit_code
+                            );
+                            eprintln!("  Services may fail due to incorrect file ownership!");
+                            eprintln!(
+                                "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                                tags.join(",")
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("⚠ Failed to run Ansible playbook: {}", e);
+                            eprintln!("  Services may fail due to incorrect file ownership!");
+                            eprintln!(
+                                "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+                                tags.join(",")
+                            );
+                        }
                     }
-                    Ok(result) => {
-                        eprintln!(
-                            "⚠ Ansible playbook failed (exit code: {})",
-                            result.exit_code
-                        );
-                        eprintln!("  Services may fail due to incorrect file ownership!");
-                        eprintln!(
-                            "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
-                            tags.join(",")
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("⚠ Failed to run Ansible playbook: {}", e);
-                        eprintln!("  Services may fail due to incorrect file ownership!");
-                        eprintln!(
-                            "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
-                            tags.join(",")
-                        );
-                    }
-                },
+                }
             }
         }
     } else if opts.skip_playbook_unsafe && !opts.dry_run {
@@ -1013,9 +1018,9 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
 
     let session = LiveSshSession::new(host, ssh_key);
     let executor = RecipeExecutor::new(&session);
-    let pb = output::progress_bar(&format!("Restoring {}", app_name), None);
-    let result = executor.restore(&recipe, backup_path, &HashMap::new());
-    pb.finish_and_clear();
+    let mut progress =
+        crate::services::progress::TerminalProgress::new(&format!("Restoring {}", app_name));
+    let result = executor.restore(&recipe, backup_path, &HashMap::new(), &mut progress);
     result?;
 
     eprintln!("✓ {} restore completed", app_name);
@@ -1141,7 +1146,8 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
 
     output::info(&format!("Pushing {} to restic", backup_dir.display()));
 
-    let spinner = output::spinner("Checking restic repository");
+    use crate::services::progress::{Progress, TerminalProgress};
+    let mut progress = TerminalProgress::new("Checking restic repository");
     let snapshots_check = Command::new("restic")
         .arg("snapshots")
         .arg("--json")
@@ -1170,7 +1176,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     };
 
     if needs_init {
-        spinner.set_message("Initializing restic repository".to_string());
+        progress.task_started("Initializing restic repository");
         let init_output = Command::new("restic")
             .arg("init")
             .env("RESTIC_REPOSITORY", &restic_repo)
@@ -1192,12 +1198,10 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
         }
     }
 
-    spinner.finish_and_clear();
-
-    let pb = output::progress_bar(&format!("Pushing {}", backup_dir.display()), None);
+    progress.task_started(&format!("Pushing {}", backup_dir.display()));
     let mut snapshot_id: Option<String> = None;
 
-    let result = output::run_with_stdout_progress(
+    let result = output::stream_command_stdout(
         "restic",
         Command::new("restic")
             .arg("backup")
@@ -1206,24 +1210,17 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
             .env("RESTIC_REPOSITORY", &restic_repo)
             .env("RESTIC_PASSWORD", &restic_password)
             .env_remove("RESTIC_PASSWORD_COMMAND"),
-        &pb,
-        |line, pb| match output::parse_restic_message(line) {
-            Some(output::ResticMessage::Status(s)) => {
+        |line| match parse_restic_message(line) {
+            Some(ResticMessage::Status(s)) => {
                 if let (Some(total), Some(done)) = (s.total_bytes, s.bytes_done) {
-                    if pb.length() != Some(total) {
-                        output::set_bytes_style(pb);
-                        pb.set_length(total);
-                    }
-                    pb.set_position(done);
+                    progress.set_total(Some(total));
+                    progress.bytes_transferred(done);
                 } else {
-                    if pb.length() != Some(100) {
-                        output::set_percent_style(pb);
-                        pb.set_length(100);
-                    }
-                    pb.set_position((s.percent_done * 100.0) as u64);
+                    progress.set_total(Some(100));
+                    progress.bytes_transferred((s.percent_done * 100.0) as u64);
                 }
             }
-            Some(output::ResticMessage::Summary(s)) => {
+            Some(ResticMessage::Summary(s)) => {
                 snapshot_id = Some(s.snapshot_id);
             }
             None => {}
@@ -1231,7 +1228,7 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     )
     .wrap_err("Failed to run restic backup")?;
 
-    pb.finish_and_clear();
+    progress.task_done();
 
     if !result.status.success() {
         if result.last_stderr.is_empty() {
@@ -1252,7 +1249,8 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
 pub fn run_backup_prune(dry_run: bool) -> Result<()> {
     let (restic_repo, restic_password) = load_restic_config()?;
 
-    let spinner = output::spinner("Pruning restic snapshots");
+    use crate::services::progress::{Progress, TerminalProgress};
+    let mut progress = TerminalProgress::new("Pruning restic snapshots");
 
     let mut cmd = Command::new("restic");
     cmd.arg("forget")
@@ -1273,7 +1271,7 @@ pub fn run_backup_prune(dry_run: bool) -> Result<()> {
 
     let prune_output = cmd.output().wrap_err("Failed to run restic forget")?;
 
-    spinner.finish_and_clear();
+    progress.task_done();
 
     let stderr_text = String::from_utf8_lossy(&prune_output.stderr);
     let lines = output::subprocess_output("restic", &stderr_text);
@@ -1386,7 +1384,8 @@ fn backup_app(
     playbooks_dir: &Path,
 ) -> Result<u64> {
     let recipe = load_app_recipe(playbooks_dir, app_name)?;
-    let pb = output::progress_bar(&format!("Backing up {}", app_name), None);
+    let mut progress =
+        crate::services::progress::TerminalProgress::new(&format!("Backing up {}", app_name));
     let app_backup_dir = backup_dest.join(&host.name).join(timestamp).join(app_name);
 
     fs::create_dir_all(&app_backup_dir).wrap_err_with(|| {
@@ -1398,9 +1397,7 @@ fn backup_app(
 
     let session = LiveSshSession::new(host, ssh_key);
     let executor = RecipeExecutor::new(&session);
-    let exec_result = executor.backup(&recipe, &app_backup_dir, parameters);
-
-    pb.finish_and_clear();
+    let exec_result = executor.backup(&recipe, &app_backup_dir, parameters, &mut progress);
 
     if let Err(e) = exec_result {
         let _ = fs::remove_dir_all(&app_backup_dir);

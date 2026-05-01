@@ -205,6 +205,7 @@ fn run_auto_resolved(
 
         let extra_vars = user.map(|u| vec![("ansible_user", u)]);
 
+        let mut progress = crate::services::progress::TerminalProgress::new("");
         let result = run_playbook(
             &preflight,
             &run.path,
@@ -215,6 +216,7 @@ fn run_auto_resolved(
             extra_vars.as_deref(),
             false,
             ask_pass,
+            &mut progress,
         )?;
 
         if !result.success {
@@ -308,6 +310,7 @@ fn run_single_playbook(
 
     let extra_vars = user.map(|u| vec![("ansible_user", u)]);
 
+    let mut progress = crate::services::progress::TerminalProgress::new("");
     let result = run_playbook(
         &preflight,
         playbook,
@@ -318,6 +321,7 @@ fn run_single_playbook(
         extra_vars.as_deref(),
         false,
         ask_pass,
+        &mut progress,
     )?;
 
     if result.success {

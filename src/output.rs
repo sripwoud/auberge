@@ -1,6 +1,4 @@
 use eyre::{Context, Result};
-use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use serde::Deserialize;
 use std::env;
 use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::{Command, ExitStatus, Stdio};
@@ -179,135 +177,6 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
-pub fn spinner(msg: &str) -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
-
-    if should_use_colors() {
-        spinner.set_style(
-            ProgressStyle::default_spinner()
-                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                .template("{spinner} {msg}")
-                .unwrap(),
-        );
-    } else {
-        spinner.set_style(
-            ProgressStyle::default_spinner()
-                .tick_chars("/-\\|")
-                .template("{spinner} {msg}")
-                .unwrap(),
-        );
-    }
-
-    spinner.set_message(msg.to_string());
-    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
-    crate::signal::register_progress_bar(&spinner);
-    spinner
-}
-
-pub fn progress_bar(msg: &str, total_bytes: Option<u64>) -> ProgressBar {
-    let pb = match total_bytes {
-        Some(total) => {
-            let pb = ProgressBar::with_draw_target(Some(total), ProgressDrawTarget::stderr());
-            if should_use_colors() {
-                pb.set_style(
-                    ProgressStyle::default_bar()
-                        .template("{spinner} {msg} [{bar:40}] {bytes}/{total_bytes} ({eta})")
-                        .unwrap()
-                        .progress_chars("█▉▊▋▌▍▎▏ "),
-                );
-            } else {
-                pb.set_style(
-                    ProgressStyle::default_bar()
-                        .template("{msg} [{bar:40}] {bytes}/{total_bytes} ({eta})")
-                        .unwrap()
-                        .progress_chars("#>-"),
-                );
-            }
-            pb.set_message(msg.to_string());
-            pb.enable_steady_tick(std::time::Duration::from_millis(100));
-            pb
-        }
-        None => {
-            let pb = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr());
-            if should_use_colors() {
-                pb.set_style(
-                    ProgressStyle::default_spinner()
-                        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                        .template("{spinner} {msg}")
-                        .unwrap(),
-                );
-            } else {
-                pb.set_style(
-                    ProgressStyle::default_spinner()
-                        .tick_chars("/-\\|")
-                        .template("{spinner} {msg}")
-                        .unwrap(),
-                );
-            }
-            pb.set_message(msg.to_string());
-            pb.enable_steady_tick(std::time::Duration::from_millis(100));
-            pb
-        }
-    };
-    crate::signal::register_progress_bar(&pb);
-    pb
-}
-
-pub fn set_bytes_style(pb: &ProgressBar) {
-    if should_use_colors() {
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner} {msg} [{bar:40}] {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .progress_chars("█▉▊▋▌▍▎▏ "),
-        );
-    } else {
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{msg} [{bar:40}] {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
-    }
-}
-
-pub fn set_percent_style(pb: &ProgressBar) {
-    if should_use_colors() {
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner} {msg} [{bar:40}] {pos:>3}% {prefix}")
-                .unwrap()
-                .progress_chars("█▉▊▋▌▍▎▏ "),
-        );
-    } else {
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{msg} [{bar:40}] {pos:>3}% {prefix}")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
-    }
-}
-
-pub fn reset_to_spinner(pb: &ProgressBar) {
-    pb.set_prefix(String::new());
-    if should_use_colors() {
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                .template("{spinner} {msg}")
-                .unwrap(),
-        );
-    } else {
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .tick_chars("/-\\|")
-                .template("{spinner} {msg}")
-                .unwrap(),
-        );
-    }
-}
-
 pub fn format_duration(seconds: u64) -> String {
     if seconds < 60 {
         format!("{}s", seconds)
@@ -318,66 +187,10 @@ pub fn format_duration(seconds: u64) -> String {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ResticStatus {
-    pub percent_done: f64,
-    pub total_bytes: Option<u64>,
-    pub bytes_done: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ResticSummary {
-    pub snapshot_id: String,
-    #[allow(dead_code)]
-    pub files_new: u64,
-    #[allow(dead_code)]
-    pub files_changed: u64,
-    #[allow(dead_code)]
-    pub data_added: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "message_type", rename_all = "lowercase")]
-pub enum ResticMessage {
-    Status(ResticStatus),
-    Summary(ResticSummary),
-}
-
-#[derive(Debug, PartialEq)]
-pub struct RsyncProgress {
-    pub bytes_transferred: u64,
-    pub percent: u8,
-    pub speed: String,
-    pub eta: String,
-}
-
-pub fn parse_restic_message(line: &str) -> Option<ResticMessage> {
-    serde_json::from_str(line).ok()
-}
-
-pub fn parse_ansible_task(line: &str) -> Option<String> {
-    let rest = line.trim().strip_prefix("TASK [")?;
-    let end = rest.find(']')?;
-    Some(rest[..end].to_string())
-}
-
-pub fn format_ansible_task(task: &str) -> String {
-    if let Some((role, name)) = task.split_once(" : ") {
-        if should_use_colors() {
-            format!("{DIM}{}:{RESET} {}", role, name)
-        } else {
-            format!("{}: {}", role, name)
-        }
-    } else {
-        task.to_string()
-    }
-}
-
-pub fn run_with_stdout_progress(
+pub fn stream_command_stdout(
     label: &str,
     cmd: &mut Command,
-    pb: &ProgressBar,
-    mut line_handler: impl FnMut(&str, &ProgressBar),
+    mut line_handler: impl FnMut(&str),
 ) -> Result<ProgressResult> {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
@@ -385,7 +198,6 @@ pub fn run_with_stdout_progress(
     let stderr = child.stderr.take().unwrap();
     let verbose = is_verbose();
 
-    let mut last_stdout: Vec<String> = Vec::new();
     const MAX_LINES: usize = 20;
 
     let stderr_tail: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -412,11 +224,7 @@ pub fn run_with_stdout_progress(
             if verbose {
                 emit_subprocess_line(label, &line);
             }
-            last_stdout.push(line.clone());
-            if last_stdout.len() > MAX_LINES {
-                last_stdout.remove(0);
-            }
-            line_handler(&line, pb);
+            line_handler(&line);
         }
     });
 
@@ -425,89 +233,6 @@ pub fn run_with_stdout_progress(
     Ok(ProgressResult {
         status,
         last_stderr,
-    })
-}
-
-pub fn run_with_cr_stdout_progress(
-    label: &str,
-    cmd: &mut Command,
-    pb: &ProgressBar,
-    mut line_handler: impl FnMut(&str, &ProgressBar),
-) -> Result<ProgressResult> {
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
-    let verbose = is_verbose();
-
-    const MAX_LINES: usize = 20;
-
-    let stderr_tail: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let stderr_tail_clone = Arc::clone(&stderr_tail);
-    let label_owned = label.to_owned();
-
-    std::thread::scope(|s| {
-        s.spawn(move || {
-            for line_result in BufReader::new(stderr).lines() {
-                let Ok(line) = line_result else { continue };
-                if verbose {
-                    emit_subprocess_line(&label_owned, &line);
-                }
-                let mut tail = stderr_tail_clone.lock().unwrap();
-                tail.push(line);
-                if tail.len() > MAX_LINES {
-                    tail.remove(0);
-                }
-            }
-        });
-
-        let mut reader = BufReader::new(stdout);
-        let mut buf = Vec::new();
-        loop {
-            buf.clear();
-            match reader.read_until(b'\r', &mut buf) {
-                Ok(0) => break,
-                Ok(_) => {}
-                Err(_) => break,
-            }
-            while buf.last() == Some(&b'\r') || buf.last() == Some(&b'\n') {
-                buf.pop();
-            }
-            let line = String::from_utf8_lossy(&buf);
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            if verbose {
-                emit_subprocess_line(label, trimmed);
-            }
-            line_handler(trimmed, pb);
-        }
-    });
-
-    let status = child.wait().wrap_err("failed to wait on subprocess")?;
-    let last_stderr = stderr_tail.lock().unwrap().join("\n");
-    Ok(ProgressResult {
-        status,
-        last_stderr,
-    })
-}
-
-pub fn parse_rsync_progress(line: &str) -> Option<RsyncProgress> {
-    let line = line.trim_end_matches('\r');
-    let fields: Vec<&str> = line.split_whitespace().collect();
-    if fields.len() < 4 {
-        return None;
-    }
-    let percent_str = fields[1].strip_suffix('%')?;
-    let percent: u8 = percent_str.parse().ok()?;
-    let bytes_str = fields[0].replace(',', "");
-    let bytes_transferred: u64 = bytes_str.parse().ok()?;
-    Some(RsyncProgress {
-        bytes_transferred,
-        percent,
-        speed: fields[2].to_string(),
-        eta: fields[3].to_string(),
     })
 }
 
@@ -609,151 +334,16 @@ mod tests {
     }
 
     #[test]
-    fn parse_restic_status_line() {
-        let line = r#"{"message_type":"status","percent_done":0.5,"total_bytes":1048576,"bytes_done":524288}"#;
-        let msg = parse_restic_message(line).unwrap();
-        match msg {
-            ResticMessage::Status(s) => {
-                assert!((s.percent_done - 0.5).abs() < f64::EPSILON);
-                assert_eq!(s.total_bytes, Some(1048576));
-                assert_eq!(s.bytes_done, Some(524288));
-            }
-            _ => panic!("expected Status"),
-        }
-    }
-
-    #[test]
-    fn parse_restic_summary_line() {
-        let line = r#"{"message_type":"summary","snapshot_id":"abc123","files_new":10,"files_changed":2,"data_added":1048576}"#;
-        let msg = parse_restic_message(line).unwrap();
-        match msg {
-            ResticMessage::Summary(s) => {
-                assert_eq!(s.snapshot_id, "abc123");
-                assert_eq!(s.files_new, 10);
-                assert_eq!(s.files_changed, 2);
-                assert_eq!(s.data_added, 1048576);
-            }
-            _ => panic!("expected Summary"),
-        }
-    }
-
-    #[test]
-    fn parse_restic_plain_text_returns_none() {
-        assert!(parse_restic_message("using parent snapshot abc123").is_none());
-    }
-
-    #[test]
-    fn parse_restic_malformed_json_returns_none() {
-        assert!(parse_restic_message("{bad json}").is_none());
-    }
-
-    #[test]
-    fn parse_restic_zero_percent() {
-        let line = r#"{"message_type":"status","percent_done":0.0}"#;
-        let msg = parse_restic_message(line).unwrap();
-        match msg {
-            ResticMessage::Status(s) => {
-                assert!((s.percent_done).abs() < f64::EPSILON);
-                assert_eq!(s.total_bytes, None);
-                assert_eq!(s.bytes_done, None);
-            }
-            _ => panic!("expected Status"),
-        }
-    }
-
-    #[test]
-    fn parse_restic_full_percent() {
-        let line =
-            r#"{"message_type":"status","percent_done":1.0,"total_bytes":100,"bytes_done":100}"#;
-        let msg = parse_restic_message(line).unwrap();
-        match msg {
-            ResticMessage::Status(s) => assert!((s.percent_done - 1.0).abs() < f64::EPSILON),
-            _ => panic!("expected Status"),
-        }
-    }
-
-    #[test]
-    fn parse_ansible_task_extracts_name() {
-        assert_eq!(
-            parse_ansible_task("TASK [Install nginx] ***************************"),
-            Some("Install nginx".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_ansible_task_with_role_prefix() {
-        assert_eq!(
-            parse_ansible_task("TASK [role : subtask name] ****"),
-            Some("role : subtask name".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_ansible_task_gathering_facts() {
-        assert_eq!(
-            parse_ansible_task("TASK [Gathering Facts] *****"),
-            Some("Gathering Facts".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_ansible_task_strips_leading_whitespace() {
-        assert_eq!(
-            parse_ansible_task("  TASK [Install nginx] ****"),
-            Some("Install nginx".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_ansible_task_play_line_returns_none() {
-        assert!(parse_ansible_task("PLAY [all] ****").is_none());
-    }
-
-    #[test]
-    fn parse_ansible_task_ok_line_returns_none() {
-        assert!(parse_ansible_task("ok: [hostname]").is_none());
-    }
-
-    #[test]
-    fn parse_ansible_task_empty_returns_none() {
-        assert!(parse_ansible_task("").is_none());
-    }
-
-    #[test]
-    fn format_ansible_task_dims_role_prefix() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        set_verbose(false);
-        let formatted = format_ansible_task("nginx : Install package");
-        assert!(formatted.contains("nginx:"));
-        assert!(formatted.contains("Install package"));
-    }
-
-    #[test]
-    fn format_ansible_task_no_role_returns_unchanged() {
-        let formatted = format_ansible_task("Gathering Facts");
-        assert_eq!(formatted, "Gathering Facts");
-    }
-
-    #[test]
-    fn format_ansible_task_nested_role_splits_on_first_separator() {
-        let formatted = format_ansible_task("role : sub : detail");
-        assert!(formatted.contains("role:"));
-        assert!(formatted.contains("sub : detail"));
-    }
-
-    #[test]
-    fn run_with_stdout_progress_invokes_handler_for_each_line() {
-        let pb = ProgressBar::hidden();
+    fn stream_command_stdout_invokes_handler_for_each_line() {
         let lines_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let lines_clone = std::sync::Arc::clone(&lines_seen);
 
-        let result = run_with_stdout_progress(
+        let result = stream_command_stdout(
             "test",
             Command::new("sh")
                 .arg("-c")
                 .arg("echo line1; echo line2; echo line3"),
-            &pb,
-            move |line, _pb| {
+            move |line| {
                 lines_clone.lock().unwrap().push(line.to_string());
             },
         )
@@ -765,107 +355,17 @@ mod tests {
     }
 
     #[test]
-    fn run_with_stdout_progress_captures_last_lines_on_failure() {
-        let pb = ProgressBar::hidden();
-
-        let result = run_with_stdout_progress(
+    fn stream_command_stdout_captures_last_lines_on_failure() {
+        let result = stream_command_stdout(
             "test",
             Command::new("sh")
                 .arg("-c")
                 .arg("echo output details >&2; exit 1"),
-            &pb,
-            |_line, _pb| {},
+            |_line| {},
         )
         .unwrap();
 
         assert!(!result.status.success());
         assert!(result.last_stderr.contains("output details"));
-    }
-
-    #[test]
-    fn run_with_cr_stdout_progress_splits_on_cr() {
-        let pb = ProgressBar::hidden();
-        let lines_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-        let lines_clone = std::sync::Arc::clone(&lines_seen);
-
-        let result = run_with_cr_stdout_progress(
-            "test",
-            Command::new("printf").arg("update1\rupdate2\rupdate3\n"),
-            &pb,
-            move |line, _pb| {
-                lines_clone.lock().unwrap().push(line.to_string());
-            },
-        )
-        .unwrap();
-
-        assert!(result.status.success());
-        let seen = lines_seen.lock().unwrap();
-        assert_eq!(*seen, vec!["update1", "update2", "update3"]);
-    }
-
-    #[test]
-    fn run_with_cr_stdout_progress_captures_stderr_on_failure() {
-        let pb = ProgressBar::hidden();
-
-        let result = run_with_cr_stdout_progress(
-            "test",
-            Command::new("sh")
-                .arg("-c")
-                .arg("echo err_detail >&2; exit 1"),
-            &pb,
-            |_line, _pb| {},
-        )
-        .unwrap();
-
-        assert!(!result.status.success());
-        assert!(result.last_stderr.contains("err_detail"));
-    }
-
-    #[test]
-    fn parse_rsync_canonical_line() {
-        let line = "    1,234,567  42%   12.34MB/s    0:01:23";
-        let p = parse_rsync_progress(line).unwrap();
-        assert_eq!(
-            p,
-            RsyncProgress {
-                bytes_transferred: 1234567,
-                percent: 42,
-                speed: "12.34MB/s".to_string(),
-                eta: "0:01:23".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn parse_rsync_single_digit_percent() {
-        let line = "  500  5%   1.00MB/s    0:00:01";
-        let p = parse_rsync_progress(line).unwrap();
-        assert_eq!(p.percent, 5);
-        assert_eq!(p.bytes_transferred, 500);
-    }
-
-    #[test]
-    fn parse_rsync_100_percent() {
-        let line = "  10,000,000 100%   50.00MB/s    0:00:00";
-        let p = parse_rsync_progress(line).unwrap();
-        assert_eq!(p.percent, 100);
-    }
-
-    #[test]
-    fn parse_rsync_plain_text_returns_none() {
-        assert!(parse_rsync_progress("sending incremental file list").is_none());
-    }
-
-    #[test]
-    fn parse_rsync_too_few_fields_returns_none() {
-        assert!(parse_rsync_progress("1234 42%").is_none());
-    }
-
-    #[test]
-    fn parse_rsync_strips_trailing_carriage_return() {
-        let line = "  1,234,567  42%   12.34MB/s    0:01:23\r";
-        let p = parse_rsync_progress(line).unwrap();
-        assert_eq!(p.eta, "0:01:23");
-        assert_eq!(p.percent, 42);
     }
 }
