@@ -18,10 +18,10 @@ pub fn unregister_progress_bar() {
 }
 
 fn cleanup_progress_bar() {
-    if let Ok(guard) = ACTIVE_BAR.lock() {
-        if let Some(pb) = guard.as_ref() {
-            pb.finish_and_clear();
-        }
+    if let Ok(guard) = ACTIVE_BAR.lock()
+        && let Some(pb) = guard.as_ref()
+    {
+        pb.finish_and_clear();
     }
 }
 

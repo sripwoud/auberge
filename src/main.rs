@@ -146,7 +146,9 @@ async fn main() -> Result<()> {
                 ask_pass,
                 force,
             } => signal::with_ctrlc(|| {
-                run_ansible_run(host, playbook, check, tags, skip_tags, user, ask_pass, force)
+                run_ansible_run(
+                    host, playbook, check, tags, skip_tags, user, ask_pass, force,
+                )
             }),
             AnsibleCommands::Bootstrap {
                 host,
@@ -181,7 +183,9 @@ async fn main() -> Result<()> {
                 ssh_key,
                 include_music,
                 dry_run,
-            } => signal::with_ctrlc(|| run_backup_sync(host, apps, ssh_key, include_music, dry_run)),
+            } => {
+                signal::with_ctrlc(|| run_backup_sync(host, apps, ssh_key, include_music, dry_run))
+            }
             BackupCommands::List { host, app, format } => run_backup_list(host, app, format),
             BackupCommands::Restore {
                 backup_id,

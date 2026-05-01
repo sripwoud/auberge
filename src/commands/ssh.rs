@@ -206,12 +206,7 @@ pub fn run_ssh_add_key(
     ));
     output::info(&format!("Public key preview: {}", pubkey_content.trim()));
 
-    if !yes
-        && !dialoguer::Confirm::new()
-            .with_prompt("Authorize this key on the remote host?")
-            .default(false)
-            .interact()?
-    {
+    if !crate::prompt::confirm("Authorize this key on the remote host?", yes) {
         println!("Cancelled");
         return Ok(());
     }
