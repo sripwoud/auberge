@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1](https://github.com/sripwoud/auberge/compare/v0.10.0...v0.10.1) - 2026-05-01
+
+### Fixed
+
+- *(release)* close race window between Release publish and binary upload ([#280](https://github.com/sripwoud/auberge/pull/280))
+
 ## [0.10.0](https://github.com/sripwoud/auberge/compare/v0.9.5...v0.10.0) - 2026-05-01
 
 ### Added
