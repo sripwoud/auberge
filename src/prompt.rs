@@ -192,3 +192,21 @@ pub fn confirm(msg: &str, yes_flag: bool) -> bool {
         .interact()
         .unwrap_or(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::confirm;
+
+    #[test]
+    fn confirm_short_circuits_to_true_when_yes_flag_set() {
+        assert!(confirm("anything", true));
+    }
+
+    #[test]
+    fn confirm_returns_false_in_non_tty_without_yes_flag() {
+        // `cargo test` runs with non-TTY stdin, so the is_terminal() guard
+        // takes effect.  This is the path that prevents `dns set-all` and
+        // `dns delete` from hanging in CI when --yes is omitted.
+        assert!(!confirm("anything", false));
+    }
+}

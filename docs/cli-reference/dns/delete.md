@@ -20,7 +20,7 @@ The command is **idempotent**: if no A record exists for the subdomain it
 reports success with a clear "already gone" diagnostic instead of failing.
 
 An interactive confirmation prompt is shown by default because Cloudflare
-deletions are destructive.  Pass `--yes` to skip it in scripts or CI.
+deletions are destructive. Pass `--yes` to skip it in scripts or CI.
 
 ## Options
 
