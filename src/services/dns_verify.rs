@@ -84,21 +84,26 @@ impl DnsLookup for HickoryLookup {
 }
 
 /// Compare the DNS lookup result against `expected_ip`. Returns `Ok(None)` on
-/// match, `Ok(Some(failure))` for mismatch / NXDOMAIN, and `Err` for I/O errors.
+/// match, `Ok(Some(failure))` for mismatch / NXDOMAIN, and `Err` for I/O errors
+/// or when `expected_ip` is not a valid IP literal.
 pub fn verify_a_record<L: DnsLookup>(
     lookup: &L,
     fqdn: &str,
     expected_ip: &str,
 ) -> Result<Option<VerifyFailure>> {
+    let expected: IpAddr = expected_ip
+        .parse()
+        .map_err(|e| eyre::eyre!("Invalid expected IP '{expected_ip}': {e}"))?;
     let ips = lookup.lookup_ipv4(fqdn)?;
     if ips.is_empty() {
         return Ok(Some(VerifyFailure::NxDomain));
     }
-    let ip_strs: Vec<String> = ips.iter().map(|ip| ip.to_string()).collect();
-    if ip_strs.iter().any(|ip| ip == expected_ip) {
+    if ips.contains(&expected) {
         Ok(None)
     } else {
-        Ok(Some(VerifyFailure::Mismatch { got: ip_strs }))
+        Ok(Some(VerifyFailure::Mismatch {
+            got: ips.iter().map(|ip| ip.to_string()).collect(),
+        }))
     }
 }
 
@@ -282,6 +287,14 @@ mod tests {
         let fqdn = "app.example.com";
         let lookup = MockLookup::new().with_error(fqdn, "timeout");
         assert!(verify_a_record(&lookup, fqdn, "203.0.113.10").is_err());
+    }
+
+    #[test]
+    fn test_verify_invalid_expected_ip_errors() {
+        let fqdn = "app.example.com";
+        let lookup = MockLookup::new().with_found(fqdn, vec!["1.2.3.4".parse().unwrap()]);
+        let err = verify_a_record(&lookup, fqdn, "not-an-ip").unwrap_err();
+        assert!(err.to_string().contains("Invalid expected IP"));
     }
 
     // ── is_tailscale_ip ───────────────────────────────────────────────────────
