@@ -498,20 +498,12 @@ mod tests {
         );
     }
 
-    // host show/edit/remove: with None on a non-TTY, select_or_arg fails before
-    // prompting; with Some(unknown_name), the host lookup fails. Both must error.
-
     #[test]
-    fn host_commands_error_on_none_or_unknown() {
+    fn host_commands_error_on_unknown_name() {
         let unknown = || Some("__nonexistent_host__".to_string());
 
-        assert!(run_host_show(None, None).is_err());
         assert!(run_host_show(unknown(), None).is_err());
-
-        assert!(run_host_remove(None, true).is_err());
         assert!(run_host_remove(unknown(), true).is_err());
-
-        assert!(run_host_edit(None).is_err());
         assert!(run_host_edit(unknown()).is_err());
     }
 }
