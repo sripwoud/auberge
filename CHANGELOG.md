@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2](https://github.com/sripwoud/auberge/compare/v0.10.1...v0.10.2) - 2026-05-05
+
+### Added
+
+- *(dns)* auto-fill tailnet-only DNS overrides from host tailscale_ip cache ([#282](https://github.com/sripwoud/auberge/pull/282))
+
 ## [0.10.1](https://github.com/sripwoud/auberge/compare/v0.10.0...v0.10.1) - 2026-05-01
 
 ### Fixed
