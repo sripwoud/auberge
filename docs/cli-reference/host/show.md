@@ -5,7 +5,7 @@ Show detailed host information
 ## Synopsis
 
 ```bash
-auberge host show [OPTIONS] <NAME>
+auberge host show [OPTIONS] [NAME]
 # Alias: auberge h s
 ```
 
@@ -13,11 +13,13 @@ auberge host show [OPTIONS] <NAME>
 
 Displays detailed configuration for a specific host, including all metadata and connection details.
 
+If `NAME` is omitted, you'll be prompted to select a host.
+
 ## Arguments
 
-| Argument | Description          |
-| -------- | -------------------- |
-| NAME     | Host name (required) |
+| Argument | Description                     |
+| -------- | ------------------------------- |
+| NAME     | Host name (omit to be prompted) |
 
 ## Options
 
@@ -30,6 +32,9 @@ Displays detailed configuration for a specific host, including all metadata and 
 ```bash
 # Show host details (YAML)
 auberge host show myserver
+
+# Interactive (prompts for host)
+auberge host show
 
 # JSON output
 auberge host show myserver --output json
