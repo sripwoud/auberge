@@ -365,4 +365,29 @@ freshrss_subdomain = "rss"
         assert!(msg.contains("1.1.1.1"));
         assert!(msg.contains("NXDOMAIN"));
     }
+
+    // ── HickoryLookup network integration ─────────────────────────────────────
+    //
+    // Exercises the real resolver wiring (TokioResolver build, block_in_place,
+    // trailing-dot FQDN, IPv4 filter). Ignored by default because it hits the
+    // public network. Run with:
+    //
+    //     cargo nextest run --run-ignored only -- hickory_lookup
+    //
+    // Cloudflare publishes one.one.one.one → 1.1.1.1 / 1.0.0.1 as a stable
+    // anchor; we just check that querying 1.1.1.1 returns that IP.
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "requires network access to 1.1.1.1"]
+    async fn hickory_lookup_resolves_public_anchor() {
+        let lookup = HickoryLookup::new("1.1.1.1").expect("build resolver");
+        let ips = lookup
+            .lookup_ipv4("one.one.one.one")
+            .expect("lookup succeeds");
+        let one_one: IpAddr = "1.1.1.1".parse().unwrap();
+        assert!(
+            ips.contains(&one_one),
+            "expected 1.1.1.1 in {ips:?} for one.one.one.one"
+        );
+    }
 }
