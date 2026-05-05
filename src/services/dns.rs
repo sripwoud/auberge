@@ -1,7 +1,7 @@
 use crate::config::Config;
 use cloudflare::endpoints::dns::dns::{
-    CreateDnsRecord, CreateDnsRecordParams, DnsContent, DnsRecord, ListDnsRecords, UpdateDnsRecord,
-    UpdateDnsRecordParams,
+    CreateDnsRecord, CreateDnsRecordParams, DeleteDnsRecord, DnsContent, DnsRecord, ListDnsRecords,
+    UpdateDnsRecord, UpdateDnsRecordParams,
 };
 use cloudflare::endpoints::zones::zone::{ListZones, ListZonesParams};
 use cloudflare::framework::Environment;
@@ -202,6 +202,25 @@ impl DnsService {
         }
 
         Ok(())
+    }
+
+    /// Deletes the A record for `subdomain`.  Returns `true` when the record
+    /// was found and deleted, `false` when it was already absent (idempotent).
+    pub async fn delete_a_record(&self, subdomain: &str) -> Result<bool> {
+        let existing = self.find_record(subdomain).await?;
+        match existing {
+            None => Ok(false),
+            Some(record) => {
+                self.client
+                    .request(&DeleteDnsRecord {
+                        zone_identifier: &self.zone_id,
+                        identifier: &record.id,
+                    })
+                    .await
+                    .map_err(|e| eyre::eyre!("Failed to delete DNS record: {}", e))?;
+                Ok(true)
+            }
+        }
     }
 
     pub async fn migrate_all(&self, new_ip: &str, dry_run: bool) -> Result<Vec<MigrationResult>> {

@@ -23,7 +23,8 @@ use commands::config_cmd::{
 };
 use commands::deploy::{DeployCmd, run_deploy};
 use commands::dns::{
-    DnsCommands, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all, run_dns_status,
+    DnsCommands, run_dns_delete, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all,
+    run_dns_status,
 };
 use commands::headscale::{
     HeadscaleCommands, run_headscale_add_user, run_headscale_list_nodes, run_headscale_list_users,
@@ -260,6 +261,11 @@ async fn main() -> Result<()> {
                 ip,
                 production,
             } => run_dns_set(subdomain, ip, production).await,
+            DnsCommands::Delete {
+                subdomain,
+                production,
+                yes,
+            } => run_dns_delete(subdomain, production, yes).await,
             DnsCommands::Migrate {
                 ip,
                 dry_run,
