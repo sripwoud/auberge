@@ -35,7 +35,24 @@ pub enum DnsCommands {
         #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
         production: bool,
     },
-    #[command(alias = "d", about = "Delete an A record for a subdomain")]
+    #[command(
+        alias = "d",
+        about = "Delete an A record for a subdomain",
+        long_about = "Delete the Cloudflare A record for a subdomain.\n\n\
+                      Idempotent — running against an already-absent record reports success. \
+                      Only A records are considered; CNAME / AAAA / TXT records for the same \
+                      name are left untouched.\n\n\
+                      Confirmation is required by default; --yes skips it. Production deletions \
+                      escalate the confirmation: the user must retype the subdomain name to \
+                      proceed.\n\n\
+                      EXAMPLES:\n  \
+                      # Pick a subdomain interactively, confirm, then delete (sandbox)\n  \
+                      auberge dns delete\n\n  \
+                      # Preview the action without deleting\n  \
+                      auberge dns delete -s freshrss --dry-run\n\n  \
+                      # Production delete in CI (no prompts)\n  \
+                      auberge dns delete -s freshrss --production --yes"
+    )]
     Delete {
         #[arg(short, long, help = "Subdomain name (omit to be prompted)")]
         subdomain: Option<String>,
