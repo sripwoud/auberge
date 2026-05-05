@@ -281,21 +281,30 @@ mod tests {
     fn no_color_flag_overrides_tty_check() {
         let _guard = TEST_LOCK.lock().unwrap();
         let _env_guard = EnvVarGuard::unset("NO_COLOR");
-        set_no_color(false);
         set_no_color(true);
         assert!(!should_use_colors());
         set_no_color(false);
     }
 
     #[test]
-    fn no_color_flag_cleared_does_not_force_off() {
+    fn no_color_env_disables_colors_when_flag_cleared() {
         let _guard = TEST_LOCK.lock().unwrap();
+        let _env_guard = EnvVarGuard::unset("NO_COLOR");
+        // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+        unsafe { env::set_var("NO_COLOR", "1") };
         set_no_color(false);
-        // When the flag is cleared AND NO_COLOR env is absent AND TERM != dumb, the only
-        // remaining condition is the TTY check.  In a non-TTY test environment that will be
-        // false, but what matters is that set_no_color(false) alone doesn't return true.
-        // (We just assert the flag doesn't independently force *true*.)
-        let _ = should_use_colors(); // must not panic
+        assert!(!should_use_colors());
+    }
+
+    #[test]
+    fn term_dumb_disables_colors_when_flag_and_env_absent() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let _no_color_guard = EnvVarGuard::unset("NO_COLOR");
+        let _term_guard = EnvVarGuard::unset("TERM");
+        // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+        unsafe { env::set_var("TERM", "dumb") };
+        set_no_color(false);
+        assert!(!should_use_colors());
     }
 
     #[test]
