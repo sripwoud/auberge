@@ -14,12 +14,32 @@ use crate::ssh_session::SshSession;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
+use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 use std::time::Instant;
 use tabled::Tabled;
+
+fn backup_timestamp_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
+            .expect("backup timestamp regex must compile")
+    })
+}
+
+fn is_backup_timestamp_dir(entry: &fs::DirEntry) -> bool {
+    let path = entry.path();
+    if !path.is_dir() || path.is_symlink() {
+        return false;
+    }
+    let name = entry.file_name();
+    let name = name.to_string_lossy();
+    backup_timestamp_re().is_match(&name)
+}
 
 #[derive(Subcommand)]
 pub enum BackupCommands {
@@ -680,12 +700,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         let backup_path = if backup_id == "latest" {
             let mut timestamps: Vec<_> = fs::read_dir(&host_backup_dir)?
                 .filter_map(Result::ok)
-                .filter(|e| e.path().is_dir())
-                .filter(|e| !e.path().is_symlink())
-                .filter(|e| {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    name.contains('_') && name.starts_with("20")
-                })
+                .filter(is_backup_timestamp_dir)
                 .collect();
 
             timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
@@ -1185,11 +1200,7 @@ fn resolve_backup_dir(
         None => {
             let mut timestamps: Vec<_> = fs::read_dir(&host_dir)?
                 .filter_map(Result::ok)
-                .filter(|e| e.path().is_dir() && !e.path().is_symlink())
-                .filter(|e| {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    name.contains('_') && name.starts_with("20")
-                })
+                .filter(is_backup_timestamp_dir)
                 .collect();
 
             timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
@@ -1205,12 +1216,8 @@ fn resolve_backup_dir(
 fn select_backup_id(host_backup_dir: &Path) -> Result<String> {
     let mut timestamps: Vec<String> = fs::read_dir(host_backup_dir)?
         .filter_map(Result::ok)
-        .filter(|e| e.path().is_dir() && !e.path().is_symlink())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            name.contains('_') && name.starts_with("20")
-        })
-        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(is_backup_timestamp_dir)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
 
     timestamps.sort_by(|a, b| b.cmp(a)); // newest first
@@ -1708,7 +1715,10 @@ mod tests {
         let result = select_backup_id(&nonexistent);
         assert!(result.is_err(), "expected error when no timestamps exist");
         assert!(
-            result.unwrap_err().to_string().contains("No backup timestamps found"),
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No backup timestamps found"),
             "error should mention missing timestamps"
         );
     }

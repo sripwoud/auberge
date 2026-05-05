@@ -505,7 +505,10 @@ mod tests {
     #[test]
     fn show_none_without_tty_errors() {
         let result = run_host_show(None, None);
-        assert!(result.is_err(), "expected error when name is None and not a TTY");
+        assert!(
+            result.is_err(),
+            "expected error when name is None and not a TTY"
+        );
     }
 
     #[test]
@@ -517,7 +520,10 @@ mod tests {
     #[test]
     fn remove_none_without_tty_errors() {
         let result = run_host_remove(None, true);
-        assert!(result.is_err(), "expected error when name is None and not a TTY");
+        assert!(
+            result.is_err(),
+            "expected error when name is None and not a TTY"
+        );
     }
 
     #[test]
