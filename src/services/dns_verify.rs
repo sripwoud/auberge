@@ -281,7 +281,7 @@ mod tests {
     // ── app_verify_config ─────────────────────────────────────────────────────
 
     fn make_config(toml_str: &str) -> Config {
-        Config::from_toml_str(toml_str)
+        Config::from_toml_str(toml_str).expect("test fixture TOML must parse")
     }
 
     #[test]
