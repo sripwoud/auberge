@@ -49,9 +49,16 @@ Three problems accumulated:
 
 ## Implementation notes
 
-### `subdomain` lives in the Playbook Meta
+### `subdomain` lives in the Playbook Meta, with operator override
 
-The Blocky role composes each tailnet-only FQDN from `<meta.subdomain>.<domain>`. Subdomains are otherwise available only as role-default variables (`<app>_subdomain`), which are not in scope when the Blocky role runs (Ansible role defaults are scoped to their owning role). An earlier draft used `lookup('vars', ...)` with a `default=app` fallback, but that worked only because every default happened to equal the app name — silently broken if a role default ever diverged. Promoting `subdomain` to the Playbook Meta puts the FQDN's identity next to the `tailnet_only` flag that gates its publication, eliminating that latent inconsistency. Public Apps may still rely on role defaults; only tailnet-only Apps need the meta declaration.
+The Blocky role composes each tailnet-only FQDN as `<effective_subdomain>.<domain>`, where `effective_subdomain = lookup('vars', '<app>_subdomain', default=meta.subdomain)`. The meta's `subdomain` field is the canonical _default_; the operator's `<app>_subdomain` in `config.toml` (which the CLI propagates to Ansible as an extra-var) is the _override_.
+
+Why both layers:
+
+- Caddy and the TLS-via-DNS-01 cert flow already consume the operator override via the role-default → extra-var precedence (extra-vars beat defaults). For Blocky's FQDN to match Caddy's vhost and the cert's SAN, Blocky must consult the same override.
+- An earlier draft used `lookup('vars', ...)` with `default=app` as the _only_ source. That worked only because every role default happened to equal the app name and would have silently broken if a default ever diverged. Promoting `subdomain` to the meta gave a non-fragile default; layering the override on top restores the operator-renaming UX without reintroducing the original fragility — the meta is consulted unconditionally as the fallback, so a missing extra-var is no longer a silent failure.
+
+App identity for the override lookup is derived from the meta filename (`<app>.meta.yml` → `<app>`), matching the Rust-side convention in `playbook_meta.rs::load_for_app`. Public Apps may still rely on role defaults; only tailnet-only Apps need the meta declaration.
 
 ### Split-DNS target IP auto-detection
 

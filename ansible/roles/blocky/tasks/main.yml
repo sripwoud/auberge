@@ -176,19 +176,26 @@
   loop: "{{ blocky_meta_files_found.files }}"
   register: blocky_meta_slurped
 
-- name: Derive blocky_tailscale_bound_domains from tailnet-only meta files
+- name: Initialize blocky_tailscale_bound_domains
+  run_once: true
+  ansible.builtin.set_fact:
+    blocky_tailscale_bound_domains: []
+
+- name: Append tailnet-only FQDN per meta with operator-override resolution
   run_once: true
   vars:
-    parsed_metas: "{{ blocky_meta_slurped.results | map(attribute='content') | map('b64decode') | map('from_yaml') | list }}"
+    parsed: "{{ item.content | b64decode | from_yaml }}"
+    app_name: "{{ item.source | basename | regex_replace('\\.meta\\.yml$', '') }}"
+    override_var: "{{ app_name + '_subdomain' }}"
+    effective_subdomain: "{{ lookup('vars', override_var, default=parsed.subdomain | default('')) }}"
   ansible.builtin.set_fact:
-    blocky_tailscale_bound_domains: >-
-      {{ parsed_metas
-         | selectattr('tailnet_only', 'defined')
-         | selectattr('tailnet_only', 'equalto', true)
-         | selectattr('subdomain', 'defined')
-         | map(attribute='subdomain')
-         | map('regex_replace', '^(.+)$', '\1.' + domain)
-         | list }}
+    blocky_tailscale_bound_domains: "{{ blocky_tailscale_bound_domains + [effective_subdomain + '.' + domain] }}"
+  when:
+    - parsed.tailnet_only | default(false)
+    - effective_subdomain | length > 0
+  loop: "{{ blocky_meta_slurped.results }}"
+  loop_control:
+    label: "{{ item.source | basename }}"
 
 - name: Configure blocky
   ansible.builtin.template:
