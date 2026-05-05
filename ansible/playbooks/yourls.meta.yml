@@ -1,4 +1,5 @@
 required_keys: []
+subdomain: yourls
 backup:
   paths: [/var/www/yourls]
   owner: [www-data, www-data]

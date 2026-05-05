@@ -1,4 +1,6 @@
+use crate::ansible_assets::AnsibleAssets;
 use crate::config::Config;
+use crate::playbook_meta::PlaybookMeta;
 use cloudflare::endpoints::dns::dns::{
     CreateDnsRecord, CreateDnsRecordParams, DeleteDnsRecord, DnsContent, DnsRecord, ListDnsRecords,
     UpdateDnsRecord, UpdateDnsRecordParams,
@@ -37,42 +39,55 @@ pub struct SubdomainEntry {
     pub ip_override: Option<String>,
 }
 
-const KNOWN_SUBDOMAIN_KEYS: &[&str] = &[
-    "baikal_subdomain",
-    "bichon_subdomain",
-    "blocky_subdomain",
-    "grimmory_subdomain",
-    "colporteur_subdomain",
-    "freshrss_subdomain",
-    "headscale_subdomain",
-    "navidrome_subdomain",
-    "paperless_subdomain",
-    "webdav_subdomain",
-    "yourls_subdomain",
-];
-
+/// Discovers Public-App subdomains from sibling Playbook Metas.
+/// Filters out tailnet-only Apps; mirrors how Blocky derives `customDNS`
+/// from the same metas (ADR-0003).
 pub fn discover_subdomains() -> HashMap<String, SubdomainEntry> {
-    let config = match Config::load() {
-        Ok(c) => c,
+    let assets = match AnsibleAssets::prepare() {
+        Ok(a) => a,
         Err(_) => return HashMap::new(),
     };
-    KNOWN_SUBDOMAIN_KEYS
-        .iter()
-        .filter_map(|key| {
-            config.get(key).filter(|v| !v.is_empty()).map(|value| {
-                let app = key.strip_suffix("_subdomain").unwrap_or(key);
-                let tailscale_key = format!("{}_tailscale_ip", app);
-                let ip_override = config.get(&tailscale_key).filter(|v| !v.is_empty());
-                (
-                    app.to_string(),
-                    SubdomainEntry {
-                        subdomain: value,
-                        ip_override,
-                    },
-                )
-            })
-        })
-        .collect()
+    let entries = match std::fs::read_dir(assets.playbooks_dir()) {
+        Ok(e) => e,
+        Err(_) => return HashMap::new(),
+    };
+
+    let config = Config::load().ok();
+
+    let mut result: HashMap<String, SubdomainEntry> = HashMap::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(app) = file_name.strip_suffix(".meta.yml") else {
+            continue;
+        };
+        let Ok(meta) = PlaybookMeta::load(&path) else {
+            continue;
+        };
+        if meta.tailnet_only {
+            continue;
+        }
+        let Some(subdomain) = meta.subdomain.filter(|s| !s.is_empty()) else {
+            continue;
+        };
+
+        let ip_override = config.as_ref().and_then(|c| {
+            let key = format!("{}_tailscale_ip", app);
+            c.get(&key).filter(|v| !v.is_empty())
+        });
+
+        result.insert(
+            app.to_string(),
+            SubdomainEntry {
+                subdomain,
+                ip_override,
+            },
+        );
+    }
+
+    result
 }
 
 /// Returns `true` if `ip` is in the Tailscale CGNAT range (100.64.0.0/10).
@@ -321,6 +336,8 @@ impl DnsService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
 
     #[test]
     fn test_is_tailscale_ip_true() {
@@ -335,5 +352,99 @@ mod tests {
         assert!(!is_tailscale_ip("192.168.1.1"));
         assert!(!is_tailscale_ip("203.0.113.10"));
         assert!(!is_tailscale_ip("not-an-ip"));
+    }
+
+    fn playbooks_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("ansible")
+            .join("playbooks")
+    }
+
+    // Metas for orchestrating/infrastructure playbooks that don't represent
+    // an App with DNS publication. Anything else must declare `subdomain`.
+    const NON_APP_PLAYBOOK_METAS: &[&str] = &[
+        "apps",
+        "bootstrap",
+        "calibre",
+        "hardening",
+        "hermes",
+        "infrastructure",
+        "remove-radicale",
+        "vibecoder",
+    ];
+
+    #[test]
+    fn test_every_app_meta_has_subdomain_unless_tailnet_only_or_excluded() {
+        let dir = playbooks_dir();
+        let read = std::fs::read_dir(&dir).expect("playbooks dir");
+        for entry in read.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Some(stem) = name.strip_suffix(".meta.yml") else {
+                continue;
+            };
+            let meta =
+                PlaybookMeta::load(&path).unwrap_or_else(|e| panic!("failed to parse {name}: {e}"));
+
+            if meta.tailnet_only {
+                assert!(
+                    meta.subdomain.as_deref().is_some_and(|s| !s.is_empty()),
+                    "{name}: tailnet_only metas must declare subdomain"
+                );
+                continue;
+            }
+
+            if NON_APP_PLAYBOOK_METAS.contains(&stem) {
+                continue;
+            }
+
+            assert!(
+                meta.subdomain.as_deref().is_some_and(|s| !s.is_empty()),
+                "{name}: non-tailnet-only App meta must declare subdomain. \
+                 If this Playbook Meta does not represent an App, add its stem \
+                 to NON_APP_PLAYBOOK_METAS in src/services/dns.rs tests."
+            );
+        }
+    }
+
+    #[test]
+    fn test_discover_subdomains_returns_expected_public_apps() {
+        let discovered = discover_subdomains();
+        let got: BTreeSet<String> = discovered.keys().cloned().collect();
+        let expected: BTreeSet<String> = [
+            "baikal",
+            "blocky",
+            "colporteur",
+            "freshrss",
+            "grimmory",
+            "headscale",
+            "navidrome",
+            "webdav",
+            "yourls",
+        ]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn test_discover_subdomains_excludes_tailnet_only_apps() {
+        let discovered = discover_subdomains();
+        for tailnet_only in ["bichon", "cockpit", "paperless"] {
+            assert!(
+                !discovered.contains_key(tailnet_only),
+                "tailnet-only app {tailnet_only} must not appear in Public-App discovery"
+            );
+        }
+    }
+
+    #[test]
+    fn test_discover_subdomains_uses_meta_subdomain_value() {
+        let discovered = discover_subdomains();
+        assert_eq!(discovered["headscale"].subdomain, "hs");
+        assert_eq!(discovered["freshrss"].subdomain, "freshrss");
     }
 }

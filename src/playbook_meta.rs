@@ -344,10 +344,18 @@ mod tests {
     }
 
     #[test]
-    fn test_public_app_meta_defaults_to_not_tailnet_only() {
+    fn test_public_app_meta_declares_subdomain_and_is_not_tailnet_only() {
         let meta = load_meta("freshrss");
         assert!(!meta.tailnet_only);
+        assert_eq!(meta.subdomain.as_deref(), Some("freshrss"));
+    }
+
+    #[test]
+    fn test_meta_without_subdomain_parses_to_none() {
+        let yaml = "required_keys: []\n";
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
         assert!(meta.subdomain.is_none());
+        assert!(!meta.tailnet_only);
     }
 
     #[test]
