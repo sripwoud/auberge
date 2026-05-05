@@ -35,6 +35,34 @@ pub enum DnsCommands {
         #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
         production: bool,
     },
+    #[command(
+        alias = "d",
+        about = "Delete an A record for a subdomain",
+        long_about = "Delete the Cloudflare A record for a subdomain.\n\n\
+                      Idempotent — running against an already-absent record reports success. \
+                      Only A records are considered; CNAME / AAAA / TXT records for the same \
+                      name are left untouched.\n\n\
+                      Confirmation is required by default; --yes skips it. Production deletions \
+                      escalate the confirmation: the user must retype the subdomain name to \
+                      proceed.\n\n\
+                      EXAMPLES:\n  \
+                      # Pick a subdomain interactively, confirm, then delete (sandbox)\n  \
+                      auberge dns delete\n\n  \
+                      # Preview the action without deleting\n  \
+                      auberge dns delete -s freshrss --dry-run\n\n  \
+                      # Production delete in CI (no prompts)\n  \
+                      auberge dns delete -s freshrss --production --yes"
+    )]
+    Delete {
+        #[arg(short, long, help = "Subdomain name (omit to be prompted)")]
+        subdomain: Option<String>,
+        #[arg(short = 'n', long, help = "Preview without deleting")]
+        dry_run: bool,
+        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        production: bool,
+        #[arg(short = 'y', long, help = "Skip confirmation prompt")]
+        yes: bool,
+    },
     #[command(alias = "m", about = "Migrate all A records to a new IP")]
     Migrate {
         #[arg(short, long, help = "New IP address")]
@@ -204,9 +232,13 @@ pub async fn run_dns_status(production: bool) -> Result<()> {
 }
 
 fn resolve_subdomain(subdomain: Option<String>) -> Result<String> {
+    use std::io::IsTerminal;
     match subdomain {
         Some(s) => Ok(s),
         None => {
+            if !std::io::stdin().is_terminal() {
+                eyre::bail!("No subdomain provided. Pass -s <name> for non-interactive use.");
+            }
             crate::config::Config::load()?;
             let subdomains = crate::services::dns::discover_subdomains();
             let mut items: Vec<String> = subdomains.values().map(|e| e.subdomain.clone()).collect();
@@ -216,7 +248,7 @@ fn resolve_subdomain(subdomain: Option<String>) -> Result<String> {
             items.sort();
             items.dedup();
             select_item(&items, |s: &String| s.clone(), "Select subdomain")?
-                .ok_or_else(|| eyre::eyre!("No subdomain selected"))
+                .ok_or_else(|| eyre::eyre!("No subdomain selected — pass -s <name> to provide one"))
         }
     }
 }
@@ -257,6 +289,51 @@ pub async fn run_dns_set(
 
     service.set_a_record(&subdomain, &ip).await?;
     output::success("A record set successfully");
+
+    Ok(())
+}
+
+pub async fn run_dns_delete(
+    subdomain: Option<String>,
+    dry_run: bool,
+    production: bool,
+    yes: bool,
+) -> Result<()> {
+    let subdomain = resolve_subdomain(subdomain)?;
+    let service = DnsService::new_with_production(Some(production)).await?;
+    print_mode_banner();
+
+    let fqdn = format!("{}.{}", subdomain, service.domain());
+
+    if dry_run {
+        output::info(&format!("[DRY RUN] Would delete A record: {}", fqdn));
+        return Ok(());
+    }
+
+    let confirmed = if production {
+        crate::prompt::confirm_typed(
+            &format!("Type '{}' to confirm production deletion", subdomain),
+            &subdomain,
+            yes,
+        )?
+    } else {
+        crate::prompt::confirm(&format!("Delete A record for {}?", fqdn), yes)
+    };
+
+    if !confirmed {
+        output::info("Operation cancelled");
+        return Ok(());
+    }
+
+    let deleted = service.delete_a_record(&subdomain).await?;
+    if deleted {
+        output::success(&format!("A record deleted: {}", fqdn));
+    } else {
+        output::info(&format!(
+            "No A record found for {} — nothing to delete",
+            fqdn
+        ));
+    }
 
     Ok(())
 }
@@ -419,15 +496,9 @@ pub async fn run_dns_set_all(
         }
     }
 
-    if !yes && !dry_run {
-        eprint!("\nProceed? [y/N]: ");
-        use std::io::{self, BufRead};
-        let mut response = String::new();
-        io::stdin().lock().read_line(&mut response)?;
-        if !response.trim().eq_ignore_ascii_case("y") {
-            println!("Operation cancelled");
-            return Ok(());
-        }
+    if !dry_run && !crate::prompt::confirm("Proceed?", yes) {
+        output::info("Operation cancelled");
+        return Ok(());
     }
 
     if dry_run {

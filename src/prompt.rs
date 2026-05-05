@@ -1,4 +1,4 @@
-use dialoguer::{Confirm, MultiSelect, Select, theme::ColorfulTheme};
+use dialoguer::{Confirm, Input, MultiSelect, Select, theme::ColorfulTheme};
 use eyre::Result;
 use skim::prelude::*;
 use std::io::{Cursor, IsTerminal, Write};
@@ -191,4 +191,60 @@ pub fn confirm(msg: &str, yes_flag: bool) -> bool {
         .default(false)
         .interact()
         .unwrap_or(false)
+}
+
+/// Severe confirmation: the user must type `expected` exactly to proceed.
+/// Use for irreversible / production-impacting actions.
+///
+/// Honors `yes_flag` (skip prompt, proceed) and non-TTY stdin (refuse, return
+/// `Ok(false)` so callers can bail with an actionable message instead of
+/// hanging on a prompt that nobody can answer).
+pub fn confirm_typed(prompt_msg: &str, expected: &str, yes_flag: bool) -> Result<bool> {
+    if yes_flag {
+        return Ok(true);
+    }
+
+    if !std::io::stdin().is_terminal() {
+        return Ok(false);
+    }
+
+    let typed: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt_msg)
+        .allow_empty(true)
+        .interact_text()?;
+
+    Ok(typed.trim() == expected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{confirm, confirm_typed};
+
+    #[test]
+    fn confirm_short_circuits_to_true_when_yes_flag_set() {
+        assert!(confirm("anything", true));
+    }
+
+    #[test]
+    fn confirm_returns_false_in_non_tty_without_yes_flag() {
+        // `cargo test` runs with non-TTY stdin, so the is_terminal() guard
+        // takes effect.  This is the path that prevents `dns set-all` and
+        // `dns delete` from hanging in CI when --yes is omitted.
+        assert!(!confirm("anything", false));
+    }
+
+    #[test]
+    fn confirm_typed_short_circuits_to_true_when_yes_flag_set() {
+        // --yes must bypass the typed-confirmation gate so CI can run without
+        // a TTY attached.  Expected value is irrelevant on this path.
+        assert!(confirm_typed("type the name", "freshrss", true).unwrap());
+    }
+
+    #[test]
+    fn confirm_typed_returns_false_in_non_tty_without_yes_flag() {
+        // Without --yes and without a TTY, severe confirmation cannot be
+        // satisfied — callers should treat this as cancellation and surface
+        // an actionable error rather than dispatching the destructive op.
+        assert!(!confirm_typed("type the name", "freshrss", false).unwrap());
+    }
 }
