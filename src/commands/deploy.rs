@@ -29,7 +29,7 @@ pub struct DeployCmd {
     pub force: bool,
     #[arg(
         long,
-        help = "After each app's playbook run, verify public DNS resolves to the host IP (queries 1.1.1.1; opt-in because Cloudflare propagation can be slow)"
+        help = "Verify public DNS after each app's playbook run (queries 1.1.1.1)"
     )]
     pub verify_public_dns: bool,
 }
