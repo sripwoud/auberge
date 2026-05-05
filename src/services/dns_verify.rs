@@ -2,11 +2,9 @@ use crate::config::Config;
 use eyre::Result;
 use std::net::IpAddr;
 
-/// The outcome of a DNS A-record verification.
+/// A failed DNS A-record verification.
 #[derive(Debug, PartialEq)]
-pub enum VerifyOutcome {
-    /// The A record exists and includes the expected IP.
-    Match,
+pub enum VerifyFailure {
     /// The A record exists but doesn't include the expected IP.
     Mismatch {
         /// The actual A records returned.
@@ -85,23 +83,22 @@ impl DnsLookup for HickoryLookup {
     }
 }
 
-/// Compare the DNS lookup result against `expected_ip` and return the outcome.
+/// Compare the DNS lookup result against `expected_ip`. Returns `Ok(None)` on
+/// match, `Ok(Some(failure))` for mismatch / NXDOMAIN, and `Err` for I/O errors.
 pub fn verify_a_record<L: DnsLookup>(
     lookup: &L,
     fqdn: &str,
     expected_ip: &str,
-) -> Result<VerifyOutcome> {
-    match lookup.lookup_ipv4(fqdn) {
-        Ok(ips) if ips.is_empty() => Ok(VerifyOutcome::NxDomain),
-        Ok(ips) => {
-            let ip_strs: Vec<String> = ips.iter().map(|ip| ip.to_string()).collect();
-            if ip_strs.iter().any(|ip| ip == expected_ip) {
-                Ok(VerifyOutcome::Match)
-            } else {
-                Ok(VerifyOutcome::Mismatch { got: ip_strs })
-            }
-        }
-        Err(e) => Err(e),
+) -> Result<Option<VerifyFailure>> {
+    let ips = lookup.lookup_ipv4(fqdn)?;
+    if ips.is_empty() {
+        return Ok(Some(VerifyFailure::NxDomain));
+    }
+    let ip_strs: Vec<String> = ips.iter().map(|ip| ip.to_string()).collect();
+    if ip_strs.iter().any(|ip| ip == expected_ip) {
+        Ok(None)
+    } else {
+        Ok(Some(VerifyFailure::Mismatch { got: ip_strs }))
     }
 }
 
@@ -140,15 +137,15 @@ pub fn app_verify_config(
     let fqdn = format!("{}.{}", subdomain, domain);
 
     let tailscale_key = format!("{}_tailscale_ip", app);
-    if let Some(tailscale_ip) = config.get(&tailscale_key).filter(|v| !v.is_empty()) {
-        if is_tailscale_ip(&tailscale_ip) {
-            return Some(AppVerifyConfig {
-                fqdn,
-                resolver_ip: tailscale_ip.clone(),
-                expected_ip: tailscale_ip,
-                is_tailnet: true,
-            });
-        }
+    if let Some(tailscale_ip) = config.get(&tailscale_key).filter(|v| !v.is_empty())
+        && is_tailscale_ip(&tailscale_ip)
+    {
+        return Some(AppVerifyConfig {
+            fqdn,
+            resolver_ip: tailscale_ip.clone(),
+            expected_ip: tailscale_ip,
+            is_tailnet: true,
+        });
     }
 
     if verify_public {
@@ -164,16 +161,20 @@ pub fn app_verify_config(
 }
 
 /// Format a user-visible diagnostic for a failed DNS check.
-pub fn format_dns_error(fqdn: &str, resolver_ip: &str, expected_ip: &str, outcome: &VerifyOutcome) -> String {
-    match outcome {
-        VerifyOutcome::Mismatch { got } => format!(
+pub fn format_dns_error(
+    fqdn: &str,
+    resolver_ip: &str,
+    expected_ip: &str,
+    failure: &VerifyFailure,
+) -> String {
+    match failure {
+        VerifyFailure::Mismatch { got } => format!(
             "DNS mismatch for {fqdn}: queried {resolver_ip}, expected {expected_ip}, got [{}]",
             got.join(", ")
         ),
-        VerifyOutcome::NxDomain => format!(
+        VerifyFailure::NxDomain => format!(
             "DNS check failed for {fqdn}: queried {resolver_ip}, expected {expected_ip}, got NXDOMAIN (name not found)"
         ),
-        VerifyOutcome::Match => String::new(),
     }
 }
 
@@ -239,38 +240,30 @@ mod tests {
     fn test_verify_match_tailnet() {
         let ip = "100.64.1.2";
         let fqdn = "myapp.example.ts";
-        let lookup = MockLookup::new()
-            .with_found(fqdn, vec![ip.parse::<Ipv4Addr>().unwrap()]);
-        assert_eq!(
-            verify_a_record(&lookup, fqdn, ip).unwrap(),
-            VerifyOutcome::Match
-        );
+        let lookup = MockLookup::new().with_found(fqdn, vec![ip.parse::<Ipv4Addr>().unwrap()]);
+        assert_eq!(verify_a_record(&lookup, fqdn, ip).unwrap(), None);
     }
 
     #[test]
     fn test_verify_match_public() {
         let ip = "203.0.113.10";
         let fqdn = "app.example.com";
-        let lookup = MockLookup::new()
-            .with_found(fqdn, vec![ip.parse::<Ipv4Addr>().unwrap()]);
-        assert_eq!(
-            verify_a_record(&lookup, fqdn, ip).unwrap(),
-            VerifyOutcome::Match
-        );
+        let lookup = MockLookup::new().with_found(fqdn, vec![ip.parse::<Ipv4Addr>().unwrap()]);
+        assert_eq!(verify_a_record(&lookup, fqdn, ip).unwrap(), None);
     }
 
     #[test]
     fn test_verify_mismatch() {
         let fqdn = "app.example.com";
         let actual_ip = "203.0.113.99";
-        let lookup = MockLookup::new()
-            .with_found(fqdn, vec![actual_ip.parse::<Ipv4Addr>().unwrap()]);
-        let outcome = verify_a_record(&lookup, fqdn, "203.0.113.10").unwrap();
+        let lookup =
+            MockLookup::new().with_found(fqdn, vec![actual_ip.parse::<Ipv4Addr>().unwrap()]);
+        let failure = verify_a_record(&lookup, fqdn, "203.0.113.10").unwrap();
         assert_eq!(
-            outcome,
-            VerifyOutcome::Mismatch {
+            failure,
+            Some(VerifyFailure::Mismatch {
                 got: vec![actual_ip.to_string()]
-            }
+            })
         );
     }
 
@@ -280,7 +273,7 @@ mod tests {
         let lookup = MockLookup::new().with_nxdomain(fqdn);
         assert_eq!(
             verify_a_record(&lookup, fqdn, "203.0.113.10").unwrap(),
-            VerifyOutcome::NxDomain
+            Some(VerifyFailure::NxDomain)
         );
     }
 
@@ -374,7 +367,7 @@ freshrss_subdomain = "rss"
             "app.example.com",
             "100.64.1.2",
             "100.64.1.2",
-            &VerifyOutcome::Mismatch {
+            &VerifyFailure::Mismatch {
                 got: vec!["203.0.113.99".to_string()],
             },
         );
@@ -389,7 +382,7 @@ freshrss_subdomain = "rss"
             "app.example.com",
             "1.1.1.1",
             "203.0.113.10",
-            &VerifyOutcome::NxDomain,
+            &VerifyFailure::NxDomain,
         );
         assert!(msg.contains("app.example.com"));
         assert!(msg.contains("1.1.1.1"));

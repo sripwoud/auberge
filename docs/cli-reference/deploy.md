@@ -24,14 +24,14 @@ App names are derived from roles defined in `apps.yml`.
 
 ## Options
 
-| Option                 | Description                                                | Default               |
-| ---------------------- | ---------------------------------------------------------- | --------------------- |
-| `apps...`              | Space-separated app names to deploy (positional, variadic) | Interactive selection |
-| `-H, --host HOST`      | Target host                                                | Interactive selection |
-| `-C, --check`          | Dry-run mode (ansible check mode, no changes applied)      | false                 |
-| `--all`                | Deploy all apps                                            | false                 |
-| `-f, --force`          | Skip confirmation prompt                                   | false                 |
-| `--verify-public-dns`  | After each app's playbook run, verify the public A record resolves to the host IP (queries `1.1.1.1`; opt-in because Cloudflare propagation can be slow) | false |
+| Option                | Description                                                                                                                                              | Default               |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `apps...`             | Space-separated app names to deploy (positional, variadic)                                                                                               | Interactive selection |
+| `-H, --host HOST`     | Target host                                                                                                                                              | Interactive selection |
+| `-C, --check`         | Dry-run mode (ansible check mode, no changes applied)                                                                                                    | false                 |
+| `--all`               | Deploy all apps                                                                                                                                          | false                 |
+| `-f, --force`         | Skip confirmation prompt                                                                                                                                 | false                 |
+| `--verify-public-dns` | After each app's playbook run, verify the public A record resolves to the host IP (queries `1.1.1.1`; opt-in because Cloudflare propagation can be slow) | false                 |
 
 ## Examples
 

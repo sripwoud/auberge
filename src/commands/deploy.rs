@@ -8,7 +8,6 @@ use crate::services::dependency_resolver::{
 };
 use crate::services::dns_verify::{
     AppVerifyConfig, HickoryLookup, app_verify_config, format_dns_error, verify_a_record,
-    VerifyOutcome,
 };
 use crate::services::inventory::{Host, select_or_arg};
 use clap::Args;
@@ -158,11 +157,7 @@ fn run_dns_checks_for_run(
     host: &Host,
     verify_public: bool,
 ) -> Result<()> {
-    let playbook_name = run
-        .path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let playbook_name = run.path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     if playbook_name != "apps.yml" || run.tags.is_empty() {
         return Ok(());
@@ -187,15 +182,15 @@ fn run_dns_checks_for_run(
 
         let lookup = HickoryLookup::new(&vc.resolver_ip);
         match verify_a_record(&lookup, &vc.fqdn, &vc.expected_ip) {
-            Ok(VerifyOutcome::Match) => {
+            Ok(None) => {
                 output::success(&format!("DNS OK: {} → {}", vc.fqdn, vc.expected_ip));
             }
-            Ok(outcome) => {
+            Ok(Some(failure)) => {
                 errors.push(format_dns_error(
                     &vc.fqdn,
                     &vc.resolver_ip,
                     &vc.expected_ip,
-                    &outcome,
+                    &failure,
                 ));
             }
             Err(e) => {
