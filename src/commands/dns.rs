@@ -345,10 +345,18 @@ pub async fn run_dns_set_all(
     // When `--host` is used, look up the host's cached Tailscale IP so we can
     // auto-fill `ip_override` for tailnet-only apps. With `--ip` the user is
     // being explicit; we don't second-guess.
-    let host_tailscale_ip: Option<String> = host
-        .as_deref()
-        .and_then(|name| HostManager::get_host(name).ok())
-        .and_then(|h| h.tailscale_ip);
+    //
+    // `load_hosts()?` propagates parse/IO errors so a malformed `hosts.toml`
+    // surfaces here instead of being silently treated as "no cached IP" —
+    // missing-host vs malformed-file diverge intentionally.
+    let host_tailscale_ip: Option<String> = if let Some(name) = host.as_deref() {
+        HostManager::load_hosts()?
+            .into_iter()
+            .find(|h| h.name == name)
+            .and_then(|h| h.tailscale_ip)
+    } else {
+        None
+    };
 
     let mut discovered = discover_subdomains();
 
