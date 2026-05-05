@@ -73,6 +73,22 @@
         state: absent
       when: headscale_installed_version != headscale_version
 
+    - name: Get Tailscale status for split-DNS target IP detection
+      ansible.builtin.command: tailscale status --json
+      register: headscale_tailscale_status_raw
+      changed_when: false
+      failed_when: false
+      when: headscale_split_dns_target_ip | length == 0
+
+    - name: Auto-derive headscale_split_dns_target_ip from local Tailscale interface
+      ansible.builtin.set_fact:
+        headscale_split_dns_target_ip: "{{ (headscale_tailscale_status_raw.stdout | from_json).Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
+      when:
+        - headscale_split_dns_target_ip | length == 0
+        - headscale_tailscale_status_raw.rc is defined
+        - headscale_tailscale_status_raw.rc == 0
+        - (headscale_tailscale_status_raw.stdout | from_json).BackendState == "Running"
+
     - name: Deploy headscale configuration
       ansible.builtin.template:
         src: headscale-config.yaml.j2
