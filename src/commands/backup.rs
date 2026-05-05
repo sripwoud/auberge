@@ -1701,41 +1701,18 @@ mod tests {
         }
     }
 
-    // backup restore: backup_id now optional — test None/non-TTY and Some paths.
-
     #[test]
-    fn restore_backup_id_none_without_tty_errors() {
-        // select_backup_id on a non-existent directory should fail before prompting.
+    fn select_backup_id_empty_dir_errors() {
         let tmp = tempfile::tempdir().unwrap();
-        let nonexistent = tmp.path().join("no_such_host");
-        // Directory does not exist, so run_backup_restore would have bailed earlier
-        // with "No backups found for host".  Test select_backup_id directly on an
-        // empty-but-existing directory (no timestamp dirs) instead.
-        fs::create_dir(&nonexistent).unwrap();
-        let result = select_backup_id(&nonexistent);
-        assert!(result.is_err(), "expected error when no timestamps exist");
+        let empty = tmp.path().join("host_with_no_backups");
+        fs::create_dir(&empty).unwrap();
+        let result = select_backup_id(&empty);
+        assert!(result.is_err());
         assert!(
             result
                 .unwrap_err()
                 .to_string()
                 .contains("No backup timestamps found"),
-            "error should mention missing timestamps"
         );
-    }
-
-    #[test]
-    fn restore_options_backup_id_some_is_preserved() {
-        // Verify the Some variant compiles and the value is passed through.
-        let opts = RestoreOptions {
-            backup_id: Some("2026-01-15_10-30-00".to_string()),
-            host_arg: None,
-            from_host_arg: None,
-            apps: None,
-            ssh_key: None,
-            dry_run: true,
-            yes: false,
-            skip_playbook_unsafe: false,
-        };
-        assert_eq!(opts.backup_id.as_deref(), Some("2026-01-15_10-30-00"));
     }
 }
