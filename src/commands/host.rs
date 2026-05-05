@@ -358,7 +358,7 @@ pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
 
 fn resolve_ssh_key(host: &Host) -> Result<PathBuf> {
     let key = match host.ssh_key.as_ref() {
-        Some(p) => PathBuf::from(p),
+        Some(p) => PathBuf::from(shellexpand::tilde(p).into_owned()),
         None => dirs::home_dir()
             .ok_or_else(|| eyre::eyre!("Could not determine home directory"))?
             .join(format!(".ssh/identities/{}_{}", host.user, host.name)),
