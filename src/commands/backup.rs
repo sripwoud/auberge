@@ -113,7 +113,7 @@ pub enum BackupCommands {
     },
     #[command(alias = "r", about = "Restore from backup")]
     Restore {
-        #[arg(help = "Backup timestamp (YYYY-MM-DD_HH-MM-SS), 'latest', or omit to be prompted")]
+        #[arg(help = "Backup timestamp (YYYY-MM-DD_HH-MM-SS) or 'latest' (omit to be prompted)")]
         backup_id: Option<String>,
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
