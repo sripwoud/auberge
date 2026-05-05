@@ -392,7 +392,6 @@ fn is_cgnat_ipv4(addr: &Ipv4Addr) -> bool {
 
 pub fn run_host_edit(name: Option<String>) -> Result<()> {
     let host = crate::hosts::select_or_arg(name)?;
-    let name = host.name.clone();
 
     let address = Input::<String>::with_theme(&ColorfulTheme::default())
         .with_prompt("Host address")
@@ -432,7 +431,7 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
         .interact_text()?;
 
     let updated_host = Host {
-        name: name.clone(),
+        name: host.name.clone(),
         address,
         user,
         port,
@@ -448,8 +447,8 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
         tailscale_ip: host.tailscale_ip,
     };
 
-    HostManager::update_host(&name, updated_host)?;
-    output::success(&format!("Host '{}' updated", name));
+    HostManager::update_host(&host.name, updated_host)?;
+    output::success(&format!("Host '{}' updated", host.name));
 
     Ok(())
 }
