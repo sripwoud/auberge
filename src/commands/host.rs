@@ -292,7 +292,7 @@ pub fn run_host_list(tags: Option<String>, output: OutputFormat) -> Result<()> {
 pub fn run_host_remove(name: Option<String>, yes: bool) -> Result<()> {
     let host = crate::hosts::select_or_arg(name)?;
     if !confirm(&format!("Remove host '{}'?", host.name), yes) {
-        println!("Cancelled.");
+        eprintln!("Cancelled.");
         return Ok(());
     }
 

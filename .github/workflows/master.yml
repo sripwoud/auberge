@@ -60,6 +60,10 @@ jobs:
 
       - run: mise r check
 
+      - name: stdout discipline — print!/println! only in data-emitting modules
+        shell: bash
+        run: ./.github/scripts/check-stdout-discipline.sh
+
   _test:
     needs: changed-files
     if: needs.changed-files.outputs.any_rs_changed == 'true'

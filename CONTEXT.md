@@ -86,3 +86,17 @@ _Avoid_: Logger, reporter
 
 - "Backup runner" was used loosely for both per-recipe and multi-recipe execution. Resolved: use **Recipe Executor** (one recipe) and **Backup Session** (many recipes) — never "runner" without qualification.
 - "Spec" was used early in the design conversation for what became **Playbook Meta**. Resolved: avoid "spec" — it conflicts with Rust's `cargo spec` and reads ambiguous next to "schema."
+
+## Stdout discipline
+
+**stdout is data; chrome goes to stderr.**
+
+This rule follows [clig.dev](https://clig.dev/#output): programs should print only their primary data output to stdout so that output can be piped, redirected, or parsed (including as JSON) without noise. Status messages, hints, confirmations, and any other "chrome" must go to stderr.
+
+In practice:
+
+- `println!` and `print!` are allowed **only** in modules that emit the command's primary data output (e.g. `config_cmd`, `dns`, `headscale`, `host`, `select`, `backup`, and `output::print_table`).
+- All other informational messages — "Cancelled.", spinner updates, success banners, hints, interactive prompts — must use `eprintln!`/`eprint!`, `output::info`, `output::success`, or `output::warn`, all of which write to stderr.
+- Interactive prompts that read from stdin should `eprint!` the prompt and `io::stderr().flush()`, so the prompt is visible on the TTY even when the caller pipes stdout.
+
+A CI step in `.github/workflows/master.yml` enforces this by failing if `println!`/`print!` appears in any source file outside the approved allowlist. The check is per-file, so modules on the allowlist are on the honor system: chrome that lives in an allowlisted file is not caught.
