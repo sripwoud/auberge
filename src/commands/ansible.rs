@@ -63,10 +63,6 @@ pub enum AnsibleCommands {
     },
 }
 
-fn select_or_use_host(host_arg: Option<String>) -> Result<Host> {
-    select_or_arg(host_arg)
-}
-
 fn validate_config_for_playbook(playbook_name: &str, tags: Option<&[String]>) -> Result<Preflight> {
     let config = Config::load()?;
     config.preflight_for(playbook_name, tags)
@@ -101,7 +97,7 @@ pub fn run_ansible_run(
     ask_pass: bool,
     force: bool,
 ) -> Result<()> {
-    let selected_host = select_or_use_host(host)?;
+    let selected_host = select_or_arg(host)?;
 
     if let (None, Some(tag_list)) = (&playbook, &tags) {
         return run_auto_resolved(
@@ -449,7 +445,7 @@ pub fn run_ansible_bootstrap(
 ) -> Result<()> {
     let preflight = validate_config_for_playbook("bootstrap.yml", None)?;
 
-    let host = select_or_use_host(host_arg)?;
+    let host = select_or_arg(host_arg)?;
     let host_name = host.name.clone();
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     let bootstrap_playbook = assets.playbooks_dir().join("bootstrap.yml");
@@ -539,16 +535,5 @@ mod tests {
         assert!(validate_ip("localhost").is_err());
         assert!(validate_ip("192.168.1.1 ").is_err());
         assert!(validate_ip(" 192.168.1.1").is_err());
-    }
-
-    // bootstrap: select_or_use_host must error both on non-TTY None (cannot
-    // prompt) and on Some(unknown_name) (host lookup fails). run_ansible_bootstrap
-    // is exercised indirectly here because validate_config_for_playbook would
-    // otherwise short-circuit before we reach host selection.
-
-    #[test]
-    fn select_or_use_host_errors_on_none_or_unknown() {
-        assert!(select_or_use_host(None).is_err());
-        assert!(select_or_use_host(Some("__nonexistent_host__".to_string())).is_err());
     }
 }
