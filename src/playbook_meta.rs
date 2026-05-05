@@ -11,6 +11,8 @@ pub struct PlaybookMeta {
     pub backup: Option<BackupRecipe>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub tailnet_only: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdomain: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -317,24 +319,35 @@ mod tests {
         assert_eq!(meta.required_keys, vec!["foo", "bar"]);
         assert!(meta.backup.is_none());
         assert!(!meta.tailnet_only);
+        assert!(meta.subdomain.is_none());
     }
 
     #[test]
     fn test_bichon_meta_is_tailnet_only() {
         let meta = load_meta("bichon");
         assert!(meta.tailnet_only);
+        assert_eq!(meta.subdomain.as_deref(), Some("bichon"));
     }
 
     #[test]
     fn test_paperless_meta_is_tailnet_only() {
         let meta = load_meta("paperless");
         assert!(meta.tailnet_only);
+        assert_eq!(meta.subdomain.as_deref(), Some("paperless"));
+    }
+
+    #[test]
+    fn test_cockpit_meta_is_tailnet_only() {
+        let meta = load_meta("cockpit");
+        assert!(meta.tailnet_only);
+        assert_eq!(meta.subdomain.as_deref(), Some("cockpit"));
     }
 
     #[test]
     fn test_public_app_meta_defaults_to_not_tailnet_only() {
         let meta = load_meta("freshrss");
         assert!(!meta.tailnet_only);
+        assert!(meta.subdomain.is_none());
     }
 
     #[test]

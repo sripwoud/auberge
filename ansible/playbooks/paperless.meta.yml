@@ -1,5 +1,6 @@
 required_keys: []
 tailnet_only: true
+subdomain: paperless
 backup:
   systemd_services:
     - paperless-webserver
