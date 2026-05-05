@@ -31,6 +31,11 @@ dns:
     global:
       - 1.1.1.1
       - 1.0.0.1
+{% if headscale_split_dns_target_ip | length > 0 %}
+    split:
+      "{{ domain }}":
+        - {{ headscale_split_dns_target_ip }}
+{% endif %}
 log:
   level: {{ headscale_log_level }}
 logtail:

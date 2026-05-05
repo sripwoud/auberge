@@ -158,6 +158,36 @@
     - blocky_tailscale_status_raw.rc == 0
     - (blocky_tailscale_status_raw.stdout | from_json).BackendState == "Running"
 
+- name: Find playbook meta files for tailnet-only domain derivation
+  become: false
+  delegate_to: localhost
+  ansible.builtin.find:
+    paths: "{{ playbook_dir }}"
+    patterns: "*.meta.yml"
+  register: blocky_meta_files_found
+
+- name: Read playbook meta file contents
+  become: false
+  delegate_to: localhost
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ blocky_meta_files_found.files }}"
+  register: blocky_meta_slurped
+
+- name: Derive blocky_tailscale_bound_domains from tailnet-only meta files
+  ansible.builtin.set_fact:
+    blocky_tailscale_bound_domains: >-
+      {%- set ns = namespace(domains=[]) -%}
+      {%- for result in blocky_meta_slurped.results -%}
+        {%- set meta = result.content | b64decode | from_yaml -%}
+        {%- if meta.tailnet_only | default(false) -%}
+          {%- set app = result.item.path | basename | regex_replace('\.meta\.yml$', '') -%}
+          {%- set subdomain = lookup('vars', app + '_subdomain', default=app) -%}
+          {%- set ns.domains = ns.domains + [subdomain + '.' + domain] -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.domains }}
+
 - name: Configure blocky
   ansible.builtin.template:
     src: config.yaml.j2
