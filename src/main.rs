@@ -48,7 +48,11 @@ struct Cli {
     verbose: bool,
     #[arg(short, long, global = true, help = "Suppress non-essential output")]
     quiet: bool,
-    #[arg(long, global = true, help = "Disable colored output")]
+    #[arg(
+        long,
+        global = true,
+        help = "Disable colored output (also honored via NO_COLOR env var)"
+    )]
     no_color: bool,
 
     #[command(subcommand)]
