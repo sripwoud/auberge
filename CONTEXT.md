@@ -37,7 +37,7 @@ An application deployed by a Playbook (e.g. paperless, navidrome, baikal). An Ap
 _Avoid_: Service, package, workload
 
 **Tailnet-only App**:
-An App whose Playbook Meta declares `tailnet_only: true` (and a `subdomain:` field for FQDN composition). Caddy binds only to the host's Tailscale interface; the App's hostname is published only via Blocky's `customDNS` map — derived at deploy time from the meta files of all `tailnet_only` Apps — and does _not_ appear in public DNS. Reachable only by clients on the user's tailnet, via Blocky as resolver. Headscale's `dns.nameservers.split` routes `*.{{ domain }}` queries to Blocky so every tailnet client uses Blocky for the user's domain without manual client-side DoT setup.
+An App whose Playbook Meta declares `tailnet_only: true` (and a `subdomain:` field as the canonical default for FQDN composition). Caddy binds only to the host's Tailscale interface; the App's hostname is published only via Blocky's `customDNS` map — derived at deploy time from the meta files of all `tailnet_only` Apps, with the operator's `<app>_subdomain` in `config.toml` taking precedence over `meta.subdomain` when defined — and does _not_ appear in public DNS. Reachable only by clients on the user's tailnet, via Blocky as resolver. Headscale's `dns.nameservers.split` routes `*.{{ domain }}` queries to Blocky so every tailnet client uses Blocky for the user's domain without manual client-side DoT setup.
 _Avoid_: Private app, internal app, vpn-only app
 
 **Public App**:
