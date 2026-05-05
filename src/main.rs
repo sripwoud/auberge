@@ -46,7 +46,13 @@ use eyre::Result;
 struct Cli {
     #[arg(short, long, global = true, help = "Enable verbose output")]
     verbose: bool,
-    #[arg(short, long, global = true, help = "Suppress non-essential output")]
+    #[arg(
+        short,
+        long,
+        global = true,
+        help = "Suppress non-essential output",
+        conflicts_with = "verbose"
+    )]
     quiet: bool,
     #[arg(
         long,
@@ -97,6 +103,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     output::set_verbose(cli.verbose);
+    output::set_quiet(cli.quiet);
     output::set_no_color(cli.no_color);
 
     match cli.command {

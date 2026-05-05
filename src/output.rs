@@ -19,6 +19,7 @@ pub enum OutputFormat {
 }
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
+static QUIET: AtomicBool = AtomicBool::new(false);
 static NO_COLOR_FLAG: AtomicBool = AtomicBool::new(false);
 
 // Shared across this binary's test suite: any test that mutates global state
@@ -33,6 +34,14 @@ pub fn set_verbose(v: bool) {
 
 pub fn is_verbose() -> bool {
     VERBOSE.load(Ordering::Relaxed)
+}
+
+pub fn set_quiet(v: bool) {
+    QUIET.store(v, Ordering::Relaxed);
+}
+
+pub fn is_quiet() -> bool {
+    QUIET.load(Ordering::Relaxed)
 }
 
 pub(crate) fn set_no_color(v: bool) {
@@ -61,6 +70,9 @@ const DIM: &str = "\x1b[2m";
 pub(crate) const RESET: &str = "\x1b[0m";
 
 pub fn success(msg: &str) {
+    if is_quiet() {
+        return;
+    }
     if should_use_colors() {
         eprintln!("{}✓{} {}", GREEN, RESET, msg);
     } else {
@@ -69,6 +81,9 @@ pub fn success(msg: &str) {
 }
 
 pub fn warn(msg: &str) {
+    if is_quiet() {
+        return;
+    }
     if should_use_colors() {
         eprintln!("{}⚠{} {}", YELLOW, RESET, msg);
     } else {
@@ -77,6 +92,9 @@ pub fn warn(msg: &str) {
 }
 
 pub fn info(msg: &str) {
+    if is_quiet() {
+        return;
+    }
     if should_use_colors() {
         eprintln!("{}→{} {}", CYAN, RESET, msg);
     } else {
@@ -348,6 +366,30 @@ mod tests {
         assert!(is_verbose());
         set_verbose(false);
         assert!(!is_verbose());
+    }
+
+    #[test]
+    fn quiet_defaults_to_false() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_quiet(false);
+        assert!(!is_quiet());
+    }
+
+    #[test]
+    fn set_quiet_true() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_quiet(true);
+        assert!(is_quiet());
+        set_quiet(false);
+    }
+
+    #[test]
+    fn set_quiet_false_after_true() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_quiet(true);
+        assert!(is_quiet());
+        set_quiet(false);
+        assert!(!is_quiet());
     }
 
     #[test]

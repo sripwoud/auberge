@@ -81,13 +81,13 @@ Apply the rule when proposing `--output` on a new command. The conversation live
 
 `output::info` / `success` / `warn` already use `eprintln!`. Bare `println!` in command modules is acceptable only for the command's data output. Audit scope for this ADR: the commands listed above. CLI-wide audit (e.g. `host remove`'s "Cancelled.", `ssh`'s "Cancelled") is tracked separately in #302.
 
-### `--quiet` is currently a no-op, and stays orthogonal to `--output`
+### `--quiet` stays orthogonal to `--output`
 
-`Cli::quiet` at `src/main.rs:50` is parsed but never wired to `output::set_*`. Issue #294's "quiet already exists" premise is partially wrong — the flag exists on the parser but is dropped on the floor.
+`Cli::quiet` was parsed but never wired to `output::set_*` — the flag existed on the parser but was dropped on the floor (the gap #294 surfaced). That is resolved: `output::set_quiet(cli.quiet)` now suppresses `output::info/success/warn` on the `human` format (PR #306, closes #301).
 
 `--quiet` is _not_ folded into `OutputFormat` as a third variant. The two flags have different scopes:
 
 - `--output` is per-command, data-shape, defined only on commands with load-bearing JSON.
 - `--quiet` is global, verbosity, meaningful on every chrome-emitting command including those without structured output (`auberge deploy --quiet`, `auberge ansible run --quiet`).
 
-Folding `quiet` into `--output` would either strip `--quiet` from non-output commands or duplicate the concept across two surfaces. Neither pays off. Wiring `--quiet` to suppress `output::info` on the `human` format is tracked in #301.
+Folding `quiet` into `--output` would either strip `--quiet` from non-output commands or duplicate the concept across two surfaces. Neither pays off. Wiring `--quiet` to suppress `output::info/success/warn` on the `human` format landed in #306.
