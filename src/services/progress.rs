@@ -76,25 +76,31 @@ impl Progress for TerminalProgress {
     }
 
     fn info(&mut self, msg: &str) {
-        let line = if should_use_colors() {
-            format!("{CYAN}\u{2192}{RESET} {msg}")
-        } else {
-            format!("\u{2192} {msg}")
-        };
-        self.pb.println(line);
+        self.pb.println(format_info_line(msg, should_use_colors()));
     }
 
     fn warn(&mut self, msg: &str) {
-        let line = if should_use_colors() {
-            format!("{YELLOW}\u{26A0}{RESET} {msg}")
-        } else {
-            format!("\u{26A0} {msg}")
-        };
-        self.pb.println(line);
+        self.pb.println(format_warn_line(msg, should_use_colors()));
     }
 
     fn cancel(&mut self) {
         self.pb.finish_and_clear();
+    }
+}
+
+fn format_info_line(msg: &str, use_colors: bool) -> String {
+    if use_colors {
+        format!("{CYAN}\u{2192}{RESET} {msg}")
+    } else {
+        format!("\u{2192} {msg}")
+    }
+}
+
+fn format_warn_line(msg: &str, use_colors: bool) -> String {
+    if use_colors {
+        format!("{YELLOW}\u{26A0}{RESET} {msg}")
+    } else {
+        format!("\u{26A0} {msg}")
     }
 }
 
@@ -298,5 +304,31 @@ mod tests {
         p.set_total(None);
         p.set_total(None);
         p.task_done();
+    }
+
+    #[test]
+    fn format_info_line_omits_color_when_disabled() {
+        let line = format_info_line("hello", false);
+        assert_eq!(line, "\u{2192} hello");
+        assert!(!line.contains('\x1b'));
+    }
+
+    #[test]
+    fn format_info_line_wraps_glyph_in_cyan_when_enabled() {
+        let line = format_info_line("hello", true);
+        assert_eq!(line, format!("{CYAN}\u{2192}{RESET} hello"));
+    }
+
+    #[test]
+    fn format_warn_line_omits_color_when_disabled() {
+        let line = format_warn_line("careful", false);
+        assert_eq!(line, "\u{26A0} careful");
+        assert!(!line.contains('\x1b'));
+    }
+
+    #[test]
+    fn format_warn_line_wraps_glyph_in_yellow_when_enabled() {
+        let line = format_warn_line("careful", true);
+        assert_eq!(line, format!("{YELLOW}\u{26A0}{RESET} careful"));
     }
 }
