@@ -387,7 +387,12 @@ pub async fn run_dns_set_all(
     // Apply the tailnet-only fallback only to records that survived `--skip`
     // / `--subdomains` filtering — otherwise an excluded tailnet-only app with
     // no cached IP would still abort the run.
-    apply_tailnet_only_fallback(&mut subdomains_to_process, host_tailscale_ip.as_deref())?;
+    //
+    // Skip entirely when `--ip` was used: the user is being explicit and the
+    // host-cache fallback should not second-guess (or bail on) that.
+    if host.is_some() {
+        apply_tailnet_only_fallback(&mut subdomains_to_process, host_tailscale_ip.as_deref())?;
+    }
 
     if dry_run {
         output::info("DRY RUN - Would create the following A records:");
