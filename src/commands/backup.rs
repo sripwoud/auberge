@@ -672,9 +672,6 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
 
     let host_backup_dir = backup_root.join(&source_host_name);
 
-    let ssh_key_path = resolve_ssh_key_path(&host, opts.ssh_key)?;
-    eprintln!("Using SSH key: {}", ssh_key_path.display());
-
     if !host_backup_dir.exists() {
         eyre::bail!("No backups found for host: {}", source_host_name);
     }
@@ -683,6 +680,9 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         Some(id) => id,
         None => select_backup_id(&host_backup_dir)?,
     };
+
+    let ssh_key_path = resolve_ssh_key_path(&host, opts.ssh_key)?;
+    eprintln!("Using SSH key: {}", ssh_key_path.display());
 
     let app_names = opts.apps.unwrap_or_else(|| {
         vec![
