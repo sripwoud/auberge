@@ -263,9 +263,10 @@ async fn main() -> Result<()> {
             } => run_dns_set(subdomain, ip, production).await,
             DnsCommands::Delete {
                 subdomain,
+                dry_run,
                 production,
                 yes,
-            } => run_dns_delete(subdomain, production, yes).await,
+            } => run_dns_delete(subdomain, dry_run, production, yes).await,
             DnsCommands::Migrate {
                 ip,
                 dry_run,

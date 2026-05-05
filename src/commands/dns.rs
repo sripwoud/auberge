@@ -39,6 +39,8 @@ pub enum DnsCommands {
     Delete {
         #[arg(short, long, help = "Subdomain name (omit to be prompted)")]
         subdomain: Option<String>,
+        #[arg(short = 'n', long, help = "Preview without deleting")]
+        dry_run: bool,
         #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
         production: bool,
         #[arg(short = 'y', long, help = "Skip confirmation prompt")]
@@ -274,14 +276,34 @@ pub async fn run_dns_set(
     Ok(())
 }
 
-pub async fn run_dns_delete(subdomain: Option<String>, production: bool, yes: bool) -> Result<()> {
+pub async fn run_dns_delete(
+    subdomain: Option<String>,
+    dry_run: bool,
+    production: bool,
+    yes: bool,
+) -> Result<()> {
     let subdomain = resolve_subdomain(subdomain)?;
     let service = DnsService::new_with_production(Some(production)).await?;
     print_mode_banner();
 
     let fqdn = format!("{}.{}", subdomain, service.domain());
 
-    if !crate::prompt::confirm(&format!("Delete A record for {}?", fqdn), yes) {
+    if dry_run {
+        output::info(&format!("[DRY RUN] Would delete A record: {}", fqdn));
+        return Ok(());
+    }
+
+    let confirmed = if production {
+        crate::prompt::confirm_typed(
+            &format!("Type '{}' to confirm production deletion", subdomain),
+            &subdomain,
+            yes,
+        )?
+    } else {
+        crate::prompt::confirm(&format!("Delete A record for {}?", fqdn), yes)
+    };
+
+    if !confirmed {
         output::info("Operation cancelled");
         return Ok(());
     }
