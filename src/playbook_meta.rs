@@ -9,6 +9,8 @@ pub struct PlaybookMeta {
     pub required_keys: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup: Option<BackupRecipe>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tailnet_only: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,6 +65,17 @@ impl PlaybookMeta {
             .wrap_err_with(|| format!("Failed to read Playbook Meta from {}", path.display()))?;
         serde_yaml::from_str(&contents)
             .wrap_err_with(|| format!("Failed to parse Playbook Meta from {}", path.display()))
+    }
+
+    /// Load the meta for an app/playbook by stem name (e.g. `"bichon"`).
+    /// Returns `Ok(None)` if no meta file exists.
+    pub fn load_for_app(app: &str) -> Result<Option<Self>> {
+        let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+        let path = assets.playbooks_dir().join(format!("{app}.meta.yml"));
+        if !path.exists() {
+            return Ok(None);
+        }
+        Self::load(&path).map(Some)
     }
 }
 
@@ -303,6 +316,25 @@ mod tests {
         let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(meta.required_keys, vec!["foo", "bar"]);
         assert!(meta.backup.is_none());
+        assert!(!meta.tailnet_only);
+    }
+
+    #[test]
+    fn test_bichon_meta_is_tailnet_only() {
+        let meta = load_meta("bichon");
+        assert!(meta.tailnet_only);
+    }
+
+    #[test]
+    fn test_paperless_meta_is_tailnet_only() {
+        let meta = load_meta("paperless");
+        assert!(meta.tailnet_only);
+    }
+
+    #[test]
+    fn test_public_app_meta_defaults_to_not_tailnet_only() {
+        let meta = load_meta("freshrss");
+        assert!(!meta.tailnet_only);
     }
 
     #[test]

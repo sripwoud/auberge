@@ -131,6 +131,20 @@ auberge dns set-all --host myserver
 # Uses 192.168.1.10 automatically
 ```
 
+## Tailnet-only apps
+
+Apps whose playbook meta declares `tailnet_only: true` (currently `bichon` and `paperless`) need to point at the host's Tailscale CGNAT IP, not its public IP — Caddy binds those vhosts only to the Tailnet interface.
+
+The IP is resolved per-subdomain in this order:
+
+1. `<app>_tailscale_ip` in `config.toml` (explicit per-app override)
+2. `host.tailscale_ip` from `hosts.toml` (cached via [`auberge host detect-tailscale-ip`](../host/detect-tailscale-ip.md), used only when `--host` is passed)
+3. The host's public IP (default for public apps)
+
+If a tailnet-only app has no resolvable Tailscale IP, `dns set-all` bails — silently pointing such DNS at the public IP would make the service unreachable.
+
+See [Tailnet-only Subdomains](../../dns/batch-operations.md#tailnet-only-subdomains) for the full pattern.
+
 ## Use Cases
 
 **Initial setup** after deploying apps:

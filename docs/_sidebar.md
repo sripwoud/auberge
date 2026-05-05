@@ -48,6 +48,7 @@
     - [show](cli-reference/host/show.md)
     - [edit](cli-reference/host/edit.md)
     - [remove](cli-reference/host/remove.md)
+    - [detect-tailscale-ip](cli-reference/host/detect-tailscale-ip.md)
   - Ansible
     - [run](cli-reference/ansible/run.md)
     - [bootstrap](cli-reference/ansible/bootstrap.md)

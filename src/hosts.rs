@@ -21,6 +21,8 @@ pub struct Host {
     pub python_interpreter: Option<String>,
     #[serde(default = "default_become_method")]
     pub become_method: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tailscale_ip: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -183,6 +185,7 @@ mod tests {
             description: Some("Test host".to_string()),
             python_interpreter: None,
             become_method: "sudo".to_string(),
+            tailscale_ip: None,
         };
 
         let config = HostsConfig { hosts: vec![host] };
@@ -208,5 +211,47 @@ mod tests {
         assert_eq!(config.hosts[0].port, 22);
         assert_eq!(config.hosts[0].become_method, "sudo");
         assert!(config.hosts[0].tags.is_empty());
+        assert!(config.hosts[0].tailscale_ip.is_none());
+    }
+
+    #[test]
+    fn test_tailscale_ip_round_trip() {
+        let host = Host {
+            name: "vps".to_string(),
+            address: "203.0.113.10".to_string(),
+            user: "admin".to_string(),
+            port: 22,
+            ssh_key: None,
+            tags: vec![],
+            description: None,
+            python_interpreter: None,
+            become_method: "sudo".to_string(),
+            tailscale_ip: Some("100.64.0.5".to_string()),
+        };
+
+        let serialized = toml::to_string(&HostsConfig { hosts: vec![host] }).unwrap();
+        assert!(serialized.contains("tailscale_ip = \"100.64.0.5\""));
+
+        let parsed: HostsConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(parsed.hosts[0].tailscale_ip.as_deref(), Some("100.64.0.5"));
+    }
+
+    #[test]
+    fn test_tailscale_ip_omitted_when_none() {
+        let host = Host {
+            name: "vps".to_string(),
+            address: "203.0.113.10".to_string(),
+            user: "admin".to_string(),
+            port: 22,
+            ssh_key: None,
+            tags: vec![],
+            description: None,
+            python_interpreter: None,
+            become_method: "sudo".to_string(),
+            tailscale_ip: None,
+        };
+
+        let serialized = toml::to_string(&HostsConfig { hosts: vec![host] }).unwrap();
+        assert!(!serialized.contains("tailscale_ip"));
     }
 }

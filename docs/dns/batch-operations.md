@@ -61,14 +61,36 @@ Some services should be reachable only by Tailscale network members while still 
 
 ### Configuration
 
-In `~/.config/auberge/config.toml`, set both a subdomain and a Tailscale IP for the app:
+There are two ways to tell `dns set-all` which IP to use for a tailnet-only app. Pick whichever fits your layout.
+
+**Option A — host-wide cache (recommended).** When all tailnet-only apps on a host share the same Tailscale IP, cache it once on the host record:
+
+```bash
+auberge host detect-tailscale-ip auberge
+```
+
+This SSHs the host, reads `tailscale ip -4`, and writes `tailscale_ip = "100.x.y.z"` into the host's entry in `~/.config/auberge/hosts.toml`. Apps whose playbook meta declares `tailnet_only: true` (currently `bichon` and `paperless`) then automatically pick up this IP — no per-app config needed.
+
+**Option B — per-app override.** Set both a subdomain and an explicit Tailscale IP in `~/.config/auberge/config.toml`:
 
 ```toml
 paperless_subdomain = "paperless"
 paperless_tailscale_ip = "100.x.y.z"
 ```
 
-When `<app>_tailscale_ip` is present, `dns set-all` automatically uses that IP for the app's A record instead of the server's public IP.
+Use this when an app needs a _different_ Tailscale IP than the host (rare).
+
+### Resolution chain
+
+For each subdomain, `dns set-all` picks the IP in this order:
+
+1. `<app>_tailscale_ip` in `config.toml` (per-app override, when set)
+2. `host.tailscale_ip` in `hosts.toml` (when the playbook meta has `tailnet_only: true` and `--host` was used)
+3. The host's public IP (default, public apps)
+
+Passing `--ip <addr>` bypasses (2) — when you're being explicit, the CLI does not second-guess.
+
+`dns set-all` bails fast when a tailnet-only app has no resolvable Tailscale IP, since pointing such DNS at the public IP would silently break access (Caddy binds only to the Tailnet interface).
 
 ### Prerequisites
 

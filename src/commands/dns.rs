@@ -309,6 +309,7 @@ pub async fn run_dns_set_all(
     continue_on_error: bool,
     production: bool,
 ) -> Result<()> {
+    use crate::hosts::HostManager;
     use crate::services::dns::{SubdomainEntry, discover_subdomains};
     use crate::services::inventory::discover_hosts_with_ips;
     use std::collections::HashSet;
@@ -341,6 +342,22 @@ pub async fn run_dns_set_all(
         _ => unreachable!(),
     };
 
+    // When `--host` is used, look up the host's cached Tailscale IP so we can
+    // auto-fill `ip_override` for tailnet-only apps. With `--ip` the user is
+    // being explicit; we don't second-guess.
+    //
+    // `load_hosts()?` propagates parse/IO errors so a malformed `hosts.toml`
+    // surfaces here instead of being silently treated as "no cached IP" —
+    // missing-host vs malformed-file diverge intentionally.
+    let host_tailscale_ip: Option<String> = if let Some(name) = host.as_deref() {
+        HostManager::load_hosts()?
+            .into_iter()
+            .find(|h| h.name == name)
+            .and_then(|h| h.tailscale_ip)
+    } else {
+        None
+    };
+
     let mut discovered = discover_subdomains();
 
     if strict && discovered.is_empty() {
@@ -349,7 +366,7 @@ pub async fn run_dns_set_all(
 
     let skip_set: HashSet<_> = skip.iter().cloned().collect();
 
-    let subdomains_to_process: Vec<(String, SubdomainEntry)> = if !subdomains.is_empty() {
+    let mut subdomains_to_process: Vec<(String, SubdomainEntry)> = if !subdomains.is_empty() {
         subdomains
             .into_iter()
             .filter(|s| !skip_set.contains(s))
@@ -365,6 +382,16 @@ pub async fn run_dns_set_all(
     if subdomains_to_process.is_empty() {
         output::info("No subdomains to process");
         return Ok(());
+    }
+
+    // Apply the tailnet-only fallback only to records that survived `--skip`
+    // / `--subdomains` filtering — otherwise an excluded tailnet-only app with
+    // no cached IP would still abort the run.
+    //
+    // Skip entirely when `--ip` was used: the user is being explicit and the
+    // host-cache fallback should not second-guess (or bail on) that.
+    if host.is_some() {
+        apply_tailnet_only_fallback(&mut subdomains_to_process, host_tailscale_ip.as_deref())?;
     }
 
     if dry_run {
@@ -456,5 +483,119 @@ pub async fn run_dns_set_all(
         std::process::exit(1);
     }
 
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_tailnet_only_fallback;
+    use crate::services::dns::SubdomainEntry;
+
+    fn entries(items: &[(&str, &str, Option<&str>)]) -> Vec<(String, SubdomainEntry)> {
+        items
+            .iter()
+            .map(|(app, subdomain, ip_override)| {
+                (
+                    app.to_string(),
+                    SubdomainEntry {
+                        subdomain: subdomain.to_string(),
+                        ip_override: ip_override.map(String::from),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn find<'a>(v: &'a [(String, SubdomainEntry)], app: &str) -> &'a SubdomainEntry {
+        &v.iter().find(|(a, _)| a == app).unwrap().1
+    }
+
+    #[test]
+    fn fills_tailnet_only_app_when_host_has_tailscale_ip() {
+        let mut v = entries(&[("bichon", "bichon", None)]);
+        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
+        assert_eq!(
+            find(&v, "bichon").ip_override.as_deref(),
+            Some("100.64.0.5")
+        );
+    }
+
+    #[test]
+    fn preserves_explicit_override_for_tailnet_only_app() {
+        let mut v = entries(&[("bichon", "bichon", Some("100.42.42.42"))]);
+        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
+        assert_eq!(
+            find(&v, "bichon").ip_override.as_deref(),
+            Some("100.42.42.42"),
+        );
+    }
+
+    #[test]
+    fn leaves_public_app_unchanged_even_with_host_tailscale_ip() {
+        let mut v = entries(&[("freshrss", "rss", None)]);
+        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
+        assert!(find(&v, "freshrss").ip_override.is_none());
+    }
+
+    #[test]
+    fn fails_fast_when_tailnet_only_app_has_no_tailscale_ip() {
+        let mut v = entries(&[("bichon", "bichon", None)]);
+        let err = apply_tailnet_only_fallback(&mut v, None).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("bichon"));
+        assert!(msg.contains("tailnet-only"));
+    }
+
+    #[test]
+    fn ignores_apps_with_missing_meta_files() {
+        let mut v = entries(&[("nonexistent_app_xyz", "nonexistent_app_xyz", None)]);
+        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
+        assert!(find(&v, "nonexistent_app_xyz").ip_override.is_none());
+    }
+
+    #[test]
+    fn does_not_touch_entries_outside_the_processed_slice() {
+        // Simulates the post-filter behavior: when bichon was excluded via
+        // --skip, it's not in the slice, so even without a host_tailscale_ip
+        // we don't bail.
+        let mut v = entries(&[("freshrss", "rss", None)]);
+        apply_tailnet_only_fallback(&mut v, None).unwrap();
+        assert!(find(&v, "freshrss").ip_override.is_none());
+    }
+}
+
+/// For each subdomain entry being processed whose playbook meta declares
+/// `tailnet_only: true` and which lacks an explicit `<app>_tailscale_ip`
+/// override, fill `ip_override` from the host's cached Tailscale IP.
+///
+/// Bails when a tailnet-only app has no resolvable Tailscale IP — pointing
+/// such an app at the host's public IP would be silently broken (Caddy binds
+/// only to the Tailscale interface), so failing fast surfaces the missing
+/// configuration to the user.
+fn apply_tailnet_only_fallback(
+    entries: &mut [(String, crate::services::dns::SubdomainEntry)],
+    host_tailscale_ip: Option<&str>,
+) -> Result<()> {
+    use crate::playbook_meta::PlaybookMeta;
+
+    for (app, entry) in entries.iter_mut() {
+        if entry.ip_override.is_some() {
+            continue;
+        }
+        let Some(meta) = PlaybookMeta::load_for_app(app)? else {
+            continue;
+        };
+        if !meta.tailnet_only {
+            continue;
+        }
+        match host_tailscale_ip {
+            Some(ip) => entry.ip_override = Some(ip.to_string()),
+            None => eyre::bail!(
+                "App '{app}' is tailnet-only but no Tailscale IP is available. \
+                 Either pass --host (after running `auberge host detect-tailscale-ip <name>`), \
+                 or set `{app}_tailscale_ip` in config.toml."
+            ),
+        }
+    }
     Ok(())
 }
