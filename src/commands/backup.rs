@@ -104,13 +104,13 @@ pub enum BackupCommands {
         #[arg(short, long, help = "Filter by app")]
         app: Option<String>,
         #[arg(
-            short,
+            short = 'o',
             long,
             value_enum,
-            default_value = "table",
+            default_value = "human",
             help = "Output format"
         )]
-        format: OutputFormat,
+        output: OutputFormat,
     },
     #[command(alias = "r", about = "Restore from backup")]
     Restore {
@@ -191,12 +191,7 @@ pub enum BackupCommands {
     },
 }
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-pub enum OutputFormat {
-    Table,
-    Json,
-    Yaml,
-}
+pub use crate::output::OutputFormat;
 
 pub struct RestoreOptions {
     pub backup_id: Option<String>,
@@ -451,9 +446,8 @@ pub fn run_backup_list(
     }
 
     match format {
-        OutputFormat::Table => print_backups_table(&backups),
+        OutputFormat::Human => print_backups_table(&backups),
         OutputFormat::Json => print_backups_json(&backups)?,
-        OutputFormat::Yaml => print_backups_yaml(&backups)?,
     }
 
     Ok(())
@@ -621,27 +615,6 @@ fn print_backups_json(backups: &[BackupEntry]) -> Result<()> {
     )?;
 
     println!("{}", json);
-    Ok(())
-}
-
-fn print_backups_yaml(backups: &[BackupEntry]) -> Result<()> {
-    let yaml = serde_yaml::to_string(
-        &backups
-            .iter()
-            .map(|b| {
-                serde_yaml::to_value(serde_json::json!({
-                    "host": b.host,
-                    "app": b.app,
-                    "timestamp": b.timestamp,
-                    "path": b.path,
-                    "size_bytes": b.size_bytes,
-                }))
-                .unwrap()
-            })
-            .collect::<Vec<_>>(),
-    )?;
-
-    println!("{}", yaml);
     Ok(())
 }
 

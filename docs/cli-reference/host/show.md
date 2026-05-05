@@ -21,23 +21,16 @@ If `NAME` is omitted, you'll be prompted to select a host.
 | -------- | ------------------------------- |
 | NAME     | Host name (omit to be prompted) |
 
-## Options
-
-| Option              | Description               | Default |
-| ------------------- | ------------------------- | ------- |
-| -o, --output FORMAT | Output format: yaml, json | yaml    |
+This command has no `--output` flag. Output is always YAML. To get machine-readable JSON for a specific host, use `auberge host list --output json | jq '.[] | select(.name=="myserver")'`. See [ADR-0004](../../../meta/adr/0004-cli-structured-output.md) for the reasoning.
 
 ## Examples
 
 ```bash
-# Show host details (YAML)
+# Show host details
 auberge host show myserver
 
 # Interactive (prompts for host)
 auberge host show
-
-# JSON output
-auberge host show myserver --output json
 ```
 
 ## Output Example

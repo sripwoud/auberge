@@ -20,9 +20,10 @@ Checks for subdomains defined in environment variables against actual DNS record
 
 ## Options
 
-| Option           | Description                           | Default |
-| ---------------- | ------------------------------------- | ------- |
-| -P, --production | Use production API (default: sandbox) | false   |
+| Option              | Description                           | Default |
+| ------------------- | ------------------------------------- | ------- |
+| -o, --output FORMAT | Output format (`human`, `json`)       | `human` |
+| -P, --production    | Use production API (default: sandbox) | false   |
 
 ## Examples
 
@@ -70,6 +71,37 @@ Active A records: 2
 
 Missing subdomains: calibre, navidrome
 ```
+
+## JSON Output
+
+```bash
+auberge dns status --output json
+```
+
+```json
+{
+  "domain": "example.com",
+  "configured_subdomains": ["blocky", "calibre", "freshrss", "navidrome"],
+  "active_a_records": [
+    { "name": "blocky", "ip": "192.168.1.10" },
+    { "name": "freshrss", "ip": "192.168.1.10" }
+  ],
+  "missing_subdomains": ["calibre", "navidrome"]
+}
+```
+
+JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr.
+
+**Schema**
+
+| Field                   | Type     | Description                                                |
+| ----------------------- | -------- | ---------------------------------------------------------- |
+| domain                  | string   | Domain name from config                                    |
+| configured_subdomains   | string[] | Subdomains discovered from `config.toml`                   |
+| active_a_records        | object[] | A records present in Cloudflare                            |
+| active_a_records[].name | string   | Subdomain label                                            |
+| active_a_records[].ip   | string   | IP address the record points to                            |
+| missing_subdomains      | string[] | Configured subdomains that have no A record (load-bearing) |
 
 ## Subdomain Discovery
 
