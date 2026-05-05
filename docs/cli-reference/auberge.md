@@ -14,13 +14,13 @@ Auberge is a comprehensive command-line tool for managing self-hosted infrastruc
 
 ## Global Options
 
-| Option        | Description                                                         |
-| ------------- | ------------------------------------------------------------------- |
-| -v, --verbose | Show dimmed subprocess output (cleared on success, kept on failure) |
-| -q, --quiet   | Suppress non-essential output                                       |
-| --no-color    | Disable colored output (also honored via `NO_COLOR` env var)        |
-| -h, --help    | Print help information                                              |
-| -V, --version | Print version information                                           |
+| Option        | Description                                                                                                                                          |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| -v, --verbose | Show dimmed subprocess output (cleared on success, kept on failure)                                                                                  |
+| -q, --quiet   | Suppress chrome (info/success/warn) on stderr in `human` mode; errors and stdout data (tables, JSON) unaffected; mutually exclusive with `--verbose` |
+| --no-color    | Disable colored output (also honored via `NO_COLOR` env var)                                                                                         |
+| -h, --help    | Print help information                                                                                                                               |
+| -V, --version | Print version information                                                                                                                            |
 
 ## Commands
 
