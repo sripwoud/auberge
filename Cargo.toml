@@ -31,5 +31,6 @@ indicatif = "0.17"
 openssl = { version = "0.10", features = ["vendored"] }
 shell-escape = "0.1.5"
 ctrlc = "3.5.2"
+hickory-resolver = { version = "0.26", features = ["tokio"] }
 
 [dev-dependencies]
