@@ -9,6 +9,12 @@ use tabled::{Table, Tabled, settings::Style as TableStyle};
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 static NO_COLOR_FLAG: AtomicBool = AtomicBool::new(false);
 
+// Shared across this binary's test suite: any test that mutates global state
+// (env vars, NO_COLOR_FLAG, VERBOSE) must hold this lock so concurrent tests
+// in other modules don't race on those reads.
+#[cfg(test)]
+pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
+
 pub fn set_verbose(v: bool) {
     VERBOSE.store(v, Ordering::Relaxed);
 }
@@ -251,9 +257,6 @@ pub fn stream_command_stdout(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     // RAII guard that unsets an env var for the duration of a test and restores it on Drop.
     // Callers MUST hold TEST_LOCK so env mutations are serialized across this binary's tests.

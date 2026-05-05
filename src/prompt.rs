@@ -4,11 +4,24 @@ use eyre::Result;
 use skim::prelude::*;
 use std::io::{Cursor, IsTerminal, Write};
 
-fn dialoguer_theme() -> Box<dyn dialoguer::theme::Theme> {
+#[derive(Debug, PartialEq, Eq)]
+enum ThemeKind {
+    Colorful,
+    Simple,
+}
+
+fn theme_kind() -> ThemeKind {
     if should_use_colors() {
-        Box::new(ColorfulTheme::default())
+        ThemeKind::Colorful
     } else {
-        Box::new(SimpleTheme)
+        ThemeKind::Simple
+    }
+}
+
+fn dialoguer_theme() -> Box<dyn dialoguer::theme::Theme> {
+    match theme_kind() {
+        ThemeKind::Colorful => Box::new(ColorfulTheme::default()),
+        ThemeKind::Simple => Box::new(SimpleTheme),
     }
 }
 
@@ -235,7 +248,8 @@ pub fn confirm_typed(prompt_msg: &str, expected: &str, yes_flag: bool) -> Result
 
 #[cfg(test)]
 mod tests {
-    use super::{confirm, confirm_typed};
+    use super::*;
+    use crate::output::{TEST_LOCK, set_no_color};
 
     #[test]
     fn confirm_short_circuits_to_true_when_yes_flag_set() {
@@ -263,5 +277,22 @@ mod tests {
         // satisfied — callers should treat this as cancellation and surface
         // an actionable error rather than dispatching the destructive op.
         assert!(!confirm_typed("type the name", "freshrss", false).unwrap());
+    }
+
+    #[test]
+    fn theme_kind_is_simple_when_no_color_flag_set() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_no_color(true);
+        assert_eq!(theme_kind(), ThemeKind::Simple);
+        set_no_color(false);
+    }
+
+    #[test]
+    fn dialoguer_theme_does_not_panic_in_either_branch() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_no_color(true);
+        let _simple = dialoguer_theme();
+        set_no_color(false);
+        let _maybe_colorful = dialoguer_theme();
     }
 }
