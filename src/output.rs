@@ -17,7 +17,7 @@ pub fn is_verbose() -> bool {
     VERBOSE.load(Ordering::Relaxed)
 }
 
-pub fn set_no_color(v: bool) {
+pub(crate) fn set_no_color(v: bool) {
     NO_COLOR_FLAG.store(v, Ordering::Relaxed);
 }
 
