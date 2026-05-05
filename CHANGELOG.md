@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.4](https://github.com/sripwoud/auberge/compare/v0.10.3...v0.10.4) - 2026-05-05
+
+### Added
+
+- *(output)* wire --quiet flag to suppress chrome on human output ([#306](https://github.com/sripwoud/auberge/pull/306))
+- *(cli)* add --output {human,json} for commands with load-bearing fields ([#297](https://github.com/sripwoud/auberge/pull/297))
+
+### Fixed
+
+- route chrome println! to stderr; add CI stdout-discipline guard ([#307](https://github.com/sripwoud/auberge/pull/307))
+- *(blocky)* honor operator <app>_subdomain override in tailnet FQDN ([#310](https://github.com/sripwoud/auberge/pull/310))
+- *(dns)* call existing get_resolved instead of nonexistent get_secret ([#309](https://github.com/sripwoud/auberge/pull/309))
+- *(dns)* resolve cloudflare token via secret reference ([#305](https://github.com/sripwoud/auberge/pull/305))
+
+### Other
+
+- *(dns)* derive Public-App subdomain list from Playbook Metas ([#311](https://github.com/sripwoud/auberge/pull/311))
+- *(adr)* record CLI structured-output decision (0004) ([#303](https://github.com/sripwoud/auberge/pull/303))
+- *(lint)* address all clippy warnings ([#300](https://github.com/sripwoud/auberge/pull/300))
+
 ## [0.10.3](https://github.com/sripwoud/auberge/compare/v0.10.2...v0.10.3) - 2026-05-05
 
 ### Added
