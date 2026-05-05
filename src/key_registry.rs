@@ -36,21 +36,25 @@ impl KeyRegistry {
     }
 
     /// Returns the entry for a key by name, if it exists.
+    #[allow(dead_code)]
     pub fn get(&self, key: &str) -> Option<&KeyEntry> {
         self.entries.get(key)
     }
 
     /// Returns an iterator over all (name, entry) pairs in the registry.
+    #[allow(dead_code)]
     pub fn iter(&self) -> impl Iterator<Item = (&String, &KeyEntry)> {
         self.entries.iter()
     }
 
     /// Returns the number of keys in the registry.
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Returns `true` if the registry contains no keys.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

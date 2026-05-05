@@ -141,7 +141,7 @@ pub fn run_piped(label: &str, cmd: &mut Command) -> Result<SubprocessResult> {
     std::thread::scope(|s| {
         s.spawn(move || {
             let reader = BufReader::new(stdout);
-            for line in reader.lines().flatten() {
+            for line in reader.lines().map_while(Result::ok) {
                 if emit_subprocess_line(&label_owned, &line) {
                     count_clone.fetch_add(1, Ordering::Relaxed);
                 }
@@ -149,7 +149,7 @@ pub fn run_piped(label: &str, cmd: &mut Command) -> Result<SubprocessResult> {
         });
 
         let reader = BufReader::new(stderr);
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             if emit_subprocess_line(label, &line) {
                 line_count.fetch_add(1, Ordering::Relaxed);
             }

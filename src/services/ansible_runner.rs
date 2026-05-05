@@ -88,6 +88,7 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
     Ok(tmpfile)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_playbook(
     preflight: &Preflight,
     playbook: &Path,

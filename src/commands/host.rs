@@ -153,11 +153,9 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
 
         select_item(
             &options,
-            |h: &crate::ssh_config::SshConfigHost| {
-                if h.hostname.is_none() {
-                    "Enter manually".to_string()
-                } else {
-                    let addr = h.hostname.as_ref().unwrap();
+            |h: &crate::ssh_config::SshConfigHost| match &h.hostname {
+                None => "Enter manually".to_string(),
+                Some(addr) => {
                     let port = h.port.unwrap_or(22);
                     format!("{} ({}:{})", h.name, addr, port)
                 }
