@@ -98,6 +98,11 @@ impl Progress for TerminalProgress {
     }
 }
 
+// `should_use_colors()` here also gates non-color glyphs (braille spinner,
+// block progress chars). Bundling is intentional: every code path that
+// disables colors today (--no-color, NO_COLOR, TERM=dumb, non-TTY) is also
+// the path most likely to render Unicode poorly. Split if a real use case
+// needs colored ASCII or vice versa.
 fn apply_spinner_style(pb: &ProgressBar) {
     if should_use_colors() {
         pb.set_style(
