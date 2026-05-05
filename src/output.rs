@@ -74,6 +74,10 @@ pub struct SubprocessResult {
 const CURSOR_UP: &str = "\x1b[A";
 const ERASE_LINE: &str = "\x1b[2K";
 
+// Cursor movement and line erasure are intentionally not gated by --no-color:
+// per https://no-color.org/ the contract is "suppress color output", not all
+// terminal control. They are still skipped on non-TTY stderr to avoid leaking
+// escape codes into pipes and log files.
 pub fn clear_subprocess_lines(count: usize) {
     if count == 0 || !std::io::stderr().is_terminal() {
         return;
