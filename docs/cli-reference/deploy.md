@@ -24,13 +24,14 @@ App names are derived from roles defined in `apps.yml`.
 
 ## Options
 
-| Option            | Description                                                | Default               |
-| ----------------- | ---------------------------------------------------------- | --------------------- |
-| `apps...`         | Space-separated app names to deploy (positional, variadic) | Interactive selection |
-| `-H, --host HOST` | Target host                                                | Interactive selection |
-| `-C, --check`     | Dry-run mode (ansible check mode, no changes applied)      | false                 |
-| `--all`           | Deploy all apps                                            | false                 |
-| `-f, --force`     | Skip confirmation prompt                                   | false                 |
+| Option                | Description                                                                                                                                              | Default               |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `apps...`             | Space-separated app names to deploy (positional, variadic)                                                                                               | Interactive selection |
+| `-H, --host HOST`     | Target host                                                                                                                                              | Interactive selection |
+| `-C, --check`         | Dry-run mode (ansible check mode, no changes applied)                                                                                                    | false                 |
+| `--all`               | Deploy all apps                                                                                                                                          | false                 |
+| `-f, --force`         | Skip confirmation prompt                                                                                                                                 | false                 |
+| `--verify-public-dns` | After each app's playbook run, verify the public A record resolves to the host IP (queries `1.1.1.1`; opt-in because Cloudflare propagation can be slow) | false                 |
 
 ## Examples
 
@@ -52,6 +53,9 @@ auberge deploy paperless --check
 
 # Deploy without confirmation prompt (for automation)
 auberge deploy --all --host prod --force
+
+# Deploy and verify public DNS after each app run
+auberge deploy paperless --host prod --verify-public-dns
 ```
 
 ## Behavior
@@ -91,9 +95,22 @@ To skip hardening or run arbitrary playbooks, use [`auberge ansible run`](ansibl
 
 ### Check Mode
 
-`--check` runs in ansible check mode: tasks are evaluated but no changes are applied to the host. Useful for previewing what a deployment would change.
+`--check` runs in ansible check mode: tasks are evaluated but no changes are applied to the host. Useful for previewing what a deployment would change. DNS verification is skipped in check mode.
 
 See [Check Mode](../deployment/check-mode.md) for output interpretation.
+
+### DNS Verification
+
+After each successful app playbook run (not in `--check` mode), `auberge deploy` can verify that the app's FQDN resolves to the expected IP:
+
+- **Tailnet-only apps** (those with a `{app}_tailscale_ip` config key): verified automatically. Blocky is queried directly at the tailscale IP (UDP/53) and the returned A record must match that same IP.
+- **Public apps**: opt-in via `--verify-public-dns`. `1.1.1.1` is queried and the returned A record must match the host's `ansible_host` IP. This flag is opt-in because Cloudflare propagation can be slow immediately after a deploy.
+
+If verification fails, the deploy is aborted with an actionable diagnostic:
+
+```
+DNS mismatch for paperless.example.com: queried 100.64.1.2, expected 100.64.1.2, got [1.2.3.4]
+```
 
 ## Related Commands
 

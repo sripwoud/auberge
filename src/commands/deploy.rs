@@ -6,6 +6,9 @@ use crate::services::ansible_runner::{InventoryHost, run_playbook};
 use crate::services::dependency_resolver::{
     PlaybookRun, get_app_names, resolve_tags_to_playbook_runs,
 };
+use crate::services::dns_verify::{
+    AppVerifyConfig, HickoryLookup, app_verify_config, format_dns_error, verify_a_record,
+};
 use crate::services::inventory::{Host, select_or_arg};
 use clap::Args;
 use eyre::Result;
@@ -24,6 +27,11 @@ pub struct DeployCmd {
     pub all: bool,
     #[arg(short = 'f', long, help = "Skip confirmation prompt")]
     pub force: bool,
+    #[arg(
+        long,
+        help = "Verify public DNS after each app's playbook run (queries 1.1.1.1)"
+    )]
+    pub verify_public_dns: bool,
 }
 
 fn select_host(host_arg: Option<String>) -> Result<Host> {
@@ -118,14 +126,7 @@ fn prepend_hardening(runs: Vec<PlaybookRun>) -> Result<Vec<PlaybookRun>> {
 }
 
 fn warn_apps_prerequisites(runs: &[PlaybookRun]) {
-    let has_apps = runs.iter().any(|run| {
-        run.path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n == "apps.yml")
-    });
-
-    if has_apps {
+    if runs.iter().any(PlaybookRun::is_apps) {
         output::warn(
             "Ensure Cloudflare API token is configured and provider firewall allows port 853 (DNS-over-TLS)",
         );
@@ -137,6 +138,74 @@ fn confirm_deploy(force: bool) -> Result<()> {
         eprintln!("Aborted.");
         std::process::exit(1);
     }
+    Ok(())
+}
+
+/// Run DNS verification checks for every app tag in `run` (only for apps.yml runs).
+/// Failures are reported as errors; mismatches / NXDOMAIN / lookup errors each
+/// produce an actionable diagnostic naming the FQDN, resolver, and mismatch.
+fn run_dns_checks_for_run(
+    run: &PlaybookRun,
+    config: &Config,
+    host: &Host,
+    verify_public: bool,
+) -> Result<()> {
+    if !run.is_apps() || run.tags.is_empty() {
+        return Ok(());
+    }
+
+    let domain = config.domain();
+    let ansible_host = &host.vars.ansible_host;
+    let mut errors: Vec<String> = Vec::new();
+
+    for tag in &run.tags {
+        let Some(vc): Option<AppVerifyConfig> =
+            app_verify_config(tag, &domain, ansible_host, config, verify_public)
+        else {
+            continue;
+        };
+
+        let kind = if vc.is_tailnet() { "tailnet" } else { "public" };
+        output::info(&format!(
+            "DNS check ({kind}): {} → {} via {}",
+            tag, vc.fqdn, vc.resolver_ip
+        ));
+
+        let lookup = match HickoryLookup::new(&vc.resolver_ip) {
+            Ok(l) => l,
+            Err(e) => {
+                errors.push(format!(
+                    "Failed to build resolver for {} (resolver {}): {}",
+                    vc.fqdn, vc.resolver_ip, e
+                ));
+                continue;
+            }
+        };
+        match verify_a_record(&lookup, &vc.fqdn, &vc.expected_ip) {
+            Ok(None) => {
+                output::success(&format!("DNS OK: {} → {}", vc.fqdn, vc.expected_ip));
+            }
+            Ok(Some(failure)) => {
+                errors.push(format_dns_error(
+                    &vc.fqdn,
+                    &vc.resolver_ip,
+                    &vc.expected_ip,
+                    &failure,
+                ));
+            }
+            Err(e) => {
+                errors.push(format!(
+                    "DNS lookup error for {} (resolver {}): {}",
+                    vc.fqdn, vc.resolver_ip, e
+                ));
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        eyre::bail!("DNS verification failed:\n{}", errors.join("\n"));
+    }
+
     Ok(())
 }
 
@@ -247,6 +316,10 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         }
 
         output::success(&format!("{} completed successfully", playbook_name));
+
+        if !cmd.check {
+            run_dns_checks_for_run(run, &config, &host, cmd.verify_public_dns)?;
+        }
     }
 
     output::success("Deployment completed successfully");

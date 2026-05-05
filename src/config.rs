@@ -295,6 +295,20 @@ impl Config {
         fs::set_permissions(path, fs::Permissions::from_mode(0o600))
             .wrap_err_with(|| format!("Failed to set permissions on {}", path.display()))
     }
+
+    // ── Test helpers ──────────────────────────────────────────────────────────
+
+    /// Construct a `Config` from a TOML string without touching the filesystem.
+    /// Only available in test builds; used by unit tests in other modules.
+    #[cfg(test)]
+    pub fn from_toml_str(toml_str: &str) -> Result<Self> {
+        let values: toml::Table =
+            toml::from_str(toml_str).wrap_err("Failed to parse TOML in test fixture")?;
+        Ok(Config {
+            path: PathBuf::from("/tmp/fake"),
+            values,
+        })
+    }
 }
 
 fn value_to_string(v: &toml::Value) -> Option<String> {
