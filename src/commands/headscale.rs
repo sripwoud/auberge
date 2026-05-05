@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::hosts::{Host, HostManager, select_or_arg};
 use crate::output;
+use crate::output::OutputFormat;
 use crate::prompt::{confirm, select_item};
 use crate::ssh_session::SshSession;
 use clap::Subcommand;
@@ -25,15 +26,27 @@ pub enum HeadscaleCommands {
     },
     #[command(alias = "lu", about = "List registered users")]
     ListUsers {
-        #[arg(short, long, help = "Output format: table, json")]
-        output: Option<String>,
+        #[arg(
+            short = 'o',
+            long,
+            value_enum,
+            default_value = "human",
+            help = "Output format"
+        )]
+        output: OutputFormat,
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
     #[command(alias = "ln", about = "List connected nodes")]
     ListNodes {
-        #[arg(short, long, help = "Output format: table, json")]
-        output: Option<String>,
+        #[arg(
+            short = 'o',
+            long,
+            value_enum,
+            default_value = "human",
+            help = "Output format"
+        )]
+        output: OutputFormat,
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
@@ -325,7 +338,7 @@ pub fn run_headscale_add_user(
     Ok(())
 }
 
-pub fn run_headscale_list_users(output_fmt: Option<String>, host: Option<String>) -> Result<()> {
+pub fn run_headscale_list_users(output_fmt: OutputFormat, host: Option<String>) -> Result<()> {
     let (host_info, ssh_key) = resolve_headscale_host(host)?;
     let session = SshSession::new(&host_info, &ssh_key);
 
@@ -333,11 +346,11 @@ pub fn run_headscale_list_users(output_fmt: Option<String>, host: Option<String>
     let users: Vec<HeadscaleUser> =
         serde_json::from_str(raw.trim()).wrap_err("Failed to parse headscale users list")?;
 
-    match output_fmt.as_deref() {
-        Some("json") => {
+    match output_fmt {
+        OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&users)?);
         }
-        _ => {
+        OutputFormat::Human => {
             if users.is_empty() {
                 output::info("No users found");
                 return Ok(());
@@ -349,7 +362,7 @@ pub fn run_headscale_list_users(output_fmt: Option<String>, host: Option<String>
     Ok(())
 }
 
-pub fn run_headscale_list_nodes(output_fmt: Option<String>, host: Option<String>) -> Result<()> {
+pub fn run_headscale_list_nodes(output_fmt: OutputFormat, host: Option<String>) -> Result<()> {
     let (host_info, ssh_key) = resolve_headscale_host(host)?;
     let session = SshSession::new(&host_info, &ssh_key);
 
@@ -362,11 +375,11 @@ pub fn run_headscale_list_nodes(output_fmt: Option<String>, host: Option<String>
         serde_json::from_value(parsed).wrap_err("Failed to parse headscale nodes list")?
     };
 
-    match output_fmt.as_deref() {
-        Some("json") => {
+    match output_fmt {
+        OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&nodes)?);
         }
-        _ => {
+        OutputFormat::Human => {
             if nodes.is_empty() {
                 output::info("No nodes found");
                 return Ok(());

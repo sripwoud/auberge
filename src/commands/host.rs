@@ -1,5 +1,6 @@
 use crate::hosts::{Host, HostManager};
 use crate::output;
+use crate::output::OutputFormat;
 use crate::prompt::{confirm, select_item};
 use crate::ssh_session::SshSession;
 use clap::Subcommand;
@@ -71,8 +72,14 @@ pub enum HostCommands {
     List {
         #[arg(short, long, help = "Filter by tags (comma-separated)")]
         tags: Option<String>,
-        #[arg(short, long, help = "Output format: table, json, yaml")]
-        output: Option<String>,
+        #[arg(
+            short = 'o',
+            long,
+            value_enum,
+            default_value = "human",
+            help = "Output format"
+        )]
+        output: OutputFormat,
     },
     #[command(alias = "rm", about = "Remove a host")]
     Remove {
@@ -85,8 +92,6 @@ pub enum HostCommands {
     Show {
         #[arg(help = "Host name (omit to be prompted)")]
         name: Option<String>,
-        #[arg(short, long, help = "Output format: yaml, json")]
-        output: Option<String>,
     },
     #[command(alias = "e", about = "Edit a host")]
     Edit {
@@ -259,26 +264,23 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn run_host_list(tags: Option<String>, output: Option<String>) -> Result<()> {
+pub fn run_host_list(tags: Option<String>, output: OutputFormat) -> Result<()> {
     let filter_tags = tags.map(|t| t.split(',').map(|s| s.trim().to_string()).collect());
 
     let hosts = HostManager::list_hosts_filtered(filter_tags)?;
 
-    if hosts.is_empty() {
-        output::info("No hosts configured yet");
-        println!("\nAdd a host with:");
-        println!("  auberge host add <name> <address>");
-        return Ok(());
-    }
-
-    match output.as_deref() {
-        Some("json") => {
+    match output {
+        OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&hosts)?);
         }
-        Some("yaml") => {
-            println!("{}", serde_yaml::to_string(&hosts)?);
-        }
-        _ => {
+        OutputFormat::Human => {
+            if hosts.is_empty() {
+                output::info("No hosts configured yet");
+                eprintln!();
+                eprintln!("Add a host with:");
+                eprintln!("  auberge host add <name> <address>");
+                return Ok(());
+            }
             let display_hosts: Vec<HostDisplay> = hosts.iter().map(HostDisplay::from).collect();
             output::print_table(&display_hosts);
         }
@@ -300,18 +302,9 @@ pub fn run_host_remove(name: Option<String>, yes: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn run_host_show(name: Option<String>, output: Option<String>) -> Result<()> {
+pub fn run_host_show(name: Option<String>) -> Result<()> {
     let host = crate::hosts::select_or_arg(name)?;
-
-    match output.as_deref() {
-        Some("json") => {
-            println!("{}", serde_json::to_string_pretty(&host)?);
-        }
-        _ => {
-            println!("{}", serde_yaml::to_string(&host)?);
-        }
-    }
-
+    println!("{}", serde_yaml::to_string(&host)?);
     Ok(())
 }
 
@@ -499,7 +492,7 @@ mod tests {
     fn host_commands_error_on_unknown_name() {
         let unknown = || Some("__nonexistent_host__".to_string());
 
-        assert!(run_host_show(unknown(), None).is_err());
+        assert!(run_host_show(unknown()).is_err());
         assert!(run_host_remove(unknown(), true).is_err());
         assert!(run_host_edit(unknown()).is_err());
     }

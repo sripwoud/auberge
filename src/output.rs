@@ -1,3 +1,4 @@
+use clap::ValueEnum;
 use eyre::{Context, Result};
 use std::env;
 use std::io::{BufRead, BufReader, IsTerminal};
@@ -5,6 +6,17 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tabled::{Table, Tabled, settings::Style as TableStyle};
+
+/// Shared output format for commands that produce structured output.
+///
+/// See ADR-0004: only commands with at least one load-bearing JSON field
+/// expose `--output`. Drop-in serialisation surface; nothing more.
+#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+pub enum OutputFormat {
+    #[default]
+    Human,
+    Json,
+}
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 static NO_COLOR_FLAG: AtomicBool = AtomicBool::new(false);

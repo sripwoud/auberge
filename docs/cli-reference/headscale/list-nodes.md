@@ -18,10 +18,10 @@ Lists all nodes currently connected to the target Headscale instance, including 
 
 ## Options
 
-| Option         | Description                     | Default            |
-| -------------- | ------------------------------- | ------------------ |
-| `--host HOST`  | Target host running headscale   | Interactive prompt |
-| `-o, --output` | Output format (`json` or table) | table              |
+| Option                | Description                     | Default            |
+| --------------------- | ------------------------------- | ------------------ |
+| `--host HOST`         | Target host running headscale   | Interactive prompt |
+| `-o, --output FORMAT` | Output format (`human`, `json`) | `human`            |
 
 ## Examples
 
@@ -41,6 +41,54 @@ ID  NAME          USER     IPS                               ONLINE  LAST SEEN
 2   phone         mobile   100.64.0.2, fd7a:115c:a1e0::2     no      2024-01-19 08:00:00 UTC
 3   home-server   default  100.64.0.3, fd7a:115c:a1e0::3     yes     2024-01-20 15:00:00 UTC
 ```
+
+## JSON Output
+
+```bash
+auberge headscale list-nodes --host myserver --output json
+```
+
+```json
+[
+  {
+    "id": 1,
+    "name": "laptop",
+    "user": "default",
+    "ips": ["100.64.0.1", "fd7a:115c:a1e0::1"],
+    "online": true,
+    "last_seen": "2024-01-20T15:00:00Z"
+  },
+  {
+    "id": 2,
+    "name": "phone",
+    "user": "mobile",
+    "ips": ["100.64.0.2", "fd7a:115c:a1e0::2"],
+    "online": false,
+    "last_seen": "2024-01-19T08:00:00Z"
+  },
+  {
+    "id": 3,
+    "name": "home-server",
+    "user": "default",
+    "ips": ["100.64.0.3", "fd7a:115c:a1e0::3"],
+    "online": true,
+    "last_seen": "2024-01-20T15:00:00Z"
+  }
+]
+```
+
+JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr.
+
+**Schema**
+
+| Field     | Type     | Description                              |
+| --------- | -------- | ---------------------------------------- |
+| id        | number   | Headscale node ID                        |
+| name      | string   | Node hostname                            |
+| user      | string   | Headscale user the node belongs to       |
+| ips       | string[] | Assigned Tailscale IP addresses          |
+| online    | boolean  | Whether the node is currently connected  |
+| last_seen | string   | ISO 8601 timestamp of last contact (UTC) |
 
 ## Related Commands
 

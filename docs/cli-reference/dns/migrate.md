@@ -20,11 +20,12 @@ Shows a table of old vs new IPs before making changes (dry run by default is rec
 
 ## Options
 
-| Option           | Description                           | Default |
-| ---------------- | ------------------------------------- | ------- |
-| -i, --ip IP      | New IP address (required)             | None    |
-| -n, --dry-run    | Preview without updating              | false   |
-| -P, --production | Use production API (default: sandbox) | false   |
+| Option              | Description                           | Default |
+| ------------------- | ------------------------------------- | ------- |
+| -i, --ip IP         | New IP address (required)             | None    |
+| -n, --dry-run       | Preview without updating              | false   |
+| -o, --output FORMAT | Output format (`human`, `json`)       | `human` |
+| -P, --production    | Use production API (default: sandbox) | false   |
 
 ## Examples
 
@@ -70,6 +71,46 @@ baikal       192.168.1.10  ->  10.0.0.5
 
 Updated 3 A record(s).
 ```
+
+## JSON Output
+
+```bash
+auberge dns migrate --ip 10.0.0.5 --output json
+```
+
+```json
+[
+  {
+    "subdomain": "blocky",
+    "old_ip": "192.168.1.10",
+    "new_ip": "10.0.0.5",
+    "success": true
+  },
+  {
+    "subdomain": "freshrss",
+    "old_ip": "192.168.1.10",
+    "new_ip": "10.0.0.5",
+    "success": true
+  },
+  {
+    "subdomain": "baikal",
+    "old_ip": "192.168.1.10",
+    "new_ip": "10.0.0.5",
+    "success": false
+  }
+]
+```
+
+JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr.
+
+**Schema**
+
+| Field     | Type    | Description                                            |
+| --------- | ------- | ------------------------------------------------------ |
+| subdomain | string  | Subdomain label                                        |
+| old_ip    | string  | IP address before migration                            |
+| new_ip    | string  | IP address after migration (the `--ip` argument)       |
+| success   | boolean | Whether the Cloudflare update succeeded (load-bearing) |
 
 ## Migration Process
 

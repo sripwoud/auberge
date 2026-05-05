@@ -23,6 +23,7 @@ Requires `cloudflare_dns_api_token` and `domain` set in `config.toml`.
 | Option               | Description                           | Default     |
 | -------------------- | ------------------------------------- | ----------- |
 | -s, --subdomain NAME | Filter by subdomain name              | All records |
+| -o, --output FORMAT  | Output format (`human`, `json`)       | `human`     |
 | -P, --production     | Use production API (default: sandbox) | false       |
 
 ## Configuration
@@ -66,6 +67,42 @@ www                                      CNAME    example.com              1
 mail                                     MX       mail.example.com (10)    1
 @                                        TXT      v=spf1 include:_...      1
 ```
+
+## JSON Output
+
+```bash
+auberge dns list --output json
+```
+
+```json
+[
+  { "name": "@", "record_type": "A", "content": "192.168.1.10", "ttl": 1 },
+  {
+    "name": "freshrss",
+    "record_type": "A",
+    "content": "192.168.1.10",
+    "ttl": 1
+  },
+  { "name": "www", "record_type": "CNAME", "content": "example.com", "ttl": 1 },
+  {
+    "name": "mail",
+    "record_type": "MX",
+    "content": "mail.example.com",
+    "ttl": 1
+  }
+]
+```
+
+JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr.
+
+**Schema**
+
+| Field       | Type   | Description                             |
+| ----------- | ------ | --------------------------------------- |
+| name        | string | Subdomain label (`@` for apex)          |
+| record_type | string | DNS record type (A, AAAA, CNAME, MX, …) |
+| content     | string | Record value (IP, hostname, text, …)    |
+| ttl         | number | Time-to-live in seconds                 |
 
 ## Record Types
 

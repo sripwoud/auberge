@@ -1,16 +1,11 @@
 use crate::output;
+use crate::output::OutputFormat;
 use crate::prompt::select_item;
 use crate::services::dns::DnsService;
-use clap::{Subcommand, ValueEnum};
+use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::Result;
-
-#[derive(Clone, ValueEnum)]
-pub enum OutputFormat {
-    Human,
-    Json,
-    Tsv,
-}
+use serde::Serialize;
 
 #[derive(Subcommand)]
 pub enum DnsCommands {
@@ -18,11 +13,27 @@ pub enum DnsCommands {
     List {
         #[arg(short, long, help = "Filter by subdomain name")]
         subdomain: Option<String>,
+        #[arg(
+            short = 'o',
+            long,
+            value_enum,
+            default_value = "human",
+            help = "Output format"
+        )]
+        output: OutputFormat,
         #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
         production: bool,
     },
     #[command(alias = "st", about = "Show DNS status and health")]
     Status {
+        #[arg(
+            short = 'o',
+            long,
+            value_enum,
+            default_value = "human",
+            help = "Output format"
+        )]
+        output: OutputFormat,
         #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
         production: bool,
     },
@@ -58,6 +69,14 @@ pub enum DnsCommands {
         subdomain: Option<String>,
         #[arg(short = 'n', long, help = "Preview without deleting")]
         dry_run: bool,
+        #[arg(
+            short = 'o',
+            long,
+            value_enum,
+            default_value = "human",
+            help = "Output format"
+        )]
+        output: OutputFormat,
         #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
         production: bool,
         #[arg(short = 'y', long, help = "Skip confirmation prompt")]
@@ -69,6 +88,14 @@ pub enum DnsCommands {
         ip: String,
         #[arg(short = 'n', long, help = "Dry run (don't actually migrate)")]
         dry_run: bool,
+        #[arg(
+            short = 'o',
+            long,
+            value_enum,
+            default_value = "human",
+            help = "Output format"
+        )]
+        output: OutputFormat,
         #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
         production: bool,
     },
@@ -135,9 +162,20 @@ pub enum DnsCommands {
     },
 }
 
-pub async fn run_dns_list(subdomain: Option<String>, production: bool) -> Result<()> {
+#[derive(Serialize)]
+struct DnsRecordRow {
+    name: String,
+    record_type: String,
+    content: String,
+    ttl: u32,
+}
+
+pub async fn run_dns_list(
+    subdomain: Option<String>,
+    output: OutputFormat,
+    production: bool,
+) -> Result<()> {
     let service = DnsService::new_with_production(Some(production)).await?;
-    print_mode_banner();
 
     let records = service.list_records().await?;
 
@@ -146,27 +184,45 @@ pub async fn run_dns_list(subdomain: Option<String>, production: bool) -> Result
         None => records.iter().collect(),
     };
 
-    if filtered.is_empty() {
-        output::info("No DNS records found");
-        return Ok(());
-    }
-
-    eprintln!(
-        "DNS Records for {}\n{:<40} {:<8} {:<24} {:>6}",
-        service.domain(),
-        "NAME",
-        "TYPE",
-        "CONTENT",
-        "TTL"
-    );
-    eprintln!("{}", "-".repeat(80));
-
-    for record in filtered {
-        let (record_type, content) = format_dns_content(&record.content);
-        eprintln!(
-            "{:<40} {:<8} {:<24} {:>6}",
-            record.name, record_type, content, record.ttl
-        );
+    match output {
+        OutputFormat::Json => {
+            let rows: Vec<DnsRecordRow> = filtered
+                .iter()
+                .map(|r| {
+                    let (record_type, content) = format_dns_content(&r.content);
+                    DnsRecordRow {
+                        name: r.name.clone(),
+                        record_type,
+                        content,
+                        ttl: r.ttl,
+                    }
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&rows)?);
+        }
+        OutputFormat::Human => {
+            print_mode_banner();
+            if filtered.is_empty() {
+                output::info("No DNS records found");
+                return Ok(());
+            }
+            eprintln!(
+                "DNS Records for {}\n{:<40} {:<8} {:<24} {:>6}",
+                service.domain(),
+                "NAME",
+                "TYPE",
+                "CONTENT",
+                "TTL"
+            );
+            eprintln!("{}", "-".repeat(80));
+            for record in filtered {
+                let (record_type, content) = format_dns_content(&record.content);
+                eprintln!(
+                    "{:<40} {:<8} {:<24} {:>6}",
+                    record.name, record_type, content, record.ttl
+                );
+            }
+        }
     }
 
     Ok(())
@@ -191,19 +247,23 @@ fn print_mode_banner() {
     output::info("CLOUDFLARE DNS");
 }
 
-pub async fn run_dns_status(production: bool) -> Result<()> {
+#[derive(Serialize)]
+struct StatusARecord {
+    name: String,
+    ip: String,
+}
+
+#[derive(Serialize)]
+struct DnsStatusJson {
+    domain: String,
+    configured_subdomains: Vec<String>,
+    active_a_records: Vec<StatusARecord>,
+    missing_subdomains: Vec<String>,
+}
+
+pub async fn run_dns_status(output: OutputFormat, production: bool) -> Result<()> {
     let service = DnsService::new_with_production(Some(production)).await?;
-    print_mode_banner();
-
     let status = service.status().await?;
-
-    eprintln!("DNS Status for {}", status.domain);
-    eprintln!("{}", "-".repeat(40));
-
-    eprintln!(
-        "\nConfigured subdomains: {}",
-        status.configured_subdomains.join(", ")
-    );
 
     use cloudflare::endpoints::dns::dns::DnsContent;
     let a_records: Vec<_> = status
@@ -212,20 +272,51 @@ pub async fn run_dns_status(production: bool) -> Result<()> {
         .filter(|r| matches!(r.content, DnsContent::A { .. }))
         .collect();
 
-    eprintln!("\nActive A records: {}", a_records.len());
-    for record in &a_records {
-        if let DnsContent::A { content } = record.content {
-            eprintln!("  {} -> {}", record.name, content);
+    match output {
+        OutputFormat::Json => {
+            let json_status = DnsStatusJson {
+                domain: status.domain.clone(),
+                configured_subdomains: status.configured_subdomains.clone(),
+                active_a_records: a_records
+                    .iter()
+                    .filter_map(|r| {
+                        if let DnsContent::A { content } = r.content {
+                            Some(StatusARecord {
+                                name: r.name.clone(),
+                                ip: content.to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+                missing_subdomains: status.missing_subdomains.clone(),
+            };
+            println!("{}", serde_json::to_string_pretty(&json_status)?);
         }
-    }
-
-    if !status.missing_subdomains.is_empty() {
-        eprintln!(
-            "\nMissing subdomains: {}",
-            status.missing_subdomains.join(", ")
-        );
-    } else {
-        eprintln!("\nAll configured subdomains have A records");
+        OutputFormat::Human => {
+            print_mode_banner();
+            eprintln!("DNS Status for {}", status.domain);
+            eprintln!("{}", "-".repeat(40));
+            eprintln!(
+                "\nConfigured subdomains: {}",
+                status.configured_subdomains.join(", ")
+            );
+            eprintln!("\nActive A records: {}", a_records.len());
+            for record in &a_records {
+                if let DnsContent::A { content } = record.content {
+                    eprintln!("  {} -> {}", record.name, content);
+                }
+            }
+            if !status.missing_subdomains.is_empty() {
+                eprintln!(
+                    "\nMissing subdomains: {}",
+                    status.missing_subdomains.join(", ")
+                );
+            } else {
+                eprintln!("\nAll configured subdomains have A records");
+            }
+        }
     }
 
     Ok(())
@@ -293,20 +384,39 @@ pub async fn run_dns_set(
     Ok(())
 }
 
+#[derive(Serialize)]
+struct DnsDeleteResult {
+    deleted: bool,
+    fqdn: String,
+    production: bool,
+}
+
 pub async fn run_dns_delete(
     subdomain: Option<String>,
     dry_run: bool,
+    output: OutputFormat,
     production: bool,
     yes: bool,
 ) -> Result<()> {
     let subdomain = resolve_subdomain(subdomain)?;
     let service = DnsService::new_with_production(Some(production)).await?;
-    print_mode_banner();
-
     let fqdn = format!("{}.{}", subdomain, service.domain());
 
     if dry_run {
-        output::info(&format!("[DRY RUN] Would delete A record: {}", fqdn));
+        match output {
+            OutputFormat::Json => {
+                let result = DnsDeleteResult {
+                    deleted: false,
+                    fqdn,
+                    production,
+                };
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            }
+            OutputFormat::Human => {
+                print_mode_banner();
+                output::info(&format!("[DRY RUN] Would delete A record: {}", fqdn));
+            }
+        }
         return Ok(());
     }
 
@@ -321,56 +431,108 @@ pub async fn run_dns_delete(
     };
 
     if !confirmed {
-        output::info("Operation cancelled");
+        if matches!(output, OutputFormat::Human) {
+            output::info("Operation cancelled");
+        }
         return Ok(());
     }
 
     let deleted = service.delete_a_record(&subdomain).await?;
-    if deleted {
-        output::success(&format!("A record deleted: {}", fqdn));
-    } else {
-        output::info(&format!(
-            "No A record found for {} — nothing to delete",
-            fqdn
-        ));
+
+    match output {
+        OutputFormat::Json => {
+            let result = DnsDeleteResult {
+                deleted,
+                fqdn,
+                production,
+            };
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        OutputFormat::Human => {
+            print_mode_banner();
+            if deleted {
+                output::success(&format!("A record deleted: {}", fqdn));
+            } else {
+                output::info(&format!(
+                    "No A record found for {} — nothing to delete",
+                    fqdn
+                ));
+            }
+        }
     }
 
     Ok(())
 }
 
-pub async fn run_dns_migrate(ip: String, dry_run: bool, production: bool) -> Result<()> {
+#[derive(Serialize)]
+struct MigrationRow {
+    subdomain: String,
+    old_ip: String,
+    new_ip: String,
+    success: bool,
+}
+
+pub async fn run_dns_migrate(
+    ip: String,
+    dry_run: bool,
+    output: OutputFormat,
+    production: bool,
+) -> Result<()> {
     let service = DnsService::new_with_production(Some(production)).await?;
-    print_mode_banner();
-
-    if dry_run {
-        eprintln!("[DRY RUN] DNS Migration Preview");
-    } else {
-        eprintln!("DNS Migration");
-    }
-    eprintln!("{}", "-".repeat(50));
-    eprintln!(
-        "{:<14} {:<16} {:^3} {:<16}",
-        "SUBDOMAIN", "CURRENT", "", "NEW"
-    );
-    eprintln!("{}", "-".repeat(50));
-
     let results = service.migrate_all(&ip, dry_run).await?;
 
-    for result in &results {
-        eprintln!(
-            "{:<14} {:<16} ->  {:<16}",
-            result.subdomain, result.old_ip, result.new_ip
-        );
-    }
-
-    if dry_run {
-        eprintln!("\nWould update {} A record(s).", results.len());
-    } else {
-        let success_count = results.iter().filter(|r| r.success).count();
-        eprintln!("\nUpdated {} A record(s).", success_count);
+    match output {
+        OutputFormat::Json => {
+            let rows: Vec<MigrationRow> = results
+                .iter()
+                .map(|r| MigrationRow {
+                    subdomain: r.subdomain.clone(),
+                    old_ip: r.old_ip.clone(),
+                    new_ip: r.new_ip.clone(),
+                    success: r.success,
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&rows)?);
+        }
+        OutputFormat::Human => {
+            print_mode_banner();
+            if dry_run {
+                eprintln!("[DRY RUN] DNS Migration Preview");
+            } else {
+                eprintln!("DNS Migration");
+            }
+            eprintln!("{}", "-".repeat(50));
+            eprintln!(
+                "{:<14} {:<16} {:^3} {:<16}",
+                "SUBDOMAIN", "CURRENT", "", "NEW"
+            );
+            eprintln!("{}", "-".repeat(50));
+            for result in &results {
+                eprintln!(
+                    "{:<14} {:<16} ->  {:<16}",
+                    result.subdomain, result.old_ip, result.new_ip
+                );
+            }
+            if dry_run {
+                eprintln!("\nWould update {} A record(s).", results.len());
+            } else {
+                let success_count = results.iter().filter(|r| r.success).count();
+                eprintln!("\nUpdated {} A record(s).", success_count);
+            }
+        }
     }
 
     Ok(())
+}
+
+#[derive(Serialize)]
+struct SetAllRow {
+    subdomain: String,
+    fqdn: String,
+    ip: String,
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -382,7 +544,7 @@ pub async fn run_dns_set_all(
     strict: bool,
     subdomains: Vec<String>,
     skip: Vec<String>,
-    _output: OutputFormat,
+    output: OutputFormat,
     continue_on_error: bool,
     production: bool,
 ) -> Result<()> {
@@ -392,7 +554,6 @@ pub async fn run_dns_set_all(
     use std::collections::HashSet;
 
     let service = DnsService::new_with_production(Some(production)).await?;
-    print_mode_banner();
 
     let target_ip = match (&host, &ip) {
         (Some(host_name), None) => {
@@ -457,7 +618,10 @@ pub async fn run_dns_set_all(
     };
 
     if subdomains_to_process.is_empty() {
-        output::info("No subdomains to process");
+        match output {
+            OutputFormat::Json => println!("[]"),
+            OutputFormat::Human => output::info("No subdomains to process"),
+        }
         return Ok(());
     }
 
@@ -471,54 +635,84 @@ pub async fn run_dns_set_all(
         apply_tailnet_only_fallback(&mut subdomains_to_process, host_tailscale_ip.as_deref())?;
     }
 
-    if dry_run {
-        output::info("DRY RUN - Would create the following A records:");
-    } else {
-        output::info("Creating the following A records:");
-    }
-
-    for (_, entry) in &subdomains_to_process {
-        let effective_ip = entry.ip_override.as_deref().unwrap_or(&target_ip);
-        if entry.ip_override.is_some() {
-            eprintln!(
-                "  • {}.{} → {} (tailnet)",
-                entry.subdomain,
-                service.domain(),
-                effective_ip
-            );
+    if matches!(output, OutputFormat::Human) {
+        print_mode_banner();
+        if dry_run {
+            output::info("DRY RUN - Would create the following A records:");
         } else {
-            eprintln!(
-                "  • {}.{} → {}",
-                entry.subdomain,
-                service.domain(),
-                effective_ip
-            );
+            output::info("Creating the following A records:");
+        }
+
+        for (_, entry) in &subdomains_to_process {
+            let effective_ip = entry.ip_override.as_deref().unwrap_or(&target_ip);
+            if entry.ip_override.is_some() {
+                eprintln!(
+                    "  • {}.{} → {} (tailnet)",
+                    entry.subdomain,
+                    service.domain(),
+                    effective_ip
+                );
+            } else {
+                eprintln!(
+                    "  • {}.{} → {}",
+                    entry.subdomain,
+                    service.domain(),
+                    effective_ip
+                );
+            }
         }
     }
 
     if !dry_run && !crate::prompt::confirm("Proceed?", yes) {
-        output::info("Operation cancelled");
+        if matches!(output, OutputFormat::Human) {
+            output::info("Operation cancelled");
+        }
         return Ok(());
     }
 
     if dry_run {
-        output::info("DRY RUN - No changes were made");
+        if matches!(output, OutputFormat::Human) {
+            output::info("DRY RUN - No changes were made");
+        }
         return Ok(());
     }
 
-    eprintln!();
+    let mut rows: Vec<SetAllRow> = Vec::new();
     let mut succeeded = 0;
     let mut failed = 0;
 
+    if matches!(output, OutputFormat::Human) {
+        eprintln!();
+    }
+
     for (idx, (_app_name, entry)) in subdomains_to_process.iter().enumerate() {
         let effective_ip = entry.ip_override.as_deref().unwrap_or(&target_ip);
+        let fqdn = format!("{}.{}", entry.subdomain, service.domain());
         match service.set_a_record(&entry.subdomain, effective_ip).await {
             Ok(_) => {
-                output::success(&format!("Created {}.{}", entry.subdomain, service.domain()));
+                if matches!(output, OutputFormat::Human) {
+                    output::success(&format!("Created {}", fqdn));
+                }
+                rows.push(SetAllRow {
+                    subdomain: entry.subdomain.clone(),
+                    fqdn,
+                    ip: effective_ip.to_string(),
+                    success: true,
+                    error: None,
+                });
                 succeeded += 1;
             }
             Err(e) => {
-                eprintln!("Failed {}.{}: {}", entry.subdomain, service.domain(), e);
+                if matches!(output, OutputFormat::Human) {
+                    eprintln!("Failed {}: {}", fqdn, e);
+                }
+                rows.push(SetAllRow {
+                    subdomain: entry.subdomain.clone(),
+                    fqdn,
+                    ip: effective_ip.to_string(),
+                    success: false,
+                    error: Some(e.to_string()),
+                });
                 failed += 1;
                 if !continue_on_error {
                     return Err(e);
@@ -531,22 +725,29 @@ pub async fn run_dns_set_all(
         }
     }
 
-    let has_overrides = subdomains_to_process
-        .iter()
-        .any(|(_, e)| e.ip_override.is_some());
-    if has_overrides {
-        output::success(&format!(
-            "Successfully created {}/{} A records (some with tailnet IP overrides)",
-            succeeded,
-            subdomains_to_process.len(),
-        ));
-    } else {
-        output::success(&format!(
-            "Successfully created {}/{} A records pointing to {}",
-            succeeded,
-            subdomains_to_process.len(),
-            target_ip
-        ));
+    match output {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&rows)?);
+        }
+        OutputFormat::Human => {
+            let has_overrides = subdomains_to_process
+                .iter()
+                .any(|(_, e)| e.ip_override.is_some());
+            if has_overrides {
+                output::success(&format!(
+                    "Successfully created {}/{} A records (some with tailnet IP overrides)",
+                    succeeded,
+                    subdomains_to_process.len(),
+                ));
+            } else {
+                output::success(&format!(
+                    "Successfully created {}/{} A records pointing to {}",
+                    succeeded,
+                    subdomains_to_process.len(),
+                    target_ip
+                ));
+            }
+        }
     }
 
     if failed > 0 {
@@ -560,6 +761,9 @@ pub async fn run_dns_set_all(
 #[cfg(test)]
 mod tests {
     use super::apply_tailnet_only_fallback;
+    use super::{
+        DnsDeleteResult, DnsRecordRow, DnsStatusJson, MigrationRow, SetAllRow, StatusARecord,
+    };
     use crate::services::dns::SubdomainEntry;
 
     fn entries(items: &[(&str, &str, Option<&str>)]) -> Vec<(String, SubdomainEntry)> {
@@ -632,6 +836,102 @@ mod tests {
         let mut v = entries(&[("freshrss", "rss", None)]);
         apply_tailnet_only_fallback(&mut v, None).unwrap();
         assert!(find(&v, "freshrss").ip_override.is_none());
+    }
+
+    #[test]
+    fn dns_record_row_serialises_to_json() {
+        let row = DnsRecordRow {
+            name: "freshrss.example.com".to_string(),
+            record_type: "A".to_string(),
+            content: "192.168.1.10".to_string(),
+            ttl: 1,
+        };
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(json.contains("\"name\":\"freshrss.example.com\""));
+        assert!(json.contains("\"record_type\":\"A\""));
+        assert!(json.contains("\"ttl\":1"));
+    }
+
+    #[test]
+    fn dns_status_json_serialises_with_nested_records() {
+        let status = DnsStatusJson {
+            domain: "example.com".to_string(),
+            configured_subdomains: vec!["freshrss".to_string()],
+            active_a_records: vec![StatusARecord {
+                name: "freshrss.example.com".to_string(),
+                ip: "192.168.1.10".to_string(),
+            }],
+            missing_subdomains: vec![],
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("\"missing_subdomains\":[]"));
+        assert!(json.contains("\"active_a_records\":[{\"name\":\"freshrss.example.com\""));
+    }
+
+    #[test]
+    fn migration_row_serialises_with_success_flag() {
+        let row = MigrationRow {
+            subdomain: "baikal".to_string(),
+            old_ip: "1.2.3.4".to_string(),
+            new_ip: "5.6.7.8".to_string(),
+            success: true,
+        };
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(json.contains("\"success\":true"));
+    }
+
+    #[test]
+    fn set_all_row_omits_error_field_when_success() {
+        let row = SetAllRow {
+            subdomain: "baikal".to_string(),
+            fqdn: "baikal.example.com".to_string(),
+            ip: "1.2.3.4".to_string(),
+            success: true,
+            error: None,
+        };
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(!json.contains("\"error\""));
+    }
+
+    #[test]
+    fn set_all_row_includes_error_field_on_failure() {
+        let row = SetAllRow {
+            subdomain: "baikal".to_string(),
+            fqdn: "baikal.example.com".to_string(),
+            ip: "1.2.3.4".to_string(),
+            success: false,
+            error: Some("timeout".to_string()),
+        };
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(json.contains("\"error\":\"timeout\""));
+        assert!(json.contains("\"success\":false"));
+    }
+
+    // The `deleted` field is what makes `dns delete` a load-bearing-JSON
+    // command (vs. `dns set` which only echoes input). Lock both branches
+    // under test so a future refactor that drops the field surfaces here.
+    #[test]
+    fn dns_delete_result_distinguishes_real_delete_from_noop() {
+        let real = DnsDeleteResult {
+            deleted: true,
+            fqdn: "freshrss.example.com".to_string(),
+            production: false,
+        };
+        let noop = DnsDeleteResult {
+            deleted: false,
+            fqdn: "freshrss.example.com".to_string(),
+            production: false,
+        };
+        assert!(
+            serde_json::to_string(&real)
+                .unwrap()
+                .contains("\"deleted\":true")
+        );
+        assert!(
+            serde_json::to_string(&noop)
+                .unwrap()
+                .contains("\"deleted\":false")
+        );
     }
 }
 

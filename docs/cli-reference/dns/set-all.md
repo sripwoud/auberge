@@ -29,7 +29,7 @@ Discovers subdomain names from `config.toml` (e.g., `freshrss_subdomain`, `baika
 | -s, --strict           | Fail if any subdomain env var missing       | false       |
 | -S, --subdomains NAMES | Only process specific subdomains            | All         |
 | --skip NAMES           | Skip specific subdomains                    | None        |
-| -o, --output FORMAT    | Output format: human, json, tsv             | human       |
+| -o, --output FORMAT    | Output format (`human`, `json`)             | `human`     |
 | --continue-on-error    | Continue on errors instead of failing       | false       |
 | -P, --production       | Use production API (default: sandbox)       | false       |
 
@@ -120,6 +120,48 @@ Proceed? [y/N]: y
 
 Successfully created 4/4 A records pointing to 192.168.1.10
 ```
+
+## JSON Output
+
+```bash
+auberge dns set-all --host myserver --output json
+```
+
+```json
+[
+  {
+    "subdomain": "freshrss",
+    "fqdn": "freshrss.example.com",
+    "ip": "192.168.1.10",
+    "success": true
+  },
+  {
+    "subdomain": "baikal",
+    "fqdn": "baikal.example.com",
+    "ip": "192.168.1.10",
+    "success": true
+  },
+  {
+    "subdomain": "calibre",
+    "fqdn": "calibre.example.com",
+    "ip": "192.168.1.10",
+    "success": false,
+    "error": "API rate limit exceeded"
+  }
+]
+```
+
+JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr.
+
+**Schema**
+
+| Field     | Type    | Description                                                                                       |
+| --------- | ------- | ------------------------------------------------------------------------------------------------- |
+| subdomain | string  | Subdomain label                                                                                   |
+| fqdn      | string  | Fully-qualified domain name                                                                       |
+| ip        | string  | IP address the record points to                                                                   |
+| success   | boolean | Whether the Cloudflare create/update succeeded (load-bearing)                                     |
+| error     | string  | Error message when `success` is `false`; field is omitted when `success` is `true` (load-bearing) |
 
 ## Host Discovery
 

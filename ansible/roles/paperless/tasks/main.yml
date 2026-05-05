@@ -351,4 +351,3 @@
           - "  systemctl status paperless-consumer"
           - "  systemctl status paperless-task-queue"
           - "  systemctl status paperless-scheduler"
-

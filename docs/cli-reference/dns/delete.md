@@ -31,12 +31,13 @@ name are ignored — running this command against such a name reports
 
 ## Options
 
-| Option           | Description                           | Required |
-| ---------------- | ------------------------------------- | -------- |
-| -s, --subdomain  | Subdomain name (omit to be prompted)  | No       |
-| -n, --dry-run    | Preview without deleting              | No       |
-| -y, --yes        | Skip confirmation prompt              | No       |
-| -P, --production | Use production API (default: sandbox) | No       |
+| Option              | Description                           | Required |
+| ------------------- | ------------------------------------- | -------- |
+| -s, --subdomain     | Subdomain name (omit to be prompted)  | No       |
+| -n, --dry-run       | Preview without deleting              | No       |
+| -o, --output FORMAT | Output format (`human`, `json`)       | No       |
+| -y, --yes           | Skip confirmation prompt              | No       |
+| -P, --production    | Use production API (default: sandbox) | No       |
 
 ## Examples
 
@@ -89,6 +90,34 @@ CLOUDFLARE DNS
 Delete A record for freshrss.example.com? yes
 → No A record found for freshrss.example.com — nothing to delete
 ```
+
+## JSON Output
+
+> Why does `dns delete` get `--output` while `dns set` does not? See [ADR-0004](../../../meta/adr/0004-cli-structured-output.md) — the `deleted` field is load-bearing (was the record actually removed, or was it already absent?). `dns set`'s output would only echo its own input arguments.
+
+```bash
+auberge dns delete -s freshrss --yes --output json
+```
+
+```json
+{ "deleted": true, "fqdn": "freshrss.example.com", "production": false }
+```
+
+Idempotent no-op (record was already absent):
+
+```json
+{ "deleted": false, "fqdn": "freshrss.example.com", "production": false }
+```
+
+JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr.
+
+**Schema**
+
+| Field      | Type    | Description                                                                                             |
+| ---------- | ------- | ------------------------------------------------------------------------------------------------------- |
+| deleted    | boolean | `true` if a record was actually removed; `false` if no record existed (idempotent no-op) (load-bearing) |
+| fqdn       | string  | Fully-qualified domain name that was targeted                                                           |
+| production | boolean | Whether the production API was used                                                                     |
 
 ## Behaviour
 

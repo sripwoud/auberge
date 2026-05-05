@@ -139,7 +139,7 @@ async fn main() -> Result<()> {
             }),
             HostCommands::List { tags, output } => run_host_list(tags, output),
             HostCommands::Remove { name, yes } => run_host_remove(name, yes),
-            HostCommands::Show { name, output } => run_host_show(name, output),
+            HostCommands::Show { name } => run_host_show(name),
             HostCommands::Edit { name } => run_host_edit(name),
             HostCommands::DetectTailscaleIp { name } => run_host_detect_tailscale_ip(name),
         },
@@ -195,7 +195,7 @@ async fn main() -> Result<()> {
             } => {
                 signal::with_ctrlc(|| run_backup_sync(host, apps, ssh_key, include_music, dry_run))
             }
-            BackupCommands::List { host, app, format } => run_backup_list(host, app, format),
+            BackupCommands::List { host, app, output } => run_backup_list(host, app, output),
             BackupCommands::Restore {
                 backup_id,
                 host,
@@ -260,9 +260,10 @@ async fn main() -> Result<()> {
         Commands::Dns(cmd) => match cmd {
             DnsCommands::List {
                 subdomain,
+                output,
                 production,
-            } => run_dns_list(subdomain, production).await,
-            DnsCommands::Status { production } => run_dns_status(production).await,
+            } => run_dns_list(subdomain, output, production).await,
+            DnsCommands::Status { output, production } => run_dns_status(output, production).await,
             DnsCommands::Set {
                 subdomain,
                 ip,
@@ -271,14 +272,16 @@ async fn main() -> Result<()> {
             DnsCommands::Delete {
                 subdomain,
                 dry_run,
+                output,
                 production,
                 yes,
-            } => run_dns_delete(subdomain, dry_run, production, yes).await,
+            } => run_dns_delete(subdomain, dry_run, output, production, yes).await,
             DnsCommands::Migrate {
                 ip,
                 dry_run,
+                output,
                 production,
-            } => run_dns_migrate(ip, dry_run, production).await,
+            } => run_dns_migrate(ip, dry_run, output, production).await,
             DnsCommands::SetAll {
                 host,
                 ip,
