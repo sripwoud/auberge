@@ -60,6 +60,21 @@ jobs:
 
       - run: mise r check
 
+      - name: stdout discipline — println! only in data-emitting modules
+        shell: bash
+        run: |
+          # clig.dev rule: stdout = data, stderr = chrome.
+          # println! is allowed only in the modules listed below that emit
+          # the command's primary data output.  Everything else must use
+          # eprintln! / output::info / output::warn.
+          ALLOWLIST="src/output\.rs|src/commands/(backup|config_cmd|dns|headscale|host|select)\.rs"
+          hits=$(grep -rn 'println!' src/ --include='*.rs' | grep -vE "$ALLOWLIST" || true)
+          if [ -n "$hits" ]; then
+            echo "::error::println! found outside data-emitting modules (use eprintln! or output::info/warn for chrome):"
+            echo "$hits"
+            exit 1
+          fi
+
   _test:
     needs: changed-files
     if: needs.changed-files.outputs.any_rs_changed == 'true'

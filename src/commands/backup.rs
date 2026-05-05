@@ -595,7 +595,7 @@ fn calculate_dir_size(path: &Path) -> Result<u64> {
 fn print_backups_table(backups: &[BackupEntry]) {
     let display_backups: Vec<BackupDisplay> = backups.iter().map(BackupDisplay::from).collect();
     output::print_table(&display_backups);
-    println!("\nTotal: {} backup(s)", backups.len());
+    eprintln!("\nTotal: {} backup(s)", backups.len());
 }
 
 fn print_backups_json(backups: &[BackupEntry]) -> Result<()> {
