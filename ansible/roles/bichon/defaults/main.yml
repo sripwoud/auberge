@@ -15,4 +15,4 @@ bichon_domain: "{{ bichon_subdomain }}.{{ domain }}"
 bichon_public_url: "https://{{ bichon_domain }}"
 bichon_encrypt_password_file: "{{ bichon_install_dir }}/encrypt.password"
 
-bichon_release_url: "https://github.com/rustmailer/bichon/releases/download/v{{ bichon_version }}/bichon-x86_64-unknown-linux-gnu.tar.gz"
+bichon_release_url: "https://github.com/rustmailer/bichon/releases/download/{{ bichon_version }}/bichon-{{ bichon_version }}-x86_64-unknown-linux-gnu.tar.gz"
