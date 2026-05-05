@@ -1,6 +1,6 @@
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use std::env;
-use std::io::IsTerminal;
+
+use crate::output::{CYAN, RESET, YELLOW, should_use_colors};
 
 pub trait Progress {
     fn task_started(&mut self, name: &str);
@@ -13,25 +13,6 @@ pub trait Progress {
     fn warn(&mut self, msg: &str);
     #[allow(dead_code)]
     fn cancel(&mut self);
-}
-
-#[allow(dead_code)]
-const YELLOW: &str = "\x1b[33m";
-#[allow(dead_code)]
-const CYAN: &str = "\x1b[36m";
-#[allow(dead_code)]
-const RESET: &str = "\x1b[0m";
-
-fn should_use_colors() -> bool {
-    if env::var("NO_COLOR").is_ok() {
-        return false;
-    }
-    if let Ok(term) = env::var("TERM")
-        && term == "dumb"
-    {
-        return false;
-    }
-    std::io::stderr().is_terminal()
 }
 
 pub struct TerminalProgress {
@@ -95,21 +76,11 @@ impl Progress for TerminalProgress {
     }
 
     fn info(&mut self, msg: &str) {
-        let line = if should_use_colors() {
-            format!("{}\u{2192}{} {}", CYAN, RESET, msg)
-        } else {
-            format!("\u{2192} {}", msg)
-        };
-        self.pb.println(line);
+        self.pb.println(format_info_line(msg, should_use_colors()));
     }
 
     fn warn(&mut self, msg: &str) {
-        let line = if should_use_colors() {
-            format!("{}\u{26A0}{} {}", YELLOW, RESET, msg)
-        } else {
-            format!("\u{26A0} {}", msg)
-        };
-        self.pb.println(line);
+        self.pb.println(format_warn_line(msg, should_use_colors()));
     }
 
     fn cancel(&mut self) {
@@ -117,6 +88,27 @@ impl Progress for TerminalProgress {
     }
 }
 
+fn format_info_line(msg: &str, use_colors: bool) -> String {
+    if use_colors {
+        format!("{CYAN}\u{2192}{RESET} {msg}")
+    } else {
+        format!("\u{2192} {msg}")
+    }
+}
+
+fn format_warn_line(msg: &str, use_colors: bool) -> String {
+    if use_colors {
+        format!("{YELLOW}\u{26A0}{RESET} {msg}")
+    } else {
+        format!("\u{26A0} {msg}")
+    }
+}
+
+// `should_use_colors()` here also gates non-color glyphs (braille spinner,
+// block progress chars). Bundling is intentional: every code path that
+// disables colors today (--no-color, NO_COLOR, TERM=dumb, non-TTY) is also
+// the path most likely to render Unicode poorly. Split if a real use case
+// needs colored ASCII or vice versa.
 fn apply_spinner_style(pb: &ProgressBar) {
     if should_use_colors() {
         pb.set_style(
@@ -312,5 +304,31 @@ mod tests {
         p.set_total(None);
         p.set_total(None);
         p.task_done();
+    }
+
+    #[test]
+    fn format_info_line_omits_color_when_disabled() {
+        let line = format_info_line("hello", false);
+        assert_eq!(line, "\u{2192} hello");
+        assert!(!line.contains('\x1b'));
+    }
+
+    #[test]
+    fn format_info_line_wraps_glyph_in_cyan_when_enabled() {
+        let line = format_info_line("hello", true);
+        assert_eq!(line, format!("{CYAN}\u{2192}{RESET} hello"));
+    }
+
+    #[test]
+    fn format_warn_line_omits_color_when_disabled() {
+        let line = format_warn_line("careful", false);
+        assert_eq!(line, "\u{26A0} careful");
+        assert!(!line.contains('\x1b'));
+    }
+
+    #[test]
+    fn format_warn_line_wraps_glyph_in_yellow_when_enabled() {
+        let line = format_warn_line("careful", true);
+        assert_eq!(line, format!("{YELLOW}\u{26A0}{RESET} careful"));
     }
 }

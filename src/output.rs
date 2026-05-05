@@ -7,6 +7,13 @@ use std::sync::{Arc, Mutex};
 use tabled::{Table, Tabled, settings::Style as TableStyle};
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
+static NO_COLOR_FLAG: AtomicBool = AtomicBool::new(false);
+
+// Shared across this binary's test suite: any test that mutates global state
+// (env vars, NO_COLOR_FLAG, VERBOSE) must hold this lock so concurrent tests
+// in other modules don't race on those reads.
+#[cfg(test)]
+pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn set_verbose(v: bool) {
     VERBOSE.store(v, Ordering::Relaxed);
@@ -16,7 +23,14 @@ pub fn is_verbose() -> bool {
     VERBOSE.load(Ordering::Relaxed)
 }
 
-fn should_use_colors() -> bool {
+pub(crate) fn set_no_color(v: bool) {
+    NO_COLOR_FLAG.store(v, Ordering::Relaxed);
+}
+
+pub(crate) fn should_use_colors() -> bool {
+    if NO_COLOR_FLAG.load(Ordering::Relaxed) {
+        return false;
+    }
     if env::var("NO_COLOR").is_ok() {
         return false;
     }
@@ -28,11 +42,11 @@ fn should_use_colors() -> bool {
     std::io::stderr().is_terminal()
 }
 
-const YELLOW: &str = "\x1b[33m";
+pub(crate) const YELLOW: &str = "\x1b[33m";
 const GREEN: &str = "\x1b[32m";
-const CYAN: &str = "\x1b[36m";
+pub(crate) const CYAN: &str = "\x1b[36m";
 const DIM: &str = "\x1b[2m";
-const RESET: &str = "\x1b[0m";
+pub(crate) const RESET: &str = "\x1b[0m";
 
 pub fn success(msg: &str) {
     if should_use_colors() {
@@ -66,6 +80,10 @@ pub struct SubprocessResult {
 const CURSOR_UP: &str = "\x1b[A";
 const ERASE_LINE: &str = "\x1b[2K";
 
+// Cursor movement and line erasure are intentionally not gated by --no-color:
+// per https://no-color.org/ the contract is "suppress color output", not all
+// terminal control. They are still skipped on non-TTY stderr to avoid leaking
+// escape codes into pipes and log files.
 pub fn clear_subprocess_lines(count: usize) {
     if count == 0 || !std::io::stderr().is_terminal() {
         return;
@@ -239,9 +257,62 @@ pub fn stream_command_stdout(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    // RAII guard that unsets an env var for the duration of a test and restores it on Drop.
+    // Callers MUST hold TEST_LOCK so env mutations are serialized across this binary's tests.
+    struct EnvVarGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn unset(key: &'static str) -> Self {
+            let prev = env::var(key).ok();
+            // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+            unsafe { env::remove_var(key) };
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+            match &self.prev {
+                Some(v) => unsafe { env::set_var(self.key, v) },
+                None => unsafe { env::remove_var(self.key) },
+            }
+        }
+    }
+
+    #[test]
+    fn no_color_flag_overrides_tty_check() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let _env_guard = EnvVarGuard::unset("NO_COLOR");
+        set_no_color(true);
+        assert!(!should_use_colors());
+        set_no_color(false);
+    }
+
+    #[test]
+    fn no_color_env_disables_colors_when_flag_cleared() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let _env_guard = EnvVarGuard::unset("NO_COLOR");
+        // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+        unsafe { env::set_var("NO_COLOR", "1") };
+        set_no_color(false);
+        assert!(!should_use_colors());
+    }
+
+    #[test]
+    fn term_dumb_disables_colors_when_flag_and_env_absent() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let _no_color_guard = EnvVarGuard::unset("NO_COLOR");
+        let _term_guard = EnvVarGuard::unset("TERM");
+        // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+        unsafe { env::set_var("TERM", "dumb") };
+        set_no_color(false);
+        assert!(!should_use_colors());
+    }
 
     #[test]
     fn verbose_defaults_to_false() {
