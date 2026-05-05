@@ -1221,23 +1221,26 @@ fn select_backup_id(host_backup_dir: &Path) -> Result<String> {
         );
     }
 
-    let mut timestamps: Vec<String> = fs::read_dir(host_backup_dir)?
+    let mut entries: Vec<fs::DirEntry> = fs::read_dir(host_backup_dir)?
         .filter_map(Result::ok)
         .filter(is_backup_timestamp_dir)
-        .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
 
-    timestamps.sort_by(|a, b| b.cmp(a)); // newest first
-
-    if timestamps.is_empty() {
+    if entries.is_empty() {
         eyre::bail!(
             "No backup timestamps found in {}",
             host_backup_dir.display()
         );
     }
 
+    entries.sort_by_key(|e| std::cmp::Reverse(e.file_name())); // newest first
+
     let mut options = vec!["latest".to_string()];
-    options.extend(timestamps);
+    options.extend(
+        entries
+            .iter()
+            .map(|e| e.file_name().to_string_lossy().into_owned()),
+    );
 
     crate::prompt::select_item(&options, |s: &String| s.clone(), "Select backup")?
         .ok_or_else(|| eyre::eyre!("No backup selected"))
