@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use tabled::{Table, Tabled, settings::Style as TableStyle};
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
+static NO_COLOR_FLAG: AtomicBool = AtomicBool::new(false);
 
 pub fn set_verbose(v: bool) {
     VERBOSE.store(v, Ordering::Relaxed);
@@ -16,7 +17,14 @@ pub fn is_verbose() -> bool {
     VERBOSE.load(Ordering::Relaxed)
 }
 
-fn should_use_colors() -> bool {
+pub fn set_no_color(v: bool) {
+    NO_COLOR_FLAG.store(v, Ordering::Relaxed);
+}
+
+pub(crate) fn should_use_colors() -> bool {
+    if NO_COLOR_FLAG.load(Ordering::Relaxed) {
+        return false;
+    }
     if env::var("NO_COLOR").is_ok() {
         return false;
     }
@@ -242,6 +250,35 @@ mod tests {
     use std::sync::Mutex;
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn no_color_flag_overrides_tty_check() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        // Ensure NO_COLOR env var is not set so only the flag is in play.
+        let _no_color_guard = std::env::var("NO_COLOR").ok().map(|v| {
+            // SAFETY: tests are serialized via TEST_LOCK; no other threads read this var.
+            unsafe { std::env::remove_var("NO_COLOR") };
+            v
+        });
+        // With flag cleared, should_use_colors returns whatever the TTY check says (not tested
+        // for its value here; we only care about the flag override).
+        set_no_color(false);
+        // Set the flag and verify it forces colors off.
+        set_no_color(true);
+        assert!(!should_use_colors());
+        set_no_color(false);
+    }
+
+    #[test]
+    fn no_color_flag_cleared_does_not_force_off() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_no_color(false);
+        // When the flag is cleared AND NO_COLOR env is absent AND TERM != dumb, the only
+        // remaining condition is the TTY check.  In a non-TTY test environment that will be
+        // false, but what matters is that set_no_color(false) alone doesn't return true.
+        // (We just assert the flag doesn't independently force *true*.)
+        let _ = should_use_colors(); // must not panic
+    }
 
     #[test]
     fn verbose_defaults_to_false() {

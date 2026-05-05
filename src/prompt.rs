@@ -1,7 +1,16 @@
-use dialoguer::{Confirm, Input, MultiSelect, Select, theme::ColorfulTheme};
+use crate::output::should_use_colors;
+use dialoguer::{Confirm, Input, MultiSelect, Select, theme::ColorfulTheme, theme::SimpleTheme};
 use eyre::Result;
 use skim::prelude::*;
 use std::io::{Cursor, IsTerminal, Write};
+
+fn dialoguer_theme() -> Box<dyn dialoguer::theme::Theme> {
+    if should_use_colors() {
+        Box::new(ColorfulTheme::default())
+    } else {
+        Box::new(SimpleTheme)
+    }
+}
 
 fn has_skim_support() -> bool {
     std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
@@ -31,9 +40,11 @@ fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
     // Skim leaves terminal background color set after exit.
     // \x1b[0m resets all SGR attributes (fixes colored bands on subsequent lines).
     // \x1b[J clears from cursor to end of screen (removes phantom blank lines).
-    let mut stderr = std::io::stderr().lock();
-    let _ = stderr.write_all(b"\x1b[0m\x1b[J");
-    let _ = stderr.flush();
+    if should_use_colors() {
+        let mut stderr = std::io::stderr().lock();
+        let _ = stderr.write_all(b"\x1b[0m\x1b[J");
+        let _ = stderr.flush();
+    }
 
     if output.is_abort {
         return None;
@@ -50,7 +61,8 @@ fn select_with_dialoguer(items: &[String], prompt: &str) -> Option<String> {
         return None;
     }
 
-    let selection = Select::with_theme(&ColorfulTheme::default())
+    let theme = dialoguer_theme();
+    let selection = Select::with_theme(theme.as_ref())
         .with_prompt(prompt)
         .items(items)
         .default(0)
@@ -118,9 +130,11 @@ fn select_multi_with_skim(items: &[String], prompt: &str) -> Option<Vec<String>>
 
     let output = Skim::run_with(&options, Some(items))?;
 
-    let mut stderr = std::io::stderr().lock();
-    let _ = stderr.write_all(b"\x1b[0m\x1b[J");
-    let _ = stderr.flush();
+    if should_use_colors() {
+        let mut stderr = std::io::stderr().lock();
+        let _ = stderr.write_all(b"\x1b[0m\x1b[J");
+        let _ = stderr.flush();
+    }
 
     if output.is_abort {
         return None;
@@ -144,7 +158,8 @@ fn select_multi_with_dialoguer(items: &[String], prompt: &str) -> Option<Vec<Str
         return None;
     }
 
-    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+    let theme = dialoguer_theme();
+    let selections = MultiSelect::with_theme(theme.as_ref())
         .with_prompt(prompt)
         .items(items)
         .interact_opt()
@@ -186,7 +201,8 @@ pub fn confirm(msg: &str, yes_flag: bool) -> bool {
         return false;
     }
 
-    Confirm::with_theme(&ColorfulTheme::default())
+    let theme = dialoguer_theme();
+    Confirm::with_theme(theme.as_ref())
         .with_prompt(msg)
         .default(false)
         .interact()
@@ -208,7 +224,8 @@ pub fn confirm_typed(prompt_msg: &str, expected: &str, yes_flag: bool) -> Result
         return Ok(false);
     }
 
-    let typed: String = Input::with_theme(&ColorfulTheme::default())
+    let theme = dialoguer_theme();
+    let typed: String = Input::with_theme(theme.as_ref())
         .with_prompt(prompt_msg)
         .allow_empty(true)
         .interact_text()?;

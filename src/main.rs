@@ -48,6 +48,8 @@ struct Cli {
     verbose: bool,
     #[arg(short, long, global = true, help = "Suppress non-essential output")]
     quiet: bool,
+    #[arg(long, global = true, help = "Disable colored output")]
+    no_color: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -91,6 +93,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     output::set_verbose(cli.verbose);
+    output::set_no_color(cli.no_color);
 
     match cli.command {
         Commands::Deploy(cmd) => signal::with_ctrlc(|| run_deploy(cmd)),

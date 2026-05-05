@@ -1,6 +1,6 @@
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use std::env;
-use std::io::IsTerminal;
+
+use crate::output::should_use_colors;
 
 pub trait Progress {
     fn task_started(&mut self, name: &str);
@@ -13,25 +13,6 @@ pub trait Progress {
     fn warn(&mut self, msg: &str);
     #[allow(dead_code)]
     fn cancel(&mut self);
-}
-
-#[allow(dead_code)]
-const YELLOW: &str = "\x1b[33m";
-#[allow(dead_code)]
-const CYAN: &str = "\x1b[36m";
-#[allow(dead_code)]
-const RESET: &str = "\x1b[0m";
-
-fn should_use_colors() -> bool {
-    if env::var("NO_COLOR").is_ok() {
-        return false;
-    }
-    if let Ok(term) = env::var("TERM")
-        && term == "dumb"
-    {
-        return false;
-    }
-    std::io::stderr().is_terminal()
 }
 
 pub struct TerminalProgress {
@@ -96,7 +77,7 @@ impl Progress for TerminalProgress {
 
     fn info(&mut self, msg: &str) {
         let line = if should_use_colors() {
-            format!("{}\u{2192}{} {}", CYAN, RESET, msg)
+            format!("\x1b[36m\u{2192}\x1b[0m {}", msg)
         } else {
             format!("\u{2192} {}", msg)
         };
@@ -105,7 +86,7 @@ impl Progress for TerminalProgress {
 
     fn warn(&mut self, msg: &str) {
         let line = if should_use_colors() {
-            format!("{}\u{26A0}{} {}", YELLOW, RESET, msg)
+            format!("\x1b[33m\u{26A0}\x1b[0m {}", msg)
         } else {
             format!("\u{26A0} {}", msg)
         };
