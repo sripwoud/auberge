@@ -236,6 +236,7 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         description: args.description,
         python_interpreter: None,
         become_method: "sudo".to_string(),
+        tailscale_ip: None,
     };
 
     HostManager::add_host(host)?;
@@ -359,6 +360,7 @@ pub fn run_host_edit(name: String) -> Result<()> {
         },
         python_interpreter: host.python_interpreter,
         become_method: host.become_method,
+        tailscale_ip: host.tailscale_ip,
     };
 
     HostManager::update_host(&name, updated_host)?;

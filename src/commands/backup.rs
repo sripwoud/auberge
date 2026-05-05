@@ -1526,6 +1526,7 @@ mod tests {
             description: None,
             python_interpreter: None,
             become_method: "sudo".to_string(),
+            tailscale_ip: None,
         }
     }
 
