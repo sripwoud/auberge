@@ -21,7 +21,7 @@ Required variables in `config.toml`:
 
 Optional:
 
-- `bichon_tailscale_ip` - Override auto-detected Tailscale IP (e.g. `100.x.y.z`); signals `dns set-all` to use this IP instead of the public IP
+- `bichon_tailscale_ip` - Override the host's cached Tailscale IP for this app specifically (e.g. `100.x.y.z`). Usually unnecessary: bichon's playbook meta declares `tailnet_only: true`, so `dns set-all --host <name>` already auto-fills the IP from `host.tailscale_ip` (set once via [`auberge host detect-tailscale-ip`](../../cli-reference/host/detect-tailscale-ip.md)). Use this key only when bichon needs a _different_ Tailscale IP than the rest of the host's tailnet-only apps.
 
 > **Warning**: Once the encryption password is set, it **cannot be changed**. Changing it later will make all encrypted data unreadable. To start over, you must reinitialize Bichon and delete all emails and metadata. See [upstream docs](https://github.com/rustmailer/bichon/wiki/Setting-the-Bichon-Encryption-Password). The Ansible role enforces this: the password file is written once on first deploy, and subsequent runs will fail if the configured password differs from the deployed one.
 
