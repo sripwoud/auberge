@@ -171,7 +171,16 @@ fn run_dns_checks_for_run(
             tag, vc.fqdn, vc.resolver_ip
         ));
 
-        let lookup = HickoryLookup::new(&vc.resolver_ip);
+        let lookup = match HickoryLookup::new(&vc.resolver_ip) {
+            Ok(l) => l,
+            Err(e) => {
+                errors.push(format!(
+                    "Failed to build resolver for {} (resolver {}): {}",
+                    vc.fqdn, vc.resolver_ip, e
+                ));
+                continue;
+            }
+        };
         match verify_a_record(&lookup, &vc.fqdn, &vc.expected_ip) {
             Ok(None) => {
                 output::success(&format!("DNS OK: {} → {}", vc.fqdn, vc.expected_ip));

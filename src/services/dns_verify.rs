@@ -22,62 +22,51 @@ pub trait DnsLookup {
 
 /// Production DNS lookup using hickory-resolver (queries a specific resolver IP at UDP/53).
 pub struct HickoryLookup {
-    resolver_ip: String,
+    resolver: hickory_resolver::TokioResolver,
 }
 
 impl HickoryLookup {
-    pub fn new(resolver_ip: &str) -> Self {
-        Self {
-            resolver_ip: resolver_ip.to_string(),
-        }
-    }
-}
-
-impl DnsLookup for HickoryLookup {
-    fn lookup_ipv4(&self, fqdn: &str) -> Result<Vec<IpAddr>> {
+    pub fn new(resolver_ip: &str) -> Result<Self> {
         use hickory_resolver::{
             TokioResolver,
             config::{NameServerConfig, ResolverConfig, ResolverOpts},
             net::runtime::TokioRuntimeProvider,
         };
-        use std::str::FromStr;
 
-        let addr: IpAddr = IpAddr::from_str(&self.resolver_ip)
-            .map_err(|e| eyre::eyre!("Invalid resolver IP '{}': {}", self.resolver_ip, e))?;
+        let addr: IpAddr = resolver_ip
+            .parse()
+            .map_err(|e| eyre::eyre!("Invalid resolver IP '{resolver_ip}': {e}"))?;
 
         let ns = NameServerConfig::udp(addr);
         let config = ResolverConfig::from_parts(None, vec![], vec![ns]);
         let mut opts = ResolverOpts::default();
         opts.attempts = 2;
 
-        // Use block_in_place to run async resolver code from within a synchronous
-        // function that's executing on a multi-threaded tokio runtime.
+        let resolver = TokioResolver::builder_with_config(config, TokioRuntimeProvider::default())
+            .with_options(opts)
+            .build()
+            .map_err(|e| eyre::eyre!("Failed to build DNS resolver: {e}"))?;
+
+        Ok(Self { resolver })
+    }
+}
+
+impl DnsLookup for HickoryLookup {
+    fn lookup_ipv4(&self, fqdn: &str) -> Result<Vec<IpAddr>> {
+        let fqdn_owned;
+        let fqdn_dot: &str = if fqdn.ends_with('.') {
+            fqdn
+        } else {
+            fqdn_owned = format!("{fqdn}.");
+            &fqdn_owned
+        };
+
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let resolver =
-                    TokioResolver::builder_with_config(config, TokioRuntimeProvider::default())
-                        .with_options(opts)
-                        .build()
-                        .map_err(|e| eyre::eyre!("Failed to build DNS resolver: {}", e))?;
-
-                // Append trailing dot to query the name as a FQDN, preventing
-                // the resolver from appending any search-domain suffix.
-                let fqdn_owned;
-                let fqdn_dot: &str = if fqdn.ends_with('.') {
-                    fqdn
-                } else {
-                    fqdn_owned = format!("{fqdn}.");
-                    &fqdn_owned
-                };
-
-                match resolver.lookup_ip(fqdn_dot).await {
-                    Ok(lookup) => {
-                        let ips: Vec<IpAddr> =
-                            lookup.iter().filter(|a: &IpAddr| a.is_ipv4()).collect();
-                        Ok(ips)
-                    }
+                match self.resolver.lookup_ip(fqdn_dot).await {
+                    Ok(lookup) => Ok(lookup.iter().filter(|a: &IpAddr| a.is_ipv4()).collect()),
                     Err(e) if e.is_no_records_found() => Ok(vec![]),
-                    Err(e) => Err(eyre::eyre!("DNS lookup error: {}", e)),
+                    Err(e) => Err(eyre::eyre!("DNS lookup error: {e}")),
                 }
             })
         })
