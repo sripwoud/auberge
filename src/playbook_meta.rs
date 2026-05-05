@@ -9,6 +9,8 @@ pub struct PlaybookMeta {
     pub required_keys: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup: Option<BackupRecipe>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tailnet_only: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -303,6 +305,25 @@ mod tests {
         let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(meta.required_keys, vec!["foo", "bar"]);
         assert!(meta.backup.is_none());
+        assert!(!meta.tailnet_only);
+    }
+
+    #[test]
+    fn test_bichon_meta_is_tailnet_only() {
+        let meta = load_meta("bichon");
+        assert!(meta.tailnet_only);
+    }
+
+    #[test]
+    fn test_paperless_meta_is_tailnet_only() {
+        let meta = load_meta("paperless");
+        assert!(meta.tailnet_only);
+    }
+
+    #[test]
+    fn test_public_app_meta_defaults_to_not_tailnet_only() {
+        let meta = load_meta("freshrss");
+        assert!(!meta.tailnet_only);
     }
 
     #[test]

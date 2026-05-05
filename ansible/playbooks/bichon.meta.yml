@@ -1,4 +1,5 @@
 required_keys: []
+tailnet_only: true
 backup:
   systemd_services: [bichon]
   paths: [/opt/bichon/data]
