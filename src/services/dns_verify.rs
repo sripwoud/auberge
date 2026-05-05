@@ -102,8 +102,14 @@ pub struct AppVerifyConfig {
     pub fqdn: String,
     pub resolver_ip: String,
     pub expected_ip: String,
-    /// `true` when the check targets Blocky over the tailnet.
-    pub is_tailnet: bool,
+}
+
+impl AppVerifyConfig {
+    /// `true` when the check targets Blocky over the tailnet
+    /// (resolver IP is in the Tailscale CGNAT range).
+    pub fn is_tailnet(&self) -> bool {
+        is_tailscale_ip(&self.resolver_ip)
+    }
 }
 
 /// Derive the DNS-verification config for `app` from the user config.
@@ -130,7 +136,6 @@ pub fn app_verify_config(
             fqdn,
             resolver_ip: tailscale_ip.clone(),
             expected_ip: tailscale_ip,
-            is_tailnet: true,
         });
     }
 
@@ -139,7 +144,6 @@ pub fn app_verify_config(
             fqdn,
             resolver_ip: "1.1.1.1".to_string(),
             expected_ip: ansible_host.to_string(),
-            is_tailnet: false,
         });
     }
 
@@ -297,7 +301,7 @@ paperless_tailscale_ip = "100.64.1.2"
         assert_eq!(vc.fqdn, "paperless.example.com");
         assert_eq!(vc.resolver_ip, "100.64.1.2");
         assert_eq!(vc.expected_ip, "100.64.1.2");
-        assert!(vc.is_tailnet);
+        assert!(vc.is_tailnet());
     }
 
     #[test]
@@ -313,7 +317,7 @@ freshrss_subdomain = "rss"
         assert_eq!(vc.fqdn, "rss.example.com");
         assert_eq!(vc.resolver_ip, "1.1.1.1");
         assert_eq!(vc.expected_ip, "203.0.113.10");
-        assert!(!vc.is_tailnet);
+        assert!(!vc.is_tailnet());
     }
 
     #[test]

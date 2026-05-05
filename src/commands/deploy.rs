@@ -165,7 +165,7 @@ fn run_dns_checks_for_run(
             continue;
         };
 
-        let kind = if vc.is_tailnet { "tailnet" } else { "public" };
+        let kind = if vc.is_tailnet() { "tailnet" } else { "public" };
         output::info(&format!(
             "DNS check ({kind}): {} → {} via {}",
             tag, vc.fqdn, vc.resolver_ip
