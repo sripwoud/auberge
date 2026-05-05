@@ -12,8 +12,8 @@
 #   2 — self-test failed (regex is broken; file a bug)
 #
 # Usage:
-#   ./scripts/check-stdout-discipline.sh
-#   GITHUB_ACTIONS=true ./scripts/check-stdout-discipline.sh
+#   ./.github/scripts/check-stdout-discipline.sh
+#   GITHUB_ACTIONS=true ./.github/scripts/check-stdout-discipline.sh
 
 set -euo pipefail
 

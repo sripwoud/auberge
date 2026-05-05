@@ -62,7 +62,7 @@ jobs:
 
       - name: stdout discipline — print!/println! only in data-emitting modules
         shell: bash
-        run: ./scripts/check-stdout-discipline.sh
+        run: ./.github/scripts/check-stdout-discipline.sh
 
   _test:
     needs: changed-files
