@@ -9,6 +9,16 @@ pub struct PlaybookRun {
     pub tags: Vec<String>,
 }
 
+impl PlaybookRun {
+    /// `true` when this run targets the apps playbook (`apps.yml`).
+    pub fn is_apps(&self) -> bool {
+        self.path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n == "apps.yml")
+    }
+}
+
 fn parse_playbook_roles(playbook_path: &PathBuf) -> Result<Vec<(String, Vec<String>)>> {
     let content = std::fs::read_to_string(playbook_path)
         .wrap_err_with(|| format!("Failed to read playbook: {}", playbook_path.display()))?;

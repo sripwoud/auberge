@@ -126,14 +126,7 @@ fn prepend_hardening(runs: Vec<PlaybookRun>) -> Result<Vec<PlaybookRun>> {
 }
 
 fn warn_apps_prerequisites(runs: &[PlaybookRun]) {
-    let has_apps = runs.iter().any(|run| {
-        run.path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n == "apps.yml")
-    });
-
-    if has_apps {
+    if runs.iter().any(PlaybookRun::is_apps) {
         output::warn(
             "Ensure Cloudflare API token is configured and provider firewall allows port 853 (DNS-over-TLS)",
         );
@@ -157,9 +150,7 @@ fn run_dns_checks_for_run(
     host: &Host,
     verify_public: bool,
 ) -> Result<()> {
-    let playbook_name = run.path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-    if playbook_name != "apps.yml" || run.tags.is_empty() {
+    if !run.is_apps() || run.tags.is_empty() {
         return Ok(());
     }
 
