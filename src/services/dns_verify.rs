@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::services::dns::is_tailscale_ip;
 use eyre::Result;
 use std::net::IpAddr;
 
@@ -105,15 +106,6 @@ pub fn verify_a_record<L: DnsLookup>(
             got: ips.iter().map(|ip| ip.to_string()).collect(),
         }))
     }
-}
-
-/// Returns `true` if `ip` is in the Tailscale CGNAT range (100.64.0.0/10).
-pub fn is_tailscale_ip(ip: &str) -> bool {
-    let Ok(addr) = ip.parse::<std::net::Ipv4Addr>() else {
-        return false;
-    };
-    let octets = addr.octets();
-    octets[0] == 100 && (64..=127).contains(&octets[1])
 }
 
 /// Resolved verification parameters for a single app.
@@ -295,23 +287,6 @@ mod tests {
         let lookup = MockLookup::new().with_found(fqdn, vec!["1.2.3.4".parse().unwrap()]);
         let err = verify_a_record(&lookup, fqdn, "not-an-ip").unwrap_err();
         assert!(err.to_string().contains("Invalid expected IP"));
-    }
-
-    // ── is_tailscale_ip ───────────────────────────────────────────────────────
-
-    #[test]
-    fn test_is_tailscale_ip_true() {
-        assert!(is_tailscale_ip("100.64.0.1"));
-        assert!(is_tailscale_ip("100.100.200.1"));
-        assert!(is_tailscale_ip("100.127.255.255"));
-    }
-
-    #[test]
-    fn test_is_tailscale_ip_false() {
-        assert!(!is_tailscale_ip("100.128.0.1")); // just outside range
-        assert!(!is_tailscale_ip("192.168.1.1"));
-        assert!(!is_tailscale_ip("203.0.113.10"));
-        assert!(!is_tailscale_ip("not-an-ip"));
     }
 
     // ── app_verify_config ─────────────────────────────────────────────────────

@@ -75,7 +75,8 @@ pub fn discover_subdomains() -> HashMap<String, SubdomainEntry> {
         .collect()
 }
 
-fn is_tailscale_ip(ip: &str) -> bool {
+/// Returns `true` if `ip` is in the Tailscale CGNAT range (100.64.0.0/10).
+pub fn is_tailscale_ip(ip: &str) -> bool {
     let Ok(addr) = ip.parse::<std::net::Ipv4Addr>() else {
         return false;
     };
@@ -314,5 +315,25 @@ impl DnsService {
             active_records,
             missing_subdomains,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_tailscale_ip_true() {
+        assert!(is_tailscale_ip("100.64.0.1"));
+        assert!(is_tailscale_ip("100.100.200.1"));
+        assert!(is_tailscale_ip("100.127.255.255"));
+    }
+
+    #[test]
+    fn test_is_tailscale_ip_false() {
+        assert!(!is_tailscale_ip("100.128.0.1"));
+        assert!(!is_tailscale_ip("192.168.1.1"));
+        assert!(!is_tailscale_ip("203.0.113.10"));
+        assert!(!is_tailscale_ip("not-an-ip"));
     }
 }
