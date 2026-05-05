@@ -14,12 +14,33 @@ use crate::ssh_session::SshSession;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
+use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 use std::time::Instant;
 use tabled::Tabled;
+
+fn backup_timestamp_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
+            .expect("backup timestamp regex must compile")
+    })
+}
+
+fn is_backup_timestamp_dir(entry: &fs::DirEntry) -> bool {
+    let path = entry.path();
+    if !path.is_dir() || path.is_symlink() {
+        return false;
+    }
+    let name = entry.file_name();
+    let name = name.to_string_lossy();
+    backup_timestamp_re().is_match(&name)
+}
 
 #[derive(Subcommand)]
 pub enum BackupCommands {
@@ -93,8 +114,8 @@ pub enum BackupCommands {
     },
     #[command(alias = "r", about = "Restore from backup")]
     Restore {
-        #[arg(help = "Backup timestamp (YYYY-MM-DD_HH-MM-SS) or 'latest'")]
-        backup_id: String,
+        #[arg(help = "Backup timestamp (YYYY-MM-DD_HH-MM-SS) or 'latest' (omit to be prompted)")]
+        backup_id: Option<String>,
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
         #[arg(
@@ -178,7 +199,7 @@ pub enum OutputFormat {
 }
 
 pub struct RestoreOptions {
-    pub backup_id: String,
+    pub backup_id: Option<String>,
     pub host_arg: Option<String>,
     pub from_host_arg: Option<String>,
     pub apps: Option<Vec<String>>,
@@ -651,12 +672,17 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
 
     let host_backup_dir = backup_root.join(&source_host_name);
 
-    let ssh_key_path = resolve_ssh_key_path(&host, opts.ssh_key)?;
-    eprintln!("Using SSH key: {}", ssh_key_path.display());
-
     if !host_backup_dir.exists() {
         eyre::bail!("No backups found for host: {}", source_host_name);
     }
+
+    let backup_id = match opts.backup_id {
+        Some(id) => id,
+        None => select_backup_id(&host_backup_dir)?,
+    };
+
+    let ssh_key_path = resolve_ssh_key_path(&host, opts.ssh_key)?;
+    eprintln!("Using SSH key: {}", ssh_key_path.display());
 
     let app_names = opts.apps.unwrap_or_else(|| {
         vec![
@@ -672,15 +698,10 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     let mut restore_plan = Vec::new();
 
     for app_name in &app_names {
-        let backup_path = if opts.backup_id == "latest" {
+        let backup_path = if backup_id == "latest" {
             let mut timestamps: Vec<_> = fs::read_dir(&host_backup_dir)?
                 .filter_map(Result::ok)
-                .filter(|e| e.path().is_dir())
-                .filter(|e| !e.path().is_symlink())
-                .filter(|e| {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    name.contains('_') && name.starts_with("20")
-                })
+                .filter(is_backup_timestamp_dir)
                 .collect();
 
             timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
@@ -702,11 +723,11 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                 continue;
             }
         } else {
-            let backup_path = host_backup_dir.join(&opts.backup_id).join(app_name);
+            let backup_path = host_backup_dir.join(&backup_id).join(app_name);
             if !backup_path.exists() {
                 eprintln!(
                     "⚠ Backup {} not found for {}, skipping",
-                    opts.backup_id, app_name
+                    backup_id, app_name
                 );
                 continue;
             }
@@ -731,7 +752,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
 
     eprintln!("\n=== Restore Plan ===");
     if is_cross_host {
-        eprintln!("Source: {} (backup: {})", source_host_name, opts.backup_id);
+        eprintln!("Source: {} (backup: {})", source_host_name, backup_id);
         eprintln!("Target: {} ({}:{})", host.name, host.address, host.port);
         eprintln!("\n⚠  CROSS-HOST RESTORE WARNING");
         eprintln!(
@@ -741,7 +762,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         eprintln!("   Existing data on '{}' will be OVERWRITTEN", host.name);
     } else {
         eprintln!("Host: {}", host.name);
-        eprintln!("Backup ID: {}", opts.backup_id);
+        eprintln!("Backup ID: {}", backup_id);
     }
     eprintln!("\nApps to restore:");
     for (app, path) in &restore_plan {
@@ -1180,11 +1201,7 @@ fn resolve_backup_dir(
         None => {
             let mut timestamps: Vec<_> = fs::read_dir(&host_dir)?
                 .filter_map(Result::ok)
-                .filter(|e| e.path().is_dir() && !e.path().is_symlink())
-                .filter(|e| {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    name.contains('_') && name.starts_with("20")
-                })
+                .filter(is_backup_timestamp_dir)
                 .collect();
 
             timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
@@ -1195,6 +1212,38 @@ fn resolve_backup_dir(
                 .ok_or_else(|| eyre::eyre!("No backup timestamps found in {}", host_dir.display()))
         }
     }
+}
+
+fn select_backup_id(host_backup_dir: &Path) -> Result<String> {
+    if !std::io::stdin().is_terminal() {
+        eyre::bail!(
+            "Backup ID is required in non-interactive mode (pass it explicitly or use 'latest')"
+        );
+    }
+
+    let mut entries: Vec<fs::DirEntry> = fs::read_dir(host_backup_dir)?
+        .filter_map(Result::ok)
+        .filter(is_backup_timestamp_dir)
+        .collect();
+
+    if entries.is_empty() {
+        eyre::bail!(
+            "No backup timestamps found in {}",
+            host_backup_dir.display()
+        );
+    }
+
+    entries.sort_by_key(|e| std::cmp::Reverse(e.file_name())); // newest first
+
+    let mut options = vec!["latest".to_string()];
+    options.extend(
+        entries
+            .iter()
+            .map(|e| e.file_name().to_string_lossy().into_owned()),
+    );
+
+    crate::prompt::select_item(&options, |s: &String| s.clone(), "Select backup")?
+        .ok_or_else(|| eyre::eyre!("No backup selected"))
 }
 
 fn get_host_or_select(host_arg: Option<String>) -> Result<Host> {
@@ -1660,5 +1709,20 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn select_backup_id_errors_in_non_interactive_mode() {
+        // Tests run without a TTY, so the non-interactive guard fires first
+        // regardless of directory contents.
+        let tmp = tempfile::tempdir().unwrap();
+        let result = select_backup_id(tmp.path());
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("non-interactive mode"),
+        );
     }
 }

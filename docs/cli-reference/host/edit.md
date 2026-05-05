@@ -5,7 +5,7 @@ Edit host configuration interactively
 ## Synopsis
 
 ```bash
-auberge host edit <NAME>
+auberge host edit [NAME]
 # Alias: auberge h e
 ```
 
@@ -13,13 +13,15 @@ auberge host edit <NAME>
 
 Opens an interactive prompt to edit an existing host's configuration. Allows updating address, user, port, tags, and description.
 
+If `NAME` is omitted, you'll be prompted to select a host.
+
 Note: Host name and SSH key cannot be changed through this command. To change the name, remove and re-add the host.
 
 ## Arguments
 
-| Argument | Description                  |
-| -------- | ---------------------------- |
-| NAME     | Host name to edit (required) |
+| Argument | Description                             |
+| -------- | --------------------------------------- |
+| NAME     | Host name to edit (omit to be prompted) |
 
 ## Editable Fields
 
@@ -34,6 +36,9 @@ Note: Host name and SSH key cannot be changed through this command. To change th
 ```bash
 # Edit host configuration
 auberge host edit myserver
+
+# Interactive (prompts for host)
+auberge host edit
 ```
 
 ## Interactive Session Example

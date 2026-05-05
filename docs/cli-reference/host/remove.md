@@ -5,13 +5,15 @@ Remove a host from configuration
 ## Synopsis
 
 ```bash
-auberge host remove [OPTIONS] <NAME>
+auberge host remove [OPTIONS] [NAME]
 # Alias: auberge h rm
 ```
 
 ## Description
 
 Removes a host from the Auberge configuration. Prompts for confirmation unless --yes flag is used.
+
+If `NAME` is omitted, you'll be prompted to select a host.
 
 **Warning**: This only removes the host from Auberge configuration. It does not:
 
@@ -21,9 +23,9 @@ Removes a host from the Auberge configuration. Prompts for confirmation unless -
 
 ## Arguments
 
-| Argument | Description                    |
-| -------- | ------------------------------ |
-| NAME     | Host name to remove (required) |
+| Argument | Description                               |
+| -------- | ----------------------------------------- |
+| NAME     | Host name to remove (omit to be prompted) |
 
 ## Options
 
@@ -36,6 +38,9 @@ Removes a host from the Auberge configuration. Prompts for confirmation unless -
 ```bash
 # Remove with confirmation
 auberge host remove myserver
+
+# Interactive (prompts for host)
+auberge host remove
 
 # Skip confirmation (for scripts)
 auberge host remove old-server --yes
