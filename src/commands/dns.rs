@@ -360,15 +360,13 @@ pub async fn run_dns_set_all(
 
     let mut discovered = discover_subdomains();
 
-    apply_tailnet_only_fallback(&mut discovered, host_tailscale_ip.as_deref())?;
-
     if strict && discovered.is_empty() {
         eyre::bail!("No subdomain environment variables found");
     }
 
     let skip_set: HashSet<_> = skip.iter().cloned().collect();
 
-    let subdomains_to_process: Vec<(String, SubdomainEntry)> = if !subdomains.is_empty() {
+    let mut subdomains_to_process: Vec<(String, SubdomainEntry)> = if !subdomains.is_empty() {
         subdomains
             .into_iter()
             .filter(|s| !skip_set.contains(s))
@@ -385,6 +383,11 @@ pub async fn run_dns_set_all(
         output::info("No subdomains to process");
         return Ok(());
     }
+
+    // Apply the tailnet-only fallback only to records that survived `--skip`
+    // / `--subdomains` filtering — otherwise an excluded tailnet-only app with
+    // no cached IP would still abort the run.
+    apply_tailnet_only_fallback(&mut subdomains_to_process, host_tailscale_ip.as_deref())?;
 
     if dry_run {
         output::info("DRY RUN - Would create the following A records:");
@@ -482,57 +485,57 @@ pub async fn run_dns_set_all(
 mod tests {
     use super::apply_tailnet_only_fallback;
     use crate::services::dns::SubdomainEntry;
-    use std::collections::HashMap;
 
-    fn entry(subdomain: &str, ip_override: Option<&str>) -> SubdomainEntry {
-        SubdomainEntry {
-            subdomain: subdomain.to_string(),
-            ip_override: ip_override.map(String::from),
-        }
+    fn entries(items: &[(&str, &str, Option<&str>)]) -> Vec<(String, SubdomainEntry)> {
+        items
+            .iter()
+            .map(|(app, subdomain, ip_override)| {
+                (
+                    app.to_string(),
+                    SubdomainEntry {
+                        subdomain: subdomain.to_string(),
+                        ip_override: ip_override.map(String::from),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn find<'a>(v: &'a [(String, SubdomainEntry)], app: &str) -> &'a SubdomainEntry {
+        &v.iter().find(|(a, _)| a == app).unwrap().1
     }
 
     #[test]
     fn fills_tailnet_only_app_when_host_has_tailscale_ip() {
-        let mut discovered = HashMap::new();
-        discovered.insert("bichon".to_string(), entry("bichon", None));
-
-        apply_tailnet_only_fallback(&mut discovered, Some("100.64.0.5")).unwrap();
-
+        let mut v = entries(&[("bichon", "bichon", None)]);
+        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
         assert_eq!(
-            discovered["bichon"].ip_override.as_deref(),
+            find(&v, "bichon").ip_override.as_deref(),
             Some("100.64.0.5")
         );
     }
 
     #[test]
     fn preserves_explicit_override_for_tailnet_only_app() {
-        let mut discovered = HashMap::new();
-        discovered.insert("bichon".to_string(), entry("bichon", Some("100.42.42.42")));
-
-        apply_tailnet_only_fallback(&mut discovered, Some("100.64.0.5")).unwrap();
-
+        let mut v = entries(&[("bichon", "bichon", Some("100.42.42.42"))]);
+        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
         assert_eq!(
-            discovered["bichon"].ip_override.as_deref(),
+            find(&v, "bichon").ip_override.as_deref(),
             Some("100.42.42.42"),
         );
     }
 
     #[test]
     fn leaves_public_app_unchanged_even_with_host_tailscale_ip() {
-        let mut discovered = HashMap::new();
-        discovered.insert("freshrss".to_string(), entry("rss", None));
-
-        apply_tailnet_only_fallback(&mut discovered, Some("100.64.0.5")).unwrap();
-
-        assert!(discovered["freshrss"].ip_override.is_none());
+        let mut v = entries(&[("freshrss", "rss", None)]);
+        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
+        assert!(find(&v, "freshrss").ip_override.is_none());
     }
 
     #[test]
     fn fails_fast_when_tailnet_only_app_has_no_tailscale_ip() {
-        let mut discovered = HashMap::new();
-        discovered.insert("bichon".to_string(), entry("bichon", None));
-
-        let err = apply_tailnet_only_fallback(&mut discovered, None).unwrap_err();
+        let mut v = entries(&[("bichon", "bichon", None)]);
+        let err = apply_tailnet_only_fallback(&mut v, None).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("bichon"));
         assert!(msg.contains("tailnet-only"));
@@ -540,19 +543,23 @@ mod tests {
 
     #[test]
     fn ignores_apps_with_missing_meta_files() {
-        let mut discovered = HashMap::new();
-        discovered.insert(
-            "nonexistent_app_xyz".to_string(),
-            entry("nonexistent_app_xyz", None),
-        );
+        let mut v = entries(&[("nonexistent_app_xyz", "nonexistent_app_xyz", None)]);
+        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
+        assert!(find(&v, "nonexistent_app_xyz").ip_override.is_none());
+    }
 
-        apply_tailnet_only_fallback(&mut discovered, Some("100.64.0.5")).unwrap();
-
-        assert!(discovered["nonexistent_app_xyz"].ip_override.is_none());
+    #[test]
+    fn does_not_touch_entries_outside_the_processed_slice() {
+        // Simulates the post-filter behavior: when bichon was excluded via
+        // --skip, it's not in the slice, so even without a host_tailscale_ip
+        // we don't bail.
+        let mut v = entries(&[("freshrss", "rss", None)]);
+        apply_tailnet_only_fallback(&mut v, None).unwrap();
+        assert!(find(&v, "freshrss").ip_override.is_none());
     }
 }
 
-/// For each discovered subdomain whose playbook meta declares
+/// For each subdomain entry being processed whose playbook meta declares
 /// `tailnet_only: true` and which lacks an explicit `<app>_tailscale_ip`
 /// override, fill `ip_override` from the host's cached Tailscale IP.
 ///
@@ -561,12 +568,12 @@ mod tests {
 /// only to the Tailscale interface), so failing fast surfaces the missing
 /// configuration to the user.
 fn apply_tailnet_only_fallback(
-    discovered: &mut std::collections::HashMap<String, crate::services::dns::SubdomainEntry>,
+    entries: &mut [(String, crate::services::dns::SubdomainEntry)],
     host_tailscale_ip: Option<&str>,
 ) -> Result<()> {
     use crate::playbook_meta::PlaybookMeta;
 
-    for (app, entry) in discovered.iter_mut() {
+    for (app, entry) in entries.iter_mut() {
         if entry.ip_override.is_some() {
             continue;
         }
