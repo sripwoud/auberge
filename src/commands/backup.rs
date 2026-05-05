@@ -17,6 +17,7 @@ use eyre::{Context, Result};
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
@@ -1214,6 +1215,12 @@ fn resolve_backup_dir(
 }
 
 fn select_backup_id(host_backup_dir: &Path) -> Result<String> {
+    if !std::io::stdin().is_terminal() {
+        eyre::bail!(
+            "Backup ID is required in non-interactive mode (pass it explicitly or use 'latest')"
+        );
+    }
+
     let mut timestamps: Vec<String> = fs::read_dir(host_backup_dir)?
         .filter_map(Result::ok)
         .filter(is_backup_timestamp_dir)
@@ -1702,17 +1709,17 @@ mod tests {
     }
 
     #[test]
-    fn select_backup_id_empty_dir_errors() {
+    fn select_backup_id_errors_in_non_interactive_mode() {
+        // Tests run without a TTY, so the non-interactive guard fires first
+        // regardless of directory contents.
         let tmp = tempfile::tempdir().unwrap();
-        let empty = tmp.path().join("host_with_no_backups");
-        fs::create_dir(&empty).unwrap();
-        let result = select_backup_id(&empty);
+        let result = select_backup_id(tmp.path());
         assert!(result.is_err());
         assert!(
             result
                 .unwrap_err()
                 .to_string()
-                .contains("No backup timestamps found"),
+                .contains("non-interactive mode"),
         );
     }
 }
