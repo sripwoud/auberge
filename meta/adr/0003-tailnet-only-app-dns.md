@@ -46,3 +46,17 @@ Three problems accumulated:
 - **Cloudflare A → Tailscale IP for tailnet-only apps (pattern A) with split-DNS.** Reachable, no two-truth problem after `blocky_tailscale_bound_domains` retirement. Rejected: still publishes the existence of tailnet-only services in public DNS, which contradicts what "tailnet-only" claims.
 - **CLI-derived Blocky list.** `auberge deploy` injects the list via `--extra-vars`. Rejected: breaks direct `ansible-playbook` invocations without surprise; auberge's CONTEXT positions the CLI as canonical but Ansible as not hidden.
 - **Compile-time test for DNS publication invariants.** A Rust test that parses every role's tasks. Rejected: parser fragility outweighs the benefit in a single-operator homelab where deploys happen frequently and the runtime check fires within minutes of any regression.
+
+## Implementation notes
+
+### `subdomain` lives in the Playbook Meta
+
+The Blocky role composes each tailnet-only FQDN from `<meta.subdomain>.<domain>`. Subdomains are otherwise available only as role-default variables (`<app>_subdomain`), which are not in scope when the Blocky role runs (Ansible role defaults are scoped to their owning role). An earlier draft used `lookup('vars', ...)` with a `default=app` fallback, but that worked only because every default happened to equal the app name — silently broken if a role default ever diverged. Promoting `subdomain` to the Playbook Meta puts the FQDN's identity next to the `tailnet_only` flag that gates its publication, eliminating that latent inconsistency. Public Apps may still rely on role defaults; only tailnet-only Apps need the meta declaration.
+
+### Split-DNS target IP auto-detection
+
+The split-DNS target IP is exposed as `headscale_split_dns_target_ip`. The Headscale role auto-detects it from the host's Tailscale interface (`tailscale status --json`), matching the pattern Blocky uses for its own bind address. Operators may override it via inventory or extra-vars when Blocky and Headscale run on different hosts.
+
+### First-deploy ordering caveat
+
+In `infrastructure.yml`, the `headscale` role runs before the `tailscale` role (Headscale must be reachable before the host can `tailscale up` against it as login server). On the very first deploy, `tailscale status` returns no IP, the `set_fact` is skipped, and the rendered config omits the `split` block. A second deploy run — after `tailscale up` succeeds — populates the IP and the rendered config gains the `split` block, triggering the `Restart headscale` handler. This two-pass behaviour is consistent with how the Blocky role already handles its own tailnet bind address.
