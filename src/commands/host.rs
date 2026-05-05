@@ -1,9 +1,11 @@
 use crate::hosts::{Host, HostManager};
 use crate::output;
 use crate::prompt::{confirm, select_item};
+use crate::ssh_session::SshSession;
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::Result;
+use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use tabled::Tabled;
 
@@ -90,6 +92,14 @@ pub enum HostCommands {
     Edit {
         #[arg(help = "Host name")]
         name: String,
+    },
+    #[command(
+        alias = "dti",
+        about = "Detect and cache the host's Tailscale IPv4 (queries the host via SSH)"
+    )]
+    DetectTailscaleIp {
+        #[arg(help = "Host name (omit to be prompted)")]
+        name: Option<String>,
     },
 }
 
@@ -306,6 +316,79 @@ pub fn run_host_show(name: String, output: Option<String>) -> Result<()> {
     Ok(())
 }
 
+pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
+    let host = crate::hosts::select_or_arg(name_arg)?;
+    let ssh_key = resolve_ssh_key(&host)?;
+    let session = SshSession::new(&host, &ssh_key);
+
+    output::info(&format!(
+        "Querying Tailscale IPv4 on {}@{}…",
+        host.user, host.address
+    ));
+
+    let out = session.run("tailscale ip -4")?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            eyre::bail!("`tailscale ip -4` failed on {}", host.name);
+        }
+        eyre::bail!("`tailscale ip -4` failed on {}: {}", host.name, stderr);
+    }
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let detected = parse_tailscale_cgnat_ipv4(&stdout).ok_or_else(|| {
+        eyre::eyre!(
+            "No Tailscale CGNAT IPv4 found in `tailscale ip -4` output for {}: {:?}",
+            host.name,
+            stdout.trim()
+        )
+    })?;
+
+    let mut updated = host.clone();
+    updated.tailscale_ip = Some(detected.clone());
+    HostManager::update_host(&host.name, updated)?;
+
+    output::success(&format!(
+        "Cached tailscale_ip={} for host '{}'",
+        detected, host.name
+    ));
+    Ok(())
+}
+
+fn resolve_ssh_key(host: &Host) -> Result<PathBuf> {
+    let key = match host.ssh_key.as_ref() {
+        Some(p) => PathBuf::from(p),
+        None => dirs::home_dir()
+            .ok_or_else(|| eyre::eyre!("Could not determine home directory"))?
+            .join(format!(".ssh/identities/{}_{}", host.user, host.name)),
+    };
+    if !key.exists() {
+        eyre::bail!(
+            "SSH key not found: {}. Run 'auberge ssh keygen --host {}' first.",
+            key.display(),
+            host.name
+        );
+    }
+    Ok(key)
+}
+
+fn parse_tailscale_cgnat_ipv4(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .find_map(|line| {
+            let addr = line.parse::<Ipv4Addr>().ok()?;
+            is_cgnat_ipv4(&addr).then(|| addr.to_string())
+        })
+}
+
+fn is_cgnat_ipv4(addr: &Ipv4Addr) -> bool {
+    let octets = addr.octets();
+    octets[0] == 100 && (64..=127).contains(&octets[1])
+}
+
 pub fn run_host_edit(name: String) -> Result<()> {
     let host = HostManager::get_host(&name)?;
 
@@ -367,4 +450,49 @@ pub fn run_host_edit(name: String) -> Result<()> {
     output::success(&format!("Host '{}' updated", name));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cgnat_classification() {
+        assert!(is_cgnat_ipv4(&"100.64.0.1".parse().unwrap()));
+        assert!(is_cgnat_ipv4(&"100.99.62.26".parse().unwrap()));
+        assert!(is_cgnat_ipv4(&"100.127.255.254".parse().unwrap()));
+
+        assert!(!is_cgnat_ipv4(&"100.63.255.255".parse().unwrap()));
+        assert!(!is_cgnat_ipv4(&"100.128.0.0".parse().unwrap()));
+        assert!(!is_cgnat_ipv4(&"10.0.0.1".parse().unwrap()));
+        assert!(!is_cgnat_ipv4(&"192.168.1.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn parses_first_cgnat_ipv4_from_tailscale_output() {
+        let stdout = "100.99.62.26\n";
+        assert_eq!(
+            parse_tailscale_cgnat_ipv4(stdout),
+            Some("100.99.62.26".to_string())
+        );
+    }
+
+    #[test]
+    fn skips_blank_lines_and_non_cgnat_lines() {
+        let stdout = "\n203.0.113.10\n100.99.62.26\nfd7a:115c:a1e0::1\n";
+        assert_eq!(
+            parse_tailscale_cgnat_ipv4(stdout),
+            Some("100.99.62.26".to_string())
+        );
+    }
+
+    #[test]
+    fn returns_none_when_no_cgnat_present() {
+        assert_eq!(parse_tailscale_cgnat_ipv4(""), None);
+        assert_eq!(parse_tailscale_cgnat_ipv4("203.0.113.10\n"), None);
+        assert_eq!(
+            parse_tailscale_cgnat_ipv4("not-an-ip\nfd7a:115c:a1e0::1\n"),
+            None
+        );
+    }
 }
