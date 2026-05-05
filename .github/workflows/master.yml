@@ -62,30 +62,7 @@ jobs:
 
       - name: stdout discipline — print!/println! only in data-emitting modules
         shell: bash
-        run: |
-          # clig.dev rule: stdout = data, stderr = chrome.
-          # println!/print! are allowed only in the modules listed below that
-          # emit the command's primary data output. Everything else must use
-          # eprintln!/eprint! / output::info / output::warn.
-          # Allowlisted files are on the honor system: chrome regressions
-          # inside them won't be caught here.
-          PATTERN='\b(println|print)!'
-
-          # Self-test: regex must match print!/println! and reject eprint!/eprintln!.
-          echo 'println!()' | grep -qE "$PATTERN" || { echo "self-test: missed println!"; exit 2; }
-          echo 'print!()'   | grep -qE "$PATTERN" || { echo "self-test: missed print!";   exit 2; }
-          if echo 'eprintln!()' | grep -qE "$PATTERN"; then echo "self-test: false-matched eprintln!"; exit 2; fi
-          if echo 'eprint!()'   | grep -qE "$PATTERN"; then echo "self-test: false-matched eprint!";   exit 2; fi
-
-          # Trailing ':' anchors against the path-delimiter in `grep -n` output
-          # (path:line:content), so e.g. `src/output.rs.bak` is not allowlisted.
-          ALLOWLIST='src/output\.rs:|src/commands/(backup|config_cmd|dns|headscale|host|select)\.rs:'
-          hits=$(grep -rnE "$PATTERN" src/ --include='*.rs' | grep -vE "$ALLOWLIST" || true)
-          if [ -n "$hits" ]; then
-            echo "::error::println!/print! found outside data-emitting modules (use eprintln!/eprint! or output::info/warn for chrome):"
-            echo "$hits"
-            exit 1
-          fi
+        run: ./scripts/check-stdout-discipline.sh
 
   _test:
     needs: changed-files
