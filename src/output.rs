@@ -36,11 +36,11 @@ pub(crate) fn should_use_colors() -> bool {
     std::io::stderr().is_terminal()
 }
 
-const YELLOW: &str = "\x1b[33m";
+pub(crate) const YELLOW: &str = "\x1b[33m";
 const GREEN: &str = "\x1b[32m";
-const CYAN: &str = "\x1b[36m";
+pub(crate) const CYAN: &str = "\x1b[36m";
 const DIM: &str = "\x1b[2m";
-const RESET: &str = "\x1b[0m";
+pub(crate) const RESET: &str = "\x1b[0m";
 
 pub fn success(msg: &str) {
     if should_use_colors() {
