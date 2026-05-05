@@ -36,6 +36,18 @@ _Avoid_: Hostlist, fleet
 An application deployed by a Playbook (e.g. paperless, navidrome, baikal). An App has a Backup Recipe iff its Playbook Meta includes a `backup:` section.
 _Avoid_: Service, package, workload
 
+**Tailnet-only App**:
+An App whose Playbook Meta declares `tailnet_only: true`. Caddy binds only to the host's Tailscale interface; the App's hostname is published only via Blocky's `customDNS` map and does _not_ appear in public DNS. Reachable only by clients on the user's tailnet, via Blocky as resolver.
+_Avoid_: Private app, internal app, vpn-only app
+
+**Public App**:
+An App without `tailnet_only`. Caddy serves on the host's public address; DNS publication is a Cloudflare A record pointing at `ansible_host` (via the `dns_record` role).
+_Avoid_: External app, world-facing app
+
+**DNS Publication**:
+The act of making an App's hostname resolvable, performed during deploy. For Public Apps it is a Cloudflare A record; for Tailnet-only Apps it is a Blocky `customDNS` entry. Either is part of `auberge deploy`'s success criterion — a deploy that completes without a working DNS answer is treated as a failure.
+_Avoid_: DNS setup, record creation, A-record provisioning
+
 **Backup Recipe**:
 The declarative `backup:` section of a Playbook Meta describing how to back up the App: services to stop, paths to rsync, optional database dump, optional `post_restore_command`. Pure data — no imperative branching.
 _Avoid_: Backup config, backup plan, strategy
@@ -60,6 +72,7 @@ _Avoid_: Logger, reporter
 - A **Preflight** binds one **Playbook Meta** to a validated **Config**.
 - The **Recipe Executor** consumes one **Backup Recipe**; the **Backup Session** consumes many.
 - All runners report through **Progress**; none touch terminal output directly.
+- An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
 
 ## Example dialogue
 
