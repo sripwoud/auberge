@@ -541,27 +541,14 @@ mod tests {
         assert!(validate_ip(" 192.168.1.1").is_err());
     }
 
-    // bootstrap: None without TTY → error
-    // (In the test environment stdin is not a terminal, so select_or_use_host(None)
-    // fails with "No host selected" instead of prompting.)
-    //
-    // Note: run_ansible_bootstrap also calls validate_config_for_playbook which
-    // may fail when no auberge config exists; that comes before host selection,
-    // so we test select_or_use_host in isolation here.
+    // bootstrap: select_or_use_host must error both on non-TTY None (cannot
+    // prompt) and on Some(unknown_name) (host lookup fails). run_ansible_bootstrap
+    // is exercised indirectly here because validate_config_for_playbook would
+    // otherwise short-circuit before we reach host selection.
 
     #[test]
-    fn bootstrap_none_without_tty_errors() {
-        // select_or_use_host(None) on non-TTY must return an error.
-        let result = select_or_use_host(None);
-        assert!(
-            result.is_err(),
-            "expected error when host is None and not a TTY"
-        );
-    }
-
-    #[test]
-    fn bootstrap_some_nonexistent_host_errors() {
-        let result = select_or_use_host(Some("__nonexistent_host__".to_string()));
-        assert!(result.is_err(), "expected error for unknown host name");
+    fn select_or_use_host_errors_on_none_or_unknown() {
+        assert!(select_or_use_host(None).is_err());
+        assert!(select_or_use_host(Some("__nonexistent_host__".to_string())).is_err());
     }
 }

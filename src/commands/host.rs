@@ -498,37 +498,20 @@ mod tests {
         );
     }
 
-    // run_host_show, run_host_edit, run_host_remove: None without TTY → error
-    // (In the test environment stdin is not a terminal, so select_or_arg(None)
-    // fails with "No host selected" instead of prompting.)
+    // host show/edit/remove: with None on a non-TTY, select_or_arg fails before
+    // prompting; with Some(unknown_name), the host lookup fails. Both must error.
 
     #[test]
-    fn show_none_without_tty_errors() {
-        let result = run_host_show(None, None);
-        assert!(
-            result.is_err(),
-            "expected error when name is None and not a TTY"
-        );
-    }
+    fn host_commands_error_on_none_or_unknown() {
+        let unknown = || Some("__nonexistent_host__".to_string());
 
-    #[test]
-    fn show_some_nonexistent_host_errors() {
-        let result = run_host_show(Some("__nonexistent_host__".to_string()), None);
-        assert!(result.is_err(), "expected error for unknown host name");
-    }
+        assert!(run_host_show(None, None).is_err());
+        assert!(run_host_show(unknown(), None).is_err());
 
-    #[test]
-    fn remove_none_without_tty_errors() {
-        let result = run_host_remove(None, true);
-        assert!(
-            result.is_err(),
-            "expected error when name is None and not a TTY"
-        );
-    }
+        assert!(run_host_remove(None, true).is_err());
+        assert!(run_host_remove(unknown(), true).is_err());
 
-    #[test]
-    fn remove_some_nonexistent_host_errors() {
-        let result = run_host_remove(Some("__nonexistent_host__".to_string()), true);
-        assert!(result.is_err(), "expected error for unknown host name");
+        assert!(run_host_edit(None).is_err());
+        assert!(run_host_edit(unknown()).is_err());
     }
 }
