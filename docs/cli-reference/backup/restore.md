@@ -5,7 +5,7 @@ Restore application data from backup
 ## Synopsis
 
 ```bash
-auberge backup restore [OPTIONS] <BACKUP_ID>
+auberge backup restore [OPTIONS] [BACKUP_ID]
 ```
 
 ## Alias
@@ -16,6 +16,8 @@ auberge backup restore [OPTIONS] <BACKUP_ID>
 
 Restores application data from a backup. Supports same-host restore and cross-host migration with safety checks.
 
+If `BACKUP_ID` is omitted, you'll be prompted to pick a timestamp from the available backups (newest first, with `latest` as a shortcut).
+
 **Critical safety features**:
 
 - Pre-flight validation (SSH, services, disk space)
@@ -25,9 +27,9 @@ Restores application data from a backup. Supports same-host restore and cross-ho
 
 ## Arguments
 
-| Argument  | Description                                        |
-| --------- | -------------------------------------------------- |
-| BACKUP_ID | Backup timestamp (YYYY-MM-DD_HH-MM-SS) or 'latest' |
+| Argument  | Description                                                              |
+| --------- | ------------------------------------------------------------------------ |
+| BACKUP_ID | Backup timestamp (YYYY-MM-DD_HH-MM-SS) or 'latest' (omit to be prompted) |
 
 ## Options
 
@@ -46,6 +48,9 @@ Restores application data from a backup. Supports same-host restore and cross-ho
 ```bash
 # Restore latest backup (interactive)
 auberge backup restore latest
+
+# Interactive (prompts for backup timestamp)
+auberge backup restore --host myserver
 
 # Restore specific timestamp
 auberge backup restore 2024-01-27_14-30-00 --host myserver

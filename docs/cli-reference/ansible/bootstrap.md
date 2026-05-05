@@ -5,7 +5,7 @@ Bootstrap a fresh VPS with initial configuration
 ## Synopsis
 
 ```bash
-auberge ansible bootstrap [OPTIONS] <HOST>
+auberge ansible bootstrap [OPTIONS] [HOST]
 ```
 
 ## Alias
@@ -15,6 +15,8 @@ auberge ansible bootstrap [OPTIONS] <HOST>
 ## Description
 
 Bootstraps a fresh VPS by running the bootstrap playbook with the bootstrap user (typically root). This is the first command to run on a new VPS before regular Ansible playbooks.
+
+If `HOST` is omitted, you'll be prompted to select a host.
 
 The bootstrap process:
 
@@ -28,9 +30,9 @@ The bootstrap process:
 
 ## Arguments
 
-| Argument | Description                             |
-| -------- | --------------------------------------- |
-| HOST     | Host name from configuration (required) |
+| Argument | Description                                        |
+| -------- | -------------------------------------------------- |
+| HOST     | Host name from configuration (omit to be prompted) |
 
 ## Options
 
@@ -45,6 +47,9 @@ The bootstrap process:
 ```bash
 # Interactive bootstrap (prompts for IP)
 auberge ansible bootstrap myserver
+
+# Fully interactive (prompts for host then IP)
+auberge ansible bootstrap
 
 # Specify IP address
 auberge ansible bootstrap myserver --ip 192.168.1.10

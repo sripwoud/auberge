@@ -76,22 +76,22 @@ pub enum HostCommands {
     },
     #[command(alias = "rm", about = "Remove a host")]
     Remove {
-        #[arg(help = "Host name")]
-        name: String,
+        #[arg(help = "Host name (omit to be prompted)")]
+        name: Option<String>,
         #[arg(short, long, help = "Skip confirmation")]
         yes: bool,
     },
     #[command(alias = "s", about = "Show host details")]
     Show {
-        #[arg(help = "Host name")]
-        name: String,
+        #[arg(help = "Host name (omit to be prompted)")]
+        name: Option<String>,
         #[arg(short, long, help = "Output format: yaml, json")]
         output: Option<String>,
     },
     #[command(alias = "e", about = "Edit a host")]
     Edit {
-        #[arg(help = "Host name")]
-        name: String,
+        #[arg(help = "Host name (omit to be prompted)")]
+        name: Option<String>,
     },
     #[command(
         alias = "dti",
@@ -289,20 +289,21 @@ pub fn run_host_list(tags: Option<String>, output: Option<String>) -> Result<()>
     Ok(())
 }
 
-pub fn run_host_remove(name: String, yes: bool) -> Result<()> {
-    if !confirm(&format!("Remove host '{}'?", name), yes) {
+pub fn run_host_remove(name: Option<String>, yes: bool) -> Result<()> {
+    let host = crate::hosts::select_or_arg(name)?;
+    if !confirm(&format!("Remove host '{}'?", host.name), yes) {
         println!("Cancelled.");
         return Ok(());
     }
 
-    HostManager::remove_host(&name)?;
-    output::success(&format!("Host '{}' removed", name));
+    HostManager::remove_host(&host.name)?;
+    output::success(&format!("Host '{}' removed", host.name));
 
     Ok(())
 }
 
-pub fn run_host_show(name: String, output: Option<String>) -> Result<()> {
-    let host = HostManager::get_host(&name)?;
+pub fn run_host_show(name: Option<String>, output: Option<String>) -> Result<()> {
+    let host = crate::hosts::select_or_arg(name)?;
 
     match output.as_deref() {
         Some("json") => {
@@ -389,8 +390,8 @@ fn is_cgnat_ipv4(addr: &Ipv4Addr) -> bool {
     octets[0] == 100 && (64..=127).contains(&octets[1])
 }
 
-pub fn run_host_edit(name: String) -> Result<()> {
-    let host = HostManager::get_host(&name)?;
+pub fn run_host_edit(name: Option<String>) -> Result<()> {
+    let host = crate::hosts::select_or_arg(name)?;
 
     let address = Input::<String>::with_theme(&ColorfulTheme::default())
         .with_prompt("Host address")
@@ -430,7 +431,7 @@ pub fn run_host_edit(name: String) -> Result<()> {
         .interact_text()?;
 
     let updated_host = Host {
-        name: name.clone(),
+        name: host.name.clone(),
         address,
         user,
         port,
@@ -446,8 +447,8 @@ pub fn run_host_edit(name: String) -> Result<()> {
         tailscale_ip: host.tailscale_ip,
     };
 
-    HostManager::update_host(&name, updated_host)?;
-    output::success(&format!("Host '{}' updated", name));
+    HostManager::update_host(&host.name, updated_host)?;
+    output::success(&format!("Host '{}' updated", host.name));
 
     Ok(())
 }
@@ -494,5 +495,14 @@ mod tests {
             parse_tailscale_cgnat_ipv4("not-an-ip\nfd7a:115c:a1e0::1\n"),
             None
         );
+    }
+
+    #[test]
+    fn host_commands_error_on_unknown_name() {
+        let unknown = || Some("__nonexistent_host__".to_string());
+
+        assert!(run_host_show(unknown(), None).is_err());
+        assert!(run_host_remove(unknown(), true).is_err());
+        assert!(run_host_edit(unknown()).is_err());
     }
 }

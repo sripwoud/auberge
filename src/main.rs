@@ -23,7 +23,8 @@ use commands::config_cmd::{
 };
 use commands::deploy::{DeployCmd, run_deploy};
 use commands::dns::{
-    DnsCommands, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all, run_dns_status,
+    DnsCommands, run_dns_delete, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all,
+    run_dns_status,
 };
 use commands::headscale::{
     HeadscaleCommands, run_headscale_add_user, run_headscale_list_nodes, run_headscale_list_users,
@@ -47,6 +48,12 @@ struct Cli {
     verbose: bool,
     #[arg(short, long, global = true, help = "Suppress non-essential output")]
     quiet: bool,
+    #[arg(
+        long,
+        global = true,
+        help = "Disable colored output (also honored via NO_COLOR env var)"
+    )]
+    no_color: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -90,6 +97,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     output::set_verbose(cli.verbose);
+    output::set_no_color(cli.no_color);
 
     match cli.command {
         Commands::Deploy(cmd) => signal::with_ctrlc(|| run_deploy(cmd)),
@@ -260,6 +268,12 @@ async fn main() -> Result<()> {
                 ip,
                 production,
             } => run_dns_set(subdomain, ip, production).await,
+            DnsCommands::Delete {
+                subdomain,
+                dry_run,
+                production,
+                yes,
+            } => run_dns_delete(subdomain, dry_run, production, yes).await,
             DnsCommands::Migrate {
                 ip,
                 dry_run,

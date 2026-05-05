@@ -73,6 +73,7 @@
     - [list](cli-reference/dns/list.md)
     - [status](cli-reference/dns/status.md)
     - [set](cli-reference/dns/set.md)
+    - [delete](cli-reference/dns/delete.md)
     - [migrate](cli-reference/dns/migrate.md)
     - [set-all](cli-reference/dns/set-all.md)
   - Headscale

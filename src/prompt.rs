@@ -1,7 +1,29 @@
-use dialoguer::{Confirm, MultiSelect, Select, theme::ColorfulTheme};
+use crate::output::should_use_colors;
+use dialoguer::{Confirm, Input, MultiSelect, Select, theme::ColorfulTheme, theme::SimpleTheme};
 use eyre::Result;
 use skim::prelude::*;
 use std::io::{Cursor, IsTerminal, Write};
+
+#[derive(Debug, PartialEq, Eq)]
+enum ThemeKind {
+    Colorful,
+    Simple,
+}
+
+fn theme_kind() -> ThemeKind {
+    if should_use_colors() {
+        ThemeKind::Colorful
+    } else {
+        ThemeKind::Simple
+    }
+}
+
+fn dialoguer_theme() -> Box<dyn dialoguer::theme::Theme> {
+    match theme_kind() {
+        ThemeKind::Colorful => Box::new(ColorfulTheme::default()),
+        ThemeKind::Simple => Box::new(SimpleTheme),
+    }
+}
 
 fn has_skim_support() -> bool {
     std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
@@ -31,9 +53,11 @@ fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
     // Skim leaves terminal background color set after exit.
     // \x1b[0m resets all SGR attributes (fixes colored bands on subsequent lines).
     // \x1b[J clears from cursor to end of screen (removes phantom blank lines).
-    let mut stderr = std::io::stderr().lock();
-    let _ = stderr.write_all(b"\x1b[0m\x1b[J");
-    let _ = stderr.flush();
+    if should_use_colors() {
+        let mut stderr = std::io::stderr().lock();
+        let _ = stderr.write_all(b"\x1b[0m\x1b[J");
+        let _ = stderr.flush();
+    }
 
     if output.is_abort {
         return None;
@@ -50,7 +74,8 @@ fn select_with_dialoguer(items: &[String], prompt: &str) -> Option<String> {
         return None;
     }
 
-    let selection = Select::with_theme(&ColorfulTheme::default())
+    let theme = dialoguer_theme();
+    let selection = Select::with_theme(theme.as_ref())
         .with_prompt(prompt)
         .items(items)
         .default(0)
@@ -118,9 +143,11 @@ fn select_multi_with_skim(items: &[String], prompt: &str) -> Option<Vec<String>>
 
     let output = Skim::run_with(&options, Some(items))?;
 
-    let mut stderr = std::io::stderr().lock();
-    let _ = stderr.write_all(b"\x1b[0m\x1b[J");
-    let _ = stderr.flush();
+    if should_use_colors() {
+        let mut stderr = std::io::stderr().lock();
+        let _ = stderr.write_all(b"\x1b[0m\x1b[J");
+        let _ = stderr.flush();
+    }
 
     if output.is_abort {
         return None;
@@ -144,7 +171,8 @@ fn select_multi_with_dialoguer(items: &[String], prompt: &str) -> Option<Vec<Str
         return None;
     }
 
-    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+    let theme = dialoguer_theme();
+    let selections = MultiSelect::with_theme(theme.as_ref())
         .with_prompt(prompt)
         .items(items)
         .interact_opt()
@@ -186,9 +214,85 @@ pub fn confirm(msg: &str, yes_flag: bool) -> bool {
         return false;
     }
 
-    Confirm::with_theme(&ColorfulTheme::default())
+    let theme = dialoguer_theme();
+    Confirm::with_theme(theme.as_ref())
         .with_prompt(msg)
         .default(false)
         .interact()
         .unwrap_or(false)
+}
+
+/// Severe confirmation: the user must type `expected` exactly to proceed.
+/// Use for irreversible / production-impacting actions.
+///
+/// Honors `yes_flag` (skip prompt, proceed) and non-TTY stdin (refuse, return
+/// `Ok(false)` so callers can bail with an actionable message instead of
+/// hanging on a prompt that nobody can answer).
+pub fn confirm_typed(prompt_msg: &str, expected: &str, yes_flag: bool) -> Result<bool> {
+    if yes_flag {
+        return Ok(true);
+    }
+
+    if !std::io::stdin().is_terminal() {
+        return Ok(false);
+    }
+
+    let theme = dialoguer_theme();
+    let typed: String = Input::with_theme(theme.as_ref())
+        .with_prompt(prompt_msg)
+        .allow_empty(true)
+        .interact_text()?;
+
+    Ok(typed.trim() == expected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::output::{TEST_LOCK, set_no_color};
+
+    #[test]
+    fn confirm_short_circuits_to_true_when_yes_flag_set() {
+        assert!(confirm("anything", true));
+    }
+
+    #[test]
+    fn confirm_returns_false_in_non_tty_without_yes_flag() {
+        // `cargo test` runs with non-TTY stdin, so the is_terminal() guard
+        // takes effect.  This is the path that prevents `dns set-all` and
+        // `dns delete` from hanging in CI when --yes is omitted.
+        assert!(!confirm("anything", false));
+    }
+
+    #[test]
+    fn confirm_typed_short_circuits_to_true_when_yes_flag_set() {
+        // --yes must bypass the typed-confirmation gate so CI can run without
+        // a TTY attached.  Expected value is irrelevant on this path.
+        assert!(confirm_typed("type the name", "freshrss", true).unwrap());
+    }
+
+    #[test]
+    fn confirm_typed_returns_false_in_non_tty_without_yes_flag() {
+        // Without --yes and without a TTY, severe confirmation cannot be
+        // satisfied — callers should treat this as cancellation and surface
+        // an actionable error rather than dispatching the destructive op.
+        assert!(!confirm_typed("type the name", "freshrss", false).unwrap());
+    }
+
+    #[test]
+    fn theme_kind_is_simple_when_no_color_flag_set() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_no_color(true);
+        assert_eq!(theme_kind(), ThemeKind::Simple);
+        set_no_color(false);
+    }
+
+    #[test]
+    fn dialoguer_theme_does_not_panic_in_either_branch() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_no_color(true);
+        let _simple = dialoguer_theme();
+        set_no_color(false);
+        let _maybe_colorful = dialoguer_theme();
+    }
 }

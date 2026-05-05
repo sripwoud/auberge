@@ -3,7 +3,7 @@ use crate::output;
 use crate::prompt::select_item;
 use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::dependency_resolver::resolve_tags_to_playbook_runs;
-use crate::services::inventory::{Host, get_host, get_playbooks, select_or_arg};
+use crate::services::inventory::{Host, get_playbooks, select_or_arg};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use regex::Regex;
@@ -46,7 +46,8 @@ pub enum AnsibleCommands {
     },
     #[command(alias = "b")]
     Bootstrap {
-        host: String,
+        #[arg(help = "Host name (omit to be prompted)")]
+        host: Option<String>,
         #[arg(long, default_value = "22", help = "SSH port for initial connection")]
         port: u16,
         #[arg(long, help = "IP address (required with --force)")]
@@ -60,10 +61,6 @@ pub enum AnsibleCommands {
         )]
         force: bool,
     },
-}
-
-fn select_or_use_host(host_arg: Option<String>) -> Result<Host> {
-    select_or_arg(host_arg)
 }
 
 fn validate_config_for_playbook(playbook_name: &str, tags: Option<&[String]>) -> Result<Preflight> {
@@ -100,7 +97,7 @@ pub fn run_ansible_run(
     ask_pass: bool,
     force: bool,
 ) -> Result<()> {
-    let selected_host = select_or_use_host(host)?;
+    let selected_host = select_or_arg(host)?;
 
     if let (None, Some(tag_list)) = (&playbook, &tags) {
         return run_auto_resolved(
@@ -440,7 +437,7 @@ fn prompt_for_ip(host_name: &str) -> Result<String> {
 }
 
 pub fn run_ansible_bootstrap(
-    host_name: String,
+    host_arg: Option<String>,
     port: u16,
     ip: Option<String>,
     user: Option<String>,
@@ -448,7 +445,8 @@ pub fn run_ansible_bootstrap(
 ) -> Result<()> {
     let preflight = validate_config_for_playbook("bootstrap.yml", None)?;
 
-    let host = get_host(&host_name, None)?;
+    let host = select_or_arg(host_arg)?;
+    let host_name = host.name.clone();
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     let bootstrap_playbook = assets.playbooks_dir().join("bootstrap.yml");
 
