@@ -251,19 +251,37 @@ mod tests {
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
+    // RAII guard that unsets an env var for the duration of a test and restores it on Drop.
+    // Callers MUST hold TEST_LOCK so env mutations are serialized across this binary's tests.
+    struct EnvVarGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn unset(key: &'static str) -> Self {
+            let prev = env::var(key).ok();
+            // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+            unsafe { env::remove_var(key) };
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+            match &self.prev {
+                Some(v) => unsafe { env::set_var(self.key, v) },
+                None => unsafe { env::remove_var(self.key) },
+            }
+        }
+    }
+
     #[test]
     fn no_color_flag_overrides_tty_check() {
         let _guard = TEST_LOCK.lock().unwrap();
-        // Ensure NO_COLOR env var is not set so only the flag is in play.
-        let _no_color_guard = std::env::var("NO_COLOR").ok().map(|v| {
-            // SAFETY: tests are serialized via TEST_LOCK; no other threads read this var.
-            unsafe { std::env::remove_var("NO_COLOR") };
-            v
-        });
-        // With flag cleared, should_use_colors returns whatever the TTY check says (not tested
-        // for its value here; we only care about the flag override).
+        let _env_guard = EnvVarGuard::unset("NO_COLOR");
         set_no_color(false);
-        // Set the flag and verify it forces colors off.
         set_no_color(true);
         assert!(!should_use_colors());
         set_no_color(false);
