@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3](https://github.com/sripwoud/auberge/compare/v0.10.2...v0.10.3) - 2026-05-05
+
+### Added
+
+- runtime DNS verification at end of `auberge deploy` ([#296](https://github.com/sripwoud/auberge/pull/296))
+- *(cli)* add --no-color flag and centralize color handling ([#298](https://github.com/sripwoud/auberge/pull/298))
+- *(cli)* make positional args optional with interactive prompts ([#293](https://github.com/sripwoud/auberge/pull/293))
+- *(dns)* add delete subcommand ([#292](https://github.com/sripwoud/auberge/pull/292))
+- *(dns)* publish tailnet-only apps via blocky and headscale split-DNS ([#290](https://github.com/sripwoud/auberge/pull/290))
+
+### Fixed
+
+- *(bichon)* correct upstream release URL pattern ([#285](https://github.com/sripwoud/auberge/pull/285))
+
+### Other
+
+- *(dns)* drop Cloudflare records for paperless and cockpit ([#299](https://github.com/sripwoud/auberge/pull/299))
+- update adr
+- update adr
+
 ## [0.10.2](https://github.com/sripwoud/auberge/compare/v0.10.1...v0.10.2) - 2026-05-05
 
 ### Added
