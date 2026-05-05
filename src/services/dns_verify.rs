@@ -63,13 +63,15 @@ impl DnsLookup for HickoryLookup {
 
                 // Append trailing dot to query the name as a FQDN, preventing
                 // the resolver from appending any search-domain suffix.
-                let fqdn_dot = if fqdn.ends_with('.') {
-                    fqdn.to_string()
+                let fqdn_owned;
+                let fqdn_dot: &str = if fqdn.ends_with('.') {
+                    fqdn
                 } else {
-                    format!("{fqdn}.")
+                    fqdn_owned = format!("{fqdn}.");
+                    &fqdn_owned
                 };
 
-                match resolver.lookup_ip(fqdn_dot.as_str()).await {
+                match resolver.lookup_ip(fqdn_dot).await {
                     Ok(lookup) => {
                         let ips: Vec<IpAddr> =
                             lookup.iter().filter(|a: &IpAddr| a.is_ipv4()).collect();
