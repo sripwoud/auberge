@@ -66,6 +66,17 @@ impl PlaybookMeta {
         serde_yaml::from_str(&contents)
             .wrap_err_with(|| format!("Failed to parse Playbook Meta from {}", path.display()))
     }
+
+    /// Load the meta for an app/playbook by stem name (e.g. `"bichon"`).
+    /// Returns `Ok(None)` if no meta file exists.
+    pub fn load_for_app(app: &str) -> Result<Option<Self>> {
+        let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+        let path = assets.playbooks_dir().join(format!("{app}.meta.yml"));
+        if !path.exists() {
+            return Ok(None);
+        }
+        Self::load(&path).map(Some)
+    }
 }
 
 #[cfg(test)]
