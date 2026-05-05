@@ -282,8 +282,8 @@ fn run_single_playbook(
         eprintln!();
 
         if !force {
-            print!("Have you configured your provider's firewall? [y/N]: ");
-            io::stdout().flush()?;
+            eprint!("Have you configured your provider's firewall? [y/N]: ");
+            io::stderr().flush()?;
             let mut response = String::new();
             io::stdin().read_line(&mut response)?;
 
@@ -364,8 +364,8 @@ fn show_playbook_warnings(playbook_name: &str, force: bool) -> Result<()> {
         eprintln!();
 
         if !force {
-            print!("Have you configured your Cloudflare API token? [y/N]: ");
-            io::stdout().flush()?;
+            eprint!("Have you configured your Cloudflare API token? [y/N]: ");
+            io::stderr().flush()?;
             let mut response = String::new();
             io::stdin().read_line(&mut response)?;
 
@@ -392,8 +392,8 @@ fn show_playbook_warnings(playbook_name: &str, force: bool) -> Result<()> {
         eprintln!();
 
         if !force {
-            print!("Have you opened port 853 in your provider's firewall? [y/N]: ");
-            io::stdout().flush()?;
+            eprint!("Have you opened port 853 in your provider's firewall? [y/N]: ");
+            io::stderr().flush()?;
             let mut port_response = String::new();
             io::stdin().read_line(&mut port_response)?;
 
@@ -429,8 +429,8 @@ fn validate_ip(ip: &str) -> Result<()> {
 }
 
 fn prompt_for_ip(host_name: &str) -> Result<String> {
-    print!("Enter IP address for {}: ", host_name);
-    io::stdout().flush()?;
+    eprint!("Enter IP address for {}: ", host_name);
+    io::stderr().flush()?;
     let mut host_ip = String::new();
     io::stdin()
         .read_line(&mut host_ip)
