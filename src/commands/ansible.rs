@@ -3,7 +3,7 @@ use crate::output;
 use crate::prompt::select_item;
 use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::dependency_resolver::resolve_tags_to_playbook_runs;
-use crate::services::inventory::{Host, get_host, get_playbooks, select_or_arg};
+use crate::services::inventory::{Host, get_playbooks, select_or_arg};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use regex::Regex;
@@ -46,7 +46,8 @@ pub enum AnsibleCommands {
     },
     #[command(alias = "b")]
     Bootstrap {
-        host: String,
+        #[arg(help = "Host name (omit to be prompted)")]
+        host: Option<String>,
         #[arg(long, default_value = "22", help = "SSH port for initial connection")]
         port: u16,
         #[arg(long, help = "IP address (required with --force)")]
@@ -440,7 +441,7 @@ fn prompt_for_ip(host_name: &str) -> Result<String> {
 }
 
 pub fn run_ansible_bootstrap(
-    host_name: String,
+    host_arg: Option<String>,
     port: u16,
     ip: Option<String>,
     user: Option<String>,
@@ -448,7 +449,8 @@ pub fn run_ansible_bootstrap(
 ) -> Result<()> {
     let preflight = validate_config_for_playbook("bootstrap.yml", None)?;
 
-    let host = get_host(&host_name, None)?;
+    let host = select_or_use_host(host_arg)?;
+    let host_name = host.name.clone();
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     let bootstrap_playbook = assets.playbooks_dir().join("bootstrap.yml");
 
@@ -537,5 +539,29 @@ mod tests {
         assert!(validate_ip("localhost").is_err());
         assert!(validate_ip("192.168.1.1 ").is_err());
         assert!(validate_ip(" 192.168.1.1").is_err());
+    }
+
+    // bootstrap: None without TTY → error
+    // (In the test environment stdin is not a terminal, so select_or_use_host(None)
+    // fails with "No host selected" instead of prompting.)
+    //
+    // Note: run_ansible_bootstrap also calls validate_config_for_playbook which
+    // may fail when no auberge config exists; that comes before host selection,
+    // so we test select_or_use_host in isolation here.
+
+    #[test]
+    fn bootstrap_none_without_tty_errors() {
+        // select_or_use_host(None) on non-TTY must return an error.
+        let result = select_or_use_host(None);
+        assert!(
+            result.is_err(),
+            "expected error when host is None and not a TTY"
+        );
+    }
+
+    #[test]
+    fn bootstrap_some_nonexistent_host_errors() {
+        let result = select_or_use_host(Some("__nonexistent_host__".to_string()));
+        assert!(result.is_err(), "expected error for unknown host name");
     }
 }

@@ -93,8 +93,8 @@ pub enum BackupCommands {
     },
     #[command(alias = "r", about = "Restore from backup")]
     Restore {
-        #[arg(help = "Backup timestamp (YYYY-MM-DD_HH-MM-SS) or 'latest'")]
-        backup_id: String,
+        #[arg(help = "Backup timestamp (YYYY-MM-DD_HH-MM-SS), 'latest', or omit to be prompted")]
+        backup_id: Option<String>,
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
         #[arg(
@@ -178,7 +178,7 @@ pub enum OutputFormat {
 }
 
 pub struct RestoreOptions {
-    pub backup_id: String,
+    pub backup_id: Option<String>,
     pub host_arg: Option<String>,
     pub from_host_arg: Option<String>,
     pub apps: Option<Vec<String>>,
@@ -658,6 +658,11 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         eyre::bail!("No backups found for host: {}", source_host_name);
     }
 
+    let backup_id = match opts.backup_id {
+        Some(id) => id,
+        None => select_backup_id(&host_backup_dir)?,
+    };
+
     let app_names = opts.apps.unwrap_or_else(|| {
         vec![
             "baikal".to_string(),
@@ -672,7 +677,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     let mut restore_plan = Vec::new();
 
     for app_name in &app_names {
-        let backup_path = if opts.backup_id == "latest" {
+        let backup_path = if backup_id == "latest" {
             let mut timestamps: Vec<_> = fs::read_dir(&host_backup_dir)?
                 .filter_map(Result::ok)
                 .filter(|e| e.path().is_dir())
@@ -702,11 +707,11 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                 continue;
             }
         } else {
-            let backup_path = host_backup_dir.join(&opts.backup_id).join(app_name);
+            let backup_path = host_backup_dir.join(&backup_id).join(app_name);
             if !backup_path.exists() {
                 eprintln!(
                     "⚠ Backup {} not found for {}, skipping",
-                    opts.backup_id, app_name
+                    backup_id, app_name
                 );
                 continue;
             }
@@ -731,7 +736,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
 
     eprintln!("\n=== Restore Plan ===");
     if is_cross_host {
-        eprintln!("Source: {} (backup: {})", source_host_name, opts.backup_id);
+        eprintln!("Source: {} (backup: {})", source_host_name, backup_id);
         eprintln!("Target: {} ({}:{})", host.name, host.address, host.port);
         eprintln!("\n⚠  CROSS-HOST RESTORE WARNING");
         eprintln!(
@@ -741,7 +746,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         eprintln!("   Existing data on '{}' will be OVERWRITTEN", host.name);
     } else {
         eprintln!("Host: {}", host.name);
-        eprintln!("Backup ID: {}", opts.backup_id);
+        eprintln!("Backup ID: {}", backup_id);
     }
     eprintln!("\nApps to restore:");
     for (app, path) in &restore_plan {
@@ -1195,6 +1200,33 @@ fn resolve_backup_dir(
                 .ok_or_else(|| eyre::eyre!("No backup timestamps found in {}", host_dir.display()))
         }
     }
+}
+
+fn select_backup_id(host_backup_dir: &Path) -> Result<String> {
+    let mut timestamps: Vec<String> = fs::read_dir(host_backup_dir)?
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_dir() && !e.path().is_symlink())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            name.contains('_') && name.starts_with("20")
+        })
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+
+    timestamps.sort_by(|a, b| b.cmp(a)); // newest first
+
+    if timestamps.is_empty() {
+        eyre::bail!(
+            "No backup timestamps found in {}",
+            host_backup_dir.display()
+        );
+    }
+
+    let mut options = vec!["latest".to_string()];
+    options.extend(timestamps);
+
+    crate::prompt::select_item(&options, |s: &String| s.clone(), "Select backup")?
+        .ok_or_else(|| eyre::eyre!("No backup selected"))
 }
 
 fn get_host_or_select(host_arg: Option<String>) -> Result<Host> {
@@ -1660,5 +1692,40 @@ mod tests {
                 );
             }
         }
+    }
+
+    // backup restore: backup_id now optional — test None/non-TTY and Some paths.
+
+    #[test]
+    fn restore_backup_id_none_without_tty_errors() {
+        // select_backup_id on a non-existent directory should fail before prompting.
+        let tmp = tempfile::tempdir().unwrap();
+        let nonexistent = tmp.path().join("no_such_host");
+        // Directory does not exist, so run_backup_restore would have bailed earlier
+        // with "No backups found for host".  Test select_backup_id directly on an
+        // empty-but-existing directory (no timestamp dirs) instead.
+        fs::create_dir(&nonexistent).unwrap();
+        let result = select_backup_id(&nonexistent);
+        assert!(result.is_err(), "expected error when no timestamps exist");
+        assert!(
+            result.unwrap_err().to_string().contains("No backup timestamps found"),
+            "error should mention missing timestamps"
+        );
+    }
+
+    #[test]
+    fn restore_options_backup_id_some_is_preserved() {
+        // Verify the Some variant compiles and the value is passed through.
+        let opts = RestoreOptions {
+            backup_id: Some("2026-01-15_10-30-00".to_string()),
+            host_arg: None,
+            from_host_arg: None,
+            apps: None,
+            ssh_key: None,
+            dry_run: true,
+            yes: false,
+            skip_playbook_unsafe: false,
+        };
+        assert_eq!(opts.backup_id.as_deref(), Some("2026-01-15_10-30-00"));
     }
 }
