@@ -89,7 +89,7 @@ impl DnsService {
         let config = Config::load()?;
 
         let api_token = config
-            .get("cloudflare_dns_api_token")
+            .get_secret("cloudflare_dns_api_token")?
             .filter(|v| !v.is_empty())
             .ok_or_else(|| eyre::eyre!("cloudflare_dns_api_token not set in config"))?;
 
