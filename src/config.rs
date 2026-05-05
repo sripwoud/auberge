@@ -12,6 +12,7 @@ const DEFAULT_TTL: u32 = 300;
 /// Acts as the Key Registry entry for a given playbook.
 #[derive(Debug)]
 pub struct PlaybookMeta {
+    #[allow(dead_code)]
     pub name: String,
     pub required_keys: Vec<String>,
 }
@@ -87,11 +88,13 @@ fn tag_required_keys(tag: &str) -> &[&'static str] {
 /// which guarantees all required keys are present and resolved.
 #[derive(Debug)]
 pub struct Preflight {
+    #[allow(dead_code)]
     meta: PlaybookMeta,
     flat_vars: HashMap<String, String>,
 }
 
 impl Preflight {
+    #[allow(dead_code)]
     pub fn meta(&self) -> &PlaybookMeta {
         &self.meta
     }
@@ -177,13 +180,6 @@ impl Config {
 
     pub fn get(&self, key: &str) -> Option<String> {
         self.values.get(key).and_then(value_to_string)
-    }
-
-    /// Returns the resolved value for `key`, executing shell commands for
-    /// values prefixed with `!`.  Suitable for sensitive keys stored via
-    /// secret managers (e.g. `restic_password = "!pass auberge/restic"`).
-    pub fn get_secret(&self, key: &str) -> Result<Option<String>> {
-        self.get_resolved(key)
     }
 
     pub fn get_resolved(&self, key: &str) -> Result<Option<String>> {
@@ -614,7 +610,7 @@ mod tests {
         assert!(flat.get("broken_key").is_none());
     }
 
-    // ── get_resolved / get_secret ─────────────────────────────────────────────
+    // ── get_resolved ──────────────────────────────────────────────────────────
 
     #[test]
     fn test_get_resolved_plain_value() {

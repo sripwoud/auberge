@@ -7,12 +7,14 @@ use std::process::Command;
 #[derive(Debug, Clone)]
 pub struct CommandResult {
     pub success: bool,
+    #[allow(dead_code)]
     pub exit_code: Option<i32>,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
 }
 
 impl CommandResult {
+    #[allow(dead_code)]
     pub fn ok() -> Self {
         Self {
             success: true,

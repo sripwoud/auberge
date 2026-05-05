@@ -5,6 +5,7 @@ use eyre::Result;
 use std::collections::HashMap;
 use std::path::Path;
 
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct RsyncProgress {
     pub bytes_transferred: u64,
@@ -13,6 +14,7 @@ pub struct RsyncProgress {
     pub eta: String,
 }
 
+#[allow(dead_code)]
 pub fn parse_rsync_progress(line: &str) -> Option<RsyncProgress> {
     let line = line.trim_end_matches('\r');
     let fields: Vec<&str> = line.split_whitespace().collect();

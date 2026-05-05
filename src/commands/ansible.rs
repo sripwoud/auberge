@@ -87,6 +87,7 @@ fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<PathBuf> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_ansible_run(
     host: Option<String>,
     playbook: Option<PathBuf>,
@@ -240,6 +241,7 @@ fn run_auto_resolved(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_single_playbook(
     host: &Host,
     playbook: &Path,
