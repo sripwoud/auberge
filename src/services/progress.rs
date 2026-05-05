@@ -1,6 +1,6 @@
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
-use crate::output::should_use_colors;
+use crate::output::{CYAN, RESET, YELLOW, should_use_colors};
 
 pub trait Progress {
     fn task_started(&mut self, name: &str);
@@ -77,18 +77,18 @@ impl Progress for TerminalProgress {
 
     fn info(&mut self, msg: &str) {
         let line = if should_use_colors() {
-            format!("\x1b[36m\u{2192}\x1b[0m {}", msg)
+            format!("{CYAN}\u{2192}{RESET} {msg}")
         } else {
-            format!("\u{2192} {}", msg)
+            format!("\u{2192} {msg}")
         };
         self.pb.println(line);
     }
 
     fn warn(&mut self, msg: &str) {
         let line = if should_use_colors() {
-            format!("\x1b[33m\u{26A0}\x1b[0m {}", msg)
+            format!("{YELLOW}\u{26A0}{RESET} {msg}")
         } else {
-            format!("\u{26A0} {}", msg)
+            format!("\u{26A0} {msg}")
         };
         self.pb.println(line);
     }
