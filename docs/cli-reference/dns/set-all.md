@@ -144,9 +144,9 @@ auberge dns set-all --host myserver --output json
     }
   ],
   "skipped": [
-    {"app": "bichon", "subdomain": "bichon", "reason": "tailnet_only"},
-    {"app": "cockpit", "subdomain": "cockpit", "reason": "tailnet_only"},
-    {"app": "paperless", "subdomain": "paperless", "reason": "tailnet_only"}
+    { "app": "bichon", "subdomain": "bichon", "reason": "tailnet_only" },
+    { "app": "cockpit", "subdomain": "cockpit", "reason": "tailnet_only" },
+    { "app": "paperless", "subdomain": "paperless", "reason": "tailnet_only" }
   ],
   "failed": []
 }
@@ -166,11 +166,11 @@ JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr
 
 **Schema — `skipped` entries**
 
-| Field     | Type   | Description                               |
-| --------- | ------ | ----------------------------------------- |
-| app       | string | Canonical app name (Playbook Meta stem)   |
+| Field     | Type   | Description                                   |
+| --------- | ------ | --------------------------------------------- |
+| app       | string | Canonical app name (Playbook Meta stem)       |
 | subdomain | string | Effective subdomain (operator-override-aware) |
-| reason    | string | Always `"tailnet_only"` (matches meta key) |
+| reason    | string | Always `"tailnet_only"` (matches meta key)    |
 
 Both `created` and `skipped` arrays are sorted alphabetically by app name for deterministic output.
 
@@ -190,10 +190,10 @@ Apps whose playbook meta declares `tailnet_only: true` (e.g., `bichon`, `cockpit
 
 `dns set-all` handles them automatically by operator intent:
 
-| How the app got there          | Behavior                                                                           |
-| ------------------------------ | ---------------------------------------------------------------------------------- |
+| How the app got there                  | Behavior                                                                                                              |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Implicit discovery (no `--subdomains`) | Skipped silently; a grouped info line is emitted: `Skipping (tailnet-only — published via Blocky): <app1>, <app2>, …` |
-| Explicit `--subdomains` target | Hard-error before any Cloudflare API call. Use `auberge deploy <app>` instead.    |
+| Explicit `--subdomains` target         | Hard-error before any Cloudflare API call. Use `auberge deploy <app>` instead.                                        |
 
 See [Tailnet-only Apps](../../dns/batch-operations.md#tailnet-only-apps) for the ADR-0003 context.
 

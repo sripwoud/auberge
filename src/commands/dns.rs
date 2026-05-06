@@ -537,7 +537,7 @@ pub async fn run_dns_migrate(
     Ok(())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct SkippedRow {
     app: String,
     subdomain: String,
@@ -561,6 +561,78 @@ struct SetAllRow {
     error: Option<String>,
 }
 
+type SubdomainMap = std::collections::HashMap<String, crate::services::dns::SubdomainEntry>;
+type PartitionResult = (
+    Vec<(String, crate::services::dns::SubdomainEntry)>,
+    Vec<SkippedRow>,
+);
+
+/// Partitions discovery output into the "create" and "skip" lists, applying
+/// `--subdomains` / `--skip` operator intent and ADR-0003 invariants:
+///
+/// - Implicit (`subdomains` empty): all `--skip`-filtered tailnet-only apps
+///   are skipped; remaining public apps are scheduled to create. `to_skip`
+///   is sorted alphabetically by app name for deterministic output.
+/// - Explicit (`subdomains` non-empty): if any non-`--skip`-excluded entry
+///   names a tailnet-only app, hard-error before any Cloudflare API call.
+///   `to_skip` is empty in this branch — explicit means "operator owns it".
+///
+/// `public_discovered` is mutated in place (drained of selected entries) so
+/// the caller still owns the residual map if it ever needs it.
+fn partition_for_set_all(
+    subdomains: Vec<String>,
+    skip_set: &std::collections::HashSet<String>,
+    public_discovered: &mut SubdomainMap,
+    tailnet_only_discovered: &SubdomainMap,
+) -> Result<PartitionResult> {
+    if !subdomains.is_empty() {
+        let offenders: Vec<(String, String)> = subdomains
+            .iter()
+            .filter(|s| !skip_set.contains(*s))
+            .filter_map(|s| {
+                tailnet_only_discovered
+                    .get(s)
+                    .map(|entry| (s.clone(), entry.subdomain.clone()))
+            })
+            .collect();
+        if !offenders.is_empty() {
+            let apps_list = offenders
+                .iter()
+                .map(|(app, sub)| format!("  • {} (subdomain: {})", app, sub))
+                .collect::<Vec<_>>()
+                .join("\n");
+            eyre::bail!(
+                "tailnet-only apps cannot have Cloudflare A records (ADR-0003):\n{}\n\n\
+                 DNS for tailnet-only apps is published via Blocky on `auberge deploy <app>`.",
+                apps_list
+            );
+        }
+        let to_process = subdomains
+            .into_iter()
+            .filter(|s| !skip_set.contains(s))
+            .filter_map(|s| public_discovered.remove(&s).map(|entry| (s, entry)))
+            .collect();
+        Ok((to_process, vec![]))
+    } else {
+        let mut skip_vec: Vec<SkippedRow> = tailnet_only_discovered
+            .iter()
+            .filter(|(k, _)| !skip_set.contains(*k))
+            .map(|(app, entry)| SkippedRow {
+                app: app.clone(),
+                subdomain: entry.subdomain.clone(),
+                reason: "tailnet_only".to_string(),
+            })
+            .collect();
+        skip_vec.sort_by(|a, b| a.app.cmp(&b.app));
+
+        let to_process = public_discovered
+            .drain()
+            .filter(|(k, _)| !skip_set.contains(k))
+            .collect();
+        Ok((to_process, skip_vec))
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn run_dns_set_all(
     host: Option<String>,
@@ -574,8 +646,7 @@ pub async fn run_dns_set_all(
     continue_on_error: bool,
     production: bool,
 ) -> Result<()> {
-    use crate::playbook_meta::PlaybookMeta;
-    use crate::services::dns::{SubdomainEntry, discover_subdomains, discover_tailnet_only_subdomains};
+    use crate::services::dns::discover_all_subdomains;
     use crate::services::inventory::discover_hosts_with_ips;
     use std::collections::HashSet;
 
@@ -606,74 +677,20 @@ pub async fn run_dns_set_all(
         _ => unreachable!(),
     };
 
-    let mut discovered = discover_subdomains();
+    let mut discovered = discover_all_subdomains();
 
-    if strict && discovered.is_empty() {
+    if strict && discovered.public.is_empty() {
         eyre::bail!("No subdomain environment variables found");
     }
 
-    let skip_set: HashSet<_> = skip.iter().cloned().collect();
+    let skip_set: HashSet<String> = skip.iter().cloned().collect();
 
-    // Partition into "to create" (public) and "to skip" (tailnet-only).
-    //
-    // Explicit --subdomains: pre-validate that none of the named apps are
-    // tailnet-only — creating public Cloudflare A records for them violates
-    // ADR-0003.  Hard-error before any API call so operators learn fast.
-    //
-    // Implicit discovery: tailnet-only apps are already absent from
-    // `discover_subdomains()`, so we collect them separately purely to emit
-    // an informational skip line in the confirmation output.
-    let (mut subdomains_to_process, to_skip): (Vec<(String, SubdomainEntry)>, Vec<SkippedRow>) =
-        if !subdomains.is_empty() {
-            let mut tailnet_only_offenders: Vec<(String, String)> = Vec::new();
-            for s in &subdomains {
-                if skip_set.contains(s) {
-                    continue;
-                }
-                if let Some(meta) = PlaybookMeta::load_for_app(s)?
-                    && meta.tailnet_only
-                {
-                    let effective_subdomain = meta.effective_subdomain(s);
-                    tailnet_only_offenders.push((s.clone(), effective_subdomain));
-                }
-            }
-            if !tailnet_only_offenders.is_empty() {
-                let apps_list = tailnet_only_offenders
-                    .iter()
-                    .map(|(app, sub)| format!("  • {} (subdomain: {})", app, sub))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                eyre::bail!(
-                    "tailnet-only apps cannot have Cloudflare A records (ADR-0003):\n{}\n\n\
-                     DNS for tailnet-only apps is published via Blocky on `auberge deploy <app>`.",
-                    apps_list
-                );
-            }
-            let to_process: Vec<(String, SubdomainEntry)> = subdomains
-                .into_iter()
-                .filter(|s| !skip_set.contains(s))
-                .filter_map(|s| discovered.remove(&s).map(|entry| (s, entry)))
-                .collect();
-            (to_process, vec![])
-        } else {
-            let tailnet_only_discovered = discover_tailnet_only_subdomains();
-            let mut skip_vec: Vec<SkippedRow> = tailnet_only_discovered
-                .into_iter()
-                .filter(|(k, _)| !skip_set.contains(k))
-                .map(|(app, entry)| SkippedRow {
-                    app,
-                    subdomain: entry.subdomain,
-                    reason: "tailnet_only".to_string(),
-                })
-                .collect();
-            skip_vec.sort_by(|a, b| a.app.cmp(&b.app));
-
-            let to_process: Vec<(String, SubdomainEntry)> = discovered
-                .into_iter()
-                .filter(|(k, _)| !skip_set.contains(k))
-                .collect();
-            (to_process, skip_vec)
-        };
+    let (mut subdomains_to_process, to_skip) = partition_for_set_all(
+        subdomains,
+        &skip_set,
+        &mut discovered.public,
+        &discovered.tailnet_only,
+    )?;
 
     if subdomains_to_process.is_empty() {
         let message = if to_skip.is_empty() {
@@ -1019,59 +1036,190 @@ mod tests {
     }
 
     #[test]
-    fn discover_tailnet_only_subdomains_returns_tailnet_apps() {
-        use crate::services::dns::discover_tailnet_only_subdomains;
-        let discovered = discover_tailnet_only_subdomains();
+    fn discover_all_subdomains_partitions_tailnet_only() {
+        use crate::services::dns::discover_all_subdomains;
+        let discovered = discover_all_subdomains();
         for app in ["bichon", "cockpit", "paperless"] {
             assert!(
-                discovered.contains_key(app),
-                "tailnet-only app '{app}' must appear in tailnet-only discovery"
+                discovered.tailnet_only.contains_key(app),
+                "tailnet-only app '{app}' must appear in tailnet-only partition"
+            );
+            assert!(
+                !discovered.public.contains_key(app),
+                "tailnet-only app '{app}' must not appear in public partition"
             );
         }
-    }
-
-    #[test]
-    fn discover_tailnet_only_subdomains_excludes_public_apps() {
-        use crate::services::dns::discover_tailnet_only_subdomains;
-        let discovered = discover_tailnet_only_subdomains();
         for app in ["freshrss", "baikal", "navidrome"] {
             assert!(
-                !discovered.contains_key(app),
-                "public app '{app}' must not appear in tailnet-only discovery"
+                discovered.public.contains_key(app),
+                "public app '{app}' must appear in public partition"
+            );
+            assert!(
+                !discovered.tailnet_only.contains_key(app),
+                "public app '{app}' must not appear in tailnet-only partition"
             );
         }
     }
 
+    fn entry(subdomain: &str) -> crate::services::dns::SubdomainEntry {
+        crate::services::dns::SubdomainEntry {
+            subdomain: subdomain.to_string(),
+            ip_override: None,
+        }
+    }
+
     #[test]
-    fn explicit_subdomains_containing_tailnet_only_app_errors() {
-        use crate::playbook_meta::PlaybookMeta;
-        // Verify that bichon is indeed tailnet_only so the hard-error path
-        // is exercisable from the meta files in this repo.
-        let meta = PlaybookMeta::load_for_app("bichon")
-            .expect("load should not fail")
-            .expect("bichon meta should exist");
+    fn partition_implicit_partitions_public_and_tailnet_only() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = [("freshrss".to_string(), entry("rss"))]
+            .into_iter()
+            .collect();
+        let tailnet: HashMap<_, _> = [("bichon".to_string(), entry("bichon"))]
+            .into_iter()
+            .collect();
+        let skip_set: HashSet<String> = HashSet::new();
+
+        let (to_process, skipped) =
+            super::partition_for_set_all(vec![], &skip_set, &mut public, &tailnet).unwrap();
+
+        assert_eq!(to_process.len(), 1);
+        assert_eq!(to_process[0].0, "freshrss");
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].app, "bichon");
+        assert_eq!(skipped[0].subdomain, "bichon");
+        assert_eq!(skipped[0].reason, "tailnet_only");
+    }
+
+    #[test]
+    fn partition_implicit_skip_excludes_tailnet_only_from_skipped_list() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = HashMap::new();
+        let tailnet: HashMap<_, _> = [
+            ("bichon".to_string(), entry("bichon")),
+            ("paperless".to_string(), entry("paperless")),
+        ]
+        .into_iter()
+        .collect();
+        let skip_set: HashSet<String> = ["bichon".to_string()].into_iter().collect();
+
+        let (_, skipped) =
+            super::partition_for_set_all(vec![], &skip_set, &mut public, &tailnet).unwrap();
+
+        let skipped_names: Vec<&str> = skipped.iter().map(|r| r.app.as_str()).collect();
+        assert_eq!(skipped_names, vec!["paperless"]);
+    }
+
+    #[test]
+    fn partition_implicit_skipped_list_is_sorted_alphabetically() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = HashMap::new();
+        let tailnet: HashMap<_, _> = [
+            ("paperless".to_string(), entry("paperless")),
+            ("bichon".to_string(), entry("bichon")),
+            ("cockpit".to_string(), entry("cockpit")),
+        ]
+        .into_iter()
+        .collect();
+        let skip_set: HashSet<String> = HashSet::new();
+
+        let (_, skipped) =
+            super::partition_for_set_all(vec![], &skip_set, &mut public, &tailnet).unwrap();
+
+        let names: Vec<&str> = skipped.iter().map(|r| r.app.as_str()).collect();
+        assert_eq!(names, vec!["bichon", "cockpit", "paperless"]);
+    }
+
+    #[test]
+    fn partition_explicit_tailnet_only_target_errors_before_returning() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = HashMap::new();
+        let tailnet: HashMap<_, _> = [("paperless".to_string(), entry("docs"))]
+            .into_iter()
+            .collect();
+        let skip_set: HashSet<String> = HashSet::new();
+
+        let err = super::partition_for_set_all(
+            vec!["paperless".to_string()],
+            &skip_set,
+            &mut public,
+            &tailnet,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("paperless"), "error must name the offender");
         assert!(
-            meta.tailnet_only,
-            "bichon must be tailnet_only for the explicit-subdomains hard-error path"
+            msg.contains("subdomain: docs"),
+            "error must surface effective subdomain"
+        );
+        assert!(msg.contains("ADR-0003"), "error must reference the ADR");
+        assert!(
+            msg.contains("auberge deploy"),
+            "error must point to the corrective action"
         );
     }
 
     #[test]
-    fn explicit_subdomains_tailnet_only_error_surfaces_effective_subdomain() {
-        use crate::playbook_meta::PlaybookMeta;
-        // When a tailnet-only app has a subdomain override in its meta, the
-        // error message must use the effective subdomain, not the app name,
-        // so operators who configured overrides are not confused.
-        let meta = PlaybookMeta::load_for_app("paperless")
-            .expect("load should not fail")
-            .expect("paperless meta should exist");
-        assert!(meta.tailnet_only);
-        // The effective subdomain is what would appear in the error message.
-        let effective = meta.effective_subdomain("paperless");
+    fn partition_explicit_skip_excludes_tailnet_only_target_avoids_error() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = HashMap::new();
+        let tailnet: HashMap<_, _> = [("bichon".to_string(), entry("bichon"))]
+            .into_iter()
+            .collect();
+        let skip_set: HashSet<String> = ["bichon".to_string()].into_iter().collect();
+
+        let (to_process, skipped) = super::partition_for_set_all(
+            vec!["bichon".to_string()],
+            &skip_set,
+            &mut public,
+            &tailnet,
+        )
+        .unwrap();
+        assert!(to_process.is_empty());
         assert!(
-            !effective.is_empty(),
-            "tailnet-only app must declare a subdomain for effective-subdomain surfacing"
+            skipped.is_empty(),
+            "explicit branch returns empty skip list — operator owns the choice"
         );
+    }
+
+    #[test]
+    fn partition_explicit_public_only_returns_empty_skip() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = [
+            ("freshrss".to_string(), entry("rss")),
+            ("baikal".to_string(), entry("baikal")),
+        ]
+        .into_iter()
+        .collect();
+        let tailnet: HashMap<_, _> = HashMap::new();
+        let skip_set: HashSet<String> = HashSet::new();
+
+        let (to_process, skipped) = super::partition_for_set_all(
+            vec!["freshrss".to_string()],
+            &skip_set,
+            &mut public,
+            &tailnet,
+        )
+        .unwrap();
+        assert_eq!(to_process.len(), 1);
+        assert_eq!(to_process[0].0, "freshrss");
+        assert!(skipped.is_empty());
+    }
+
+    #[test]
+    fn partition_explicit_unknown_app_silently_dropped() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = HashMap::new();
+        let tailnet: HashMap<_, _> = HashMap::new();
+        let skip_set: HashSet<String> = HashSet::new();
+
+        let (to_process, skipped) = super::partition_for_set_all(
+            vec!["nonexistent".to_string()],
+            &skip_set,
+            &mut public,
+            &tailnet,
+        )
+        .unwrap();
+        assert!(to_process.is_empty());
+        assert!(skipped.is_empty());
     }
 }
-
