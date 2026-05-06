@@ -10,3 +10,9 @@
     name: caddy
     state: restarted
     daemon_reload: true
+
+- name: Restart bichon-archive timer
+  ansible.builtin.systemd_service:
+    name: bichon-archive.timer
+    state: restarted
+    daemon_reload: true

@@ -6,7 +6,9 @@
         that:
           - bichon_encryption_password is defined
           - bichon_encryption_password | length > 0
-        fail_msg: "bichon_encryption_password must be defined"
+          - bichon_api_token is defined
+          - bichon_api_token | length > 0
+        fail_msg: "bichon_encryption_password and bichon_api_token must be defined"
 
     - name: Get Tailscale status
       ansible.builtin.command: tailscale status --json
@@ -204,6 +206,67 @@
         group: "{{ bichon_sys_group }}"
         mode: "0644"
 
+    - name: Install archive script dependencies
+      ansible.builtin.apt:
+        name: [jq, curl]
+        state: present
+        update_cache: false
+
+    - name: Create archive directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ bichon_sys_user }}"
+        group: "{{ bichon_sys_group }}"
+        mode: "0750"
+      loop:
+        - "{{ bichon_archive_dir }}"
+        - "{{ bichon_archive_state_dir }}"
+
+    - name: Deploy archive script
+      ansible.builtin.template:
+        src: bichon-archive.sh.j2
+        dest: "{{ bichon_archive_script_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart bichon-archive timer
+
+    - name: Deploy archive environment file
+      ansible.builtin.template:
+        src: bichon-archive.env.j2
+        dest: "{{ bichon_archive_env_path }}"
+        owner: "{{ bichon_sys_user }}"
+        group: "{{ bichon_sys_group }}"
+        mode: "0600"
+      no_log: true
+      notify: Restart bichon-archive timer
+
+    - name: Deploy archive systemd service unit
+      ansible.builtin.template:
+        src: bichon-archive.service.j2
+        dest: /etc/systemd/system/bichon-archive.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart bichon-archive timer
+
+    - name: Deploy archive systemd timer unit
+      ansible.builtin.template:
+        src: bichon-archive.timer.j2
+        dest: /etc/systemd/system/bichon-archive.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart bichon-archive timer
+
+    - name: Enable and start archive timer
+      ansible.builtin.systemd_service:
+        name: bichon-archive.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
     - name: Display deployment summary
       ansible.builtin.debug:
         msg:
@@ -212,8 +275,11 @@
           - "==================================="
           - "Version: {{ bichon_version }}"
           - "Data: {{ bichon_root_dir }}"
+          - "Archive: {{ bichon_archive_dir }}"
           - ""
           - "Access: https://{{ bichon_domain }}"
           - ""
-          - "Service:"
+          - "Services:"
           - "  systemctl status bichon"
+          - "  systemctl status bichon-archive.timer"
+          - "  systemctl list-timers bichon-archive.timer"

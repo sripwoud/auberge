@@ -1,0 +1,11 @@
+[Unit]
+Description=Run bichon email archive hourly
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=10min
+Persistent=true
+Unit=bichon-archive.service
+
+[Install]
+WantedBy=timers.target

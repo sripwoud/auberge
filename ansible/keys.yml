@@ -19,6 +19,10 @@ keys:
     secret: false
     doc: "Subdomain for the Baïkal CalDAV/CardDAV server"
 
+  bichon_api_token:
+    secret: true
+    doc: "Bearer token used by the Bichon archive timer to call Bichon's REST API. Generate it once in Bichon's UI."
+
   bichon_encryption_password:
     secret: true
     doc: "Encryption password for Bichon data-at-rest"

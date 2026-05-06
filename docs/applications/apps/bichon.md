@@ -18,6 +18,7 @@ Required variables in `config.toml`:
 
 - `bichon_encryption_password` - Encryption password for stored credentials (IMAP passwords, OAuth tokens, login passwords) and metadata database. Email content is stored as zstd-compressed blocks and is **not** encrypted by this password.
 - `bichon_subdomain` - Subdomain for HTTPS access (e.g. `bichon`)
+- `bichon_api_token` - Bearer token used by the hourly archive timer to call Bichon's REST API. Mint one in Bichon's UI after the first deploy, paste it into `config.toml`, then re-run the role.
 
 Optional:
 
@@ -31,13 +32,16 @@ Optional:
 - **Search**: Tantivy (embedded full-text search, no external DB)
 - **Encryption**: Credential and metadata encryption (email content is not encrypted)
 - **Config**: `/opt/bichon/bichon.env`
-- **Data**: `/opt/bichon/data`
+- **Data**: `/opt/bichon/data` (Bichon's encrypted internal store — not backed up)
+- **Archive**: `/var/lib/bichon-archive` (per-message `.eml` mirror, hourly; backed up)
 
 ### Systemd Services
 
-| Service  | Description                     |
-| -------- | ------------------------------- |
-| `bichon` | Web server and IMAP sync daemon |
+| Service                  | Description                                           |
+| ------------------------ | ----------------------------------------------------- |
+| `bichon`                 | Web server and IMAP sync daemon                       |
+| `bichon-archive.service` | Walks Bichon's REST API, writes EML files (`oneshot`) |
+| `bichon-archive.timer`   | Triggers the archive hourly with 10min jitter         |
 
 ## Access
 
@@ -51,9 +55,25 @@ Requires Tailscale — the service will not start without `tailscaled.service`.
 
 See [Tailnet-only subdomains](../../dns/batch-operations.md#tailnet-only-subdomains) for the generic pattern.
 
+## Email Archive
+
+A `bichon-archive.timer` on the host runs hourly and walks Bichon's REST API to mirror each message as a plaintext `.eml` file under `/var/lib/bichon-archive/<account-email>/<YYYY>/<MM>/<message-id>.eml`, with a `<message-id>.meta.json` sidecar capturing folder name and tags. Per-account cursors under `.state/` plus a 24-hour overlap window keep incremental runs cheap. Atomic per-message writes; failures advance no cursor.
+
+Verify after the first deploy:
+
+```bash
+sudo systemctl start bichon-archive.service   # seed the archive immediately
+sudo systemctl list-timers bichon-archive.timer
+sudo find /var/lib/bichon-archive -name '*.eml' | wc -l
+```
+
+The archive is consumable without Bichon — any IMAP/MBOX-aware client (Thunderbird, mutt) can ingest the `.eml` tree directly. The non-rotatable `bichon_encryption_password` is **not** required to read it.
+
 ## Backup
 
-Supported via `auberge backup create --apps bichon`. Backs up the entire data directory including search indices and archived emails. No external database — all data is self-contained on disk.
+Supported via `auberge backup create --apps bichon`. The Backup Recipe rsyncs `/var/lib/bichon-archive` (the EML archive above), **not** Bichon's internal `/opt/bichon/data` store. This makes the backup tool-agnostic, restic-friendly (Tantivy's segment-rewrite churn no longer dominates dedup), and survives any future where Bichon stops being maintainable.
+
+The timer must have run at least once before the first backup, otherwise the bichon backup will be empty. Rationale and considered alternatives in [ADR-0006](https://github.com/sripwoud/auberge/blob/master/meta/adr/0006-bichon-archive-feeds-backup-recipe.md).
 
 See [Backup & Restore](../../backup-restore/overview.md).
 
