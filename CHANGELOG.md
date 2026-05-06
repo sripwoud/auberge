@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/sripwoud/auberge/compare/v0.11.0...v0.12.0) - 2026-05-06
+
+### Added
+
+- *(bichon)* [**breaking**] replace internal-store backup with hourly EML archive ([#326](https://github.com/sripwoud/auberge/pull/326))
+
+### Fixed
+
+- *(caddy)* pin xcaddy plugins and rebuild on stamp drift ([#324](https://github.com/sripwoud/auberge/pull/324))
+
 ## [0.11.0](https://github.com/sripwoud/auberge/compare/v0.10.4...v0.11.0) - 2026-05-06
 
 ### Added
