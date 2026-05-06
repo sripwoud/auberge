@@ -3,5 +3,5 @@ tailnet_only: true
 subdomain: bichon
 backup:
   systemd_services: [bichon]
-  paths: [/opt/bichon/data]
+  paths: [/var/lib/bichon-archive]
   owner: [bichon, bichon]

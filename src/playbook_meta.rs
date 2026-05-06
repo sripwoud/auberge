@@ -173,7 +173,7 @@ mod tests {
     fn test_bichon_meta_backup_recipe() {
         let backup = load_meta("bichon").backup.unwrap();
         assert_eq!(backup.systemd_services, vec!["bichon"]);
-        assert_eq!(backup.paths, vec!["/opt/bichon/data"]);
+        assert_eq!(backup.paths, vec!["/var/lib/bichon-archive"]);
     }
 
     #[test]
