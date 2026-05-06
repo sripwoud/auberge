@@ -71,13 +71,16 @@ macOS does not have native DoT support in System Preferences. Use a DNS profile 
 **Option B — [dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy)**
 
 1. Install via Homebrew: `brew install dnscrypt-proxy`.
-2. In `/usr/local/etc/dnscrypt-proxy/dnscrypt-proxy.toml`, add under `[static]`:
+2. In `/usr/local/etc/dnscrypt-proxy/dnscrypt-proxy.toml`, set:
    ```toml
-   [static.blocky]
-   stamp = "sdns://..."  # generate with https://dnscrypt.info/stamps
+   listen_addresses = ['127.0.0.1:53']
+   server_names = ['blocky']
+
+   [static.'blocky']
+   stamp = 'sdns://...'  # generate at https://dnscrypt.info/stamps with protocol=DoT, host=blocky.<domain>, port=853
    ```
-   Or use the `doh_servers` / `dot_servers` option pointing at `blocky.<domain>:853`.
 3. Start the service: `sudo brew services start dnscrypt-proxy`.
+4. Point macOS DNS at `127.0.0.1` (**System Settings → Network → Wi-Fi → Details → DNS**).
 
 ## Related
 
