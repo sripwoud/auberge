@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/sripwoud/auberge/compare/v0.10.4...v0.11.0) - 2026-05-06
+
+### Added
+
+- *(blocky)* publish public A record so DoT is reachable off-tailnet ([#321](https://github.com/sripwoud/auberge/pull/321))
+- *(dns)* [**breaking**] skip tailnet-only apps in dns set-all ([#317](https://github.com/sripwoud/auberge/pull/317))
+
+### Other
+
+- *(ansible)* move blocky role into infrastructure.yml ([#318](https://github.com/sripwoud/auberge/pull/318))
+- *(adr)* record substrate-app placement convention
+
 ## [0.10.4](https://github.com/sripwoud/auberge/compare/v0.10.3...v0.10.4) - 2026-05-05
 
 ### Added
