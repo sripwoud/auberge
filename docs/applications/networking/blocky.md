@@ -19,6 +19,7 @@ Auberge configures Blocky to:
 - Listen on port 53 on the Tailscale interface for tailnet DNS queries
 - Listen on port 5353 for general DNS queries
 - Use upstream DNS resolvers (Cloudflare, Google)
+- Publish a public Cloudflare A record at `blocky.<domain>` pointing at the host's public IPv4
 
 ## Tailscale DNS Integration
 
@@ -32,6 +33,50 @@ The deployment sequence:
 4. MagicDNS is enabled to activate DNS override for all tailnet clients
 
 See [Environment Variables](../../configuration/environment-variables.md#tailscale-api-key) for API key setup.
+
+## Off-Tailnet DNS over TLS (DoT) Setup
+
+Blocky is reachable as a DNS-over-TLS (DoT) resolver from anywhere on the internet — no Tailscale required. Use this to get ad-blocking and family-safe filtering on any device.
+
+**Resolver hostname:** `blocky.<domain>` (port 853)
+
+> **Note:** Only DoT (port 853) is exposed publicly. Plain UDP/TCP port 53 is restricted to the tailnet interface.
+
+### iOS
+
+1. Go to **Settings → General → VPN & Device Management → DNS**.
+2. Tap **Add Configuration…** → choose **Encrypted (DNS over TLS)**.
+3. Enter the server URL: `tls://blocky.<domain>`.
+4. Tap **Save**, then activate the configuration.
+
+### Android
+
+Android 9 and later has a built-in "Private DNS" setting:
+
+1. Go to **Settings → Network & internet → Private DNS**.
+2. Select **Private DNS provider hostname**.
+3. Enter: `blocky.<domain>`.
+4. Tap **Save**.
+
+### macOS
+
+macOS does not have native DoT support in System Preferences. Use a DNS profile or a third-party tool:
+
+**Option A — DNS configuration profile (recommended)**
+
+1. Create a `.mobileconfig` profile referencing `tls://blocky.<domain>` on port 853.
+2. Install the profile via **System Preferences → Profiles** (double-click the `.mobileconfig` file).
+
+**Option B — [dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy)**
+
+1. Install via Homebrew: `brew install dnscrypt-proxy`.
+2. In `/usr/local/etc/dnscrypt-proxy/dnscrypt-proxy.toml`, add under `[static]`:
+   ```toml
+   [static.blocky]
+   stamp = "sdns://..."  # generate with https://dnscrypt.info/stamps
+   ```
+   Or use the `doh_servers` / `dot_servers` option pointing at `blocky.<domain>:853`.
+3. Start the service: `sudo brew services start dnscrypt-proxy`.
 
 ## Related
 
