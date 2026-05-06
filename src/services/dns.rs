@@ -34,27 +34,41 @@ pub struct DnsService {
     zone_id: String,
 }
 
+#[derive(Debug)]
 pub struct SubdomainEntry {
     pub subdomain: String,
     pub ip_override: Option<String>,
 }
 
-/// Discovers Public-App subdomains from sibling Playbook Metas.
-/// Filters out tailnet-only Apps; mirrors how Blocky derives `customDNS`
-/// from the same metas (ADR-0003).
-pub fn discover_subdomains() -> HashMap<String, SubdomainEntry> {
+#[derive(Default)]
+pub struct DiscoveredSubdomains {
+    pub public: HashMap<String, SubdomainEntry>,
+    pub tailnet_only: HashMap<String, SubdomainEntry>,
+}
+
+/// Walks the playbooks directory once and returns App subdomains partitioned
+/// by ADR-0003 publication channel:
+/// - `public`     — Cloudflare A records (subject to per-app `_tailscale_ip` override)
+/// - `tailnet_only` — Blocky `customDNS` map (no Cloudflare A record ever)
+///
+/// Metas with an empty/missing `subdomain` are silently dropped; the integrity
+/// test in this module (`test_every_app_meta_has_subdomain_unless_tailnet_only_or_excluded`)
+/// enforces that App metas declare a non-empty `subdomain`, so the silent drop
+/// is unreachable for in-tree metas.
+pub fn discover_all_subdomains() -> DiscoveredSubdomains {
     let assets = match AnsibleAssets::prepare() {
         Ok(a) => a,
-        Err(_) => return HashMap::new(),
+        Err(_) => return DiscoveredSubdomains::default(),
     };
     let entries = match std::fs::read_dir(assets.playbooks_dir()) {
         Ok(e) => e,
-        Err(_) => return HashMap::new(),
+        Err(_) => return DiscoveredSubdomains::default(),
     };
 
     let config = Config::load().ok();
+    let mut public: HashMap<String, SubdomainEntry> = HashMap::new();
+    let mut tailnet_only: HashMap<String, SubdomainEntry> = HashMap::new();
 
-    let mut result: HashMap<String, SubdomainEntry> = HashMap::new();
     for entry in entries.flatten() {
         let path = entry.path();
         let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
@@ -66,28 +80,43 @@ pub fn discover_subdomains() -> HashMap<String, SubdomainEntry> {
         let Ok(meta) = PlaybookMeta::load(&path) else {
             continue;
         };
-        if meta.tailnet_only {
-            continue;
-        }
-        let Some(subdomain) = meta.subdomain.filter(|s| !s.is_empty()) else {
+        let Some(subdomain) = meta.subdomain.clone().filter(|s| !s.is_empty()) else {
             continue;
         };
 
-        let ip_override = config.as_ref().and_then(|c| {
-            let key = format!("{}_tailscale_ip", app);
-            c.get(&key).filter(|v| !v.is_empty())
-        });
-
-        result.insert(
-            app.to_string(),
-            SubdomainEntry {
-                subdomain,
-                ip_override,
-            },
-        );
+        if meta.tailnet_only {
+            tailnet_only.insert(
+                app.to_string(),
+                SubdomainEntry {
+                    subdomain,
+                    ip_override: None,
+                },
+            );
+        } else {
+            let ip_override = config.as_ref().and_then(|c| {
+                let key = format!("{}_tailscale_ip", app);
+                c.get(&key).filter(|v| !v.is_empty())
+            });
+            public.insert(
+                app.to_string(),
+                SubdomainEntry {
+                    subdomain,
+                    ip_override,
+                },
+            );
+        }
     }
 
-    result
+    DiscoveredSubdomains {
+        public,
+        tailnet_only,
+    }
+}
+
+/// Public-App subdomains only. Thin wrapper for callers that don't need the
+/// tailnet-only half (status, interactive subdomain pickers, etc.).
+pub fn discover_subdomains() -> HashMap<String, SubdomainEntry> {
+    discover_all_subdomains().public
 }
 
 /// Returns `true` if `ip` is in the Tailscale CGNAT range (100.64.0.0/10).

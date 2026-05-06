@@ -103,8 +103,20 @@ pub enum DnsCommands {
         alias = "sa",
         about = "Batch create A records for all app subdomains",
         long_about = "Interactively or automatically create DNS A records for all configured \
-                      app subdomains (blocky, calibre, freshrss, etc.) pointing to a selected \
-                      host's IP address."
+                      app subdomains pointing to a selected host's IP address.\n\n\
+                      Tailnet-only apps (playbook meta `tailnet_only: true`) are handled \
+                      automatically per ADR-0003:\n\n\
+                      • Implicit discovery (no --subdomains): tailnet-only apps are skipped \
+                        automatically; a grouped info line is emitted to stderr.\n\
+                      • Explicit target (--subdomains names a tailnet-only app): hard-error \
+                        before any Cloudflare API call; use `auberge deploy <app>` instead.\n\n\
+                      EXAMPLES:\n  \
+                      # Publish all Public Apps; tailnet-only apps are skipped automatically\n  \
+                      auberge dns set-all --host auberge --production\n\n  \
+                      # Dry-run preview\n  \
+                      auberge dns set-all --host auberge --dry-run\n\n  \
+                      # Only specific apps (all must be public)\n  \
+                      auberge dns set-all --host auberge --subdomains freshrss,baikal"
     )]
     SetAll {
         #[arg(
@@ -525,6 +537,20 @@ pub async fn run_dns_migrate(
     Ok(())
 }
 
+#[derive(Serialize, Debug)]
+struct SkippedRow {
+    app: String,
+    subdomain: String,
+    reason: String,
+}
+
+#[derive(Serialize)]
+struct SetAllOutput {
+    created: Vec<SetAllRow>,
+    skipped: Vec<SkippedRow>,
+    failed: Vec<SetAllRow>,
+}
+
 #[derive(Serialize)]
 struct SetAllRow {
     subdomain: String,
@@ -533,6 +559,78 @@ struct SetAllRow {
     success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+type SubdomainMap = std::collections::HashMap<String, crate::services::dns::SubdomainEntry>;
+type PartitionResult = (
+    Vec<(String, crate::services::dns::SubdomainEntry)>,
+    Vec<SkippedRow>,
+);
+
+/// Partitions discovery output into the "create" and "skip" lists, applying
+/// `--subdomains` / `--skip` operator intent and ADR-0003 invariants:
+///
+/// - Implicit (`subdomains` empty): all `--skip`-filtered tailnet-only apps
+///   are skipped; remaining public apps are scheduled to create. `to_skip`
+///   is sorted alphabetically by app name for deterministic output.
+/// - Explicit (`subdomains` non-empty): if any non-`--skip`-excluded entry
+///   names a tailnet-only app, hard-error before any Cloudflare API call.
+///   `to_skip` is empty in this branch — explicit means "operator owns it".
+///
+/// `public_discovered` is mutated in place (drained of selected entries) so
+/// the caller still owns the residual map if it ever needs it.
+fn partition_for_set_all(
+    subdomains: Vec<String>,
+    skip_set: &std::collections::HashSet<String>,
+    public_discovered: &mut SubdomainMap,
+    tailnet_only_discovered: &SubdomainMap,
+) -> Result<PartitionResult> {
+    if !subdomains.is_empty() {
+        let offenders: Vec<(String, String)> = subdomains
+            .iter()
+            .filter(|s| !skip_set.contains(*s))
+            .filter_map(|s| {
+                tailnet_only_discovered
+                    .get(s)
+                    .map(|entry| (s.clone(), entry.subdomain.clone()))
+            })
+            .collect();
+        if !offenders.is_empty() {
+            let apps_list = offenders
+                .iter()
+                .map(|(app, sub)| format!("  • {} (subdomain: {})", app, sub))
+                .collect::<Vec<_>>()
+                .join("\n");
+            eyre::bail!(
+                "tailnet-only apps cannot have Cloudflare A records (ADR-0003):\n{}\n\n\
+                 DNS for tailnet-only apps is published via Blocky on `auberge deploy <app>`.",
+                apps_list
+            );
+        }
+        let to_process = subdomains
+            .into_iter()
+            .filter(|s| !skip_set.contains(s))
+            .filter_map(|s| public_discovered.remove(&s).map(|entry| (s, entry)))
+            .collect();
+        Ok((to_process, vec![]))
+    } else {
+        let mut skip_vec: Vec<SkippedRow> = tailnet_only_discovered
+            .iter()
+            .filter(|(k, _)| !skip_set.contains(*k))
+            .map(|(app, entry)| SkippedRow {
+                app: app.clone(),
+                subdomain: entry.subdomain.clone(),
+                reason: "tailnet_only".to_string(),
+            })
+            .collect();
+        skip_vec.sort_by(|a, b| a.app.cmp(&b.app));
+
+        let to_process = public_discovered
+            .drain()
+            .filter(|(k, _)| !skip_set.contains(k))
+            .collect();
+        Ok((to_process, skip_vec))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -548,8 +646,7 @@ pub async fn run_dns_set_all(
     continue_on_error: bool,
     production: bool,
 ) -> Result<()> {
-    use crate::hosts::HostManager;
-    use crate::services::dns::{SubdomainEntry, discover_subdomains};
+    use crate::services::dns::discover_all_subdomains;
     use crate::services::inventory::discover_hosts_with_ips;
     use std::collections::HashSet;
 
@@ -580,86 +677,92 @@ pub async fn run_dns_set_all(
         _ => unreachable!(),
     };
 
-    // When `--host` is used, look up the host's cached Tailscale IP so we can
-    // auto-fill `ip_override` for tailnet-only apps. With `--ip` the user is
-    // being explicit; we don't second-guess.
-    //
-    // `load_hosts()?` propagates parse/IO errors so a malformed `hosts.toml`
-    // surfaces here instead of being silently treated as "no cached IP" —
-    // missing-host vs malformed-file diverge intentionally.
-    let host_tailscale_ip: Option<String> = if let Some(name) = host.as_deref() {
-        HostManager::load_hosts()?
-            .into_iter()
-            .find(|h| h.name == name)
-            .and_then(|h| h.tailscale_ip)
-    } else {
-        None
-    };
+    let mut discovered = discover_all_subdomains();
 
-    let mut discovered = discover_subdomains();
-
-    if strict && discovered.is_empty() {
+    if strict && discovered.public.is_empty() {
         eyre::bail!("No subdomain environment variables found");
     }
 
-    let skip_set: HashSet<_> = skip.iter().cloned().collect();
+    let skip_set: HashSet<String> = skip.iter().cloned().collect();
 
-    let mut subdomains_to_process: Vec<(String, SubdomainEntry)> = if !subdomains.is_empty() {
-        subdomains
-            .into_iter()
-            .filter(|s| !skip_set.contains(s))
-            .filter_map(|s| discovered.remove(&s).map(|entry| (s, entry)))
-            .collect()
-    } else {
-        discovered
-            .into_iter()
-            .filter(|(k, _)| !skip_set.contains(k))
-            .collect()
-    };
+    let (mut subdomains_to_process, to_skip) = partition_for_set_all(
+        subdomains,
+        &skip_set,
+        &mut discovered.public,
+        &discovered.tailnet_only,
+    )?;
 
     if subdomains_to_process.is_empty() {
+        let message = if to_skip.is_empty() {
+            "No subdomains to process"
+        } else {
+            "All discovered apps are tailnet-only; nothing to create."
+        };
         match output {
-            OutputFormat::Json => println!("[]"),
-            OutputFormat::Human => output::info("No subdomains to process"),
+            OutputFormat::Json => {
+                let result = SetAllOutput {
+                    created: vec![],
+                    skipped: to_skip,
+                    failed: vec![],
+                };
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            }
+            OutputFormat::Human => output::info(message),
         }
         return Ok(());
     }
 
-    // Apply the tailnet-only fallback only to records that survived `--skip`
-    // / `--subdomains` filtering — otherwise an excluded tailnet-only app with
-    // no cached IP would still abort the run.
-    //
-    // Skip entirely when `--ip` was used: the user is being explicit and the
-    // host-cache fallback should not second-guess (or bail on) that.
-    if host.is_some() {
-        apply_tailnet_only_fallback(&mut subdomains_to_process, host_tailscale_ip.as_deref())?;
-    }
+    // Sort `subdomains_to_process` for deterministic output (`to_skip` is
+    // already sorted within the implicit-discovery branch above, since it is
+    // built in one place).  Both sorts happen before any output so callers
+    // always see alphabetical order regardless of HashMap iteration order.
+    subdomains_to_process.sort_by(|(a, _), (b, _)| a.cmp(b));
 
     if matches!(output, OutputFormat::Human) {
         print_mode_banner();
-        if dry_run {
-            output::info("DRY RUN - Would create the following A records:");
+        if to_skip.is_empty() {
+            if dry_run {
+                output::info(&format!(
+                    "DRY RUN - Would create {} A record(s):",
+                    subdomains_to_process.len()
+                ));
+            } else {
+                output::info(&format!(
+                    "Creating {} A record(s):",
+                    subdomains_to_process.len()
+                ));
+            }
+        } else if dry_run {
+            output::info(&format!(
+                "DRY RUN - Would create {} A record(s), skipping {} (tailnet-only):",
+                subdomains_to_process.len(),
+                to_skip.len()
+            ));
         } else {
-            output::info("Creating the following A records:");
+            output::info(&format!(
+                "Creating {} A record(s), skipping {} (tailnet-only):",
+                subdomains_to_process.len(),
+                to_skip.len()
+            ));
         }
 
+        eprintln!("\nTo create:");
         for (_, entry) in &subdomains_to_process {
             let effective_ip = entry.ip_override.as_deref().unwrap_or(&target_ip);
-            if entry.ip_override.is_some() {
-                eprintln!(
-                    "  • {}.{} → {} (tailnet)",
-                    entry.subdomain,
-                    service.domain(),
-                    effective_ip
-                );
-            } else {
-                eprintln!(
-                    "  • {}.{} → {}",
-                    entry.subdomain,
-                    service.domain(),
-                    effective_ip
-                );
-            }
+            eprintln!(
+                "  • {}.{} → {}",
+                entry.subdomain,
+                service.domain(),
+                effective_ip
+            );
+        }
+
+        if !to_skip.is_empty() {
+            let names: Vec<&str> = to_skip.iter().map(|r| r.app.as_str()).collect();
+            eprintln!(
+                "\nSkipping (tailnet-only — published via Blocky):\n  • {}",
+                names.join(", ")
+            );
         }
     }
 
@@ -677,7 +780,8 @@ pub async fn run_dns_set_all(
         return Ok(());
     }
 
-    let mut rows: Vec<SetAllRow> = Vec::new();
+    let mut created_rows: Vec<SetAllRow> = Vec::new();
+    let mut failed_rows: Vec<SetAllRow> = Vec::new();
     let mut succeeded = 0;
     let mut failed = 0;
 
@@ -693,7 +797,7 @@ pub async fn run_dns_set_all(
                 if matches!(output, OutputFormat::Human) {
                     output::success(&format!("Created {}", fqdn));
                 }
-                rows.push(SetAllRow {
+                created_rows.push(SetAllRow {
                     subdomain: entry.subdomain.clone(),
                     fqdn,
                     ip: effective_ip.to_string(),
@@ -706,7 +810,7 @@ pub async fn run_dns_set_all(
                 if matches!(output, OutputFormat::Human) {
                     eprintln!("Failed {}: {}", fqdn, e);
                 }
-                rows.push(SetAllRow {
+                failed_rows.push(SetAllRow {
                     subdomain: entry.subdomain.clone(),
                     fqdn,
                     ip: effective_ip.to_string(),
@@ -727,24 +831,28 @@ pub async fn run_dns_set_all(
 
     match output {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&rows)?);
+            let result = SetAllOutput {
+                created: created_rows,
+                skipped: to_skip,
+                failed: failed_rows,
+            };
+            println!("{}", serde_json::to_string_pretty(&result)?);
         }
         OutputFormat::Human => {
-            let has_overrides = subdomains_to_process
-                .iter()
-                .any(|(_, e)| e.ip_override.is_some());
-            if has_overrides {
-                output::success(&format!(
-                    "Successfully created {}/{} A records (some with tailnet IP overrides)",
-                    succeeded,
-                    subdomains_to_process.len(),
-                ));
-            } else {
+            if to_skip.is_empty() {
                 output::success(&format!(
                     "Successfully created {}/{} A records pointing to {}",
                     succeeded,
                     subdomains_to_process.len(),
                     target_ip
+                ));
+            } else {
+                output::success(&format!(
+                    "Successfully created {}/{} A records pointing to {} (skipped {} tailnet-only)",
+                    succeeded,
+                    subdomains_to_process.len(),
+                    target_ip,
+                    to_skip.len()
                 ));
             }
         }
@@ -760,84 +868,10 @@ pub async fn run_dns_set_all(
 
 #[cfg(test)]
 mod tests {
-    use super::apply_tailnet_only_fallback;
     use super::{
-        DnsDeleteResult, DnsRecordRow, DnsStatusJson, MigrationRow, SetAllRow, StatusARecord,
+        DnsDeleteResult, DnsRecordRow, DnsStatusJson, MigrationRow, SetAllOutput, SetAllRow,
+        SkippedRow, StatusARecord,
     };
-    use crate::services::dns::SubdomainEntry;
-
-    fn entries(items: &[(&str, &str, Option<&str>)]) -> Vec<(String, SubdomainEntry)> {
-        items
-            .iter()
-            .map(|(app, subdomain, ip_override)| {
-                (
-                    app.to_string(),
-                    SubdomainEntry {
-                        subdomain: subdomain.to_string(),
-                        ip_override: ip_override.map(String::from),
-                    },
-                )
-            })
-            .collect()
-    }
-
-    fn find<'a>(v: &'a [(String, SubdomainEntry)], app: &str) -> &'a SubdomainEntry {
-        &v.iter().find(|(a, _)| a == app).unwrap().1
-    }
-
-    #[test]
-    fn fills_tailnet_only_app_when_host_has_tailscale_ip() {
-        let mut v = entries(&[("bichon", "bichon", None)]);
-        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
-        assert_eq!(
-            find(&v, "bichon").ip_override.as_deref(),
-            Some("100.64.0.5")
-        );
-    }
-
-    #[test]
-    fn preserves_explicit_override_for_tailnet_only_app() {
-        let mut v = entries(&[("bichon", "bichon", Some("100.42.42.42"))]);
-        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
-        assert_eq!(
-            find(&v, "bichon").ip_override.as_deref(),
-            Some("100.42.42.42"),
-        );
-    }
-
-    #[test]
-    fn leaves_public_app_unchanged_even_with_host_tailscale_ip() {
-        let mut v = entries(&[("freshrss", "rss", None)]);
-        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
-        assert!(find(&v, "freshrss").ip_override.is_none());
-    }
-
-    #[test]
-    fn fails_fast_when_tailnet_only_app_has_no_tailscale_ip() {
-        let mut v = entries(&[("bichon", "bichon", None)]);
-        let err = apply_tailnet_only_fallback(&mut v, None).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("bichon"));
-        assert!(msg.contains("tailnet-only"));
-    }
-
-    #[test]
-    fn ignores_apps_with_missing_meta_files() {
-        let mut v = entries(&[("nonexistent_app_xyz", "nonexistent_app_xyz", None)]);
-        apply_tailnet_only_fallback(&mut v, Some("100.64.0.5")).unwrap();
-        assert!(find(&v, "nonexistent_app_xyz").ip_override.is_none());
-    }
-
-    #[test]
-    fn does_not_touch_entries_outside_the_processed_slice() {
-        // Simulates the post-filter behavior: when bichon was excluded via
-        // --skip, it's not in the slice, so even without a host_tailscale_ip
-        // we don't bail.
-        let mut v = entries(&[("freshrss", "rss", None)]);
-        apply_tailnet_only_fallback(&mut v, None).unwrap();
-        assert!(find(&v, "freshrss").ip_override.is_none());
-    }
-
     #[test]
     fn dns_record_row_serialises_to_json() {
         let row = DnsRecordRow {
@@ -933,40 +967,259 @@ mod tests {
                 .contains("\"deleted\":false")
         );
     }
-}
 
-/// For each subdomain entry being processed whose playbook meta declares
-/// `tailnet_only: true` and which lacks an explicit `<app>_tailscale_ip`
-/// override, fill `ip_override` from the host's cached Tailscale IP.
-///
-/// Bails when a tailnet-only app has no resolvable Tailscale IP — pointing
-/// such an app at the host's public IP would be silently broken (Caddy binds
-/// only to the Tailscale interface), so failing fast surfaces the missing
-/// configuration to the user.
-fn apply_tailnet_only_fallback(
-    entries: &mut [(String, crate::services::dns::SubdomainEntry)],
-    host_tailscale_ip: Option<&str>,
-) -> Result<()> {
-    use crate::playbook_meta::PlaybookMeta;
-
-    for (app, entry) in entries.iter_mut() {
-        if entry.ip_override.is_some() {
-            continue;
-        }
-        let Some(meta) = PlaybookMeta::load_for_app(app)? else {
-            continue;
+    // Lock the `SetAllOutput` JSON shape: top-level object with `created`,
+    // `skipped`, and `failed` arrays, parallel to
+    // `dns_delete_result_distinguishes_real_delete_from_noop`.
+    #[test]
+    fn set_all_output_serialises_with_created_skipped_failed_arrays() {
+        let output = SetAllOutput {
+            created: vec![SetAllRow {
+                subdomain: "rss".to_string(),
+                fqdn: "rss.example.com".to_string(),
+                ip: "1.2.3.4".to_string(),
+                success: true,
+                error: None,
+            }],
+            skipped: vec![SkippedRow {
+                app: "bichon".to_string(),
+                subdomain: "bichon".to_string(),
+                reason: "tailnet_only".to_string(),
+            }],
+            failed: vec![],
         };
-        if !meta.tailnet_only {
-            continue;
+        let json = serde_json::to_string(&output).unwrap();
+        assert!(json.contains("\"created\":[{"));
+        assert!(json.contains("\"skipped\":[{"));
+        assert!(json.contains("\"failed\":[]"));
+        assert!(json.contains("\"reason\":\"tailnet_only\""));
+        assert!(json.contains("\"app\":\"bichon\""));
+        assert!(json.contains("\"subdomain\":\"bichon\""));
+    }
+
+    #[test]
+    fn set_all_output_all_tailnet_only_produces_empty_created_and_failed() {
+        let output = SetAllOutput {
+            created: vec![],
+            skipped: vec![
+                SkippedRow {
+                    app: "bichon".to_string(),
+                    subdomain: "bichon".to_string(),
+                    reason: "tailnet_only".to_string(),
+                },
+                SkippedRow {
+                    app: "paperless".to_string(),
+                    subdomain: "paperless".to_string(),
+                    reason: "tailnet_only".to_string(),
+                },
+            ],
+            failed: vec![],
+        };
+        let json = serde_json::to_string(&output).unwrap();
+        assert!(json.contains("\"created\":[]"));
+        assert!(json.contains("\"failed\":[]"));
+        assert!(json.contains("\"bichon\""));
+        assert!(json.contains("\"paperless\""));
+    }
+
+    #[test]
+    fn skipped_row_serialises_with_app_subdomain_reason() {
+        let row = SkippedRow {
+            app: "cockpit".to_string(),
+            subdomain: "cockpit".to_string(),
+            reason: "tailnet_only".to_string(),
+        };
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(json.contains("\"app\":\"cockpit\""));
+        assert!(json.contains("\"subdomain\":\"cockpit\""));
+        assert!(json.contains("\"reason\":\"tailnet_only\""));
+    }
+
+    #[test]
+    fn discover_all_subdomains_partitions_tailnet_only() {
+        use crate::services::dns::discover_all_subdomains;
+        let discovered = discover_all_subdomains();
+        for app in ["bichon", "cockpit", "paperless"] {
+            assert!(
+                discovered.tailnet_only.contains_key(app),
+                "tailnet-only app '{app}' must appear in tailnet-only partition"
+            );
+            assert!(
+                !discovered.public.contains_key(app),
+                "tailnet-only app '{app}' must not appear in public partition"
+            );
         }
-        match host_tailscale_ip {
-            Some(ip) => entry.ip_override = Some(ip.to_string()),
-            None => eyre::bail!(
-                "App '{app}' is tailnet-only but no Tailscale IP is available. \
-                 Either pass --host (after running `auberge host detect-tailscale-ip <name>`), \
-                 or set `{app}_tailscale_ip` in config.toml."
-            ),
+        for app in ["freshrss", "baikal", "navidrome"] {
+            assert!(
+                discovered.public.contains_key(app),
+                "public app '{app}' must appear in public partition"
+            );
+            assert!(
+                !discovered.tailnet_only.contains_key(app),
+                "public app '{app}' must not appear in tailnet-only partition"
+            );
         }
     }
-    Ok(())
+
+    fn entry(subdomain: &str) -> crate::services::dns::SubdomainEntry {
+        crate::services::dns::SubdomainEntry {
+            subdomain: subdomain.to_string(),
+            ip_override: None,
+        }
+    }
+
+    #[test]
+    fn partition_implicit_partitions_public_and_tailnet_only() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = [("freshrss".to_string(), entry("rss"))]
+            .into_iter()
+            .collect();
+        let tailnet: HashMap<_, _> = [("bichon".to_string(), entry("bichon"))]
+            .into_iter()
+            .collect();
+        let skip_set: HashSet<String> = HashSet::new();
+
+        let (to_process, skipped) =
+            super::partition_for_set_all(vec![], &skip_set, &mut public, &tailnet).unwrap();
+
+        assert_eq!(to_process.len(), 1);
+        assert_eq!(to_process[0].0, "freshrss");
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].app, "bichon");
+        assert_eq!(skipped[0].subdomain, "bichon");
+        assert_eq!(skipped[0].reason, "tailnet_only");
+    }
+
+    #[test]
+    fn partition_implicit_skip_excludes_tailnet_only_from_skipped_list() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = HashMap::new();
+        let tailnet: HashMap<_, _> = [
+            ("bichon".to_string(), entry("bichon")),
+            ("paperless".to_string(), entry("paperless")),
+        ]
+        .into_iter()
+        .collect();
+        let skip_set: HashSet<String> = ["bichon".to_string()].into_iter().collect();
+
+        let (_, skipped) =
+            super::partition_for_set_all(vec![], &skip_set, &mut public, &tailnet).unwrap();
+
+        let skipped_names: Vec<&str> = skipped.iter().map(|r| r.app.as_str()).collect();
+        assert_eq!(skipped_names, vec!["paperless"]);
+    }
+
+    #[test]
+    fn partition_implicit_skipped_list_is_sorted_alphabetically() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = HashMap::new();
+        let tailnet: HashMap<_, _> = [
+            ("paperless".to_string(), entry("paperless")),
+            ("bichon".to_string(), entry("bichon")),
+            ("cockpit".to_string(), entry("cockpit")),
+        ]
+        .into_iter()
+        .collect();
+        let skip_set: HashSet<String> = HashSet::new();
+
+        let (_, skipped) =
+            super::partition_for_set_all(vec![], &skip_set, &mut public, &tailnet).unwrap();
+
+        let names: Vec<&str> = skipped.iter().map(|r| r.app.as_str()).collect();
+        assert_eq!(names, vec!["bichon", "cockpit", "paperless"]);
+    }
+
+    #[test]
+    fn partition_explicit_tailnet_only_target_errors_before_returning() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = HashMap::new();
+        let tailnet: HashMap<_, _> = [("paperless".to_string(), entry("docs"))]
+            .into_iter()
+            .collect();
+        let skip_set: HashSet<String> = HashSet::new();
+
+        let err = super::partition_for_set_all(
+            vec!["paperless".to_string()],
+            &skip_set,
+            &mut public,
+            &tailnet,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("paperless"), "error must name the offender");
+        assert!(
+            msg.contains("subdomain: docs"),
+            "error must surface effective subdomain"
+        );
+        assert!(msg.contains("ADR-0003"), "error must reference the ADR");
+        assert!(
+            msg.contains("auberge deploy"),
+            "error must point to the corrective action"
+        );
+    }
+
+    #[test]
+    fn partition_explicit_skip_excludes_tailnet_only_target_avoids_error() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = HashMap::new();
+        let tailnet: HashMap<_, _> = [("bichon".to_string(), entry("bichon"))]
+            .into_iter()
+            .collect();
+        let skip_set: HashSet<String> = ["bichon".to_string()].into_iter().collect();
+
+        let (to_process, skipped) = super::partition_for_set_all(
+            vec!["bichon".to_string()],
+            &skip_set,
+            &mut public,
+            &tailnet,
+        )
+        .unwrap();
+        assert!(to_process.is_empty());
+        assert!(
+            skipped.is_empty(),
+            "explicit branch returns empty skip list — operator owns the choice"
+        );
+    }
+
+    #[test]
+    fn partition_explicit_public_only_returns_empty_skip() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = [
+            ("freshrss".to_string(), entry("rss")),
+            ("baikal".to_string(), entry("baikal")),
+        ]
+        .into_iter()
+        .collect();
+        let tailnet: HashMap<_, _> = HashMap::new();
+        let skip_set: HashSet<String> = HashSet::new();
+
+        let (to_process, skipped) = super::partition_for_set_all(
+            vec!["freshrss".to_string()],
+            &skip_set,
+            &mut public,
+            &tailnet,
+        )
+        .unwrap();
+        assert_eq!(to_process.len(), 1);
+        assert_eq!(to_process[0].0, "freshrss");
+        assert!(skipped.is_empty());
+    }
+
+    #[test]
+    fn partition_explicit_unknown_app_silently_dropped() {
+        use std::collections::{HashMap, HashSet};
+        let mut public: HashMap<_, _> = HashMap::new();
+        let tailnet: HashMap<_, _> = HashMap::new();
+        let skip_set: HashSet<String> = HashSet::new();
+
+        let (to_process, skipped) = super::partition_for_set_all(
+            vec!["nonexistent".to_string()],
+            &skip_set,
+            &mut public,
+            &tailnet,
+        )
+        .unwrap();
+        assert!(to_process.is_empty());
+        assert!(skipped.is_empty());
+    }
 }

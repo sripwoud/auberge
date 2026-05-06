@@ -128,32 +128,33 @@ auberge dns set-all --host myserver --output json
 ```
 
 ```json
-[
-  {
-    "subdomain": "freshrss",
-    "fqdn": "freshrss.example.com",
-    "ip": "192.168.1.10",
-    "success": true
-  },
-  {
-    "subdomain": "baikal",
-    "fqdn": "baikal.example.com",
-    "ip": "192.168.1.10",
-    "success": true
-  },
-  {
-    "subdomain": "calibre",
-    "fqdn": "calibre.example.com",
-    "ip": "192.168.1.10",
-    "success": false,
-    "error": "API rate limit exceeded"
-  }
-]
+{
+  "created": [
+    {
+      "subdomain": "freshrss",
+      "fqdn": "freshrss.example.com",
+      "ip": "192.168.1.10",
+      "success": true
+    },
+    {
+      "subdomain": "baikal",
+      "fqdn": "baikal.example.com",
+      "ip": "192.168.1.10",
+      "success": true
+    }
+  ],
+  "skipped": [
+    { "app": "bichon", "subdomain": "bichon", "reason": "tailnet_only" },
+    { "app": "cockpit", "subdomain": "cockpit", "reason": "tailnet_only" },
+    { "app": "paperless", "subdomain": "paperless", "reason": "tailnet_only" }
+  ],
+  "failed": []
+}
 ```
 
 JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr.
 
-**Schema**
+**Schema — `created` / `failed` entries**
 
 | Field     | Type    | Description                                                                                       |
 | --------- | ------- | ------------------------------------------------------------------------------------------------- |
@@ -162,6 +163,16 @@ JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr
 | ip        | string  | IP address the record points to                                                                   |
 | success   | boolean | Whether the Cloudflare create/update succeeded (load-bearing)                                     |
 | error     | string  | Error message when `success` is `false`; field is omitted when `success` is `true` (load-bearing) |
+
+**Schema — `skipped` entries**
+
+| Field     | Type   | Description                                   |
+| --------- | ------ | --------------------------------------------- |
+| app       | string | Canonical app name (Playbook Meta stem)       |
+| subdomain | string | Effective subdomain (operator-override-aware) |
+| reason    | string | Always `"tailnet_only"` (matches meta key)    |
+
+Both `created` and `skipped` arrays are sorted alphabetically by app name for deterministic output.
 
 ## Host Discovery
 
@@ -175,17 +186,36 @@ auberge dns set-all --host myserver
 
 ## Tailnet-only apps
 
-Apps whose playbook meta declares `tailnet_only: true` (currently `bichon` and `paperless`) need to point at the host's Tailscale CGNAT IP, not its public IP — Caddy binds those vhosts only to the Tailnet interface.
+Apps whose playbook meta declares `tailnet_only: true` (e.g., `bichon`, `cockpit`, and `paperless`) publish DNS exclusively via Blocky's `customDNS` map (ADR-0003). They do **not** receive public Cloudflare A records.
 
-The IP is resolved per-subdomain in this order:
+`dns set-all` handles them automatically by operator intent:
 
-1. `<app>_tailscale_ip` in `config.toml` (explicit per-app override)
-2. `host.tailscale_ip` from `hosts.toml` (cached via [`auberge host detect-tailscale-ip`](../host/detect-tailscale-ip.md), used only when `--host` is passed)
-3. The host's public IP (default for public apps)
+| How the app got there                  | Behavior                                                                                                              |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Implicit discovery (no `--subdomains`) | Skipped silently; a grouped info line is emitted: `Skipping (tailnet-only — published via Blocky): <app1>, <app2>, …` |
+| Explicit `--subdomains` target         | Hard-error before any Cloudflare API call. Use `auberge deploy <app>` instead.                                        |
 
-If a tailnet-only app has no resolvable Tailscale IP, `dns set-all` bails — silently pointing such DNS at the public IP would make the service unreachable.
+See [Tailnet-only Apps](../../dns/batch-operations.md#tailnet-only-apps) for the ADR-0003 context.
 
-See [Tailnet-only Subdomains](../../dns/batch-operations.md#tailnet-only-subdomains) for the full pattern.
+### Example — publish all Public Apps
+
+```bash
+# Publish all Public Apps; tailnet-only apps are skipped automatically
+auberge dns set-all --host auberge --production
+```
+
+```
+CLOUDFLARE DNS
+Creating 7 A record(s), skipping 3 (tailnet-only):
+
+To create:
+  • rss.example.com → 82.223.116.111
+  • calendrier.example.com → 82.223.116.111
+  ...
+
+Skipping (tailnet-only — published via Blocky):
+  • bichon, cockpit, paperless
+```
 
 ## Use Cases
 
