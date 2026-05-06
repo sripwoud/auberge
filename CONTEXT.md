@@ -53,7 +53,7 @@ The act of making an App's hostname resolvable, performed during deploy. For Pub
 _Avoid_: DNS setup, record creation, A-record provisioning
 
 **Backup Recipe**:
-The declarative `backup:` section of a Playbook Meta describing how to back up the App: services to stop, paths to rsync, optional database dump, optional `post_restore_command`. Pure data — no imperative branching.
+The declarative `backup:` section of a Playbook Meta describing how to back up the App: services to stop, paths to rsync, optional database dump, optional `post_restore_command`. Pure data — no imperative branching. Most Recipes capture an App's on-disk state directly; for Bichon the Recipe rsyncs an **Email Archive** instead, see ADR-0006.
 _Avoid_: Backup config, backup plan, strategy
 
 **Recipe Executor**:
@@ -63,6 +63,10 @@ _Avoid_: Backup runner, recipe runner
 **Backup Session**:
 The Rust module that orchestrates multiple Recipe Executor invocations across a Host's Apps, plus restic push and prune. Owns cross-recipe concerns; per-recipe semantics live in the Recipe Executor.
 _Avoid_: Backup job, backup workflow
+
+**Email Archive**:
+A Bichon-independent on-disk mirror of email messages, produced by an hourly systemd timer on the bichon Host that walks Bichon's REST API and writes one `.eml` per message under `/var/lib/bichon-archive/`, with a `.meta.json` sidecar capturing folder + tags. Distinct from a **Backup Recipe**: an Archive is consumable without Bichon (any MBOX/EML-aware client can read it), and is the _source_ the bichon Backup Recipe rsyncs — Bichon's encrypted internal store (`/opt/bichon/data`) is deliberately not backed up. See ADR-0006.
+_Avoid_: backup (collides with Backup Recipe), dump, export.
 
 **Progress**:
 The trait that runners (`AnsibleRunner`, `Recipe Executor`, `Backup Session`) emit events through. `TerminalProgress` is the production impl; tests use a `MockProgress`. Keeps runners free of terminal-output coupling.
