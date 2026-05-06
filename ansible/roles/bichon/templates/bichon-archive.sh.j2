@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${BICHON_BASE_URL:?required}"
+: "${BICHON_API_TOKEN:?required}"
+: "${BICHON_ARCHIVE_DIR:?required}"
+: "${BICHON_ARCHIVE_STATE_DIR:?required}"
+: "${BICHON_ARCHIVE_OVERLAP_SECONDS:={{ bichon_archive_overlap_seconds }}}"
+: "${BICHON_ARCHIVE_PAGE_SIZE:={{ bichon_archive_page_size }}}"
+
+OVERLAP_MS=$((BICHON_ARCHIVE_OVERLAP_SECONDS * 1000))
+TOTAL_FAILURES=0
+
+log() {
+  printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2
+}
+
+curl_auth() {
+  curl --silent --show-error --fail \
+    --retry 5 --retry-all-errors --retry-delay 10 --retry-max-time 300 \
+    --header "Authorization: Bearer ${BICHON_API_TOKEN}" \
+    "$@"
+}
+
+verify_auth() {
+  if ! curl_auth "${BICHON_BASE_URL}/api/v1/current-user" >/dev/null; then
+    log "auth check failed: GET /api/v1/current-user did not return 2xx"
+    exit 2
+  fi
+}
+
+list_accounts() {
+  curl_auth "${BICHON_BASE_URL}/api/v1/minimal-account-list?only_nosync=false"
+}
+
+search_messages() {
+  local account_id="$1" since_ms="$2" page="$3"
+  local payload
+  payload=$(jq -nc \
+    --argjson account_id "$account_id" \
+    --argjson since "$since_ms" \
+    --argjson page "$page" \
+    --argjson page_size "$BICHON_ARCHIVE_PAGE_SIZE" \
+    '{filter: {since: $since, account_ids: [$account_id]}, page: $page, page_size: $page_size, sort_by: "DATE", desc: false}')
+  curl_auth \
+    --header "Content-Type: application/json" \
+    --request POST \
+    --data "$payload" \
+    "${BICHON_BASE_URL}/api/v1/search-messages"
+}
+
+download_message() {
+  local account_id="$1" message_id="$2" out_path="$3"
+  local tmp
+  tmp=$(mktemp "${out_path}.XXXXXX")
+  if curl_auth --output "$tmp" \
+      "${BICHON_BASE_URL}/api/v1/download-message/${account_id}/${message_id}"; then
+    mv "$tmp" "$out_path"
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
+write_meta_sidecar() {
+  local out_path="$1" envelope_json="$2"
+  local tmp
+  tmp=$(mktemp "${out_path}.XXXXXX")
+  printf '%s' "$envelope_json" | jq '{folder: .mailbox_name, tags: .tags}' >"$tmp"
+  mv "$tmp" "$out_path"
+}
+
+read_cursor() {
+  local cursor_file="$1"
+  if [ -f "$cursor_file" ]; then
+    cat "$cursor_file"
+  else
+    printf '0'
+  fi
+}
+
+write_cursor() {
+  local cursor_file="$1" cursor_ms="$2"
+  local tmp
+  tmp=$(mktemp "${cursor_file}.XXXXXX")
+  printf '%s\n' "$cursor_ms" >"$tmp"
+  mv "$tmp" "$cursor_file"
+}
+
+sanitize_email() {
+  printf '%s' "$1" | tr '/' '_'
+}
+
+process_account() {
+  local account_id="$1" account_email="$2"
+  local safe_email cursor_file cursor_ms since_ms
+  safe_email=$(sanitize_email "$account_email")
+  cursor_file="${BICHON_ARCHIVE_STATE_DIR}/${safe_email}.cursor"
+  cursor_ms=$(read_cursor "$cursor_file")
+  since_ms=$((cursor_ms - OVERLAP_MS))
+  if [ "$since_ms" -lt 0 ]; then since_ms=0; fi
+
+  log "account=${safe_email} id=${account_id} cursor_ms=${cursor_ms} since_ms=${since_ms}"
+
+  local page=1
+  local total_pages=1
+  local max_date=$cursor_ms
+  local account_failures=0
+  local processed=0
+  local skipped=0
+  local body envelope id date_ms yyyy_mm out_dir eml_path meta_path
+
+  while [ "$page" -le "$total_pages" ]; do
+    if ! body=$(search_messages "$account_id" "$since_ms" "$page"); then
+      log "search_messages failed account=${safe_email} page=${page}"
+      account_failures=$((account_failures + 1))
+      break
+    fi
+    total_pages=$(printf '%s' "$body" | jq -r '.total_pages // 0')
+    if [ "$total_pages" -eq 0 ]; then break; fi
+
+    while IFS= read -r envelope; do
+      [ -z "$envelope" ] && continue
+      id=$(printf '%s' "$envelope" | jq -r '.id')
+      date_ms=$(printf '%s' "$envelope" | jq -r '.date')
+
+      if [ "$date_ms" -gt "$max_date" ]; then max_date=$date_ms; fi
+
+      yyyy_mm=$(date -u -d "@$((date_ms / 1000))" '+%Y/%m')
+      out_dir="${BICHON_ARCHIVE_DIR}/${safe_email}/${yyyy_mm}"
+      eml_path="${out_dir}/${id}.eml"
+      meta_path="${out_dir}/${id}.meta.json"
+
+      if [ -f "$eml_path" ] && [ -f "$meta_path" ]; then
+        skipped=$((skipped + 1))
+        continue
+      fi
+
+      mkdir -p "$out_dir"
+
+      if [ ! -f "$eml_path" ]; then
+        if ! download_message "$account_id" "$id" "$eml_path"; then
+          log "download failed account=${safe_email} id=${id}"
+          account_failures=$((account_failures + 1))
+          continue
+        fi
+      fi
+      write_meta_sidecar "$meta_path" "$envelope"
+      processed=$((processed + 1))
+    done < <(printf '%s' "$body" | jq -c '.items[]?')
+
+    page=$((page + 1))
+  done
+
+  log "account=${safe_email} processed=${processed} skipped=${skipped} failures=${account_failures}"
+
+  if [ "$account_failures" -eq 0 ]; then
+    write_cursor "$cursor_file" "$max_date"
+  fi
+
+  TOTAL_FAILURES=$((TOTAL_FAILURES + account_failures))
+}
+
+main() {
+  mkdir -p "$BICHON_ARCHIVE_DIR" "$BICHON_ARCHIVE_STATE_DIR"
+  verify_auth
+
+  local accounts_json id email
+  accounts_json=$(list_accounts)
+
+  while IFS=$'\t' read -r id email; do
+    [ -z "$id" ] && continue
+    process_account "$id" "$email"
+  done < <(printf '%s' "$accounts_json" | jq -r '.[] | "\(.id)\t\(.email)"')
+
+  log "total_failures=${TOTAL_FAILURES}"
+  if [ "$TOTAL_FAILURES" -gt 0 ]; then exit 1; fi
+}
+
+main "$@"

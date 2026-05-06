@@ -1,0 +1,20 @@
+[Unit]
+Description=Bichon email archive
+After=bichon.service
+Requires=bichon.service
+
+[Service]
+Type=oneshot
+User={{ bichon_sys_user }}
+Group={{ bichon_sys_group }}
+EnvironmentFile={{ bichon_archive_env_path }}
+ExecStart={{ bichon_archive_script_path }}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths={{ bichon_archive_dir }}
+UMask=0027
