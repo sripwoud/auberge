@@ -68,23 +68,6 @@ impl PlaybookMeta {
         serde_yaml::from_str(&contents)
             .wrap_err_with(|| format!("Failed to parse Playbook Meta from {}", path.display()))
     }
-
-    /// Returns the effective subdomain for this app: the `subdomain` field
-    /// from the meta if set, otherwise the `app` stem name as a fallback.
-    pub fn effective_subdomain(&self, app: &str) -> String {
-        self.subdomain.clone().unwrap_or_else(|| app.to_string())
-    }
-
-    /// Load the meta for an app/playbook by stem name (e.g. `"bichon"`).
-    /// Returns `Ok(None)` if no meta file exists.
-    pub fn load_for_app(app: &str) -> Result<Option<Self>> {
-        let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
-        let path = assets.playbooks_dir().join(format!("{app}.meta.yml"));
-        if !path.exists() {
-            return Ok(None);
-        }
-        Self::load(&path).map(Some)
-    }
 }
 
 #[cfg(test)]
