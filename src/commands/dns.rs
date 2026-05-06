@@ -633,7 +633,7 @@ pub async fn run_dns_set_all(
                 if let Some(meta) = PlaybookMeta::load_for_app(s)?
                     && meta.tailnet_only
                 {
-                    let effective_subdomain = meta.subdomain.unwrap_or_else(|| s.clone());
+                    let effective_subdomain = meta.effective_subdomain(s);
                     tailnet_only_offenders.push((s.clone(), effective_subdomain));
                 }
             }
@@ -695,7 +695,10 @@ pub async fn run_dns_set_all(
         return Ok(());
     }
 
-    // Sort for deterministic output.
+    // Sort `subdomains_to_process` for deterministic output (`to_skip` is
+    // already sorted within the implicit-discovery branch above, since it is
+    // built in one place).  Both sorts happen before any output so callers
+    // always see alphabetical order regardless of HashMap iteration order.
     subdomains_to_process.sort_by(|(a, _), (b, _)| a.cmp(b));
 
     if matches!(output, OutputFormat::Human) {
@@ -1064,7 +1067,7 @@ mod tests {
             .expect("paperless meta should exist");
         assert!(meta.tailnet_only);
         // The effective subdomain is what would appear in the error message.
-        let effective = meta.subdomain.unwrap_or_else(|| "paperless".to_string());
+        let effective = meta.effective_subdomain("paperless");
         assert!(
             !effective.is_empty(),
             "tailnet-only app must declare a subdomain for effective-subdomain surfacing"
