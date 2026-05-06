@@ -12,6 +12,8 @@
       tags: [infrastructure, shell, bash]
     - role: caddy
       tags: [infrastructure, web, proxy, caddy]
+    - role: blocky
+      tags: [infrastructure, network, dns, blocky]
     - role: headscale
       tags: [infrastructure, network, vpn, headscale]
       when: headscale_subdomain is defined and headscale_subdomain | length > 0
