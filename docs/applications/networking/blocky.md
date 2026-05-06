@@ -44,10 +44,11 @@ Blocky is reachable as a DNS-over-TLS (DoT) resolver from anywhere on the intern
 
 ### iOS
 
-1. Go to **Settings → General → VPN & Device Management → DNS**.
-2. Tap **Add Configuration…** → choose **Encrypted (DNS over TLS)**.
-3. Enter the server URL: `tls://blocky.<domain>`.
-4. Tap **Save**, then activate the configuration.
+iOS has no native UI to add arbitrary DoT servers — encrypted DNS is set via configuration profiles only.
+
+1. Generate a `.mobileconfig` profile referencing `tls://blocky.<domain>` on port 853 (e.g. via [Apple Configurator 2](https://apps.apple.com/app/apple-configurator-2/id1037126344) or [encrypted-dns](https://github.com/paulmillr/encrypted-dns)).
+2. AirDrop or email the file to the device, open it, and tap **Allow** to download the profile.
+3. Go to **Settings → General → VPN & Device Management → DNS** → select the installed profile → enable it.
 
 ### Android
 
