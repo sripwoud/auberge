@@ -39,6 +39,50 @@ pub struct SubdomainEntry {
     pub ip_override: Option<String>,
 }
 
+/// Discovers Tailnet-only App subdomains from Playbook Metas (ADR-0003).
+/// These apps publish DNS exclusively via Blocky's `customDNS` map and must
+/// never receive public Cloudflare A records.
+pub fn discover_tailnet_only_subdomains() -> HashMap<String, SubdomainEntry> {
+    let assets = match AnsibleAssets::prepare() {
+        Ok(a) => a,
+        Err(_) => return HashMap::new(),
+    };
+    let entries = match std::fs::read_dir(assets.playbooks_dir()) {
+        Ok(e) => e,
+        Err(_) => return HashMap::new(),
+    };
+
+    let mut result: HashMap<String, SubdomainEntry> = HashMap::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(app) = file_name.strip_suffix(".meta.yml") else {
+            continue;
+        };
+        let Ok(meta) = PlaybookMeta::load(&path) else {
+            continue;
+        };
+        if !meta.tailnet_only {
+            continue;
+        }
+        let Some(subdomain) = meta.subdomain.filter(|s| !s.is_empty()) else {
+            continue;
+        };
+
+        result.insert(
+            app.to_string(),
+            SubdomainEntry {
+                subdomain,
+                ip_override: None,
+            },
+        );
+    }
+
+    result
+}
+
 /// Discovers Public-App subdomains from sibling Playbook Metas.
 /// Filters out tailnet-only Apps; mirrors how Blocky derives `customDNS`
 /// from the same metas (ADR-0003).

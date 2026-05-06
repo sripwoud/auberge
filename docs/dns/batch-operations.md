@@ -48,55 +48,29 @@ Uses the provided IP address.
 
 5. **Create/update A records** in Cloudflare
 
-## Tailnet-only Subdomains
+## Tailnet-only Apps
 
-Some services should be reachable only by Tailscale network members while still having a real subdomain with valid HTTPS.
+Tailnet-only Apps (playbook meta `tailnet_only: true` — currently `bichon`, `cockpit`, and `paperless`) publish DNS exclusively via Blocky's `customDNS` map, per ADR-0003. They do **not** create public Cloudflare A records.
 
-### How it works
+`dns set-all` enforces this automatically:
 
-1. A Cloudflare DNS A record points `<app>.<domain>` to the server's Tailscale IP (`100.x.y.z`).
-2. Caddy provisions a Let's Encrypt certificate via DNS-01 challenge (Cloudflare API), so the subdomain gets valid HTTPS.
-3. Caddy binds the vhost to the Tailscale interface only (`bind <tailscale-ip>`), so it is not reachable via the server's public IP even with correct SNI.
-4. The Tailscale IP is in the CGNAT range (`100.64.0.0/10`), which is not routable from the public internet. Only Tailscale network members can reach it.
+- **Implicit discovery** (no `--subdomains`): tailnet-only apps are collected into a `skipped` list and never passed to the Cloudflare API. A single info line is emitted to stderr:
 
-### Configuration
+  ```
+  Skipping (tailnet-only — published via Blocky):
+    • bichon, cockpit, paperless
+  ```
 
-There are two ways to tell `dns set-all` which IP to use for a tailnet-only app. Pick whichever fits your layout.
+- **Explicit `--subdomains`** (operator names a tailnet-only app): the command hard-errors before any API call and lists the offending apps with their effective subdomains, referencing ADR-0003:
 
-**Option A — host-wide cache (recommended).** When all tailnet-only apps on a host share the same Tailscale IP, cache it once on the host record:
+  ```
+  error: tailnet-only apps cannot have Cloudflare A records (ADR-0003):
+    • bichon (subdomain: bichon)
 
-```bash
-auberge host detect-tailscale-ip auberge
-```
+  DNS for tailnet-only apps is published via Blocky on `auberge deploy <app>`.
+  ```
 
-This SSHs the host, reads `tailscale ip -4`, and writes `tailscale_ip = "100.x.y.z"` into the host's entry in `~/.config/auberge/hosts.toml`. Apps whose playbook meta declares `tailnet_only: true` (currently `bichon` and `paperless`) then automatically pick up this IP — no per-app config needed.
-
-**Option B — per-app override.** Set both a subdomain and an explicit Tailscale IP in `~/.config/auberge/config.toml`:
-
-```toml
-paperless_subdomain = "paperless"
-paperless_tailscale_ip = "100.x.y.z"
-```
-
-Use this when an app needs a _different_ Tailscale IP than the host (rare).
-
-### Resolution chain
-
-For each subdomain, `dns set-all` picks the IP in this order:
-
-1. `<app>_tailscale_ip` in `config.toml` (per-app override, when set)
-2. `host.tailscale_ip` in `hosts.toml` (when the playbook meta has `tailnet_only: true` and `--host` was used)
-3. The host's public IP (default, public apps)
-
-Passing `--ip <addr>` bypasses (2) — when you're being explicit, the CLI does not second-guess.
-
-`dns set-all` bails fast when a tailnet-only app has no resolvable Tailscale IP, since pointing such DNS at the public IP would silently break access (Caddy binds only to the Tailnet interface).
-
-### Prerequisites
-
-- Tailscale running on the server (`tailscaled.service`)
-- Cloudflare API token configured (for DNS-01 challenge and DNS record management)
-- Caddy built with `caddy-dns/cloudflare` module (required for DNS-01 challenge)
+For tailnet-only DNS publication, use `auberge deploy <app>` which runs the relevant role and updates Blocky's `customDNS` map.
 
 ### dns migrate behavior
 
