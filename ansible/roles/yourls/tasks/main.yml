@@ -36,13 +36,13 @@
         enabled: true
         state: started
 
-    - name: Create YOURLS database
+    - name: Create YOURLS database # noqa: fqcn[canonical]
       community.mysql.mysql_db:
         name: "{{ yourls_db_name }}"
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
-    - name: Create YOURLS database user
+    - name: Create YOURLS database user # noqa: fqcn[canonical]
       community.mysql.mysql_user:
         name: "{{ yourls_db_user }}"
         password: "{{ yourls_db_password }}"
@@ -106,7 +106,7 @@
         mode: "0640"
       notify: Restart php-fpm
 
-    - name: Check if YOURLS tables exist
+    - name: Check if YOURLS tables exist # noqa: fqcn[canonical]
       community.mysql.mysql_query:
         login_unix_socket: /var/run/mysqld/mysqld.sock
         login_db: "{{ yourls_db_name }}"
@@ -114,7 +114,7 @@
       register: yourls_table_check
       changed_when: false
 
-    - name: Check if YOURLS options are initialized
+    - name: Check if YOURLS options are initialized # noqa: fqcn[canonical]
       community.mysql.mysql_query:
         login_unix_socket: /var/run/mysqld/mysqld.sock
         login_db: "{{ yourls_db_name }}"

@@ -299,3 +299,11 @@
     enabled: true
     state: started
   when: not ansible_check_mode
+
+- name: Ensure Cloudflare DNS A record exists for {{ blocky_subdomain + '.' + domain }}
+  ansible.builtin.include_role:
+    name: dns_record
+  vars:
+    dns_record_subdomain: "{{ blocky_subdomain }}"
+    dns_record_domain: "{{ domain }}"
+    dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"

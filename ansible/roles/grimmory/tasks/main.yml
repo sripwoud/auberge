@@ -69,13 +69,13 @@
         enabled: true
         state: started
 
-    - name: Create Grimmory database
+    - name: Create Grimmory database # noqa: fqcn[canonical]
       community.mysql.mysql_db:
         name: "{{ grimmory_db_name }}"
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
 
-    - name: Create Grimmory database user
+    - name: Create Grimmory database user # noqa: fqcn[canonical]
       no_log: true
       community.mysql.mysql_user:
         name: "{{ grimmory_db_user }}"
