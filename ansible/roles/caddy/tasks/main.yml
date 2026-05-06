@@ -32,16 +32,41 @@
         name: xcaddy
         state: present
 
+    - name: Check installed Caddy build id
+      ansible.builtin.stat:
+        path: "{{ caddy_build_id_file }}"
+      register: caddy_build_id_stat
+
+    - name: Read installed Caddy build id
+      when: caddy_build_id_stat.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ caddy_build_id_file }}"
+      register: caddy_installed_build_id_raw
+
+    - name: Set installed Caddy build id fact
+      ansible.builtin.set_fact:
+        caddy_installed_build_id: "{{ caddy_installed_build_id_raw.content | b64decode | trim if caddy_build_id_stat.stat.exists else '' }}"
+
     - name: Build Caddy with custom modules
+      when: caddy_installed_build_id != caddy_build_id
       ansible.builtin.command: |
         xcaddy build \
-          --with github.com/mholt/caddy-l4 \
-          --with github.com/mholt/caddy-webdav \
-          --with github.com/caddy-dns/cloudflare \
-          --output /usr/local/bin/caddy
-      args:
-        creates: /usr/local/bin/caddy
+          --with github.com/mholt/caddy-l4@{{ caddy_l4_version }} \
+          --with github.com/mholt/caddy-webdav@{{ caddy_webdav_version }} \
+          --with github.com/caddy-dns/cloudflare@{{ caddy_cloudflare_plugin_version }} \
+          --output {{ caddy_binary }}
       register: caddy_build_result
+      changed_when: caddy_build_result.rc == 0
+      notify: Restart caddy
+
+    - name: Write installed Caddy build id
+      when: caddy_installed_build_id != caddy_build_id
+      ansible.builtin.copy:
+        content: "{{ caddy_build_id }}"
+        dest: "{{ caddy_build_id_file }}"
+        owner: root
+        group: root
+        mode: "0644"
 
     - name: Create Caddy group
       ansible.builtin.group:
