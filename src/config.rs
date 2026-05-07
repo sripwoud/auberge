@@ -191,6 +191,26 @@ impl Config {
         }
     }
 
+    pub fn bichon_extra_excluded_folders(&self, account_email: &str) -> Vec<String> {
+        self.values
+            .get("bichon")
+            .and_then(toml::Value::as_table)
+            .and_then(|b| b.get("account_overrides"))
+            .and_then(toml::Value::as_table)
+            .and_then(|a| a.get(account_email))
+            .and_then(toml::Value::as_table)
+            .and_then(|entry| entry.get("extra_excluded_folders"))
+            .and_then(toml::Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(toml::Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     // ── Mutation ──────────────────────────────────────────────────────────────
 
     pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
@@ -431,6 +451,25 @@ mod tests {
     fn test_get_nonexistent_key() {
         let config = make_config(r#"domain = "example.com""#);
         assert!(config.get("nonexistent_key").is_none());
+    }
+
+    #[test]
+    fn test_bichon_extra_excluded_folders() {
+        let config = make_config(
+            r#"
+            [bichon.account_overrides."me@example.com"]
+            extra_excluded_folders = ["Newsletters", "Receipts/2019"]
+        "#,
+        );
+        assert_eq!(
+            config.bichon_extra_excluded_folders("me@example.com"),
+            vec!["Newsletters".to_string(), "Receipts/2019".to_string()]
+        );
+        assert!(
+            config
+                .bichon_extra_excluded_folders("missing@example.com")
+                .is_empty()
+        );
     }
 
     // ── keys_redacted ─────────────────────────────────────────────────────────

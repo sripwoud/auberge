@@ -36,6 +36,7 @@ Auberge is a comprehensive command-line tool for managing self-hosted infrastruc
 | [dns](dns/list.md)                 | d     | DNS management via Cloudflare           |
 | [headscale](headscale/add-user.md) | hs    | Manage Headscale users and nodes        |
 | [config](config/overview.md)       | c     | Manage user configuration               |
+| [bichon](bichon/reconcile-folders.md) | -  | Manage Bichon folder sync policy        |
 
 ## Configuration
 
