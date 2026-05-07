@@ -52,15 +52,24 @@ IMAP_COUNT=$(himalaya --account "${IMAP_ACCOUNT}" envelope list \
 echo "    IMAP messages in window: ${IMAP_COUNT}"
 
 echo ""
-echo "==> Counting .eml files on ${BICHON_HOST} for the same window…"
+echo "==> Counting archived messages for ${FOLDER} on ${BICHON_HOST}…"
 ARCHIVE_DIR="${BICHON_ARCHIVE_PATH}/${SAFE_ACCOUNT}"
-# Archive path encodes the message Date as YYYY/MM (bichon-archive.sh derives
-# it from envelope.date). File mtime reflects archiver write-time, not message
-# age, so an -mtime filter would mis-count after backfills and rebuilds.
-# shellcheck disable=SC2029  # intentional: expand ARCHIVE_DIR locally before SSH
-EML_COUNT=$(ssh "${BICHON_HOST}" \
-  "find '${ARCHIVE_DIR}' -regextype posix-extended -regex '.*/[0-9]{4}/[0-9]{2}/[^/]+\\.eml' 2>/dev/null" \
-  | awk -F/ -v c="${CUTOFF_YM}" '{ ym=$(NF-2)"/"$(NF-1); if (ym <= c) n++ } END { print n+0 }')
+# Archive path encodes message Date as YYYY/MM; folder identity lives in the
+# <id>.meta.json sidecar. The IMAP query is folder-scoped, so the archive
+# count must also be — counting account-wide .eml files would over-count and
+# pass the coverage gate when the target folder is partially archived.
+# shellcheck disable=SC2087  # heredoc expansion is intentional: send vars to remote
+EML_COUNT=$(ssh "${BICHON_HOST}" bash <<REMOTE
+set -euo pipefail
+find "${ARCHIVE_DIR}" -regextype posix-extended \
+  -regex '.*/[0-9]{4}/[0-9]{2}/[^/]+\\.meta\\.json' 2>/dev/null \
+| while IFS= read -r meta; do
+    ym=\$(printf '%s' "\$meta" | awk -F/ '{ print \$(NF-2)"/"\$(NF-1) }')
+    [ "\$ym" \> "${CUTOFF_YM}" ] && continue
+    jq -e --arg f "${FOLDER}" '.folder == \$f' "\$meta" >/dev/null 2>&1 && printf '.\n'
+  done | wc -l
+REMOTE
+)
 echo "    Archive .eml files in window: ${EML_COUNT}"
 
 echo ""
