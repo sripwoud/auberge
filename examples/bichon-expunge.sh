@@ -34,8 +34,20 @@ set -euo pipefail
 : "${WINDOW_DAYS:=90}"
 
 SAFE_ACCOUNT=$(printf '%s' "$IMAP_ACCOUNT" | tr '/' '_')
-CUTOFF_DATE=$(date -u -d "-${WINDOW_DAYS} days" '+%Y-%m-%d')
-CUTOFF_YM=$(date -u -d "-${WINDOW_DAYS} days" '+%Y/%m')
+
+# Print UTC date offset by -$1 days, formatted with $2.
+# GNU coreutils (Linux) and BSD (macOS) take incompatible flags; dispatch on
+# whichever the host's `date` binary accepts.
+date_offset() {
+  if date -u -d "-1 day" '+%Y' >/dev/null 2>&1; then
+    date -u -d "-$1 days" "$2"
+  else
+    date -u -v-"$1"d "$2"
+  fi
+}
+
+CUTOFF_DATE=$(date_offset "${WINDOW_DAYS}" '+%Y-%m-%d')
+CUTOFF_YM=$(date_offset "${WINDOW_DAYS}" '+%Y/%m')
 
 echo "==> Checking archive freshness on ${BICHON_HOST}…"
 ssh "${BICHON_HOST}" "journalctl -u bichon-archive.service --since '-2h' | tail -5"
