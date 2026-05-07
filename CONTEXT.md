@@ -68,6 +68,18 @@ _Avoid_: Backup job, backup workflow
 A Bichon-independent on-disk mirror of email messages, produced by an hourly systemd timer on the bichon Host that walks Bichon's REST API and writes one `.eml` per message under `/var/lib/bichon-archive/`, with a `.meta.json` sidecar capturing folder + tags. Distinct from a **Backup Recipe**: an Archive is consumable without Bichon (any MBOX/EML-aware client can read it), and is the _source_ the bichon Backup Recipe rsyncs — Bichon's encrypted internal store (`/opt/bichon/data`) is deliberately not backed up. See ADR-0006.
 _Avoid_: backup (collides with Backup Recipe), dump, export.
 
+**Upstream Mailbox**:
+The third-party IMAP (or Gmail-API) server that Bichon syncs _from_ — e.g. the operator's Gmail, Fastmail, ProtonMail Bridge endpoint. Distinct from the **Email Archive** (Bichon-side, append-only) and from any **Backup Recipe** target. Operations on the Upstream Mailbox (e.g. expunging old mail to reclaim quota) are out-of-scope for `auberge deploy` and `auberge backup`; any future tooling that touches it must treat it as authoritative-but-untrusted.
+_Avoid_: IMAP server, mail provider, source mailbox.
+
+**Synced Folder**:
+A folder on an **Upstream Mailbox** that Bichon ingests into the **Email Archive**. The set is computed at **Account Reconcile** time as `(remote folder list) − (exclusion set)`, where the default exclusion set is `{Spam, Trash}` — folders whose user-meaning is "not real mail" or "I'm done with this", which an Archive must not invert. The result is written into Bichon's per-account `sync_folders` field.
+_Avoid_: All folders, every folder, full mailbox, watched folder.
+
+**Account Reconcile**:
+The auberge-driven step that reads each Bichon account's live folder list (`GET /api/v1/list-mailboxes/<id>?remote=true`), computes the **Synced Folder** set, and PATCHes Bichon's per-account `sync_folders`. Account _creation_ (IMAP host, credentials, OAuth2 consent) remains UI-driven; reconcile is the only state auberge writes to Bichon. Folder identity is matched primarily by RFC 6154 SPECIAL-USE attributes (language-portable, hierarchy-portable), with case-insensitive name matching as fallback for legacy IMAP servers that don't advertise SPECIAL-USE.
+_Avoid_: Account sync, account update, account migration.
+
 **Progress**:
 The trait that runners (`AnsibleRunner`, `Recipe Executor`, `Backup Session`) emit events through. `TerminalProgress` is the production impl; tests use a `MockProgress`. Keeps runners free of terminal-output coupling.
 _Avoid_: Logger, reporter
