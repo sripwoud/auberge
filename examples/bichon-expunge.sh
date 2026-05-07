@@ -72,15 +72,20 @@ ARCHIVE_DIR="${BICHON_ARCHIVE_PATH}/${SAFE_ACCOUNT}"
 # <id>.meta.json sidecar. The IMAP query is folder-scoped, so the archive
 # count must also be — counting account-wide .eml files would over-count and
 # pass the coverage gate when the target folder is partially archived.
-# shellcheck disable=SC2087  # heredoc expansion is intentional: send vars to remote
-EML_COUNT=$(ssh "${BICHON_HOST}" bash <<REMOTE
+# Pass remote args via printf %q so $FOLDER / $ARCHIVE_DIR cannot break out of
+# argument quoting and execute on the host. The heredoc body is single-quoted
+# ('REMOTE') to disable local expansion — only positional parameters are used.
+# shellcheck disable=SC2029  # intentional: %q-quote args locally, then expand into ssh cmd
+EML_COUNT=$(ssh "${BICHON_HOST}" \
+  "bash -s -- $(printf '%q ' "${ARCHIVE_DIR}" "${FOLDER}" "${CUTOFF_YM}")" <<'REMOTE'
 set -euo pipefail
-find "${ARCHIVE_DIR}" -regextype posix-extended \
-  -regex '.*/[0-9]{4}/[0-9]{2}/[^/]+\\.meta\\.json' 2>/dev/null \
+archive_dir=$1; folder=$2; cutoff_ym=$3
+find "$archive_dir" -regextype posix-extended \
+  -regex '.*/[0-9]{4}/[0-9]{2}/[^/]+\.meta\.json' 2>/dev/null \
 | while IFS= read -r meta; do
-    ym=\$(printf '%s' "\$meta" | awk -F/ '{ print \$(NF-2)"/"\$(NF-1) }')
-    [ "\$ym" \> "${CUTOFF_YM}" ] && continue
-    jq -e --arg f "${FOLDER}" '.folder == \$f' "\$meta" >/dev/null 2>&1 && printf '.\n'
+    ym=$(printf '%s' "$meta" | awk -F/ '{ print $(NF-2)"/"$(NF-1) }')
+    [ "$ym" \> "$cutoff_ym" ] && continue
+    jq -e --arg f "$folder" '.folder == $f' "$meta" >/dev/null 2>&1 && printf '.\n'
   done | wc -l
 REMOTE
 )
