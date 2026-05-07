@@ -24,19 +24,19 @@ Auberge is a comprehensive command-line tool for managing self-hosted infrastruc
 
 ## Commands
 
-| Command                            | Alias | Description                             |
-| ---------------------------------- | ----- | --------------------------------------- |
-| [deploy](deploy.md)                | dp    | Deploy apps to a host                   |
-| [select](select/host.md)           | se    | Select hosts or playbooks interactively |
-| [ansible](ansible/run.md)          | a     | Run ansible playbooks                   |
-| [backup](backup/create.md)         | b     | Backup and restore application data     |
-| [host](host/add.md)                | h     | Manage VPS hosts                        |
-| [ssh](ssh/keygen.md)               | ss    | SSH key management                      |
-| [sync](sync/music.md)              | sy    | Sync files to remote hosts              |
-| [dns](dns/list.md)                 | d     | DNS management via Cloudflare           |
-| [headscale](headscale/add-user.md) | hs    | Manage Headscale users and nodes        |
-| [config](config/overview.md)       | c     | Manage user configuration               |
-| [bichon](bichon/reconcile-folders.md) | -  | Manage Bichon folder sync policy        |
+| Command                               | Alias | Description                             |
+| ------------------------------------- | ----- | --------------------------------------- |
+| [deploy](deploy.md)                   | dp    | Deploy apps to a host                   |
+| [select](select/host.md)              | se    | Select hosts or playbooks interactively |
+| [ansible](ansible/run.md)             | a     | Run ansible playbooks                   |
+| [backup](backup/create.md)            | b     | Backup and restore application data     |
+| [host](host/add.md)                   | h     | Manage VPS hosts                        |
+| [ssh](ssh/keygen.md)                  | ss    | SSH key management                      |
+| [sync](sync/music.md)                 | sy    | Sync files to remote hosts              |
+| [dns](dns/list.md)                    | d     | DNS management via Cloudflare           |
+| [headscale](headscale/add-user.md)    | hs    | Manage Headscale users and nodes        |
+| [config](config/overview.md)          | c     | Manage user configuration               |
+| [bichon](bichon/reconcile-folders.md) | -     | Manage Bichon folder sync policy        |
 
 ## Configuration
 
