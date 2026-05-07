@@ -103,7 +103,7 @@ Bichon supports importing EML, MBOX, and PST archives. Refer to the [upstream do
 
    In the Bichon UI go to **Accounts → \<account\> → Folders** and tick every
    folder **except** `Spam`/`Junk`/`Junk Mail` and `Trash`/`Deleted Items`
-   (and any local-language equivalents your provider uses).  The rule is:
+   (and any local-language equivalents your provider uses). The rule is:
    exclude RFC 6154 `\Junk` and `\Trash`; include everything else.
 
 4. Seed the archive immediately so the first backup is not empty:
@@ -117,7 +117,7 @@ Bichon supports importing EML, MBOX, and PST archives. Refer to the [upstream do
 
 ### Why this exists
 
-The **Email Archive** is append-only (ADR-0006).  It is the enabling primitive
+The **Email Archive** is append-only (ADR-0006). It is the enabling primitive
 for safely deleting mail from the **Upstream Mailbox**: once a message is in
 the archive _and_ the archive is in an off-host backup, expunging it from the
 IMAP server does not lose it.
@@ -133,7 +133,7 @@ Execute in this order and check each precondition before proceeding:
 1. **Bichon ingests** — the account's folders are ticked in the Bichon UI and
    `bichon.service` is syncing normally.
 2. **`bichon-archive.timer` runs successfully** — verify with
-   `journalctl -u bichon-archive.service`.  The journal is the source of truth;
+   `journalctl -u bichon-archive.service`. The journal is the source of truth;
    archive recency alone is not sufficient (see foot-gun warning below).
 3. **`auberge backup sync` (or equivalent) runs** — the archive must be in an
    off-host backup before expunge.
@@ -142,29 +142,29 @@ Execute in this order and check each precondition before proceeding:
 ### Foot-gun warnings
 
 > ⚠️ **Cursor-failure masking.** `bichon-archive.sh` advances the cursor only
-> on a fully successful run.  A non-failing run immediately after a failing one
+> on a fully successful run. A non-failing run immediately after a failing one
 > can appear to have covered the gap, but the failing run's messages may be
-> absent.  Always check `journalctl -u bichon-archive.service` for errors
+> absent. Always check `journalctl -u bichon-archive.service` for errors
 > before expunging — do not rely on the archive's modification time or message
 > count alone.
 
 > ⚠️ **Unticked folders are not archived.** The archive captures only what
-> Bichon ingested.  If a folder was unticked in Bichon's UI, messages in that
-> folder are **not** in the archive.  Verify `sync_folders` before expunging
+> Bichon ingested. If a folder was unticked in Bichon's UI, messages in that
+> folder are **not** in the archive. Verify `sync_folders` before expunging
 > any folder.
 
-> ⚠️ **Do not automate expunge on a cron.**  The human pause between
-> "archive confirmed" and "expunge" is the safety net.  Automating it removes
+> ⚠️ **Do not automate expunge on a cron.** The human pause between
+> "archive confirmed" and "expunge" is the safety net. Automating it removes
 > the only recovery window for a misconfiguration or a failed archive run.
 
 ### Recommended tooling
 
-| Task | Tool |
-| ---- | ---- |
+| Task                                  | Tool                                                                             |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
 | IMAP-side ops (list, search, expunge) | [`himalaya`](https://github.com/pimalaya/himalaya) — Rust, matches project ethos |
-| Archive checks | `ssh <host> find /var/lib/bichon-archive -name '*.eml' \| wc -l` |
-| Archive freshness | `journalctl -u bichon-archive.service` |
-| Off-host backup | `auberge backup create --apps bichon` |
+| Archive checks                        | `ssh <host> find /var/lib/bichon-archive -name '*.eml' \| wc -l`                 |
+| Archive freshness                     | `journalctl -u bichon-archive.service`                                           |
+| Off-host backup                       | `auberge backup create --apps bichon`                                            |
 
 ### Reference shell script
 
