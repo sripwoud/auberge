@@ -168,7 +168,7 @@ Execute in this order and check each precondition before proceeding:
 
 ### Reference shell script
 
-`examples/bichon-expunge.sh` is a worked example for MXroute that:
+[`examples/bichon-expunge.sh`](https://github.com/sripwoud/auberge/blob/master/examples/bichon-expunge.sh) is a worked example for MXroute that:
 
 1. Checks `bichon-archive.service` journal freshness.
 2. Counts IMAP messages in a configurable time window.
