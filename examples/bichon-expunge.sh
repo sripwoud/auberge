@@ -35,6 +35,7 @@ set -euo pipefail
 
 SAFE_ACCOUNT=$(printf '%s' "$IMAP_ACCOUNT" | tr '/' '_')
 CUTOFF_DATE=$(date -u -d "-${WINDOW_DAYS} days" '+%Y-%m-%d')
+CUTOFF_YM=$(date -u -d "-${WINDOW_DAYS} days" '+%Y/%m')
 
 echo "==> Checking archive freshness on ${BICHON_HOST}…"
 ssh "${BICHON_HOST}" "journalctl -u bichon-archive.service --since '-2h' | tail -5"
@@ -53,9 +54,13 @@ echo "    IMAP messages in window: ${IMAP_COUNT}"
 echo ""
 echo "==> Counting .eml files on ${BICHON_HOST} for the same window…"
 ARCHIVE_DIR="${BICHON_ARCHIVE_PATH}/${SAFE_ACCOUNT}"
-# shellcheck disable=SC2029  # intentional: expand ARCHIVE_DIR and WINDOW_DAYS locally before SSH
+# Archive path encodes the message Date as YYYY/MM (bichon-archive.sh derives
+# it from envelope.date). File mtime reflects archiver write-time, not message
+# age, so an -mtime filter would mis-count after backfills and rebuilds.
+# shellcheck disable=SC2029  # intentional: expand ARCHIVE_DIR locally before SSH
 EML_COUNT=$(ssh "${BICHON_HOST}" \
-  "find '${ARCHIVE_DIR}' -name '*.eml' -mtime +${WINDOW_DAYS} 2>/dev/null | wc -l")
+  "find '${ARCHIVE_DIR}' -regextype posix-extended -regex '.*/[0-9]{4}/[0-9]{2}/[^/]+\\.eml' 2>/dev/null" \
+  | awk -F/ -v c="${CUTOFF_YM}" '{ ym=$(NF-2)"/"$(NF-1); if (ym <= c) n++ } END { print n+0 }')
 echo "    Archive .eml files in window: ${EML_COUNT}"
 
 echo ""
