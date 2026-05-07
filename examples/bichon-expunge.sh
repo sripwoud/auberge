@@ -42,13 +42,15 @@ ssh "${BICHON_HOST}" "journalctl -u bichon-archive.service --since '-2h' | tail 
 
 echo ""
 echo "==> Counting IMAP messages in ${FOLDER} older than ${WINDOW_DAYS} days (before ${CUTOFF_DATE})…"
-# himalaya search with 'before:' returns only envelopes older than the cutoff.
+# Use --output json: the default table format includes header rows and box
+# drawing, so wc -l is off by a few. jq 'length' counts envelopes precisely.
 IMAP_COUNT=$(himalaya --account "${IMAP_ACCOUNT}" envelope list \
   --folder "${FOLDER}" \
   --query "before:${CUTOFF_DATE}" \
   --page-size 9999 \
+  --output json \
   2>/dev/null \
-  | wc -l)
+  | jq 'length')
 echo "    IMAP messages in window: ${IMAP_COUNT}"
 
 echo ""
