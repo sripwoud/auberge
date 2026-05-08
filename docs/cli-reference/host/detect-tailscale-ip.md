@@ -51,5 +51,5 @@ tailscale_ip = "100.99.62.26"
 ## Related
 
 - [auberge dns set-all](../dns/set-all.md) — consumer of `tailscale_ip`
-- [Tailnet-only Subdomains](../../dns/batch-operations.md#tailnet-only-subdomains)
+- [Tailnet-only Subdomains](../../cli-reference/dns/set-all.md#tailnet-only-apps)
 - [Hosts Configuration](../../configuration/hosts.md)

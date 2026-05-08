@@ -1,24 +1,15 @@
-# Hosts and Inventory
+# Hosts & Inventory
 
-Auberge uses `hosts.toml` as the single source of truth for host data, with `inventory.yml` providing Ansible group-level configuration.
+`hosts.toml` is the single source of truth for host data. `inventory.yml` provides Ansible group-level vars only.
 
-## Architecture
+| File            | Path                           | Scope                                                                               | Version controlled |
+| --------------- | ------------------------------ | ----------------------------------------------------------------------------------- | ------------------ |
+| `hosts.toml`    | `~/.config/auberge/hosts.toml` | Per-user host registry (name, IP, user, port, SSH key, tags) — used by every CLI op | ❌                 |
+| `inventory.yml` | `ansible/inventory.yml`        | Shared Ansible group vars (`ansible_user`, `ansible_python_interpreter`, …)         | ✅                 |
 
-```
-hosts.toml (host data)          inventory.yml (group vars)
-├── name, IP, port, user        ├── ansible_user
-├── ssh_key                     ├── ansible_ssh_private_key_file
-└── tags                        ├── ansible_python_interpreter
-                                └── ansible_ssh_common_args
-         │                                │
-         └──── merged at runtime ─────────┘
-                      │
-              ansible-playbook -i inventory.yml -i <generated>
-```
+At runtime the CLI generates a temporary inventory from `hosts.toml` and merges it with `inventory.yml`.
 
-## hosts.toml (Host Registry)
-
-Personal host registry at `~/.config/auberge/hosts.toml`. Used by all CLI operations: backup, SSH, ansible, DNS.
+## hosts.toml
 
 ```toml
 [[hosts]]
@@ -30,23 +21,9 @@ ssh_key = "~/.ssh/identities/sripwoud_my-vps"
 tags = ["production"]
 ```
 
-### Management
+Manage with: `auberge host {add,list,show,edit,remove}`.
 
-```bash
-auberge host add my-vps 203.0.113.10 --user sripwoud --port 59865
-auberge host list
-auberge host show my-vps
-auberge host edit my-vps
-auberge host remove my-vps
-```
-
-### Not Version Controlled
-
-This file is user-specific — different users may have different hosts, SSH keys, or ports.
-
-## inventory.yml (Ansible Group Vars)
-
-Version-controlled file at `ansible/inventory.yml`. Contains only group-level variables shared across all hosts — no host-specific entries.
+## inventory.yml
 
 ```yaml
 all:
@@ -58,43 +35,12 @@ all:
         ansible_python_interpreter: /usr/bin/python3
 ```
 
-When the CLI runs ansible-playbook, it generates a temporary inventory from hosts.toml and merges it with this file. Ansible applies the group vars to the dynamically provided host.
-
-## Usage
+## Adding a new host
 
 ```bash
-# All operations use hosts.toml as the host source
-auberge ansible run --host my-vps
-auberge backup create --host my-vps
+auberge host add my-vps 203.0.113.10 --user root --port 22
 auberge ssh keygen --host my-vps --user ansible
+auberge ansible bootstrap my-vps --ip 203.0.113.10
 ```
 
-## Adding a New Host
-
-1. Register the host:
-   ```bash
-   auberge host add my-vps 203.0.113.10 --user root --port 22
-   ```
-
-2. Generate SSH keys:
-   ```bash
-   auberge ssh keygen --host my-vps --user ansible
-   ```
-
-3. Bootstrap:
-   ```bash
-   auberge ansible bootstrap my-vps --ip 203.0.113.10
-   ```
-
-## Import from SSH Config
-
-```bash
-auberge host add
-# If ~/.ssh/config exists, shows importable hosts
-```
-
-## Related
-
-- [Hosts Configuration](../configuration/hosts.md) - hosts.toml details
-- [Ansible Inventory](../configuration/ansible-inventory.md) - inventory.yml structure
-- [SSH Keys](../configuration/ssh-keys.md) - SSH key configuration
+?> `auberge host add` (no args) detects `~/.ssh/config` and offers to import existing hosts.

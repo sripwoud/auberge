@@ -1,116 +1,31 @@
-# Configuration
+# Environment Variables
 
-All configuration is managed via `~/.config/auberge/config.toml` and `~/.config/auberge/hosts.toml`.
+All values live in `~/.config/auberge/config.toml`. Manage with `auberge config set <key> <value>`.
 
-## Config Management
+| Variable                   | Required | Description                                                                                |
+| -------------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `admin_user_name`          | Yes      | Server admin username                                                                      |
+| `admin_user_email`         | Yes      | Server admin email                                                                         |
+| `domain`                   | Yes      | Primary domain (e.g. `example.com`)                                                        |
+| `ssh_port`                 | Yes      | SSH port for managed hosts                                                                 |
+| `cloudflare_dns_api_token` | Yes      | Cloudflare token with DNS Edit + Zone Read; required for DNS commands and ACME challenges  |
+| `tailscale_authkey`        | Yes      | Tailscale (or Headscale) pre-auth key for VPN mesh                                         |
+| `tailscale_api_key`        | Optional | Enables automatic Blocky DNS configuration via Tailscale API                               |
+| `tailscale_login_server`   | Optional | Self-hosted Headscale URL (e.g. `https://hs.example.com`); omit to use Tailscale SaaS      |
+| `restic_repository`        | Optional | Restic destination (e.g. `rclone:filen:auberge-backup`); required for `backup push`        |
+| `restic_password`          | Optional | Restic encryption passphrase — NOT your cloud storage password; required for `backup push` |
+| `baikal_subdomain`         | Optional | Subdomain for Baïkal                                                                       |
+| `bichon_subdomain`         | Optional | Subdomain for Bichon                                                                       |
+| `bichon_tailscale_ip`      | Optional | Tailscale IP; makes subdomain tailnet-only (see below)                                     |
+| `blocky_subdomain`         | Optional | Subdomain for Blocky                                                                       |
+| `freshrss_subdomain`       | Optional | Subdomain for FreshRSS                                                                     |
+| `headscale_subdomain`      | Optional | Subdomain for Headscale                                                                    |
+| `navidrome_subdomain`      | Optional | Subdomain for Navidrome                                                                    |
+| `paperless_subdomain`      | Optional | Subdomain for Paperless                                                                    |
+| `paperless_tailscale_ip`   | Optional | Tailscale IP; makes subdomain tailnet-only                                                 |
+| `webdav_subdomain`         | Optional | Subdomain for WebDAV                                                                       |
+| `yourls_subdomain`         | Optional | Subdomain for YOURLS                                                                       |
 
-```bash
-auberge config init
-auberge config list
-auberge config set <key> <value>
-auberge config get <key>
-```
+?> **Tailnet-only subdomains**: setting `<app>_tailscale_ip` causes `dns set-all` to point that subdomain's A record at the Tailscale CGNAT IP (`100.64.0.0/10`) instead of the public server IP. Public internet cannot route CGNAT addresses, so no firewall rules are needed. `dns migrate` skips records whose current IP is in the CGNAT range.
 
-## Host Management
-
-```bash
-auberge host add <name> <ip> --user <user> --port <port>
-auberge host list
-auberge host show <name>
-```
-
-## Key Configuration Values
-
-```bash
-auberge config set admin_user_name <username>
-auberge config set admin_user_email <email>
-auberge config set domain <domain>
-auberge config set ssh_port <port>
-auberge config set cloudflare_dns_api_token <token>
-auberge config set tailscale_authkey <key>
-auberge config set tailscale_api_key <key>
-auberge config set baikal_subdomain calendrier
-auberge config set bichon_subdomain bichon
-auberge config set blocky_subdomain dns
-auberge config set headscale_subdomain hs
-auberge config set freshrss_subdomain rss
-auberge config set navidrome_subdomain musique
-auberge config set webdav_subdomain webdav
-```
-
-## Tailnet-only Subdomains
-
-Some services are intentionally restricted to Tailscale network members only. For these, set both a subdomain and a Tailscale IP in `config.toml`:
-
-```toml
-paperless_subdomain = "paperless"
-paperless_tailscale_ip = "100.x.y.z"
-
-bichon_subdomain = "bichon"
-bichon_tailscale_ip = "100.x.y.z"
-```
-
-The presence of `<app>_tailscale_ip` tells `dns set-all` to point that subdomain's A record at the Tailscale IP instead of the server's public IP. Because Tailscale IPs are in the CGNAT range (`100.64.0.0/10`) and are not routable from the public internet, only Tailscale network members can reach the service — no firewall rules needed.
-
-`dns migrate` skips records whose current IP is in the CGNAT range, so tailnet-only subdomains are not accidentally migrated to a new public IP during a VPS migration.
-
-See [Tailnet-only subdomains](../dns/batch-operations.md#tailnet-only-subdomains) for the full pattern.
-
-## API Keys and Tokens
-
-### Cloudflare API Token
-
-Required for DNS-01 ACME challenges via Lego certificate automation:
-
-1. Log into [Cloudflare Dashboard](https://dash.cloudflare.com)
-2. Navigate to: My Profile → API Tokens → Create Token
-3. Use the "Edit zone DNS" template
-4. Configure permissions:
-   - Zone → DNS → Edit
-   - Zone → Zone → Read
-5. Set zone resources to your domain
-6. Store the token:
-   ```bash
-   auberge config set cloudflare_dns_api_token <TOKEN>
-   ```
-
-### Tailscale Auth Key
-
-Required for VPN mesh networking:
-
-1. Generate auth key at [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
-2. Set reusable and ephemeral flags as needed
-3. Store the key:
-   ```bash
-   auberge config set tailscale_authkey <KEY>
-   ```
-
-When using [Headscale](../applications/networking/headscale.md), generate this key via `headscale preauthkeys create --user default --reusable` instead of the Tailscale admin console.
-
-### Tailscale Login Server
-
-Optional. Set this to your Headscale URL to connect nodes to your self-hosted control server instead of Tailscale SaaS:
-
-```bash
-auberge config set tailscale_login_server https://hs.<domain>
-```
-
-See [Headscale](../applications/networking/headscale.md) for the full migration guide.
-
-### Tailscale API Key
-
-Optional. Required for automated DNS configuration (setting Blocky as the tailnet DNS nameserver):
-
-1. Generate API key at [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
-2. Store the key:
-   ```bash
-   auberge config set tailscale_api_key <KEY>
-   ```
-
-When set, the Blocky role uses this key to automatically configure Tailscale DNS nameservers via the Tailscale API, routing all tailnet DNS queries through Blocky for ad-blocking.
-
-## Related Documentation
-
-- [Secrets Management](./secrets.md) - config.toml security
-- [Hosts Configuration](./hosts.md) - hosts.toml management
-- [Development Setup](../development/setup.md) - Local development
+?> All values support `!` command syntax to fetch secrets from a password manager: `auberge config set restic_password '!pass show auberge/restic'`. See [Secrets Management](../configuration/secrets.md#password-commands).

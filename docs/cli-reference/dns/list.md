@@ -1,129 +1,45 @@
 # auberge dns list
 
-List DNS records via Cloudflare
-
-## Synopsis
+List DNS records for your domain from Cloudflare. Alias: `auberge d l`.
 
 ```bash
 auberge dns list [OPTIONS]
 ```
 
-## Alias
-
-`auberge d l`
-
-## Description
-
-Lists DNS records for your domain from Cloudflare. Displays A, AAAA, CNAME, MX, TXT, NS, and SRV records.
-
-Requires `cloudflare_dns_api_token` and `domain` set in `config.toml`.
+Requires `cloudflare_dns_api_token` and `domain` in `config.toml`. Displays A, AAAA, CNAME, MX, TXT, NS, and SRV records.
 
 ## Options
 
-| Option               | Description                           | Default     |
-| -------------------- | ------------------------------------- | ----------- |
-| -s, --subdomain NAME | Filter by subdomain name              | All records |
-| -o, --output FORMAT  | Output format (`human`, `json`)       | `human`     |
-| -P, --production     | Use production API (default: sandbox) | false       |
-
-## Configuration
-
-Required values in `config.toml`:
-
-- `cloudflare_dns_api_token`: Cloudflare API token with DNS read permissions
-- `domain`: Your domain name
-
-Configure with:
-
-```bash
-auberge config set cloudflare_dns_api_token your-token-here
-auberge config set domain example.com
-```
+| Option                 | Description         | Default         |
+| ---------------------- | ------------------- | --------------- |
+| `-s, --subdomain NAME` | Filter by subdomain | All records     |
+| `-o, --output FORMAT`  | `human` or `json`   | `human`         |
+| `-P, --production`     | Use production API  | false (sandbox) |
 
 ## Examples
 
 ```bash
-# List all records
 auberge dns list
-
-# Filter by subdomain
 auberge dns list --subdomain freshrss
-
-# Production API
-auberge dns list --production
+auberge dns list --output json --production
 ```
 
-## Output Example
-
-```
-CLOUDFLARE DNS
-DNS Records for example.com
-
-NAME                                     TYPE     CONTENT                  TTL
-@                                        A        192.168.1.10             1
-freshrss                                 A        192.168.1.10             1
-baikal                                   A        192.168.1.10             1
-www                                      CNAME    example.com              1
-mail                                     MX       mail.example.com (10)    1
-@                                        TXT      v=spf1 include:_...      1
-```
-
-## JSON Output
-
-```bash
-auberge dns list --output json
-```
+<details>
+<summary>JSON output schema</summary>
 
 ```json
 [
-  { "name": "@", "record_type": "A", "content": "192.168.1.10", "ttl": 1 },
-  {
-    "name": "freshrss",
-    "record_type": "A",
-    "content": "192.168.1.10",
-    "ttl": 1
-  },
-  { "name": "www", "record_type": "CNAME", "content": "example.com", "ttl": 1 },
-  {
-    "name": "mail",
-    "record_type": "MX",
-    "content": "mail.example.com",
-    "ttl": 1
-  }
+  { "name": "@", "record_type": "A", "content": "192.168.1.10", "ttl": 1 }
 ]
 ```
 
-JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr.
+| Field         | Type   | Description                    |
+| ------------- | ------ | ------------------------------ |
+| `name`        | string | Subdomain label (`@` for apex) |
+| `record_type` | string | A, AAAA, CNAME, MX, …          |
+| `content`     | string | IP, hostname, or text value    |
+| `ttl`         | number | Time-to-live in seconds        |
 
-**Schema**
+JSON goes to stdout; human-format chrome goes to stderr.
 
-| Field       | Type   | Description                             |
-| ----------- | ------ | --------------------------------------- |
-| name        | string | Subdomain label (`@` for apex)          |
-| record_type | string | DNS record type (A, AAAA, CNAME, MX, …) |
-| content     | string | Record value (IP, hostname, text, …)    |
-| ttl         | number | Time-to-live in seconds                 |
-
-## Record Types
-
-| Type  | Description    | Content Format              |
-| ----- | -------------- | --------------------------- |
-| A     | IPv4 address   | 192.168.1.10                |
-| AAAA  | IPv6 address   | 2001:db8::1                 |
-| CNAME | Canonical name | example.com                 |
-| MX    | Mail exchange  | mail.example.com (priority) |
-| TXT   | Text record    | "v=spf1..."                 |
-| NS    | Name server    | ns1.cloudflare.com          |
-| SRV   | Service        | target.example.com          |
-
-## Related Commands
-
-- [auberge dns status](status.md) - Show DNS status
-- [auberge dns set](set.md) - Set A record
-- [auberge dns migrate](migrate.md) - Migrate all records to new IP
-- [auberge dns set-all](set-all.md) - Batch create A records
-
-## See Also
-
-- [DNS Management](../../dns/README.md)
-- [Cloudflare Setup](../../getting-started/cloudflare.md)
+</details>

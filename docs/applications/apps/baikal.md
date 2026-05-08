@@ -1,72 +1,34 @@
 # Baikal
 
-Modern CalDAV/CardDAV server for calendar and contact synchronization built on Sabre/DAV.
+CalDAV/CardDAV server for calendar and contact sync, with automatic birthday calendar generation. Docs: [sabre.io/baikal](https://sabre.io/baikal)
 
-Official Documentation: [https://sabre.io/baikal](https://sabre.io/baikal)
+- **URL**: `https://{baikal_subdomain}.{domain}`
+- **Port**: internal (Caddy proxy)
+- **Data**: `/opt/baikal/Specific/`
 
-## Deployment
+## Deploy
 
 ```bash
-auberge ansible run --tags baikal
+auberge deploy baikal
 ```
 
-## Configuration
+## Required config
 
-Requires `baikal_subdomain` and `baikal_admin_password` set in `config.toml`.
+| Key                     | Purpose                    |
+| ----------------------- | -------------------------- |
+| `baikal_subdomain`      | Subdomain for HTTPS access |
+| `baikal_admin_password` | Admin password             |
 
-The deployed `baikal.yaml` config file has mode `0640` (owner + group read) since it contains the `encryption_key` and `admin_passwordhash`.
+## Notes
 
-Initial setup is done through the web interface at `https://{baikal_subdomain}.{domain}/admin/`.
+?> Complete initial setup at `https://{baikal_subdomain}.{domain}/admin/` after first deploy.
 
-## Features
+Endpoints: CalDAV and CardDAV both at `/dav.php`.
 
-- CalDAV for calendar synchronization
-- CardDAV for contact synchronization
-- Web-based administration interface
-- SQLite database backend
-- Standards-compliant implementation
-- Low resource footprint
-- **Automatic birthday calendar** - Syncs birthdays from contacts to a dedicated calendar
-
-## Access
-
-- Admin Interface: `https://{baikal_subdomain}.{domain}/admin/`
-- CalDAV Endpoint: `https://{baikal_subdomain}.{domain}/dav.php`
-- CardDAV Endpoint: `https://{baikal_subdomain}.{domain}/dav.php`
-
-## Backup
-
-Backed up by default. Backs up the `/opt/baikal/Specific` directory containing all data and configuration.
-
-See [Backup & Restore](../../backup-restore/overview.md).
-
-## Birthday Calendar
-
-Auberge automatically deploys a birthday calendar sync system that:
-
-- Reads birthday information from your CardDAV contacts (BDAY field)
-- Creates a dedicated "Birthdays" calendar with recurring annual events
-- Automatically syncs daily via systemd timer
-- Supports both full dates (with year) and year-less birthdays
-
-The sync runs automatically once per day. To manually trigger a sync:
+Birthday sync reads `BDAY` fields from contacts and populates a dedicated "Birthdays" calendar daily via systemd timer. Trigger manually:
 
 ```bash
-ssh your-vps
 sudo systemctl start baikal-birthday-sync.service
 ```
 
-To check the sync status:
-
-```bash
-systemctl status baikal-birthday-sync.timer
-journalctl -u baikal-birthday-sync.service -n 50
-```
-
-The birthday calendar will appear in your CalDAV client alongside your other calendars as "Birthdays".
-
-## Related
-
-- [Environment Variables](../../configuration/environment-variables.md)
-- [Backup & Restore](../../backup-restore/overview.md)
-- [Applications Overview](../overview.md)
+Backed up by default (`/opt/baikal/Specific`). See [Backup & Restore](../../backup-restore/overview.md).

@@ -110,7 +110,3 @@ The platforms above do more than I need in some places, less in others. Auberge 
 | **App catalog**       | Curated                 | ~500 packaged            | ~300 containerized | ~100 containerized |
 | **Customizable**      | Fully                   | Limited                  | Minimal            | Moderate           |
 | **HTTPS**             | Caddy (auto)            | Let's Encrypt (auto)     | Not by default     | Not by default     |
-
-## Related Pages
-
-- [Contributing](../development/contributing.md) - How to get involved

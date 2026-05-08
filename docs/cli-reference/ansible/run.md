@@ -1,134 +1,62 @@
 # auberge ansible run
 
-Run Ansible playbooks on hosts
-
-## Synopsis
+Run an Ansible playbook on a target host. Alias: `auberge a r`.
 
 ```bash
 auberge ansible run [OPTIONS]
 ```
 
-## Alias
-
-`auberge a r`
-
-## Description
-
-Executes Ansible playbooks on target hosts. Supports check mode (dry run), tag filtering, and interactive host/playbook selection.
-
-**Important warnings are shown for**:
-
-- bootstrap.yml: Provider firewall configuration required
-- apps.yml: Cloudflare API token and port 853 configuration
-
-## Config Validation
-
-Before executing any playbook, the CLI validates required config values from `config.toml` and exits with an error if any are missing or empty.
-
-| Playbook           | Required config keys                                    |
-| ------------------ | ------------------------------------------------------- |
-| bootstrap.yml      | `hostname`, `admin_user_name`, `ssh_port`               |
-| hardening.yml      | (none)                                                  |
-| infrastructure.yml | `admin_user_name`, `domain`, `tailscale_authkey`        |
-| apps.yml           | `admin_user_name`, `domain`, `cloudflare_dns_api_token` |
-| other playbooks    | `admin_user_name`, `domain`                             |
-
-Example error output:
-
-```
-✗ Missing required config values:
-✗   'admin_user_name' is required. Run: auberge config set admin_user_name <VALUE>
-✗   'domain' is required. Run: auberge config set domain <VALUE>
-Error: 2 required config value(s) missing in config.toml
-```
-
-## Automatic Dependency Resolution
-
-When `--tags` is provided **without** `--playbook`, the CLI auto-resolves which playbooks need to run based on the tags:
-
-- App tags (e.g., `paperless`, `baikal`) trigger `infrastructure.yml` first (full run, idempotent), then `apps.yml` with only the specified tags
-- Infrastructure tags (e.g., `tailscale`, `caddy`) run only `infrastructure.yml` with those tags
-- Mixed tags run both playbooks in order: infrastructure first, then apps
-
-Specifying `--playbook` explicitly **bypasses** auto-resolution — only the named playbook runs.
-
 ## Options
 
-| Option              | Description                                                                        | Default               |
-| ------------------- | ---------------------------------------------------------------------------------- | --------------------- |
-| -H, --host HOST     | Target host                                                                        | Interactive selection |
-| -p, --playbook PATH | Playbook path (bypasses auto-resolution when combined with `--tags`)               | Interactive selection |
-| -C, --check         | Run in check mode (dry run)                                                        | false                 |
-| -t, --tags TAGS     | Comma-separated tags to run (auto-resolves playbooks when `--playbook` is omitted) | All tasks             |
-| --skip-tags TAGS    | Comma-separated tags to skip                                                       | None                  |
-| -f, --force         | Skip confirmation prompts (for CI/CD)                                              | false                 |
+| Option                | Description                                                                | Default     |
+| --------------------- | -------------------------------------------------------------------------- | ----------- |
+| `-H, --host HOST`     | Target host                                                                | Interactive |
+| `-p, --playbook PATH` | Playbook path (bypasses auto-resolution when combined with `--tags`)       | Interactive |
+| `-C, --check`         | Dry run                                                                    | `false`     |
+| `-t, --tags TAGS`     | Comma-separated tags (auto-resolves playbook when `--playbook` is omitted) | All tasks   |
+| `--skip-tags TAGS`    | Comma-separated tags to skip                                               | None        |
+| `-f, --force`         | Skip confirmation prompts (CI/CD)                                          | `false`     |
+
+?> **Auto-resolution**: when `--tags` is set and `--playbook` is omitted, app tags (e.g. `paperless`) trigger a full `infrastructure.yml` run first (idempotent), then `apps.yml` with only those tags. Pass `--playbook` to bypass.
 
 ## Examples
 
 ```bash
-# Interactive mode (select host and playbook)
-auberge ansible run
-
-# Run specific playbook on specific host
-auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml
-
-# Dry run (check mode)
-auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --check
-
-# Run with specific tags
-auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --tags freshrss,baikal
-
-# Auto-resolve: deploys full infrastructure first, then paperless from apps.yml
-auberge ansible run --host myserver --tags paperless
-
-# Explicit playbook: runs only apps.yml with the tag (no infra auto-deploy)
-auberge ansible run --host myserver --playbook ansible/playbooks/apps.yml --tags paperless
-
-# Skip confirmations (for automation)
-auberge ansible run --host myserver --playbook ansible/playbooks/bootstrap.yml --force
+auberge ansible run                                                      # interactive
+auberge ansible run --host my-vps --tags paperless                       # auto-resolves infra + apps
+auberge ansible run --host my-vps --playbook ansible/playbooks/apps.yml --tags freshrss,baikal --check
+auberge ansible run --host my-vps --skip-tags navidrome -f               # CI/CD
 ```
 
-## Bootstrap Warnings
+## Required config keys per playbook
 
-When running bootstrap.yml, you'll see:
+The CLI validates `config.toml` before running and exits with the missing keys.
 
-```
-IMPORTANT: Provider Firewall Configuration Required
-Before running bootstrap, ensure your VPS provider's firewall
-allows your custom SSH port (separate from UFW on the VPS)
+| Playbook             | Required keys                                           |
+| -------------------- | ------------------------------------------------------- |
+| `bootstrap.yml`      | `hostname`, `admin_user_name`, `ssh_port`               |
+| `hardening.yml`      | —                                                       |
+| `infrastructure.yml` | `admin_user_name`, `domain`, `tailscale_authkey`        |
+| `apps.yml`           | `admin_user_name`, `domain`, `cloudflare_dns_api_token` |
+| other                | `admin_user_name`, `domain`                             |
 
-Required steps:
-  1. Get your ssh_port: auberge config get ssh_port
-  2. Log into your VPS provider dashboard (IONOS, etc.)
-  3. Add firewall rule: Allow TCP on your ssh_port
-  4. Save and confirm the rule is active
+## Common tags
 
-Without this, you'll be locked out after SSH port change!
-```
+List all tags for a playbook with `cd ansible && ansible-playbook playbooks/apps.yml --list-tags`.
 
-## Apps Playbook Warnings
+| Tag                                                   | Scope                    |
+| ----------------------------------------------------- | ------------------------ |
+| `bootstrap` / `hardening` / `infrastructure` / `apps` | Layer                    |
+| `ssh` / `ufw` / `fail2ban` / `kernel_hardening`       | Hardening component      |
+| `caddy` / `apt` / `bash` / `tailscale`                | Infrastructure component |
+| `<app-name>` (e.g. `baikal`, `freshrss`, `paperless`) | Single app               |
+| `security` / `network` / `storage` / `web`            | Category                 |
 
-When running apps.yml:
+!> **bootstrap.yml**: configure your VPS provider firewall to allow your custom `ssh_port` _before_ running, or you'll be locked out. **apps.yml**: requires `cloudflare_dns_api_token` (Zone:Read + DNS:Edit) and port 853/tcp open in the provider firewall (Blocky DoT).
 
-**Cloudflare API Token**:
+<details>
+<summary>Check mode limitations</summary>
 
-- Zone → Zone → Read
-- Zone → DNS → Edit
-- Set with: `auberge config set cloudflare_dns_api_token your-token`
+Tasks that depend on previous tasks may report failures in check mode that wouldn't occur in real execution (e.g. copying a file into a directory the previous task only _would have_ created). `command`/`shell` modules always show "changed" — add `check_mode: no` for read-only commands. Handlers are notified but not executed.
 
-**Port 853 (DNS over TLS)**:
-
-- Must be opened in VPS provider firewall
-- Required for Blocky DoT functionality
-
-## Related Commands
-
-- [auberge deploy](../deploy.md) - Deploy apps (recommended for app deployments)
-- [auberge ansible bootstrap](bootstrap.md) - Bootstrap a new VPS
-- [auberge select playbook](../select/playbook.md) - Select playbook interactively
-
-## See Also
-
-- [Ansible Playbooks](../../core-concepts/ansible.md)
-- [Bootstrap Process](../../getting-started/bootstrap.md)
-- [Applications](../../applications/README.md)
+</details>

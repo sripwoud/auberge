@@ -1,32 +1,20 @@
 # Colporteur
 
-Newsletter-to-feed converter. Connects to IMAP mailboxes, fetches newsletter emails, and generates Atom XML feeds.
+Newsletter-to-feed converter: reads IMAP mailboxes, strips tracking pixels, and serves Atom XML feeds via HTTP basic auth. Repo: [github.com/sripwoud/colporteur](https://github.com/sripwoud/colporteur)
 
-Repository: [https://github.com/sripwoud/colporteur](https://github.com/sripwoud/colporteur)
+- **URL**: `https://feeds.{domain}` (basic auth)
+- **Port**: internal (Caddy static file server)
+- **Data**: `/var/lib/colporteur/feeds/`
 
-## Deployment
+## Deploy
 
 ```bash
-auberge ansible run --tags colporteur
+auberge deploy colporteur
 ```
 
-## How It Works
+## Required config
 
-Colporteur runs as a systemd timer (every 15 minutes by default):
-
-1. Connects to configured IMAP accounts
-2. Searches for unread emails from configured senders
-3. Parses and sanitizes HTML content (strips tracking pixels)
-4. Generates Atom XML feed files
-5. Caddy serves the static XML files
-
-Feeds are protected by HTTP basic auth (Caddy). Configure the feed URL (e.g. `https://feeds.domain.com/feed.xml`) in [FreshRSS](freshrss.md) or any RSS reader and enter credentials in the reader's authentication settings.
-
-## Configuration
-
-Config is managed locally at `~/.config/colporteur/config.toml` and copied to the VPS on deploy. The file must exist locally before running `auberge ansible run --tags colporteur`.
-
-Example config:
+Config lives locally at `~/.config/colporteur/config.toml` and is copied to the VPS on deploy. The file must exist before deploying.
 
 ```toml
 output_dir = "/var/lib/colporteur/feeds"
@@ -42,26 +30,13 @@ account = "mxroute"
 senders = ["hello@newsletter.com"]
 ```
 
-## FreshRSS Sync
+## Notes
 
-Set `colporteur_freshrss_sync = true` in `~/.config/auberge/config.toml` to automatically import colporteur feeds into FreshRSS on each deploy.
+?> Set `colporteur_freshrss_sync = true` in `~/.config/auberge/config.toml` to auto-import feeds into [FreshRSS](freshrss.md) on each deploy. Requires FreshRSS on the same server.
 
-Requires FreshRSS to be deployed on the same server.
-
-When enabled, the deploy will:
-
-1. Deploy an internal Caddyfile serving feeds on `localhost:8085`
-2. Generate an OPML file from the colporteur config
-3. Import the OPML into FreshRSS via its CLI
-
-## Operations
+Runs every 15 minutes via systemd timer. Check status:
 
 ```bash
 sudo systemctl status colporteur.timer
 sudo journalctl -u colporteur.service --since "1 hour ago"
 ```
-
-## Related
-
-- [FreshRSS](freshrss.md)
-- [Applications Overview](../overview.md)

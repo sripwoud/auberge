@@ -43,9 +43,3 @@ Services are available at subdomains of your primary domain:
 - `https://lire.yourdomain.com` - Grimmory
 - `https://webdav.yourdomain.com` - WebDAV
 - `https://url.yourdomain.com` - YOURLS
-
-## Next Steps
-
-- [First Deployment](first-deployment.md) - Detailed walkthrough
-- [Backup & Restore](../backup-restore/overview.md) - Protect your data
-- [CLI Reference](../cli-reference/auberge.md) - All commands

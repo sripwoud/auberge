@@ -1,39 +1,22 @@
 # Navidrome
 
-Modern music streaming server compatible with Subsonic/Airsonic clients.
+Music streaming server compatible with Subsonic/Airsonic clients. Docs: [navidrome.org](https://navidrome.org)
 
-Official Documentation: [https://navidrome.org](https://navidrome.org)
+- **URL**: `https://{subdomain}.{domain}`
+- **Data**: database and config on VPS; music files at configured path
 
-## Deployment
+## Deploy
 
 ```bash
-auberge ansible run --tags navidrome
+auberge deploy navidrome
 ```
 
-## Music Sync
+## Notes
 
-Sync music files to VPS:
+Sync music files to the VPS:
 
 ```bash
 auberge sync music --host my-vps --source ~/Music
 ```
 
-See [CLI Reference: sync music](../../cli-reference/sync/music.md).
-
-## Backup
-
-Backed up by default (database and configuration only). Music files excluded by default to save space.
-
-Include music in backup:
-
-```bash
-auberge backup create --include-music
-```
-
-See [Backup & Restore](../../backup-restore/overview.md).
-
-## Related
-
-- [Backup & Restore](../../backup-restore/overview.md)
-- [CLI Reference: sync music](../../cli-reference/sync/music.md)
-- [Applications Overview](../overview.md)
+Backed up by default (database and config only; music excluded to save space). To include music: `auberge backup create --include-music`. See [Backup & Restore](../../backup-restore/overview.md).

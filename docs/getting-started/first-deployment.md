@@ -1,41 +1,25 @@
 # First Deployment
 
-Detailed walkthrough of deploying Auberge for the first time.
-
 ## Prerequisites
 
 - Auberge installed (`cargo install auberge`)
-- A VPS with root access
-- SSH key for VPS access
-- (Optional) Cloudflare account for DNS
+- A VPS with root access and an SSH key
 
-## Step 1: Add Your VPS
-
-Add your VPS as a host:
+## Step 1: Add your VPS
 
 ```bash
 auberge host add my-vps 203.0.113.10
 ```
 
-You'll be prompted for:
-
-- **SSH user**: Usually `root` for initial setup
-- **SSH port**: Default is `22`
-- **SSH key**: Optional, defaults to `~/.ssh/identities/{user}_{hostname}`
-
-## Step 2: Generate SSH Key (Optional)
-
-If you don't have an SSH key:
+## Step 2: Generate SSH key (optional)
 
 ```bash
 auberge ssh keygen --host my-vps
 ```
 
-This creates a key at `~/.ssh/identities/root_my-vps`.
+Key is written to `~/.ssh/identities/root_my-vps`.
 
-## Step 3: Bootstrap VPS
-
-Before bootstrapping, generate `config.toml` and set the required values:
+## Step 3: Initialize config
 
 ```bash
 auberge config init --output "$(auberge config path)"
@@ -43,29 +27,19 @@ auberge config set hostname my-vps
 auberge config set admin_user_name yourname
 auberge config set admin_user_email you@example.com
 auberge config set ssh_port 22022
-# Optional: only needed for Cockpit web console login
-auberge config set admin_user_password your-linux-password
 ```
 
-Then run the bootstrap playbook:
+## Step 4: Bootstrap VPS
+
+!> Configure your VPS provider's firewall to allow your custom SSH port **before** running bootstrap, or you will lose SSH access.
 
 ```bash
 auberge ansible bootstrap --host my-vps --ip 203.0.113.10
 ```
 
-This:
+Bootstrap creates an admin user, disables root SSH login, and changes the SSH port.
 
-- Sets server hostname (from `hostname` in `config.toml`)
-- Creates an admin user (optionally sets a Linux password if `admin_user_password` is configured)
-- Disables root SSH login
-- Changes SSH port (from `ssh_port` in `config.toml`)
-- Configures basic security
-
-**Important**: Configure your VPS provider's firewall to allow your custom SSH port before running bootstrap.
-
-## Step 4: Configure
-
-Set the remaining required values (the file already exists from Step 3):
+## Step 5: Configure remaining keys
 
 ```bash
 auberge config set domain example.com
@@ -74,82 +48,40 @@ auberge config set baikal_admin_password your-password
 auberge config set webdav_password your-password
 ```
 
-Run `auberge config init` (no flags) to print the full list of known keys.
-Use `auberge config init --playbooks <a,b,c>` to scope the scaffold to
-specific playbooks.
+?> Run `auberge config init` (no flags) to print all known config keys.
 
-## Step 5: Deploy Full Stack
+## Step 6: Deploy full stack
 
 ```bash
 auberge deploy --all --host my-vps
 ```
 
-This runs:
+Runs hardening, infrastructure (Caddy, DNS), and all applications. Bootstrap is excluded — it was run in Step 4.
 
-- Hardening (firewall, fail2ban)
-- Infrastructure (Caddy, DNS)
-- Applications (all services)
-
-**Note**: Bootstrap is not included — run `auberge ansible bootstrap` separately (Step 3).
-
-## Step 6: Verify DNS Records
-
-DNS A records for app subdomains are created automatically during deployment. Verify they were provisioned:
+## Step 7: Verify DNS records
 
 ```bash
 auberge dns status
 ```
 
-To manually create or re-sync all records (e.g. for apps without automatic provisioning):
+To manually re-sync records: `auberge dns set-all --host my-vps`
 
-```bash
-auberge dns set-all --host my-vps
-```
-
-## Step 7: Verify Services
-
-Check that services are running:
+## Step 8: Verify services
 
 ```bash
 ssh user@my-vps 'systemctl status caddy php*-fpm freshrss'
 ```
 
-Access services in your browser:
-
-- `https://cal.yourdomain.com`
-- `https://rss.yourdomain.com`
-
-## Step 8: Create First Backup
+## Step 9: Create first backup
 
 ```bash
 auberge backup create --host my-vps
 ```
 
-This backs up all application data locally.
-
 ## Troubleshooting
 
-### Can't Connect via SSH After Bootstrap
-
-Your VPS provider's firewall may be blocking the new SSH port. Log into the provider's control panel and allow the custom port.
-
-### Services Not Starting
-
-Check logs:
-
-```bash
-ssh user@my-vps 'journalctl -u php*-fpm -n 50'
-```
-
-### DNS Records Not Created
-
-Verify Cloudflare API token has correct permissions:
-
-- Zone → DNS → Edit
-- Zone → Zone → Read
-
-## Next Steps
-
-- [Backup & Restore](../backup-restore/overview.md) - Regular backups
-- [Running Playbooks](../deployment/running-playbooks.md) - Deploy specific services
-- [CLI Reference](../cli-reference/auberge.md) - All commands
+| Symptom                     | Fix                                               |
+| --------------------------- | ------------------------------------------------- |
+| SSH refused after bootstrap | Allow custom port in VPS provider firewall        |
+| Services not starting       | `ssh user@my-vps 'journalctl -u php*-fpm -n 50'`  |
+| DNS records missing         | Verify token has Zone:DNS:Edit and Zone:Zone:Read |

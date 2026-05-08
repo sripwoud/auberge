@@ -1,15 +1,11 @@
 # YOURLS
 
-Your Own URL Shortener - self-hosted link shortening service.
+Self-hosted URL shortener. Docs: [yourls.org](https://yourls.org)
 
-Official Documentation: [https://yourls.org](https://yourls.org)
+- **URL**: `https://{subdomain}.{domain}`
 
-## Deployment
+## Deploy
 
 ```bash
-auberge ansible run --tags yourls
+auberge deploy yourls
 ```
-
-## Related
-
-- [Applications Overview](../overview.md)

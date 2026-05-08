@@ -3,52 +3,20 @@
   - [Quick Start](getting-started/quick-start.md)
   - [Installation](getting-started/installation.md)
   - [First Deployment](getting-started/first-deployment.md)
-
-- Core Concepts
   - [Architecture](core-concepts/architecture.md)
-  - [Playbooks](core-concepts/playbooks.md)
-  - [Hosts vs Inventory](core-concepts/hosts-vs-inventory.md)
-  - [Infrastructure Layers](core-concepts/infrastructure-layers.md)
 
 - Configuration
-  - [Hosts](configuration/hosts.md)
+  - [Hosts & Inventory](core-concepts/hosts-vs-inventory.md)
+  - [hosts.toml](configuration/hosts.md)
   - [SSH Keys](configuration/ssh-keys.md)
   - [Environment Variables](configuration/environment-variables.md)
-  - [Secrets Management](configuration/secrets.md)
+  - [Secrets](configuration/secrets.md)
   - [Ansible Inventory](configuration/ansible-inventory.md)
-
-- Deployment
-  - [Bootstrap](deployment/bootstrap.md)
-  - [Running Playbooks](deployment/running-playbooks.md)
-  - [Check Mode](deployment/check-mode.md)
-  - [Tags](deployment/tags.md)
-  - [CI/CD Automation](deployment/ci-cd.md)
-
-- Backup & Restore
-  - [Overview](backup-restore/overview.md)
-  - [Creating Backups](backup-restore/creating-backups.md)
-  - [Listing Backups](backup-restore/listing-backups.md)
-  - [Restoring Backups](backup-restore/restoring-backups.md)
-  - [Cross-Host Migration](backup-restore/cross-host-migration.md)
-  - [OPML Management](backup-restore/opml-management.md)
-  - [Best Practices](backup-restore/best-practices.md)
-
-- DNS Management
   - [Cloudflare Setup](dns/cloudflare-setup.md)
-  - [Managing Records](dns/managing-records.md)
-  - [Migration](dns/migration.md)
-  - [Batch Operations](dns/batch-operations.md)
 
 - CLI Reference
   - [Overview](cli-reference/auberge.md)
   - [deploy](cli-reference/deploy.md)
-  - Host Management
-    - [add](cli-reference/host/add.md)
-    - [list](cli-reference/host/list.md)
-    - [show](cli-reference/host/show.md)
-    - [edit](cli-reference/host/edit.md)
-    - [remove](cli-reference/host/remove.md)
-    - [detect-tailscale-ip](cli-reference/host/detect-tailscale-ip.md)
   - Ansible
     - [run](cli-reference/ansible/run.md)
     - [bootstrap](cli-reference/ansible/bootstrap.md)
@@ -61,21 +29,23 @@
     - [sync](cli-reference/backup/sync.md)
     - [export-opml](cli-reference/backup/export-opml.md)
     - [import-opml](cli-reference/backup/import-opml.md)
-  - Config
-    - [overview](cli-reference/config/overview.md)
-  - SSH
-    - [keygen](cli-reference/ssh/keygen.md)
-    - [add-key](cli-reference/ssh/add-key.md)
-  - Sync
-    - [hermes](cli-reference/sync/hermes.md)
-    - [music](cli-reference/sync/music.md)
   - DNS
     - [list](cli-reference/dns/list.md)
     - [status](cli-reference/dns/status.md)
     - [set](cli-reference/dns/set.md)
-    - [delete](cli-reference/dns/delete.md)
-    - [migrate](cli-reference/dns/migrate.md)
     - [set-all](cli-reference/dns/set-all.md)
+    - [migrate](cli-reference/dns/migrate.md)
+    - [delete](cli-reference/dns/delete.md)
+  - Host
+    - [add](cli-reference/host/add.md)
+    - [list](cli-reference/host/list.md)
+    - [show](cli-reference/host/show.md)
+    - [edit](cli-reference/host/edit.md)
+    - [remove](cli-reference/host/remove.md)
+    - [detect-tailscale-ip](cli-reference/host/detect-tailscale-ip.md)
+  - SSH
+    - [keygen](cli-reference/ssh/keygen.md)
+    - [add-key](cli-reference/ssh/add-key.md)
   - Headscale
     - [add-user](cli-reference/headscale/add-user.md)
     - [list-users](cli-reference/headscale/list-users.md)
@@ -83,38 +53,33 @@
     - [remove-user](cli-reference/headscale/remove-user.md)
   - Bichon
     - [reconcile-folders](cli-reference/bichon/reconcile-folders.md)
+  - Sync
+    - [hermes](cli-reference/sync/hermes.md)
+    - [music](cli-reference/sync/music.md)
+  - Config
+    - [overview](cli-reference/config/overview.md)
   - Select
     - [host](cli-reference/select/host.md)
     - [playbook](cli-reference/select/playbook.md)
 
+- Backup & Restore
+  - [Overview](backup-restore/overview.md)
+  - [Cross-Host Migration](backup-restore/cross-host-migration.md)
+  - [Best Practices](backup-restore/best-practices.md)
+  - [OPML Management](backup-restore/opml-management.md)
+
 - Applications
   - [Overview](applications/overview.md)
-  - Infrastructure
-    - [Caddy](applications/infrastructure/caddy.md)
-    - [Cockpit](applications/infrastructure/cockpit.md)
-    - [fail2ban](applications/infrastructure/fail2ban.md)
-    - [UFW](applications/infrastructure/ufw.md)
-  - Networking
-    - [Blocky](applications/networking/blocky.md)
-    - [Headscale](applications/networking/headscale.md)
-    - [WireGuard](applications/networking/wireguard.md)
-    - [Tailscale](applications/networking/tailscale.md)
-  - Apps
-    - [Baikal](applications/apps/baikal.md)
-    - [Bichon](applications/apps/bichon.md)
-    - [Colporteur](applications/apps/colporteur.md)
-    - [FreshRSS](applications/apps/freshrss.md)
-    - [Navidrome](applications/apps/navidrome.md)
-    - [Calibre](applications/apps/calibre.md)
-    - [Grimmory](applications/apps/grimmory.md)
-    - [WebDAV](applications/apps/webdav.md)
-    - [Syncthing](applications/apps/syncthing.md)
-    - [YOURLS](applications/apps/yourls.md)
-    - [Paperless-ngx](applications/apps/paperless.md)
-  - Notifications
-    - [TGTG Bot](applications/apps/tgtg.md)
-  - AI Agent
-    - [Hermes Agent](applications/apps/hermes.md)
+
+- Troubleshooting
+  - [Common Issues](troubleshooting/common-issues.md)
+  - [SSH](troubleshooting/ssh-problems.md)
+  - [Ansible](troubleshooting/ansible-errors.md)
+  - [DNS](troubleshooting/dns-issues.md)
+  - [Backup/Restore](troubleshooting/backup-restore-issues.md)
+
+- CI/CD
+  - [Automation](deployment/ci-cd.md)
 
 - Development
   - [Setup](development/setup.md)
@@ -123,13 +88,6 @@
   - [Ansible Roles](development/ansible-roles.md)
   - [Contributing](development/contributing.md)
 
-- Troubleshooting
-  - [Common Issues](troubleshooting/common-issues.md)
-  - [SSH Problems](troubleshooting/ssh-problems.md)
-  - [Backup/Restore Issues](troubleshooting/backup-restore-issues.md)
-  - [Ansible Errors](troubleshooting/ansible-errors.md)
-  - [DNS Issues](troubleshooting/dns-issues.md)
-
 - About
-  - [Alternatives Comparison](about/alternatives.md)
+  - [Alternatives](about/alternatives.md)
   - [License](about/license.md)

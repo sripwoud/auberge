@@ -51,14 +51,3 @@ Tags (comma-separated) [production, web]: production, api
 Description [Production web server]: Main API server
 ✓ Host 'myserver' updated
 ```
-
-## Related Commands
-
-- [auberge host show](show.md) - Show host details before editing
-- [auberge host list](list.md) - List all hosts
-- [auberge host add](add.md) - Add a new host
-- [auberge host remove](remove.md) - Remove a host
-
-## See Also
-
-- [Host Configuration](../../configuration/hosts.md)

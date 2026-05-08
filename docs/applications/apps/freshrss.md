@@ -1,40 +1,18 @@
 # FreshRSS
 
-Self-hosted RSS feed aggregator and reader.
+Self-hosted RSS feed aggregator and reader. Docs: [freshrss.org](https://freshrss.org)
 
-Official Documentation: [https://freshrss.org](https://freshrss.org)
+- **URL**: `https://{subdomain}.{domain}`
+- **Data**: SQLite database + user data on VPS
 
-## Deployment
-
-```bash
-auberge ansible run --tags freshrss
-```
-
-## Feed Updates
-
-Feeds are automatically refreshed every 15 minutes via a systemd timer (`freshrss-update.timer`).
+## Deploy
 
 ```bash
-sudo systemctl status freshrss-update.timer
-sudo journalctl -u freshrss-update.service --since "1 hour ago"
+auberge deploy freshrss
 ```
 
-## Backup
+## Notes
 
-Backed up by default. Includes:
+Feeds refresh every 15 minutes via `freshrss-update.timer`.
 
-- SQLite database
-- Configuration
-- User data
-
-See [Backup & Restore](../../backup-restore/overview.md).
-
-## OPML Export/Import
-
-Supports independent feed export/import. See [OPML Management](../../backup-restore/opml-management.md).
-
-## Related
-
-- [Backup & Restore](../../backup-restore/overview.md)
-- [OPML Management](../../backup-restore/opml-management.md)
-- [Applications Overview](../overview.md)
+Backed up by default (SQLite DB, config, user data). Supports OPML export/import — see [OPML Management](../../backup-restore/opml-management.md).

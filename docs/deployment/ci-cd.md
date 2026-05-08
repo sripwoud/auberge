@@ -1,426 +1,37 @@
 # CI/CD Automation
 
-Guide to automating Auberge deployments with CI/CD pipelines.
+Auberge supports non-interactive deployments via `--force`, which skips confirmation prompts but always prints warnings.
 
-## Overview
+## Required secrets
 
-Auberge supports fully automated deployments via the `--force` flag, which skips interactive prompts while still displaying warnings.
+| Secret                     | Description                               |
+| -------------------------- | ----------------------------------------- |
+| `SSH_PRIVATE_KEY`          | ansible user's private key (full content) |
+| `SSH_PORT`                 | custom SSH port                           |
+| `CLOUDFLARE_DNS_API_TOKEN` | Cloudflare API token                      |
+| `ADMIN_USER_NAME`          | admin username                            |
 
-**Key features:**
+App-specific secrets (e.g. `BAIKAL_ADMIN_PASSWORD`) are also required if used.
 
-- Skip confirmation prompts
-- Explicit host and playbook selection
-- Warning messages always displayed
-- Exit codes for pipeline integration
+## `--force` semantics
 
-## The --force Flag
-
-### What It Does
-
-`--force` (or `-f`) skips interactive confirmations:
+`--force` / `-f` skips interactive confirmations. Warnings still print — you are responsible for heeding them.
 
 ```bash
-# With --force: no prompts
 auberge ansible run --host production --playbook playbooks/apps.yml --force
-
-# Without --force: prompts for confirmation
-auberge ansible run --host production --playbook playbooks/apps.yml
-# ? Confirm execution? [y/N]:
 ```
 
-### What It Doesn't Do
-
-**--force does NOT skip warnings:**
-
-```bash
-auberge ansible bootstrap production --ip 10.0.0.1 --force
-```
-
-**Output:**
-
-```
-⚠ WARNING: Ensure provider firewall allows SSH_PORT (2222)
-⚠ WARNING: Bootstrap will change SSH port from 22 to 2222
-⚠ WARNING: Ensure Cloudflare API token is configured
-
-Proceeding with bootstrap...
-```
-
-**Warnings always display** - you're responsible for heeding them.
-
-## GitHub Actions
-
-### Complete Workflow Example
+## Minimal GitHub Actions workflow
 
 ```yaml
-name: Deploy to VPS
+name: Deploy
 
 on:
   push:
     branches: [main]
-  workflow_dispatch: # Manual trigger
 
 permissions:
   contents: read
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Auberge
-        run: cargo install auberge
-
-      - name: Configure secrets
-        env:
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-          ADMIN_USER_NAME: ${{ secrets.ADMIN_USER_NAME }}
-          CLOUDFLARE_DNS_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_API_TOKEN }}
-        run: |
-          auberge config init
-          auberge config set ssh_port "$SSH_PORT"
-          auberge config set admin_user_name "$ADMIN_USER_NAME"
-          auberge config set cloudflare_dns_api_token "$CLOUDFLARE_DNS_API_TOKEN"
-
-      - name: Set up SSH key
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.ssh/identities
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/identities/ansible_production
-          chmod 600 ~/.ssh/identities/ansible_production
-
-      - name: Deploy applications
-        run: |
-          auberge ansible run \
-            --host production \
-            --playbook playbooks/apps.yml \
-            --force \
-            --skip-tags bootstrap
-
-      - name: Verify deployment
-        run: |
-          ssh -i ~/.ssh/identities/ansible_production \
-              -p ${{ secrets.SSH_PORT }} \
-              ansible@${{ secrets.AUBERGE_HOST }} \
-              "systemctl is-active baikal freshrss navidrome"
-```
-
-### Required GitHub Secrets
-
-Set these in repository settings → Secrets and variables → Actions:
-
-- `SSH_PORT` - Custom SSH port
-- `SSH_PRIVATE_KEY` - ansible user's SSH private key (full content)
-- `ADMIN_USER_NAME` - Admin username
-- `CLOUDFLARE_DNS_API_TOKEN` - Cloudflare API token
-- Other app-specific secrets (BAIKAL_ADMIN_PASSWORD, etc.)
-
-## GitLab CI
-
-### .gitlab-ci.yml
-
-```yaml
-stages:
-  - deploy
-
-deploy_production:
-  stage: deploy
-  image: rust:latest
-  only:
-    - main
-  before_script:
-    - cargo install auberge
-    - mkdir -p ~/.ssh/identities
-    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/identities/ansible_production
-    - chmod 600 ~/.ssh/identities/ansible_production
-    - auberge config set ssh_port "$SSH_PORT"
-    - auberge config set admin_user_name "$ADMIN_USER_NAME"
-    - auberge config set cloudflare_dns_api_token "$CLOUDFLARE_DNS_API_TOKEN"
-  script:
-    - auberge ansible run
-      --host production
-      --playbook playbooks/apps.yml
-      --force
-      --skip-tags bootstrap
-  after_script:
-    - ssh -i ~/.ssh/identities/ansible_production
-      -p $SSH_PORT
-      ansible@$AUBERGE_HOST
-      "systemctl status php*-fpm freshrss navidrome"
-```
-
-### Required GitLab Variables
-
-Set in Settings → CI/CD → Variables:
-
-- `SSH_PORT`
-- `SSH_PRIVATE_KEY` (masked, file type)
-- `ADMIN_USER_NAME`
-- `CLOUDFLARE_DNS_API_TOKEN` (masked)
-
-## Best Practices
-
-### Use Separate Environments
-
-```yaml
-# .github/workflows/deploy-staging.yml
-- name: Deploy to staging
-  run: |
-    auberge ansible run \
-      --host staging \
-      --playbook playbooks/apps.yml \
-      --force
-
-# .github/workflows/deploy-production.yml
-- name: Deploy to production
-  run: |
-    auberge ansible run \
-      --host production \
-      --playbook playbooks/apps.yml \
-      --force
-```
-
-### Create Backup Before Deploy
-
-```yaml
-- name: Create backup
-  run: |
-    auberge backup create --host production --yes
-
-- name: Deploy
-  run: |
-    auberge ansible run \
-      --host production \
-      --playbook playbooks/apps.yml \
-      --force
-
-- name: Verify deployment
-  run: |
-    # Health checks
-    curl -f https://cal.example.com || exit 1
-```
-
-### Use Check Mode First
-
-```yaml
-- name: Check what would change
-  run: |
-    auberge deploy \
-      --all \
-      --host production \
-      --check \
-      --force
-
-- name: Deploy if check passed
-  run: |
-    auberge deploy \
-      --all \
-      --host production \
-      --force
-```
-
-### Tag-Based Deployments
-
-```yaml
-- name: Deploy only changed apps
-  run: |
-    # Detect which apps changed
-    CHANGED_APPS=$(git diff --name-only HEAD~1 | grep 'ansible/roles/' | cut -d'/' -f3 | tr '\n' ',' | sed 's/,$//')
-
-    if [ -n "$CHANGED_APPS" ]; then
-      auberge ansible run \
-        --host production \
-        --tags "$CHANGED_APPS" \
-        --force
-    else
-      echo "No app changes detected"
-    fi
-```
-
-### Rollback on Failure
-
-```yaml
-- name: Deploy
-  id: deploy
-  run: |
-    auberge ansible run \
-      --host production \
-      --playbook playbooks/apps.yml \
-      --force
-
-- name: Rollback on failure
-  if: failure() && steps.deploy.conclusion == 'failure'
-  run: |
-    auberge backup restore latest \
-      --host production \
-      --yes
-```
-
-## Security Considerations
-
-### Protect SSH Keys
-
-**Never commit SSH private keys** to version control.
-
-✓ **Good:** Use GitHub Secrets or GitLab Variables
-✗ **Bad:** Store in repository
-
-### Use Deploy Keys
-
-Generate dedicated SSH keys for CI/CD:
-
-```bash
-# On CI runner or locally
-ssh-keygen -t ed25519 -f ~/.ssh/ci_deploy_key -C "ci-deploy@example.com"
-
-# Add public key to VPS
-ssh-copy-id -i ~/.ssh/ci_deploy_key.pub ansible@vps-host
-```
-
-Add private key to CI secrets:
-
-```bash
-cat ~/.ssh/ci_deploy_key  # Copy to GitHub Secrets
-```
-
-### Restrict Runner Permissions
-
-Use least-privilege principles:
-
-```yaml
-permissions:
-  contents: read # Don't grant write unless needed
-```
-
-### Audit Deployments
-
-Log all deployments:
-
-```yaml
-- name: Log deployment
-  run: |
-    echo "Deployed by: ${{ github.actor }}"
-    echo "Commit: ${{ github.sha }}"
-    echo "Branch: ${{ github.ref }}"
-    date
-```
-
-## Testing in CI
-
-### Ansible Syntax Check
-
-```yaml
-- name: Check Ansible syntax
-  run: |
-    cd ansible && ansible-playbook playbooks/apps.yml --syntax-check
-```
-
-### Lint Playbooks
-
-```yaml
-- name: Lint Ansible playbooks
-  run: |
-    ansible-lint playbooks/
-```
-
-### Validate Inventory
-
-```yaml
-- name: Validate inventory
-  run: |
-    ansible-inventory -i ansible/inventory.yml --list
-```
-
-## Deployment Strategies
-
-### Blue-Green Deployment
-
-Maintain two VPS hosts:
-
-```yaml
-- name: Deploy to blue
-  run: |
-    auberge ansible run --host blue --playbook playbooks/apps.yml --force
-
-- name: Switch DNS to blue
-  run: |
-    auberge dns set-all --host blue --force
-
-- name: Drain green
-  run: |
-    # Wait for connections to drain
-    sleep 300
-
-- name: Update green
-  run: |
-    auberge ansible run --host green --playbook playbooks/apps.yml --force
-```
-
-### Canary Deployment
-
-Deploy to subset of hosts first:
-
-```yaml
-- name: Deploy to canary
-  run: |
-    auberge ansible run --host canary --playbook playbooks/apps.yml --force
-
-- name: Smoke test
-  run: |
-    curl -f https://cal.canary.example.com || exit 1
-
-- name: Deploy to production
-  run: |
-    auberge ansible run --host production --playbook playbooks/apps.yml --force
-```
-
-## Monitoring Deployments
-
-### Send Notifications
-
-```yaml
-- name: Notify on success
-  if: success()
-  run: |
-    curl -X POST $WEBHOOK_URL \
-      -d "Deployment to production succeeded"
-
-- name: Notify on failure
-  if: failure()
-  run: |
-    curl -X POST $WEBHOOK_URL \
-      -d "Deployment to production failed"
-```
-
-### Log to External Service
-
-```yaml
-- name: Log deployment
-  run: |
-    curl -X POST https://logging-service.example.com/events \
-      -H "Content-Type: application/json" \
-      -d '{
-        "event": "deployment",
-        "status": "success",
-        "commit": "${{ github.sha }}",
-        "actor": "${{ github.actor }}"
-      }'
-```
-
-## Example: Minimal Production Pipeline
-
-```yaml
-name: Deploy to Production
-
-on:
-  push:
-    branches: [main]
 
 jobs:
   deploy:
@@ -430,21 +41,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo install auberge
 
-      - name: Set up SSH
-        env:
-          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh/identities
-          echo "$SSH_KEY" > ~/.ssh/identities/ansible_production
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/identities/ansible_production
           chmod 600 ~/.ssh/identities/ansible_production
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" "${{ secrets.AUBERGE_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Configure
-        env:
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-          CLOUDFLARE_DNS_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_API_TOKEN }}
+      - name: Configure auberge
         run: |
-          auberge config set ssh_port "$SSH_PORT"
-          auberge config set cloudflare_dns_api_token "$CLOUDFLARE_DNS_API_TOKEN"
+          auberge config set ssh_port "${{ secrets.SSH_PORT }}"
+          auberge config set admin_user_name "${{ secrets.ADMIN_USER_NAME }}"
+          auberge config set cloudflare_dns_api_token "${{ secrets.CLOUDFLARE_DNS_API_TOKEN }}"
 
       - name: Deploy
         run: |
@@ -455,49 +63,4 @@ jobs:
             --skip-tags bootstrap
 ```
 
-## Troubleshooting
-
-### SSH Host Key Verification Failed
-
-Add host key to known_hosts:
-
-```yaml
-- name: Add host key
-  run: |
-    ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.AUBERGE_HOST }} >> ~/.ssh/known_hosts
-```
-
-### Config Values Not Set
-
-Ensure config is properly written:
-
-```yaml
-- name: Debug config
-  run: |
-    auberge config list
-```
-
-### Permission Denied (SSH)
-
-Check SSH key permissions:
-
-```yaml
-- run: chmod 600 ~/.ssh/identities/ansible_production
-```
-
-### Ansible Connection Timeout
-
-Increase timeout in inventory:
-
-```yaml
-ansible_ssh_common_args: >-
-  -o ConnectTimeout=30
-  -o ConnectionAttempts=3
-```
-
-## Related Pages
-
-- [Running Playbooks](deployment/running-playbooks.md) - Manual execution
-- [Bootstrap](deployment/bootstrap.md) - Initial VPS setup
-- [Secrets Management](configuration/secrets.md) - Handling sensitive data
-- [SSH Keys](configuration/ssh-keys.md) - SSH configuration
+?> Verify config is applied with `auberge config list` if a step silently misbehaves.

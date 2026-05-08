@@ -50,7 +50,7 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 
 ## Deployment
 
-All applications are deployed via Ansible playbooks. See [Running Playbooks](../deployment/running-playbooks.md) for details.
+All applications are deployed via Ansible playbooks. See [Running Playbooks](../cli-reference/ansible/run.md) for details.
 
 ```bash
 # Deploy all apps

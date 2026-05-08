@@ -71,9 +71,3 @@ Ensure your SSH keys are backed up separately. Auberge uses:
 - `~/.ssh/identities/` - SSH keys
 
 Back up these directories along with application data.
-
-## Related Documentation
-
-- [Creating Backups](creating-backups.md) - Backup commands
-- [Cross-Host Migration](cross-host-migration.md) - Disaster recovery
-- [Overview](overview.md) - Technical details

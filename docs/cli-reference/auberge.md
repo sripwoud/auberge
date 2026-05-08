@@ -1,71 +1,53 @@
 # auberge
 
-CLI for selfhost infrastructure management
-
-## Synopsis
+CLI for self-hosted infrastructure management.
 
 ```bash
-auberge [OPTIONS] <COMMAND>
+auberge [GLOBAL OPTIONS] <COMMAND>
 ```
 
-## Description
+## Global options
 
-Auberge is a comprehensive command-line tool for managing self-hosted infrastructure. It provides commands for managing VPS hosts, running Ansible playbooks, backing up and restoring application data, SSH key management, DNS management via Cloudflare, Headscale user and node management, and file synchronization.
-
-## Global Options
-
-| Option        | Description                                                                                                                                          |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| -v, --verbose | Show dimmed subprocess output (cleared on success, kept on failure)                                                                                  |
-| -q, --quiet   | Suppress chrome (info/success/warn) on stderr in `human` mode; errors and stdout data (tables, JSON) unaffected; mutually exclusive with `--verbose` |
-| --no-color    | Disable colored output (also honored via `NO_COLOR` env var)                                                                                         |
-| -h, --help    | Print help information                                                                                                                               |
-| -V, --version | Print version information                                                                                                                            |
+| Option          | Description                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| `-v, --verbose` | Stream subprocess output (kept on failure, dimmed on success)                                     |
+| `-q, --quiet`   | Suppress chrome on stderr (errors and stdout data unchanged); mutually exclusive with `--verbose` |
+| `--no-color`    | Disable colored output (or set `NO_COLOR` env var)                                                |
+| `-h, --help`    | Print help                                                                                        |
+| `-V, --version` | Print version                                                                                     |
 
 ## Commands
 
-| Command                               | Alias | Description                             |
-| ------------------------------------- | ----- | --------------------------------------- |
-| [deploy](deploy.md)                   | dp    | Deploy apps to a host                   |
-| [select](select/host.md)              | se    | Select hosts or playbooks interactively |
-| [ansible](ansible/run.md)             | a     | Run ansible playbooks                   |
-| [backup](backup/create.md)            | b     | Backup and restore application data     |
-| [host](host/add.md)                   | h     | Manage VPS hosts                        |
-| [ssh](ssh/keygen.md)                  | ss    | SSH key management                      |
-| [sync](sync/music.md)                 | sy    | Sync files to remote hosts              |
-| [dns](dns/list.md)                    | d     | DNS management via Cloudflare           |
-| [headscale](headscale/add-user.md)    | hs    | Manage Headscale users and nodes        |
-| [config](config/overview.md)          | c     | Manage user configuration               |
-| [bichon](bichon/reconcile-folders.md) | -     | Manage Bichon folder sync policy        |
+| Command                               | Alias | Purpose                             |
+| ------------------------------------- | ----- | ----------------------------------- |
+| [deploy](deploy.md)                   | `dp`  | Deploy apps with auto-hardening     |
+| [ansible](ansible/run.md)             | `a`   | Run Ansible playbooks               |
+| [backup](backup/create.md)            | `b`   | Backup / restore / push / prune     |
+| [dns](dns/list.md)                    | `d`   | Cloudflare DNS management           |
+| [host](host/add.md)                   | `h`   | Manage `hosts.toml`                 |
+| [ssh](ssh/keygen.md)                  | `ss`  | SSH key generation and deployment   |
+| [sync](sync/music.md)                 | `sy`  | rsync media to the VPS              |
+| [headscale](headscale/add-user.md)    | `hs`  | Headscale users and nodes           |
+| [bichon](bichon/reconcile-folders.md) | —     | Bichon folder reconciliation        |
+| [config](config/overview.md)          | `c`   | Manage `config.toml`                |
+| [select](select/host.md)              | `se`  | Interactive host / playbook pickers |
 
-## Configuration
+## Files
 
-Auberge stores configuration in:
+| Purpose  | Path                              |
+| -------- | --------------------------------- |
+| Hosts    | `~/.config/auberge/hosts.toml`    |
+| Config   | `~/.config/auberge/config.toml`   |
+| Backups  | `~/.local/share/auberge/backups/` |
+| SSH keys | `~/.ssh/identities/`              |
 
-- **Hosts**: `~/.config/auberge/hosts.yml`
-- **Backups**: `~/.local/share/auberge/backups/`
-- **SSH keys**: `~/.ssh/identities/`
-
-See [Configuration](../configuration/README.md) for details.
+See [Configuration](../configuration/hosts.md) for details on the config files.
 
 ## Examples
 
 ```bash
-# Add a new host
-auberge host add myserver 192.168.1.10
-
-# Run ansible playbook
-auberge ansible run --host myserver
-
-# Create backup
-auberge backup create --host myserver
-
-# List DNS records
+auberge host add my-vps 203.0.113.10
+auberge deploy --all --host my-vps
+auberge backup create --host my-vps
 auberge dns list
 ```
-
-## See Also
-
-- [Getting Started](../getting-started/README.md)
-- [Configuration](../configuration/README.md)
-- [Core Concepts](../core-concepts/README.md)

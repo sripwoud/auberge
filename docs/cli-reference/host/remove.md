@@ -53,13 +53,3 @@ $ auberge host remove myserver
 Remove host 'myserver'? [y/N]: y
 ✓ Host 'myserver' removed
 ```
-
-## Related Commands
-
-- [auberge host list](list.md) - List all hosts
-- [auberge host add](add.md) - Add a new host
-- [auberge host show](show.md) - Show host details
-
-## See Also
-
-- [Host Configuration](../../configuration/hosts.md)

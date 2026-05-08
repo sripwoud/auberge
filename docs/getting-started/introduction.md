@@ -1,72 +1,35 @@
 # Introduction
 
-Auberge is a CLI tool for managing self-hosted infrastructure using Ansible automation. It deploys a complete FOSS stack on minimal VPS hardware without Docker overhead.
+Auberge (French for _inn_) shelters your self-hosted services. It's a Rust CLI that wraps Ansible to deploy a complete FOSS stack on a minimal VPS — without containers.
 
-## What is Auberge?
+## How it works
 
-Auberge (French for "inn") provides shelter for your self-hosted services. It's selfware - software built to manage your self-hosted infrastructure with:
+```
+auberge CLI ─→ Ansible playbooks ─→ systemd services on the VPS
+```
 
-- **Minimal footprint**: Runs on a 2GB RAM VPS (4GB recommended with Grimmory)
-- **No Docker bloat**: Native systemd services
-- **Automated deployment**: Ansible playbooks handle everything
-- **Built-in backups**: Full backup and restore with cross-host migration
-- **DNS management**: Cloudflare integration
+1. Define hosts in `~/.config/auberge/hosts.toml` (or via `auberge host add`).
+2. Set required values in `config.toml` (domain, secrets, …).
+3. `auberge deploy <app>` runs the relevant playbooks via SSH.
 
-## Philosophy
+Backups, DNS sync, and offsite restic snapshots are first-class CLI verbs.
 
-- Lean and efficient
-- No unnecessary abstractions
-- Direct control over your services
-- Transparent operations
+## What you get
 
-## What You Get
+**Infrastructure**: [Caddy](https://caddyserver.com), [fail2ban](https://github.com/fail2ban/fail2ban), [UFW](https://launchpad.net/ufw)
 
-After deployment, your VPS will be running:
+**Networking**: [Blocky](https://0xerr0r.github.io/blocky), [Headscale](https://headscale.net), [WireGuard](https://wireguard.com), [Tailscale](https://tailscale.com)
 
-**Infrastructure**:
-
-- [Caddy](https://caddyserver.com) (reverse proxy with automatic HTTPS)
-- [fail2ban](https://github.com/fail2ban/fail2ban) (intrusion prevention)
-- [UFW](https://launchpad.net/ufw) (firewall)
-
-**Networking**:
-
-- [Blocky](https://0xerr0r.github.io/blocky) (DNS + ad-blocking)
-- [Headscale](https://headscale.net) (coordination server)
-- [WireGuard](https://wireguard.com)
-- [Tailscale](https://tailscale.com)
-
-**Applications**:
-
-- [Baikal](https://sabre.io/baikal) (calendar/contacts)
-- [Bichon](https://github.com/rustmailer/bichon) (email archiving)
-- [Grimmory](https://grimmory.org) (digital library)
-- [Colporteur](https://github.com/sripwoud/colporteur) (newsletter-to-feed)
-- [FreshRSS](https://freshrss.org) (RSS reader)
-- [Navidrome](https://navidrome.org) (music streaming)
-- [Paperless-ngx](https://docs.paperless-ngx.com) (document management)
-- [Syncthing](https://syncthing.net) (file sync)
-- [WebDAV](https://github.com/hacdias/webdav) (file sharing)
-- [YOURLS](https://yourls.org) (URL shortener)
-
-## How It Works
-
-Auberge is a Rust CLI that wraps Ansible playbooks:
-
-1. You define hosts in `~/.config/auberge/hosts.toml`
-2. Auberge runs Ansible playbooks on your VPS
-3. Services are installed and configured via systemd
-4. Backups can be created and restored anytime
+**Apps**: [Baikal](https://sabre.io/baikal), [Bichon](https://github.com/rustmailer/bichon), [Grimmory](https://grimmory.org), [Colporteur](https://github.com/sripwoud/colporteur), [FreshRSS](https://freshrss.org), [Navidrome](https://navidrome.org), [Paperless-ngx](https://docs.paperless-ngx.com), [Syncthing](https://syncthing.net), [WebDAV](https://github.com/hacdias/webdav), [YOURLS](https://yourls.org)
 
 ## Requirements
 
-- Rust/Cargo for installation
-- A VPS with root/sudo access
-- SSH connectivity to your VPS
-- (Optional) Cloudflare account for DNS management
+- Linux or macOS workstation (Windows: use WSL2)
+- VPS with root/sudo access — 2 GB RAM minimum, 4 GB recommended with Grimmory
+- (Optional) Cloudflare account for managed DNS
 
-## Next Steps
+## Philosophy
 
-- [Quick Start](quick-start.md) - 5-minute setup
-- [Installation](installation.md) - Detailed installation guide
-- [First Deployment](first-deployment.md) - Step-by-step walkthrough
+_Selfware_: direct control, no abstraction layers, no container runtime, transparent operations.
+
+Continue: [Quick Start](quick-start.md) · [Installation](installation.md) · [First Deployment](first-deployment.md)

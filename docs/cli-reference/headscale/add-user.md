@@ -39,23 +39,3 @@ auberge hs au alice --expiration 48h --host myserver
 ## Output
 
 Prints the pre-auth key and shareable setup instructions for iOS/Tailscale clients.
-
-## Next Steps
-
-After generating a pre-auth key, use it to connect nodes:
-
-```bash
-auberge config set tailscale_authkey <PRE_AUTH_KEY>
-auberge config set tailscale_login_server https://hs.<your-domain>
-auberge ansible run --tags tailscale
-```
-
-## Related Commands
-
-- [auberge headscale list-users](list-users.md) - List registered users
-- [auberge headscale list-nodes](list-nodes.md) - List connected nodes
-- [auberge headscale remove-user](remove-user.md) - Remove a user
-
-## See Also
-
-- [Headscale](../../applications/networking/headscale.md)

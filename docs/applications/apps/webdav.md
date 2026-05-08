@@ -1,27 +1,22 @@
 # WebDAV
 
-File sharing and synchronization via WebDAV protocol.
+File sharing and sync via WebDAV protocol. Repo: [github.com/hacdias/webdav](https://github.com/hacdias/webdav)
 
-Official Repository: [https://github.com/hacdias/webdav](https://github.com/hacdias/webdav)
+- **URL**: `https://{subdomain}.{domain}`
+- **Data**: shared files on VPS
 
-## Deployment
+## Deploy
 
 ```bash
-auberge ansible run --tags webdav
+auberge deploy webdav
 ```
 
-## Configuration
+## Required config
 
-Requires `WEBDAV_PASSWORD` environment variable. See [Environment Variables](../../configuration/environment-variables.md).
+| Key               | Purpose                          |
+| ----------------- | -------------------------------- |
+| `WEBDAV_PASSWORD` | WebDAV access password (env var) |
 
-## Backup
+## Notes
 
-Backed up by default. Includes all shared files.
-
-See [Backup & Restore](../../backup-restore/overview.md).
-
-## Related
-
-- [Environment Variables](../../configuration/environment-variables.md)
-- [Backup & Restore](../../backup-restore/overview.md)
-- [Applications Overview](../overview.md)
+Backed up by default (all shared files). See [Backup & Restore](../../backup-restore/overview.md).

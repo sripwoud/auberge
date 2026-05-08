@@ -109,7 +109,3 @@ Auberge depends on third-party software with various licenses:
 - **Rust crates:** See `Cargo.toml` and individual crate licenses
 - **Ansible collections:** Various open source licenses
 - **Applications deployed:** Each has its own license (check role README)
-
-## Related Pages
-
-- [Contributing](development/contributing.md) - How to contribute

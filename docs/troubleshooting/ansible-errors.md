@@ -1,288 +1,55 @@
 # Ansible Errors
 
-Common Ansible playbook failures and fixes.
+## Task failures
 
-## Task Failures
+| Error                            | Cause                                | Fix                                                                                 |
+| -------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------- |
+| `UNREACHABLE`                    | SSH connectivity                     | See [SSH Problems](ssh-problems.md)                                                 |
+| `Permission denied`              | ansible user lacks passwordless sudo | `ssh ansible@vps "sudo -n true"`; re-bootstrap if needed                            |
+| `apt lock`                       | Concurrent apt process               | Wait 60s; or via console: `sudo killall apt apt-get && sudo rm /var/lib/dpkg/lock*` |
+| `Package not found`              | Stale apt cache                      | `ssh ansible@vps "sudo apt update"`                                                 |
+| `Undefined variable`             | Config key not set                   | `auberge config list`; `auberge config set KEY value`                               |
+| `Unit not found`                 | Service file missing                 | `auberge ansible run --host vps --tags service-name`                                |
+| `No such file or directory`      | Parent path absent                   | `ssh ansible@vps "sudo mkdir -p /path/to/dir"`                                      |
+| `Connection timeout` downloading | VPS network issue                    | Retry (idempotent); check `ssh ansible@vps "ping -c 3 8.8.8.8"`                     |
 
-### "failed: UNREACHABLE!"
-
-**Problem:** Cannot connect to VPS via SSH.
-
-**Solution:** See [SSH Problems](troubleshooting/ssh-problems.md)
-
-### "failed: [host] => Permission denied"
-
-**Problem:** Insufficient sudo privileges.
-
-**Solutions:**
-
-```bash
-# Verify ansible user has passwordless sudo
-ssh ansible@vps "sudo -n true"
-
-# Re-bootstrap if needed
-auberge ansible bootstrap my-vps --ip 203.0.113.10
-```
-
-### "apt lock" errors
-
-**Problem:** Another apt process running.
-
-**Solutions:**
-
-```bash
-# Wait a minute and retry
-
-# Or kill apt processes (via provider console)
-sudo killall apt apt-get
-sudo rm /var/lib/apt/lists/lock
-sudo rm /var/cache/apt/archives/lock
-sudo rm /var/lib/dpkg/lock*
-```
-
-### "Package not found"
-
-**Problem:** Package unavailable in apt sources.
-
-**Solutions:**
-
-```bash
-# Update apt cache
-ssh ansible@vps "sudo apt update"
-
-# Check package name
-ssh ansible@vps "apt-cache search package-name"
-```
-
-## Systemd Failures
-
-### "Service failed to start"
-
-**Check logs:**
+## Service won't start
 
 ```bash
 ssh ansible@vps "journalctl -u service-name -n 50"
+ssh ansible@vps "sudo ss -tulpn | grep PORT"   # port conflict
+auberge ansible run --host vps --tags service-name  # fix permissions/config
 ```
 
-**Common causes:**
+## Handler not running
 
-- Config file syntax error
-- Port already in use
-- Missing dependencies
-- File permissions
-
-**Solutions:**
+Task must be marked `changed` for handler to fire. If config was already in the desired state, the handler is skipped.
 
 ```bash
-# Validate config
-# Check port availability
-ssh ansible@vps "sudo ss -tulpn | grep PORT"
-
-# Fix permissions
-auberge ansible run --host vps --tags service-name
-```
-
-### "Unit not found"
-
-**Problem:** Systemd service file doesn't exist.
-
-**Solution:**
-
-```bash
-# Re-run ansible to create service
-auberge ansible run --host vps --tags service-name
-```
-
-## Templating Errors
-
-### "Undefined variable"
-
-**Problem:** Required variable not set.
-
-**Solution:**
-
-```bash
-# Check config
-auberge config list
-
-# Set if missing
-auberge config set KEY value
-```
-
-### "template error"
-
-**Problem:** Jinja2 template syntax error.
-
-**Solution:**
-
-- Check template in `ansible/roles/{role}/templates/`
-- Verify variable names
-- Test template syntax
-
-## File/Directory Issues
-
-### "No such file or directory"
-
-**Problem:** Path doesn't exist.
-
-**Solutions:**
-
-```bash
-# Let ansible create it
-# Check tasks create parent directories first
-
-# Or create manually
-ssh ansible@vps "sudo mkdir -p /path/to/dir"
-```
-
-### "File exists"
-
-**Problem:** File creation when file exists.
-
-**Solution:**
-
-- Use `state: present` instead of `state: touch`
-- Or use `force: yes` to overwrite
-
-## Network Issues
-
-### "Connection timeout" downloading files
-
-**Problem:** Slow or failed downloads.
-
-**Solutions:**
-
-```bash
-# Retry ansible (idempotent)
-auberge ansible run --host vps --tags role-name
-
-# Check VPS network
-ssh ansible@vps "ping -c 3 8.8.8.8"
-
-# Download manually and scp to VPS if needed
-```
-
-### "SSL certificate verify failed"
-
-**Problem:** Certificate validation failed.
-
-**Solutions:**
-
-```bash
-# Update CA certificates
-ssh ansible@vps "sudo apt update && sudo apt install -y ca-certificates"
-
-# Or bypass validation (not recommended)
-# Add to task: validate_certs: no
-```
-
-## Handler Issues
-
-### Handler not running
-
-**Problem:** Expected service restart didn't happen.
-
-**Causes:**
-
-- Task didn't report "changed"
-- Handler syntax error
-- Wrong handler name in notify
-
-**Debug:**
-
-```bash
-# Check if task was marked as "changed"
-# Manually restart
 ssh ansible@vps "sudo systemctl restart service-name"
 ```
 
-## Idempotency Issues
+## Idempotency: task always shows `changed`
 
-### Task always shows "changed"
+Caused by `command`/`shell` modules without `changed_when`. Add `changed_when: false` for read-only commands, or switch to the appropriate module (`file`, `package`, `service`).
 
-**Problem:** Task not idempotent.
-
-**Common culprits:**
-
-- Using `command` or `shell` modules
-- Not using `creates` or `removes` parameters
-- File permissions changing unnecessarily
-
-**Solutions:**
+## Debugging
 
 ```bash
-# Use appropriate module (file, package, service)
-# Add changed_when: false for read-only commands
-```
-
-## Debug Techniques
-
-### Verbose output
-
-```bash
-# Level 1
-auberge ansible run --host vps -v
-
-# Level 2 (detailed)
-auberge ansible run --host vps -vv
-
-# Level 3 (very detailed)
-auberge ansible run --host vps -vvv
-```
-
-### Check mode
-
-```bash
-# Dry run to see what would change
-auberge deploy --all --check --host vps
-```
-
-### Run specific task
-
-```bash
-# Use tags to isolate
-auberge ansible run --host vps --tags specific-tag
-```
-
-### Manual execution
-
-```bash
-# Run ansible-playbook directly
-cd ansible
-ansible-playbook -i inventory.yml playbooks/apps.yml -vvv
+auberge ansible run --host vps -vvv          # verbose
+auberge deploy --all --check --host vps      # dry run
+auberge ansible run --host vps --tags tag    # isolate by tag
+ansible-playbook -i ansible/inventory.yml ansible/playbooks/apps.yml -vvv  # direct
 ```
 
 ## Recovery
 
-### Playbook partially applied
-
-**Problem:** Playbook stopped mid-execution.
-
-**Solution:**
-
 ```bash
-# Re-run (idempotent)
+# Partially applied playbook — re-run (idempotent)
 auberge ansible run --host vps --playbook playbooks/apps.yml
 
-# Ansible skips successful tasks
-# Reruns failed tasks
-```
-
-### System in inconsistent state
-
-**Solutions:**
-
-```bash
-# Re-run full stack
+# Inconsistent state
 auberge deploy --all --host vps
-
-# Or restore from backup
+# or
 auberge backup restore latest --host vps
 ```
-
-## Related Pages
-
-- [Running Playbooks](deployment/running-playbooks.md)
-- [SSH Problems](troubleshooting/ssh-problems.md)
-- [Common Issues](troubleshooting/common-issues.md)
-- [Playbooks](core-concepts/playbooks.md)

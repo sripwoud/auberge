@@ -78,8 +78,3 @@ The CLI checks hosts in this order:
   - Location: `ansible/inventory.yml`
   - Version controlled
   - Used by `auberge ansible` commands
-
-## Related Documentation
-
-- [SSH Keys](ssh-keys.md) - SSH key management
-- [CLI Reference: host](../cli-reference/host/add.md) - Host management commands

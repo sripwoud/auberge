@@ -44,13 +44,3 @@ Remove user 'default'? [y/N]: y
 ## Troubleshooting
 
 **User has nodes attached**: All nodes belonging to the user are removed automatically. Verify with `auberge headscale list-nodes` beforehand if you want to review what will be removed.
-
-## Related Commands
-
-- [auberge headscale add-user](add-user.md) - Create a user and generate a pre-auth key
-- [auberge headscale list-users](list-users.md) - List registered users
-- [auberge headscale list-nodes](list-nodes.md) - List connected nodes
-
-## See Also
-
-- [Headscale](../../applications/networking/headscale.md)

@@ -1,34 +1,30 @@
 # Syncthing
 
-Continuous file synchronization between devices.
+Continuous file synchronization between devices. Docs: [syncthing.net](https://syncthing.net)
 
-Official Documentation: [https://syncthing.net](https://syncthing.net)
+- **URL**: web UI via SSH tunnel only (not publicly exposed)
+- **Port**: 8384 (local tunnel target)
+- **Data**: configured sync folders on VPS
 
-## Deployment
+## Deploy
 
 ```bash
-auberge ansible run --tags syncthing
+auberge deploy syncthing
 ```
 
-## Configuration
+## Notes
 
-Optional workspace sync can be enabled per-host:
-
-```yaml
-syncthing_configure_workspace: true
-syncthing_device_id: "XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX-XXXXXXX"
-```
-
-## Web UI Access
-
-Access via SSH tunnel (recommended):
+Access the web UI via SSH tunnel:
 
 ```bash
 ssh -L 8384:localhost:8384 user@vps
 ```
 
-Then open http://localhost:8384 locally.
+Then open http://localhost:8384.
 
-## Related
+Optional workspace sync (per-host config):
 
-- [Applications Overview](../overview.md)
+```yaml
+syncthing_configure_workspace: true
+syncthing_device_id: "XXXXXXX-XXXXXXX-..."
+```

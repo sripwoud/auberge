@@ -63,13 +63,3 @@ JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr
 | id      | number | Headscale user ID                 |
 | name    | string | User name                         |
 | created | string | ISO 8601 creation timestamp (UTC) |
-
-## Related Commands
-
-- [auberge headscale add-user](add-user.md) - Create a user and generate a pre-auth key
-- [auberge headscale list-nodes](list-nodes.md) - List connected nodes
-- [auberge headscale remove-user](remove-user.md) - Remove a user
-
-## See Also
-
-- [Headscale](../../applications/networking/headscale.md)

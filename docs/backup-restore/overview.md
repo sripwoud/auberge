@@ -107,15 +107,3 @@ Backup and restore operations use SSH ControlMaster for connection reuse:
 - ControlPersist: 60 seconds
 
 This significantly speeds up operations that require multiple SSH commands.
-
-## Related Documentation
-
-- [Creating Backups](creating-backups.md)
-- [Listing Backups](listing-backups.md)
-- [Restoring Backups](restoring-backups.md)
-- [Cross-Host Migration](cross-host-migration.md)
-- [OPML Management](opml-management.md)
-- [Best Practices](best-practices.md)
-- [CLI Reference: backup sync](../cli-reference/backup/sync.md)
-- [CLI Reference: backup push](../cli-reference/backup/push.md)
-- [CLI Reference: backup prune](../cli-reference/backup/prune.md)

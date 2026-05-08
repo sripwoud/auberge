@@ -22,8 +22,7 @@ Policy:
 extra_excluded_folders = ["Newsletters", "Receipts/2019"]
 ```
 
-> [!NOTE]
-> `extra_excluded_folders` matches the **full mailbox path, case-sensitively**. Use the exact name returned by Bichon's `list-mailboxes` API (e.g. `"Receipts/2019"`, not `"receipts/2019"`). Unlike the SPECIAL-USE / leaf-name fallback, this is intentionally precise so operators can target individual sub-folders without false positives.
+?> `extra_excluded_folders` matches the **full mailbox path, case-sensitively**. Use the exact name returned by Bichon's `list-mailboxes` API (e.g. `"Receipts/2019"`, not `"receipts/2019"`). Unlike the SPECIAL-USE / leaf-name fallback, this is intentionally precise so operators can target individual sub-folders without false positives.
 
 Default is dry-run (read-only).
 

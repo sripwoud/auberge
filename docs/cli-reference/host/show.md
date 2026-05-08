@@ -48,14 +48,3 @@ description: Production web server
 python_interpreter: null
 become_method: sudo
 ```
-
-## Related Commands
-
-- [auberge host list](list.md) - List all hosts
-- [auberge host add](add.md) - Add a new host
-- [auberge host edit](edit.md) - Edit host configuration
-- [auberge host remove](remove.md) - Remove a host
-
-## See Also
-
-- [Host Configuration](../../configuration/hosts.md)

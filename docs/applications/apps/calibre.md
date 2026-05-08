@@ -1,28 +1,16 @@
 # Calibre
 
-Calibre-Web is a lightweight alternative to the default [Grimmory](grimmory.md) book library. It uses significantly less RAM (~50MB vs ~1GB) and doesn't require MariaDB or a JVM.
+Calibre-Web ebook library with web reader. Lightweight alternative to [Grimmory](grimmory.md) (~50 MB RAM vs ~1 GB, no MariaDB or JVM). Docs: [calibre-ebook.com](https://calibre-ebook.com)
 
-Ebook library management and web interface for reading and organizing books.
+- **URL**: `https://{subdomain}.{domain}`
+- **Data**: book library + metadata and user databases on VPS
 
-Official Documentation: [https://calibre-ebook.com](https://calibre-ebook.com)
-
-## Deployment
+## Deploy
 
 ```bash
-auberge ansible run --playbook playbooks/calibre.yml
+auberge deploy calibre
 ```
 
-## Backup
+## Notes
 
-Backed up by default. Includes:
-
-- Book library
-- Metadata database
-- User database (login credentials)
-
-See [Backup & Restore](../../backup-restore/overview.md).
-
-## Related
-
-- [Backup & Restore](../../backup-restore/overview.md)
-- [Applications Overview](../overview.md)
+Backed up by default (book library, metadata DB, user DB). See [Backup & Restore](../../backup-restore/overview.md).

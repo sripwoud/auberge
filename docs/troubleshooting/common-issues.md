@@ -1,260 +1,66 @@
-# Common Issues (FAQ)
+# Common Issues
 
-Frequently encountered issues and solutions.
+## Installation
 
-## Installation Issues
+| Error                         | Cause                   | Fix                             |
+| ----------------------------- | ----------------------- | ------------------------------- |
+| `cargo install auberge` fails | Outdated Rust toolchain | Run `rustup update`, then retry |
+| `mise not found`              | mise not installed      | `curl https://mise.run          |
 
-### "cargo install auberge" fails
+## Configuration
 
-**Problem:** Rust compiler error during installation.
-
-**Solution:**
-
-```bash
-# Update Rust
-rustup update
-
-# Retry installation
-cargo install auberge
-```
-
-### mise not found
-
-**Problem:** mise not installed or not in PATH.
-
-**Solution:**
+### `"Missing required config value"`
 
 ```bash
-# Install mise
-curl https://mise.run | sh
-
-# Or via package manager
-brew install mise  # macOS
-```
-
-## Configuration Issues
-
-### Config value not set
-
-**Problem:** Commands fail with "missing required config value".
-
-**Solution:**
-
-```bash
-# Check config
 auberge config list
-
-# Set if missing
 auberge config set KEY value
 ```
 
-## Host Management Issues
+## Host Management
 
-### "Host not found"
+| Error                                  | Cause                                           | Fix                                           |
+| -------------------------------------- | ----------------------------------------------- | --------------------------------------------- |
+| `"Host not found"`                     | Host absent from `~/.config/auberge/hosts.toml` | `auberge host add my-vps 203.0.113.10`        |
+| `~/.config/auberge/hosts.toml` missing | Directory not created                           | `mkdir -p ~/.config/auberge`, then add a host |
 
-**Problem:** Host not in inventory or hosts.toml.
+## Backup
 
-**Solution:**
+| Error                | Cause                    | Fix                                   |
+| -------------------- | ------------------------ | ------------------------------------- |
+| `"No backups found"` | No backup created yet    | `auberge backup create --host my-vps` |
+| Backup hangs         | Stale SSH control socket | `rm -rf ~/.ssh/ctl-*`, then retry     |
 
-```bash
-# Add host
-auberge host add my-vps 203.0.113.10
+## Deployment
 
-# Or check inventory
-ansible-inventory -i ansible/inventory.yml --list
-```
+| Error                        | Cause                                | Fix                                                                                                     |
+| ---------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `"Unreachable"`              | SSH connectivity failure             | See [SSH Problems](ssh-problems.md)                                                                     |
+| `"Permission denied"` (sudo) | ansible user lacks passwordless sudo | `ssh ansible@vps "sudo -n true"`; re-run `auberge ansible bootstrap my-vps --ip 203.0.113.10` if needed |
+| Handler not running          | Config task reported no change       | Restart manually: `ssh ansible@vps "sudo systemctl restart service-name"`                               |
 
-### Cannot edit hosts.toml
-
-**Problem:** File doesn't exist.
-
-**Solution:**
-
-```bash
-# Create directory
-mkdir -p ~/.config/auberge
-
-# Add first host
-auberge host add my-vps 203.0.113.10
-```
-
-## Backup Issues
-
-### "No backups found"
-
-**Problem:** Backup directory doesn't exist or is empty.
-
-**Solution:**
-
-```bash
-# Create first backup
-auberge backup create --host my-vps
-
-# Or check backup directory
-ls -la ~/.local/share/auberge/backups/
-```
-
-### Backup hangs
-
-**Problem:** SSH connection or rsync stalled.
-
-**Solution:**
-
-```bash
-# Test SSH connection
-ssh -i ~/.ssh/identities/ansible_my-vps ansible@vps-ip
-
-# Kill stale control sockets
-rm -rf ~/.ssh/ctl-*
-```
-
-## Deployment Issues
-
-### Playbook fails with "Unreachable"
-
-**Problem:** Cannot connect to VPS via SSH.
-
-**Solution:** See [SSH Problems](troubleshooting/ssh-problems.md)
-
-### Task fails with "Permission denied"
-
-**Problem:** Insufficient sudo privileges.
-
-**Solution:**
-
-```bash
-# Verify ansible user has passwordless sudo
-ssh ansible@vps-host "sudo -n true"
-
-# Re-run bootstrap if needed
-auberge ansible bootstrap my-vps --ip 203.0.113.10
-```
-
-### Handler not running
-
-**Problem:** Service not restarted after config change.
-
-**Solution:**
-
-- Check if config task actually changed (marked as "changed")
-- Manually restart:
-  ```bash
-  ssh ansible@vps "sudo systemctl restart service-name"
-  ```
-
-## DNS Issues
-
-### "Authentication error"
-
-**Problem:** Invalid Cloudflare API token.
-
-**Solution:**
-
-```bash
-# Regenerate token in Cloudflare Dashboard
-# Update config
-auberge config set cloudflare_dns_api_token your-new-token
-```
-
-### DNS records not propagating
-
-**Problem:** DNS cache or TTL delay.
-
-**Solution:**
-
-```bash
-# Wait 5 minutes (default TTL)
-# Flush local DNS cache
-sudo systemd-resolve --flush-caches  # Linux
-sudo dscacheutil -flushcache         # macOS
-
-# Test with specific DNS server
-dig @1.1.1.1 subdomain.example.com +short
-```
-
-## Application Issues
+## Application
 
 ### Service won't start
 
-**Problem:** systemd service fails to start.
-
-**Solution:**
-
 ```bash
-# Check service status
 ssh ansible@vps "systemctl status service-name"
-
-# Check logs
 ssh ansible@vps "journalctl -u service-name -n 50"
-
-# Common fixes:
-# - Check config file syntax
-# - Verify port not already in use
-# - Check file permissions
 ```
+
+Check: config syntax, port conflicts (`sudo ss -tulpn`), file permissions.
 
 ### HTTPS certificate errors
 
-**Problem:** SSL/TLS certificate invalid.
-
-**Solution:**
-
 ```bash
-# Check Caddy logs
 ssh ansible@vps "journalctl -u caddy -n 50"
-
-# Common causes:
-# - Cloudflare API token incorrect
-# - DNS not pointing to VPS
-# - Port 80/443 blocked
-
-# Force certificate renewal
 ssh ansible@vps "sudo systemctl restart caddy"
 ```
 
-## Performance Issues
+Causes: Cloudflare API token wrong, DNS not pointing to VPS, port 80/443 blocked. See [DNS Issues](dns-issues.md).
 
-### Slow playbook execution
+## Performance
 
-**Problem:** Tasks take long time.
-
-**Solution:**
-
-- SSH ControlMaster already enabled (check inventory.yml)
-- Use tags to run only needed tasks:
-  ```bash
-  auberge ansible run --tags specific-app
-  ```
-- Check VPS resources (CPU/memory)
-
-### Large backup size
-
-**Problem:** Backups consuming too much space.
-
-**Solution:**
-
-```bash
-# Exclude music files (largest component)
-auberge backup create --host my-vps  # Already excludes music by default
-
-# Check backup sizes
-du -sh ~/.local/share/auberge/backups/*/*
-```
-
-## Getting Help
-
-Can't find your issue?
-
-1. Check [troubleshooting section](troubleshooting/ssh-problems.md)
-2. Search [GitHub issues](https://github.com/sripwoud/auberge/issues)
-3. Open new issue with:
-   - Auberge version (`auberge --version`)
-   - Error message
-   - Steps to reproduce
-
-## Related Pages
-
-- [SSH Problems](troubleshooting/ssh-problems.md)
-- [Backup/Restore Issues](troubleshooting/backup-restore-issues.md)
-- [Ansible Errors](troubleshooting/ansible-errors.md)
-- [DNS Issues](troubleshooting/dns-issues.md)
+| Problem           | Fix                                                                                     |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| Slow playbook     | Use `auberge ansible run --tags specific-app` to scope execution                        |
+| Large backup size | Music excluded by default; check sizes with `du -sh ~/.local/share/auberge/backups/*/*` |
