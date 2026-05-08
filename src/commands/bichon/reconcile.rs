@@ -259,10 +259,13 @@ tailscale_ip = "100.100.100.10"
 
         Mock::given(method("GET"))
             .and(path("/api/v1/accounts"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-                {"id":1, "email":"me@sripwoud.xyz", "sync_folders":["INBOX","Sent","INBOX/old-archive","Receipts/2019"]},
-                {"id":2, "email":"work@sripwoud.xyz", "sync_folders":["INBOX","Sent"]}
-            ])))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [
+                    {"id":1, "email":"me@sripwoud.xyz", "sync_folders":["INBOX","Sent","INBOX/old-archive","Receipts/2019"]},
+                    {"id":2, "email":"work@sripwoud.xyz", "sync_folders":["INBOX","Sent"]}
+                ],
+                "total_items": 2
+            })))
             .mount(&server)
             .await;
 
@@ -273,7 +276,7 @@ tailscale_ip = "100.100.100.10"
                 {"name":"INBOX","attributes":[]},
                 {"name":"Sent","attributes":[]},
                 {"name":"INBOX/legal-2026","attributes":[]},
-                {"name":"INBOX/old-archive","attributes":[{"kind":"Trash"}]},
+                {"name":"INBOX/old-archive","attributes":[{"attr":"Trash"}]},
                 {"name":"Receipts/2019","attributes":[]}
             ])))
             .mount(&server)
@@ -330,9 +333,12 @@ tailscale_ip = "100.100.100.10"
 
         Mock::given(method("GET"))
             .and(path("/api/v1/accounts"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-                {"id":1, "email":"me@sripwoud.xyz", "sync_folders":["INBOX","INBOX/old-archive"]}
-            ])))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [
+                    {"id":1, "email":"me@sripwoud.xyz", "sync_folders":["INBOX","INBOX/old-archive"]}
+                ],
+                "total_items": 1
+            })))
             .mount(&server)
             .await;
 
@@ -342,7 +348,7 @@ tailscale_ip = "100.100.100.10"
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([
                 {"name":"INBOX","attributes":[]},
                 {"name":"INBOX/legal-2026","attributes":[]},
-                {"name":"INBOX/old-archive","attributes":[{"kind":"Trash"}]}
+                {"name":"INBOX/old-archive","attributes":[{"attr":"Trash"}]}
             ])))
             .mount(&server)
             .await;
@@ -373,9 +379,12 @@ tailscale_ip = "100.100.100.10"
 
         Mock::given(method("GET"))
             .and(path("/api/v1/accounts"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-                {"id":1, "email":"me@sripwoud.xyz", "sync_folders":["INBOX","INBOX/legal-2026"]}
-            ])))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [
+                    {"id":1, "email":"me@sripwoud.xyz", "sync_folders":["INBOX","INBOX/legal-2026"]}
+                ],
+                "total_items": 1
+            })))
             .mount(&server)
             .await;
 
@@ -428,7 +437,10 @@ tailscale_ip = "100.100.100.10"
             .await;
         Mock::given(method("GET"))
             .and(path("/api/v1/accounts"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [],
+                "total_items": 0
+            })))
             .mount(&server)
             .await;
 
@@ -488,7 +500,10 @@ user = "root"
 
         Mock::given(method("GET"))
             .and(path("/api/v1/accounts"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [],
+                "total_items": 0
+            })))
             .expect(1)
             .mount(&server)
             .await;

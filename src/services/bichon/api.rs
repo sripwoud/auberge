@@ -13,6 +13,13 @@ pub struct Account {
     pub sync_folders: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct PaginatedResponse<T> {
+    items: Vec<T>,
+    #[serde(default)]
+    total_pages: Option<u64>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Mailbox {
     pub name: String,
@@ -21,17 +28,18 @@ pub struct Mailbox {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum MailboxAttribute {
-    KindObject { kind: String },
-    Raw(String),
+pub struct MailboxAttribute {
+    pub attr: String,
+    #[serde(default)]
+    pub extension: Option<String>,
 }
 
 impl MailboxAttribute {
     pub fn kind(&self) -> &str {
-        match self {
-            MailboxAttribute::KindObject { kind } => kind,
-            MailboxAttribute::Raw(kind) => kind,
+        if self.attr == "Extension" {
+            self.extension.as_deref().unwrap_or(&self.attr)
+        } else {
+            &self.attr
         }
     }
 }
@@ -95,8 +103,16 @@ impl BichonApiClient {
     }
 
     pub async fn list_accounts(&self) -> Result<Vec<Account>> {
-        self.request_json(Method::GET, "/api/v1/accounts", Option::<&()>::None)
-            .await
+        let envelope: PaginatedResponse<Account> = self
+            .request_json(Method::GET, "/api/v1/accounts", Option::<&()>::None)
+            .await?;
+        if matches!(envelope.total_pages, Some(n) if n > 1) {
+            eyre::bail!(
+                "Bichon /api/v1/accounts returned multi-page response (total_pages={:?}); pagination traversal is not implemented",
+                envelope.total_pages
+            );
+        }
+        Ok(envelope.items)
     }
 
     pub async fn list_mailboxes(&self, account_id: u64) -> Result<Vec<Mailbox>> {

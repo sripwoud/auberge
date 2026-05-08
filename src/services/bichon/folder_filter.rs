@@ -43,7 +43,10 @@ mod tests {
             name: name.to_string(),
             attributes: attrs
                 .iter()
-                .map(|k| MailboxAttribute::Raw((*k).to_string()))
+                .map(|k| MailboxAttribute {
+                    attr: (*k).to_string(),
+                    extension: None,
+                })
                 .collect(),
         }
     }
