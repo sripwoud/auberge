@@ -22,7 +22,7 @@ readonly PATTERN='\b(println|print)!'
 
 # Trailing ':' anchors against the path-delimiter in `grep -n` output
 # (path:line:content), so e.g. src/output.rs.bak is NOT allowlisted.
-readonly ALLOWLIST='src/output\.rs:|src/commands/(backup|config_cmd|dns|headscale|host|select)\.rs:'
+readonly ALLOWLIST='src/output\.rs:|src/commands/((backup|config_cmd|dns|headscale|host|select)|bichon/reconcile)\.rs:'
 
 self_test() {
   echo 'println!()' | grep -qE "${PATTERN}" ||
