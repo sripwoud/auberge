@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1](https://github.com/sripwoud/auberge/compare/v0.12.0...v0.12.1) - 2026-05-08
+
+### Added
+
+- *(bichon)* add reconcile-folders command ([#331](https://github.com/sripwoud/auberge/pull/331))
+
+### Other
+
+- *(bichon)* first-time setup and archived-then-expunge playbook ([#330](https://github.com/sripwoud/auberge/pull/330))
+
 ## [0.12.0](https://github.com/sripwoud/auberge/compare/v0.11.0...v0.12.0) - 2026-05-06
 
 ### Added
