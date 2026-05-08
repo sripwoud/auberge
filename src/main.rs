@@ -17,6 +17,7 @@ use commands::backup::{
     BackupCommands, RestoreOptions, run_backup_create, run_backup_list, run_backup_prune,
     run_backup_push, run_backup_restore, run_backup_sync, run_export_opml, run_import_opml,
 };
+use commands::bichon::{BichonCommands, run_bichon_command};
 use commands::config_cmd::{
     ConfigCommands, run_config_edit, run_config_get, run_config_init, run_config_list,
     run_config_path, run_config_remove, run_config_set,
@@ -95,6 +96,8 @@ enum Commands {
     Dns(DnsCommands),
     #[command(subcommand, alias = "c", about = "Manage user configuration")]
     Config(ConfigCommands),
+    #[command(subcommand, about = "Manage Bichon email archive behavior")]
+    Bichon(BichonCommands),
 }
 
 #[tokio::main]
@@ -325,5 +328,6 @@ async fn main() -> Result<()> {
             ConfigCommands::Edit => run_config_edit(),
             ConfigCommands::Path => run_config_path(),
         },
+        Commands::Bichon(cmd) => run_bichon_command(cmd).await,
     }
 }

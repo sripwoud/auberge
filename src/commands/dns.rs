@@ -1038,6 +1038,9 @@ mod tests {
     #[test]
     fn discover_all_subdomains_partitions_tailnet_only() {
         use crate::services::dns::discover_all_subdomains;
+        // discover_all_subdomains -> Config::load() reads XDG_CONFIG_HOME, which
+        // other tests in this binary mutate. Hold TEST_LOCK to serialize.
+        let _guard = crate::output::TEST_LOCK.lock().unwrap();
         let discovered = discover_all_subdomains();
         for app in ["bichon", "cockpit", "paperless"] {
             assert!(

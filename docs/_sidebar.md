@@ -81,6 +81,8 @@
     - [list-users](cli-reference/headscale/list-users.md)
     - [list-nodes](cli-reference/headscale/list-nodes.md)
     - [remove-user](cli-reference/headscale/remove-user.md)
+  - Bichon
+    - [reconcile-folders](cli-reference/bichon/reconcile-folders.md)
   - Select
     - [host](cli-reference/select/host.md)
     - [playbook](cli-reference/select/playbook.md)

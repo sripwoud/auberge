@@ -85,9 +85,7 @@ Bichon supports importing EML, MBOX, and PST archives. Refer to the [upstream do
 
 1. Open the Bichon UI at `https://bichon.<domain>` and navigate to **Accounts → Add account**.
 2. Enter your IMAP credentials (username, password, host, port) or complete the OAuth2 flow.
-3. After saving, synchronise folders:
-
-   **Preferred (once `reconcile-folders` lands — issue #329):**
+3. After saving, reconcile synced folders:
 
    ```bash
    auberge bichon reconcile-folders --host <hostname> --apply
@@ -98,13 +96,6 @@ Bichon supports importing EML, MBOX, and PST archives. Refer to the [upstream do
    `Spam`, `Junk Mail`, `Deleted Items`, `Bin`, `Papierkorb`, `Pourriels`, …).
    See [ADR-0007](https://github.com/sripwoud/auberge/blob/master/meta/adr/0007-bichon-folder-reconcile-scope-and-silent-vs-loud.md)
    for the full exclusion rationale.
-
-   **Until `reconcile-folders` ships:**
-
-   In the Bichon UI go to **Accounts → \<account\> → Folders** and tick every
-   folder **except** `Spam`/`Junk`/`Junk Mail` and `Trash`/`Deleted Items`
-   (and any local-language equivalents your provider uses). The rule is:
-   exclude RFC 6154 `\Junk` and `\Trash`; include everything else.
 
 4. Seed the archive immediately so the first backup is not empty:
 
