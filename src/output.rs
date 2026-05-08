@@ -28,6 +28,42 @@ static NO_COLOR_FLAG: AtomicBool = AtomicBool::new(false);
 #[cfg(test)]
 pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
 
+// RAII guard that snapshots an env var on construction and restores it on Drop.
+// Callers MUST hold TEST_LOCK so env mutations are serialized across this binary's tests.
+#[cfg(test)]
+pub(crate) struct EnvVarGuard {
+    key: &'static str,
+    prev: Option<String>,
+}
+
+#[cfg(test)]
+impl EnvVarGuard {
+    pub(crate) fn unset(key: &'static str) -> Self {
+        let prev = env::var(key).ok();
+        // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+        unsafe { env::remove_var(key) };
+        Self { key, prev }
+    }
+
+    pub(crate) fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let prev = env::var(key).ok();
+        // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+        unsafe { env::set_var(key, value) };
+        Self { key, prev }
+    }
+}
+
+#[cfg(test)]
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
+        match &self.prev {
+            Some(v) => unsafe { env::set_var(self.key, v) },
+            None => unsafe { env::remove_var(self.key) },
+        }
+    }
+}
+
 pub fn set_verbose(v: bool) {
     VERBOSE.store(v, Ordering::Relaxed);
 }
@@ -287,32 +323,6 @@ pub fn stream_command_stdout(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // RAII guard that unsets an env var for the duration of a test and restores it on Drop.
-    // Callers MUST hold TEST_LOCK so env mutations are serialized across this binary's tests.
-    struct EnvVarGuard {
-        key: &'static str,
-        prev: Option<String>,
-    }
-
-    impl EnvVarGuard {
-        fn unset(key: &'static str) -> Self {
-            let prev = env::var(key).ok();
-            // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
-            unsafe { env::remove_var(key) };
-            Self { key, prev }
-        }
-    }
-
-    impl Drop for EnvVarGuard {
-        fn drop(&mut self) {
-            // SAFETY: caller holds TEST_LOCK; no concurrent env access in this binary's tests.
-            match &self.prev {
-                Some(v) => unsafe { env::set_var(self.key, v) },
-                None => unsafe { env::remove_var(self.key) },
-            }
-        }
-    }
 
     #[test]
     fn no_color_flag_overrides_tty_check() {

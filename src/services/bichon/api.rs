@@ -14,7 +14,7 @@ pub struct Account {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct MailBox {
+pub struct Mailbox {
     pub name: String,
     #[serde(default)]
     pub attributes: Vec<MailboxAttribute>,
@@ -99,7 +99,7 @@ impl BichonApiClient {
             .await
     }
 
-    pub async fn list_mailboxes(&self, account_id: u64) -> Result<Vec<MailBox>> {
+    pub async fn list_mailboxes(&self, account_id: u64) -> Result<Vec<Mailbox>> {
         self.request_json(
             Method::GET,
             &format!("/api/v1/list-mailboxes/{account_id}?remote=true"),

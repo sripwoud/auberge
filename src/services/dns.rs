@@ -440,6 +440,9 @@ mod tests {
 
     #[test]
     fn test_discover_subdomains_returns_expected_public_apps() {
+        // discover_subdomains -> Config::load() reads XDG_CONFIG_HOME, which
+        // other tests in this binary mutate. Hold TEST_LOCK to serialize.
+        let _guard = crate::output::TEST_LOCK.lock().unwrap();
         let discovered = discover_subdomains();
         let got: BTreeSet<String> = discovered.keys().cloned().collect();
         let expected: BTreeSet<String> = [
@@ -461,6 +464,7 @@ mod tests {
 
     #[test]
     fn test_discover_subdomains_excludes_tailnet_only_apps() {
+        let _guard = crate::output::TEST_LOCK.lock().unwrap();
         let discovered = discover_subdomains();
         for tailnet_only in ["bichon", "cockpit", "paperless"] {
             assert!(
@@ -472,6 +476,7 @@ mod tests {
 
     #[test]
     fn test_discover_subdomains_uses_meta_subdomain_value() {
+        let _guard = crate::output::TEST_LOCK.lock().unwrap();
         let discovered = discover_subdomains();
         assert_eq!(discovered["headscale"].subdomain, "hs");
         assert_eq!(discovered["freshrss"].subdomain, "freshrss");

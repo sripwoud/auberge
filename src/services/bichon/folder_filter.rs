@@ -1,4 +1,4 @@
-use crate::services::bichon::api::MailBox;
+use crate::services::bichon::api::Mailbox;
 use std::collections::HashSet;
 
 const FALLBACK_NAMES: &[&str] = &[
@@ -12,7 +12,7 @@ const FALLBACK_NAMES: &[&str] = &[
     "bin",
 ];
 
-pub fn is_excluded(mailbox: &MailBox, operator_extras: &HashSet<String>) -> bool {
+pub fn is_excluded(mailbox: &Mailbox, operator_extras: &HashSet<String>) -> bool {
     if mailbox.attributes.iter().any(|a| {
         let kind = a.kind().trim_start_matches('\\').to_ascii_lowercase();
         kind == "junk" || kind == "trash"
@@ -35,11 +35,11 @@ pub fn is_excluded(mailbox: &MailBox, operator_extras: &HashSet<String>) -> bool
 #[cfg(test)]
 mod tests {
     use super::is_excluded;
-    use crate::services::bichon::api::{MailBox, MailboxAttribute};
+    use crate::services::bichon::api::{Mailbox, MailboxAttribute};
     use std::collections::HashSet;
 
-    fn mailbox(name: &str, attrs: &[&str]) -> MailBox {
-        MailBox {
+    fn mailbox(name: &str, attrs: &[&str]) -> Mailbox {
+        Mailbox {
             name: name.to_string(),
             attributes: attrs
                 .iter()

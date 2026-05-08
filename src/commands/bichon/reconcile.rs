@@ -144,7 +144,7 @@ fn derive_bichon_base_url(config: &Config, host: &Host) -> Result<String> {
     let domain = config.domain();
     if domain.is_empty() {
         eyre::bail!(
-            "no Bichon base URL configured for host '{}'. Set [bichon.hosts.\"{}\"] base_url, or set domain in config.toml",
+            "no Bichon base URL configured for host '{}'. Set [bichon.hosts.\"{}\"] base_url, or set bichon_base_url, or set domain in config.toml",
             host.name,
             host.name
         )
@@ -194,6 +194,7 @@ fn emit_output(result: &ReconcileOutput, output: OutputFormat) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{AccountPlan, ReconcileSummary, compute_reconcile};
+    use crate::output::EnvVarGuard;
     use eyre::Result;
     use serde_json::json;
     use std::fs;
@@ -201,7 +202,13 @@ mod tests {
     use wiremock::matchers::{body_json, method, path, path_regex, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn prepare_config(server: &MockServer, config_extra: &str) -> Result<TempDir> {
+    struct TestEnv {
+        _tmp: TempDir,
+        _xdg_config: EnvVarGuard,
+        _xdg_data: EnvVarGuard,
+    }
+
+    fn prepare_config(server: &MockServer, config_extra: &str) -> Result<TestEnv> {
         let tmp = tempfile::tempdir()?;
         let config_home = tmp.path().join("cfg");
         let data_home = tmp.path().join("data");
@@ -234,20 +241,21 @@ tailscale_ip = "100.100.100.10"
 "#,
         )?;
 
-        // SAFETY: tests in this module mutate env vars under TEST_LOCK so they
-        // serialize across all tests in this binary.
-        unsafe {
-            std::env::set_var("XDG_CONFIG_HOME", &config_home);
-            std::env::set_var("XDG_DATA_HOME", &data_home);
-        }
-        Ok(tmp)
+        // Caller MUST hold TEST_LOCK; guards restore previous env values on Drop.
+        let xdg_config = EnvVarGuard::set("XDG_CONFIG_HOME", &config_home);
+        let xdg_data = EnvVarGuard::set("XDG_DATA_HOME", &data_home);
+        Ok(TestEnv {
+            _tmp: tmp,
+            _xdg_config: xdg_config,
+            _xdg_data: xdg_data,
+        })
     }
 
     #[tokio::test]
     async fn dry_run_returns_expected_diff() -> Result<()> {
         let _guard = crate::output::TEST_LOCK.lock().unwrap();
         let server = MockServer::start().await;
-        let _tmp = prepare_config(&server, "")?;
+        let _env = prepare_config(&server, "")?;
 
         Mock::given(method("GET"))
             .and(path("/api/v1/accounts"))
@@ -318,7 +326,7 @@ tailscale_ip = "100.100.100.10"
     async fn apply_patches_sync_folders_once_when_changed() -> Result<()> {
         let _guard = crate::output::TEST_LOCK.lock().unwrap();
         let server = MockServer::start().await;
-        let _tmp = prepare_config(&server, "")?;
+        let _env = prepare_config(&server, "")?;
 
         Mock::given(method("GET"))
             .and(path("/api/v1/accounts"))
@@ -361,7 +369,7 @@ tailscale_ip = "100.100.100.10"
     async fn apply_is_idempotent_with_no_diff() -> Result<()> {
         let _guard = crate::output::TEST_LOCK.lock().unwrap();
         let server = MockServer::start().await;
-        let _tmp = prepare_config(&server, "")?;
+        let _env = prepare_config(&server, "")?;
 
         Mock::given(method("GET"))
             .and(path("/api/v1/accounts"))
@@ -409,7 +417,7 @@ tailscale_ip = "100.100.100.10"
     async fn retries_on_5xx_then_succeeds() -> Result<()> {
         let _guard = crate::output::TEST_LOCK.lock().unwrap();
         let server = MockServer::start().await;
-        let _tmp = prepare_config(&server, "")?;
+        let _env = prepare_config(&server, "")?;
 
         // First call: 500. Second call: success.
         Mock::given(method("GET"))
@@ -433,7 +441,7 @@ tailscale_ip = "100.100.100.10"
     async fn unknown_host_fails_before_network() -> Result<()> {
         let _guard = crate::output::TEST_LOCK.lock().unwrap();
         let server = MockServer::start().await;
-        let _tmp = prepare_config(&server, "")?;
+        let _env = prepare_config(&server, "")?;
 
         let err = compute_reconcile("not-a-host".to_string(), false, None)
             .await
@@ -475,10 +483,8 @@ address = "100.100.100.10"
 user = "root"
 "#,
         )?;
-        unsafe {
-            std::env::set_var("XDG_CONFIG_HOME", &config_home);
-            std::env::set_var("XDG_DATA_HOME", &data_home);
-        }
+        let _xdg_config = EnvVarGuard::set("XDG_CONFIG_HOME", &config_home);
+        let _xdg_data = EnvVarGuard::set("XDG_DATA_HOME", &data_home);
 
         Mock::given(method("GET"))
             .and(path("/api/v1/accounts"))
