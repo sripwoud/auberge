@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2](https://github.com/sripwoud/auberge/compare/v0.12.1...v0.12.2) - 2026-05-08
+
+### Fixed
+
+- *(bichon)* decode real API response shapes in reconcile-folders
+
+### Other
+
+- compress docs
+- update ADR
+
 ## [0.12.1](https://github.com/sripwoud/auberge/compare/v0.12.0...v0.12.1) - 2026-05-08
 
 ### Added
