@@ -130,13 +130,12 @@ impl BichonApiClient {
         sync_folders: &[String],
     ) -> Result<()> {
         let payload = AccountUpdateRequest { sync_folders };
-        self.request_json::<_, serde_json::Value>(
+        self.request_empty(
             Method::POST,
             &format!("/api/v1/account/{account_id}"),
             Some(&payload),
         )
         .await
-        .map(|_| ())
     }
 
     async fn request_json<Body, Output>(
@@ -149,9 +148,31 @@ impl BichonApiClient {
         Body: Serialize + ?Sized,
         Output: DeserializeOwned,
     {
+        self.retry(|| self.request_json_once(method.clone(), path, body))
+            .await
+    }
+
+    async fn request_empty<Body>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&Body>,
+    ) -> Result<()>
+    where
+        Body: Serialize + ?Sized,
+    {
+        self.retry(|| async { self.send_once(method.clone(), path, body).await.map(|_| ()) })
+            .await
+    }
+
+    async fn retry<T, F, Fut>(&self, mut op: F) -> Result<T>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
         let mut last_err: Option<eyre::Report> = None;
         for attempt in 1..=MAX_RETRIES {
-            match self.request_json_once(method.clone(), path, body).await {
+            match op().await {
                 Ok(value) => return Ok(value),
                 Err(err) => {
                     if attempt < MAX_RETRIES && is_retryable(&err) {
@@ -178,6 +199,23 @@ impl BichonApiClient {
         Output: DeserializeOwned,
     {
         let url = format!("{}{}", self.base_url, path);
+        let response = self.send_once(method, path, body).await?;
+        response
+            .json::<Output>()
+            .await
+            .wrap_err_with(|| format!("failed to parse JSON response from {url}"))
+    }
+
+    async fn send_once<Body>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&Body>,
+    ) -> Result<reqwest::Response>
+    where
+        Body: Serialize + ?Sized,
+    {
+        let url = format!("{}{}", self.base_url, path);
         let request = self
             .http
             .request(method, &url)
@@ -195,10 +233,7 @@ impl BichonApiClient {
             let body = response.text().await.unwrap_or_default();
             return Err(eyre::Report::new(BichonApiHttpError { status, url, body }));
         }
-        response
-            .json::<Output>()
-            .await
-            .wrap_err_with(|| format!("failed to parse JSON response from {url}"))
+        Ok(response)
     }
 }
 
