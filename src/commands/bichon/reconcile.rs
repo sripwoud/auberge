@@ -358,7 +358,7 @@ tailscale_ip = "100.100.100.10"
             .and(body_json(
                 json!({"sync_folders":["INBOX","INBOX/legal-2026"]}),
             ))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok":true})))
+            .respond_with(ResponseTemplate::new(200))
             .expect(1)
             .mount(&server)
             .await;
