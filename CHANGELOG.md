@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1](https://github.com/sripwoud/auberge/compare/v0.14.0...v0.14.1) - 2026-05-20
+
+### Fixed
+
+- *(gokapi)* bind address requires colon prefix (:PORT) ([#348](https://github.com/sripwoud/auberge/pull/348))
+
+### Other
+
+- update gokapi page
+
 ## [0.14.0](https://github.com/sripwoud/auberge/compare/v0.13.0...v0.14.0) - 2026-05-20
 
 ### Added
