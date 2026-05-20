@@ -38,10 +38,10 @@ The role bootstraps Gokapi without the interactive setup wizard. See ADR-0009 fo
 
 ## Rotating the admin password
 
-Auberge does not propagate password changes automatically (the marker file blocks the one-shot from re-running). To rotate:
+Auberge does not propagate password changes automatically (the marker file blocks the one-shot from re-running). To rotate, delete the marker (path is `gokapi_bootstrap_marker`, default `{{ gokapi_data_dir }}/.bootstrap_done`) and redeploy:
 
 ```bash
-ssh <host> sudo rm /var/lib/gokapi/.bootstrap_done
+ssh <host> sudo rm /var/lib/gokapi/.bootstrap_done   # default path; adjust if you override gokapi_bootstrap_marker or gokapi_data_dir
 auberge deploy gokapi
 ```
 

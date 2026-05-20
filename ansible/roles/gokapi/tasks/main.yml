@@ -113,6 +113,16 @@
         group: root
         mode: "0644"
 
+    - name: Stat existing Gokapi config before templating (detects prior wizard-based bootstrap)
+      ansible.builtin.stat:
+        path: "{{ gokapi_config_dir }}/config.json"
+      register: gokapi_preexisting_config
+
+    - name: Stat Gokapi bootstrap marker
+      ansible.builtin.stat:
+        path: "{{ gokapi_bootstrap_marker }}"
+      register: gokapi_bootstrap_check
+
     - name: Template Gokapi config.json (first deploy only; preserves operator edits via admin UI)
       ansible.builtin.template:
         src: templates/config.json.j2
@@ -132,13 +142,21 @@
         mode: "0644"
       notify: Restart gokapi
 
-    - name: Check if Gokapi superadmin has been bootstrapped
-      ansible.builtin.stat:
+    - name: Mark bootstrap complete on hosts already configured by the prior wizard flow
+      when:
+        - not gokapi_bootstrap_check.stat.exists
+        - gokapi_preexisting_config.stat.exists
+      ansible.builtin.file:
         path: "{{ gokapi_bootstrap_marker }}"
-      register: gokapi_bootstrap_check
+        state: touch
+        owner: "{{ gokapi_sys_user }}"
+        group: "{{ gokapi_sys_group }}"
+        mode: "0640"
 
-    - name: Bootstrap Gokapi superadmin via --deployment-password (one-shot)
-      when: not gokapi_bootstrap_check.stat.exists
+    - name: Bootstrap Gokapi superadmin via --deployment-password (one-shot, first deploy only)
+      when:
+        - not gokapi_bootstrap_check.stat.exists
+        - not gokapi_preexisting_config.stat.exists
       ansible.builtin.command:
         argv:
           - "{{ gokapi_install_path }}/gokapi"
@@ -153,7 +171,9 @@
       changed_when: true
 
     - name: Mark Gokapi superadmin bootstrap as complete
-      when: not gokapi_bootstrap_check.stat.exists
+      when:
+        - not gokapi_bootstrap_check.stat.exists
+        - not gokapi_preexisting_config.stat.exists
       ansible.builtin.file:
         path: "{{ gokapi_bootstrap_marker }}"
         state: touch
