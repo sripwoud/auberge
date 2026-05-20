@@ -140,6 +140,13 @@
         replace: '"Port": ":\1"'
       notify: Restart gokapi
 
+    - name: Migrate empty RedirectUrl to {{ gokapi_redirect_url }} (Gokapi emits a broken meta-refresh on root URL when RedirectUrl is empty)
+      ansible.builtin.replace:
+        path: "{{ gokapi_config_dir }}/config.json"
+        regexp: '"RedirectUrl":\s*""'
+        replace: '"RedirectUrl": "{{ gokapi_redirect_url }}"'
+      notify: Restart gokapi
+
     - name: Deploy Gokapi systemd service file
       ansible.builtin.template:
         src: templates/gokapi.service.j2
