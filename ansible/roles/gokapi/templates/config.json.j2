@@ -9,6 +9,8 @@
   "DataDir": "{{ gokapi_data_dir }}/data",
   "DatabaseUrl": "sqlite://{{ gokapi_data_dir }}/gokapi.sqlite",
   "ConfigVersion": 22,
+  "MaxFileSizeMB": {{ gokapi_max_file_size_mb }},
+  "MaxMemory": {{ gokapi_max_memory_mb }},
   "Encryption": {
     "Level": 0
   }

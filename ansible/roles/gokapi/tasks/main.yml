@@ -140,11 +140,28 @@
         replace: '"Port": ":\1"'
       notify: Restart gokapi
 
-    - name: Migrate empty RedirectUrl to {{ gokapi_redirect_url }} (Gokapi emits a broken meta-refresh on root URL when RedirectUrl is empty)
+    # Gokapi emits a broken meta-refresh on root URL when RedirectUrl is empty
+    - name: Migrate empty RedirectUrl to {{ gokapi_redirect_url }}
       ansible.builtin.replace:
         path: "{{ gokapi_config_dir }}/config.json"
         regexp: '"RedirectUrl":\s*""'
         replace: '"RedirectUrl": "{{ gokapi_redirect_url }}"'
+      notify: Restart gokapi
+
+    # Gokapi has no runtime fallback; MaxFileSizeMB=0 blocks all uploads with "upload limit exceeded"
+    - name: Migrate MaxFileSizeMB=0 to {{ gokapi_max_file_size_mb }}
+      ansible.builtin.replace:
+        path: "{{ gokapi_config_dir }}/config.json"
+        regexp: '"MaxFileSizeMB":\s*0\b'
+        replace: '"MaxFileSizeMB": {{ gokapi_max_file_size_mb }}'
+      notify: Restart gokapi
+
+    # Gokapi has no runtime fallback; MaxMemory=0 disables multipart memory buffering
+    - name: Migrate MaxMemory=0 to {{ gokapi_max_memory_mb }}
+      ansible.builtin.replace:
+        path: "{{ gokapi_config_dir }}/config.json"
+        regexp: '"MaxMemory":\s*0\b'
+        replace: '"MaxMemory": {{ gokapi_max_memory_mb }}'
       notify: Restart gokapi
 
     - name: Deploy Gokapi systemd service file
