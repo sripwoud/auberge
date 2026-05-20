@@ -33,7 +33,7 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | [Navidrome](apps/navidrome.md)     | Music streaming server                  |
 | [Paperless-ngx](apps/paperless.md) | Document management system              |
 | [Syncthing](apps/syncthing.md)     | Continuous file synchronization         |
-| [WebDAV](apps/webdav.md)           | File sharing and synchronization        |
+| [Gokapi](apps/gokapi.md)           | Expiring-link file sharing              |
 | [YOURLS](apps/yourls.md)           | URL shortener                           |
 
 ## Notifications

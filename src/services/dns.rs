@@ -80,7 +80,13 @@ pub fn discover_all_subdomains() -> DiscoveredSubdomains {
         let Ok(meta) = PlaybookMeta::load(&path) else {
             continue;
         };
-        let Some(subdomain) = meta.subdomain.clone().filter(|s| !s.is_empty()) else {
+        let config_override = config.as_ref().and_then(|c| {
+            let key = format!("{}_subdomain", app);
+            c.get(&key).filter(|v| !v.is_empty())
+        });
+        let Some(subdomain) =
+            config_override.or_else(|| meta.subdomain.clone().filter(|s| !s.is_empty()))
+        else {
             continue;
         };
 
@@ -450,10 +456,10 @@ mod tests {
             "blocky",
             "colporteur",
             "freshrss",
+            "gokapi",
             "grimmory",
             "headscale",
             "navidrome",
-            "webdav",
             "yourls",
         ]
         .iter()
@@ -476,9 +482,43 @@ mod tests {
 
     #[test]
     fn test_discover_subdomains_uses_meta_subdomain_value() {
+        use crate::output::EnvVarGuard;
         let _guard = crate::output::TEST_LOCK.lock().unwrap();
+        // Pin XDG_CONFIG_HOME at an empty dir so no <app>_subdomain
+        // override exists and meta defaults are the sole signal.
+        let dir = tempfile::tempdir().unwrap();
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", dir.path());
         let discovered = discover_subdomains();
         assert_eq!(discovered["headscale"].subdomain, "hs");
         assert_eq!(discovered["freshrss"].subdomain, "freshrss");
+    }
+
+    #[test]
+    fn test_discover_subdomains_honors_app_subdomain_config_override() {
+        use crate::output::EnvVarGuard;
+        let _guard = crate::output::TEST_LOCK.lock().unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("auberge/config.toml");
+        std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &config_path,
+            "domain = \"example.com\"\nfreshrss_subdomain = \"news\"\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", dir.path());
+
+        let discovered = discover_subdomains();
+        assert_eq!(
+            discovered["freshrss"].subdomain, "news",
+            "freshrss_subdomain in config must override meta default"
+        );
+        assert_eq!(
+            discovered["baikal"].subdomain, "baikal",
+            "apps without a config override keep their meta default"
+        );
     }
 }

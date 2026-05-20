@@ -63,6 +63,18 @@ keys:
     secret: false
     doc: "Subdomain for the FreshRSS feed reader"
 
+  gokapi_admin_password:
+    secret: true
+    doc: "Password for the Gokapi admin account (entered manually in /setup wizard on first deploy)"
+
+  gokapi_admin_user:
+    secret: false
+    doc: "Username for the Gokapi admin account (entered manually in /setup wizard on first deploy)"
+
+  gokapi_subdomain:
+    secret: false
+    doc: "Subdomain for the Gokapi file-sharing service"
+
   grimmory_admin_password:
     secret: true
     doc: "Password for the Grimmory admin account"
@@ -162,14 +174,6 @@ keys:
   tgtg_telegram_bot_token:
     secret: true
     doc: "Telegram bot token for the Too Good To Go notifier bot"
-
-  webdav_password:
-    secret: true
-    doc: "Password for the WebDAV server"
-
-  webdav_subdomain:
-    secret: false
-    doc: "Subdomain for the WebDAV server"
 
   yourls_admin_password:
     secret: true

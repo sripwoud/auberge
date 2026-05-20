@@ -173,6 +173,7 @@ mod tests {
         assert!(role_names.contains(&"paperless"));
         assert!(role_names.contains(&"baikal"));
         assert!(role_names.contains(&"freshrss"));
+        assert!(role_names.contains(&"gokapi"));
     }
 
     #[test]

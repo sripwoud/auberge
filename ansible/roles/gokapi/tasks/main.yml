@@ -1,0 +1,173 @@
+- name: Install and configure Gokapi
+  block:
+    - name: Install unzip (required to extract Gokapi release archive)
+      ansible.builtin.apt:
+        name: unzip
+        state: present
+        update_cache: true
+
+    - name: Create Gokapi system group
+      ansible.builtin.group:
+        name: "{{ gokapi_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create Gokapi system user
+      ansible.builtin.user:
+        name: "{{ gokapi_sys_user }}"
+        group: "{{ gokapi_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ gokapi_data_dir }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create Gokapi installation directory
+      ansible.builtin.file:
+        path: "{{ gokapi_install_path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create Gokapi data directory
+      ansible.builtin.file:
+        path: "{{ gokapi_data_dir }}"
+        state: directory
+        owner: "{{ gokapi_sys_user }}"
+        group: "{{ gokapi_sys_group }}"
+        mode: "0750"
+
+    - name: Create Gokapi config directory
+      ansible.builtin.file:
+        path: "{{ gokapi_config_dir }}"
+        state: directory
+        owner: "{{ gokapi_sys_user }}"
+        group: "{{ gokapi_sys_group }}"
+        mode: "0750"
+
+    - name: Create Gokapi data subdirectory for uploaded files
+      ansible.builtin.file:
+        path: "{{ gokapi_data_dir }}/data"
+        state: directory
+        owner: "{{ gokapi_sys_user }}"
+        group: "{{ gokapi_sys_group }}"
+        mode: "0750"
+
+    - name: Check if Gokapi version file exists
+      ansible.builtin.stat:
+        path: "{{ gokapi_install_path }}/version"
+      register: gokapi_version_file
+
+    - name: Read installed Gokapi version
+      when: gokapi_version_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ gokapi_install_path }}/version"
+      register: gokapi_installed_version_raw
+
+    - name: Set installed Gokapi version fact
+      ansible.builtin.set_fact:
+        gokapi_installed_version: >-
+          {{ gokapi_installed_version_raw.content | b64decode | trim
+             if gokapi_version_file.stat.exists else '' }}
+
+    - name: Download Gokapi release archive
+      when: gokapi_installed_version != gokapi_version
+      ansible.builtin.get_url:
+        url: "{{ gokapi_archive_url }}"
+        dest: "/tmp/gokapi-{{ gokapi_version }}.zip"
+        checksum: "sha256:{{ gokapi_archive_sha256 }}"
+        mode: "0644"
+
+    - name: Extract Gokapi binary
+      when: gokapi_installed_version != gokapi_version
+      ansible.builtin.unarchive:
+        src: "/tmp/gokapi-{{ gokapi_version }}.zip"
+        dest: "{{ gokapi_install_path }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart gokapi
+
+    - name: Remove downloaded Gokapi archive
+      when: gokapi_installed_version != gokapi_version
+      ansible.builtin.file:
+        path: "/tmp/gokapi-{{ gokapi_version }}.zip"
+        state: absent
+
+    - name: Ensure Gokapi binary is executable
+      when: gokapi_installed_version != gokapi_version
+      ansible.builtin.file:
+        path: "{{ gokapi_install_path }}/gokapi"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Write installed Gokapi version file
+      when: gokapi_installed_version != gokapi_version
+      ansible.builtin.copy:
+        content: "{{ gokapi_version }}"
+        dest: "{{ gokapi_install_path }}/version"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Deploy Gokapi systemd service file
+      ansible.builtin.template:
+        src: templates/gokapi.service.j2
+        dest: /etc/systemd/system/gokapi.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart gokapi
+
+    - name: Enable and start Gokapi service
+      ansible.builtin.systemd_service:
+        name: gokapi
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Check if Gokapi setup wizard has been completed
+      ansible.builtin.stat:
+        path: "{{ gokapi_config_dir }}/config.json"
+      register: gokapi_config_check
+
+    - name: Deploy Gokapi Caddyfile
+      when: gokapi_config_check.stat.exists
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ gokapi_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
+    - name: Ensure Cloudflare DNS A record exists for {{ gokapi_subdomain + '.' + domain }}
+      when: gokapi_config_check.stat.exists
+      ansible.builtin.include_role:
+        name: dns_record
+      vars:
+        dns_record_subdomain: "{{ gokapi_subdomain }}"
+        dns_record_domain: "{{ domain }}"
+        dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"
+
+    - name: Print first-deploy setup wizard instructions
+      when: not gokapi_config_check.stat.exists
+      ansible.builtin.debug:
+        msg: |
+          Gokapi is installed but not yet configured. Caddy site and DNS A
+          record are intentionally NOT deployed until you complete the setup
+          wizard, so the unauthenticated /setup endpoint is never exposed
+          publicly.
+
+          Complete first-time setup:
+            1. From your laptop, open an SSH tunnel:
+                 ssh -L 53842:127.0.0.1:{{ gokapi_port }} {{ ansible_user }}@{{ inventory_hostname }}
+            2. In a browser, open:
+                 http://localhost:53842/setup
+            3. Enter the admin credentials matching gokapi_admin_user and
+               gokapi_admin_password from your config.toml.
+            4. Re-run: auberge deploy --tags gokapi
+               The Caddy site and DNS record will be created on this second deploy.

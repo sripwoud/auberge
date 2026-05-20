@@ -30,7 +30,7 @@ graph TD
 - **FreshRSS**: SQLite database, configuration, user data
 - **Navidrome**: Database and configuration (music files excluded by default)
 - **Calibre**: Book library, metadata database, user database (login credentials)
-- **WebDAV**: All shared files
+- **Gokapi**: SQLite database and uploaded shared files
 - **Paperless-ngx**: Documents, media, PostgreSQL database (tags, correspondents, document types, users)
 - **YOURLS**: URL shortener data and configuration
 
@@ -46,9 +46,9 @@ backups/
     │   ├── 2026-01-23_18-45-12/
     │   └── latest -> 2026-01-23_18-45-12
     ├── freshrss/
+    ├── gokapi/
     ├── navidrome/
-    ├── calibre/
-    └── webdav/
+    └── calibre/
 ```
 
 Each app has a `latest` symlink pointing to the most recent backup for easy access.

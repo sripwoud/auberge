@@ -23,7 +23,7 @@ All values live in `~/.config/auberge/config.toml`. Manage with `auberge config 
 | `navidrome_subdomain`      | Optional | Subdomain for Navidrome                                                                    |
 | `paperless_subdomain`      | Optional | Subdomain for Paperless                                                                    |
 | `paperless_tailscale_ip`   | Optional | Tailscale IP; makes subdomain tailnet-only                                                 |
-| `webdav_subdomain`         | Optional | Subdomain for WebDAV                                                                       |
+| `gokapi_subdomain`         | Optional | Subdomain for Gokapi (default: `share`)                                                    |
 | `yourls_subdomain`         | Optional | Subdomain for YOURLS                                                                       |
 
 ?> **Tailnet-only subdomains**: setting `<app>_tailscale_ip` causes `dns set-all` to point that subdomain's A record at the Tailscale CGNAT IP (`100.64.0.0/10`) instead of the public server IP. Public internet cannot route CGNAT addresses, so no firewall rules are needed. `dns migrate` skips records whose current IP is in the CGNAT range.

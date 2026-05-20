@@ -1,0 +1,7 @@
+---
+- name: Deploy Gokapi
+  hosts: vps
+  become: true
+  roles:
+    - role: gokapi
+      tags: [gokapi]

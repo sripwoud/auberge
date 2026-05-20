@@ -1,8 +1,7 @@
 ---
 caddy_l4_version: "v0.1.0"
 caddy_cloudflare_plugin_version: "v0.2.4"
-caddy_webdav_version: "fa2f366b0d75e54c2e381c0aefc3a8df8bf5794b"
 
 caddy_binary: /usr/local/bin/caddy
 caddy_build_id_file: /usr/local/bin/.caddy-build-id
-caddy_build_id: "l4-{{ caddy_l4_version }}-cf-{{ caddy_cloudflare_plugin_version }}-webdav-{{ caddy_webdav_version }}"
+caddy_build_id: "l4-{{ caddy_l4_version }}-cf-{{ caddy_cloudflare_plugin_version }}"

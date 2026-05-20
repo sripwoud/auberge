@@ -1,4 +1,0 @@
-required_keys: []
-subdomain: webdav
-backup:
-  paths: [/var/www/webdav-files]

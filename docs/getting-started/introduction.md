@@ -20,7 +20,7 @@ Backups, DNS sync, and offsite restic snapshots are first-class CLI verbs.
 
 **Networking**: [Blocky](https://0xerr0r.github.io/blocky), [Headscale](https://headscale.net), [WireGuard](https://wireguard.com), [Tailscale](https://tailscale.com)
 
-**Apps**: [Baikal](https://sabre.io/baikal), [Bichon](https://github.com/rustmailer/bichon), [Grimmory](https://grimmory.org), [Colporteur](https://github.com/sripwoud/colporteur), [FreshRSS](https://freshrss.org), [Navidrome](https://navidrome.org), [Paperless-ngx](https://docs.paperless-ngx.com), [Syncthing](https://syncthing.net), [WebDAV](https://github.com/hacdias/webdav), [YOURLS](https://yourls.org)
+**Apps**: [Baikal](https://sabre.io/baikal), [Bichon](https://github.com/rustmailer/bichon), [Grimmory](https://grimmory.org), [Colporteur](https://github.com/sripwoud/colporteur), [FreshRSS](https://freshrss.org), [Gokapi](https://github.com/Forceu/Gokapi), [Navidrome](https://navidrome.org), [Paperless-ngx](https://docs.paperless-ngx.com), [Syncthing](https://syncthing.net), [YOURLS](https://yourls.org)
 
 ## Requirements
 
