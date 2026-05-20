@@ -10,7 +10,7 @@ Group={{ gokapi_sys_group }}
 WorkingDirectory={{ gokapi_data_dir }}
 Environment=GOKAPI_CONFIG_DIR={{ gokapi_config_dir }}
 Environment=GOKAPI_DATA_DIR={{ gokapi_data_dir }}/data
-Environment=GOKAPI_PORT=:{{ gokapi_port }}
+Environment=GOKAPI_PORT={{ gokapi_port }}
 Environment=GOKAPI_USE_CLOUDFLARE=true
 Environment=GOKAPI_TRUSTED_PROXIES=127.0.0.1
 ExecStart={{ gokapi_install_path }}/gokapi
