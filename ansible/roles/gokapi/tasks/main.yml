@@ -133,6 +133,13 @@
         force: false
       notify: Restart gokapi
 
+    - name: Migrate existing config.json Port to bind-address form (Gokapi >=2.2.4 requires ":N", not "N")
+      ansible.builtin.replace:
+        path: "{{ gokapi_config_dir }}/config.json"
+        regexp: '"Port":\s*"([0-9]+)"'
+        replace: '"Port": ":\1"'
+      notify: Restart gokapi
+
     - name: Deploy Gokapi systemd service file
       ansible.builtin.template:
         src: templates/gokapi.service.j2
