@@ -5,6 +5,7 @@ gokapi_sys_user: gokapi
 gokapi_sys_group: gokapi
 gokapi_port: 53842
 gokapi_domain: "{{ gokapi_subdomain }}.{{ domain }}"
+gokapi_redirect_url: "/admin"
 gokapi_version: "2.2.4"
 gokapi_archive_url: "https://github.com/Forceu/Gokapi/releases/download/v{{ gokapi_version }}/gokapi-{{ gokapi_version }}_linux-amd64.zip"
 gokapi_archive_sha256: "51dbf724c94f8afa0b40fb1ef63a1fe418e7996e7b9536e1f0a5da695b8e18ef"
