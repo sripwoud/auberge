@@ -1,0 +1,8 @@
+required_keys:
+  - gokapi_admin_user
+  - gokapi_admin_password
+subdomain: share
+backup:
+  systemd_services: [gokapi]
+  paths: [/var/lib/gokapi]
+  owner: [gokapi, gokapi]

@@ -1,0 +1,18 @@
+{{ gokapi_domain }} {
+	reverse_proxy 127.0.0.1:{{ gokapi_port }} {
+		header_up Host {host}
+		header_up X-Real-IP {remote_ip}
+		header_up X-Forwarded-For {remote_ip}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	request_body {
+		max_size 10240M
+	}
+
+	encode gzip
+
+	log {
+		output file /var/log/caddy/{{ gokapi_domain }}.log
+	}
+}
