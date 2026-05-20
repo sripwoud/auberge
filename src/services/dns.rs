@@ -450,6 +450,7 @@ mod tests {
             "blocky",
             "colporteur",
             "freshrss",
+            "gokapi",
             "grimmory",
             "headscale",
             "navidrome",

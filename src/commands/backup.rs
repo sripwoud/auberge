@@ -52,7 +52,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to backup (baikal,bichon,freshrss,headscale,navidrome,calibre,webdav,yourls,paperless). Default: all"
+            help = "Apps to backup (baikal,bichon,freshrss,gokapi,headscale,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(short, long, help = "Backup destination directory")]
@@ -79,7 +79,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to backup (baikal,bichon,freshrss,headscale,navidrome,calibre,webdav,yourls,paperless). Default: all"
+            help = "Apps to backup (baikal,bichon,freshrss,gokapi,headscale,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(
@@ -128,7 +128,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to restore (baikal,bichon,freshrss,headscale,navidrome,calibre,webdav,yourls,paperless). Default: all"
+            help = "Apps to restore (baikal,bichon,freshrss,gokapi,headscale,navidrome,calibre,webdav,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(
@@ -661,6 +661,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         vec![
             "baikal".to_string(),
             "freshrss".to_string(),
+            "gokapi".to_string(),
             "navidrome".to_string(),
             "calibre".to_string(),
             "webdav".to_string(),
