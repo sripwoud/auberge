@@ -74,6 +74,24 @@ fn select_key(config: &Config, prompt: &str) -> Result<String> {
         .ok_or_else(|| eyre::eyre!("No key selected"))
 }
 
+fn select_registry_key(registry: &KeyRegistry, prompt: &str) -> Result<String> {
+    let keys = sorted_registry_keys(registry);
+    if keys.is_empty() {
+        eyre::bail!("Key Registry is empty");
+    }
+    let display = |k: &String| match registry.get(k) {
+        Some(entry) if entry.secret => format!("{k} [secret]"),
+        _ => k.clone(),
+    };
+    select_item(&keys, display, prompt)?.ok_or_else(|| eyre::eyre!("No key selected"))
+}
+
+fn sorted_registry_keys(registry: &KeyRegistry) -> Vec<String> {
+    let mut keys: Vec<String> = registry.iter().map(|(k, _)| k.clone()).collect();
+    keys.sort();
+    keys
+}
+
 fn resolve_key(key: Option<String>, config: &Config, prompt: &str) -> Result<String> {
     match key {
         Some(k) => Ok(k),
@@ -135,7 +153,14 @@ fn write_scaffold(path: &Path, scaffold: &str, force: bool) -> Result<()> {
 
 pub fn run_config_set(key: Option<String>, value: Option<String>) -> Result<()> {
     let mut config = Config::load()?;
-    let key = resolve_key(key, &config, "Select key to set")?;
+    let key = match key {
+        Some(k) => k,
+        None => {
+            let assets = AnsibleAssets::prepare()?;
+            let registry = KeyRegistry::load(&assets.ansible_dir().join("keys.yml"))?;
+            select_registry_key(&registry, "Select key to set")?
+        }
+    };
     let value = match value {
         Some(v) => v,
         None => {
@@ -313,6 +338,21 @@ keys:
         fs::write(&path, "existing").unwrap();
         write_scaffold(&path, "fresh", true).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "fresh");
+    }
+
+    #[test]
+    fn test_sorted_registry_keys_returns_all_keys_alphabetically() {
+        let (_keys_dir, registry) = fixture_registry();
+        let keys = sorted_registry_keys(&registry);
+        assert_eq!(
+            keys,
+            vec![
+                "admin_user_name",
+                "domain",
+                "paperless_admin_password",
+                "tailscale_authkey",
+            ]
+        );
     }
 
     #[test]
