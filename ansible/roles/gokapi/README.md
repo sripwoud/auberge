@@ -12,33 +12,40 @@ Deploys [Gokapi](https://github.com/Forceu/Gokapi) — a Go single-binary, self-
 
 ## Variables
 
-| Variable              | Default                               | Description                                 |
-| --------------------- | ------------------------------------- | ------------------------------------------- |
-| `gokapi_install_path` | `/opt/gokapi`                         | Binary install directory                    |
-| `gokapi_data_dir`     | `/var/lib/gokapi`                     | Persistent data + DB directory              |
-| `gokapi_config_dir`   | `/var/lib/gokapi/config`              | Config directory (`config.json` lives here) |
-| `gokapi_sys_user`     | `gokapi`                              | System user                                 |
-| `gokapi_sys_group`    | `gokapi`                              | System group                                |
-| `gokapi_port`         | `53842`                               | Local port for Caddy reverse proxy          |
-| `gokapi_domain`       | `{{ gokapi_subdomain }}.{{ domain }}` | Public hostname                             |
-| `gokapi_version`      | `2.2.4`                               | Pinned upstream release                     |
+| Variable                  | Default                                 | Description                                            |
+| ------------------------- | --------------------------------------- | ------------------------------------------------------ |
+| `gokapi_install_path`     | `/opt/gokapi`                           | Binary install directory                               |
+| `gokapi_data_dir`         | `/var/lib/gokapi`                       | Persistent data + DB directory                         |
+| `gokapi_config_dir`       | `/var/lib/gokapi/config`                | Config directory (`config.json` lives here)            |
+| `gokapi_sys_user`         | `gokapi`                                | System user                                            |
+| `gokapi_sys_group`        | `gokapi`                                | System group                                           |
+| `gokapi_port`             | `53842`                                 | Local port for Caddy reverse proxy                     |
+| `gokapi_domain`           | `{{ gokapi_subdomain }}.{{ domain }}`   | Public hostname                                        |
+| `gokapi_version`          | `2.2.4`                                 | Pinned upstream release                                |
+| `gokapi_bootstrap_marker` | `{{ gokapi_data_dir }}/.bootstrap_done` | Sentinel file gating the one-shot superadmin bootstrap |
 
-## First-deploy setup wizard
+`gokapi_admin_user` and `gokapi_admin_password` are required keys from the operator's `config.toml` (declared in the Playbook Meta).
 
-Gokapi has no environment-variable bootstrap for admin credentials, and its `/setup` endpoint is unauthenticated until completion — anyone reaching the listener first becomes admin. The role mitigates this by **gating public exposure** on `config.json` existing:
+## Headless first-deploy
 
-- **First deploy**: gokapi binary + systemd unit installed only. Caddy site and Cloudflare DNS record are deliberately NOT created. Gokapi listens on `:53842` but UFW blocks that port from the public internet, so the only path in is an SSH tunnel from the operator's laptop.
-- Operator runs:
-  ```bash
-  ssh -L 53842:127.0.0.1:53842 <ansible-user>@<host>
-  # in a browser: http://localhost:53842/setup
-  ```
-  Enter the admin username and password matching `gokapi_admin_user` / `gokapi_admin_password` from `config.toml`, pick SQLite, save.
-- **Second deploy**: `config.json` now exists, so the role deploys the Caddy site and creates the Cloudflare A record. `https://{{ gokapi_domain }}` is now live.
+The role bootstraps Gokapi without the interactive setup wizard. See ADR-0009 for the rationale and security analysis.
 
-Subsequent deploys are fully idempotent — no manual step.
+1. `config.json` is templated at `{{ gokapi_config_dir }}/config.json` with `force: false`. This means it is written exactly once, then never overwritten — Gokapi's admin UI persists its own changes to the same file via `configuration.save()`, and those operator edits must survive subsequent deploys.
+2. Before the systemd service starts, `gokapi --deployment-password <pw>` runs once as the `gokapi` user. Gokapi's `EditSuperAdmin` creates the superadmin in its database (Username from the templated `config.json`, password hashed by Gokapi using its own KDF), then exits 0.
+3. The bootstrap marker (`{{ gokapi_bootstrap_marker }}`) is touched. Subsequent deploys see the marker and skip the one-shot.
+4. The systemd service is enabled and started. `RunIfFirstStart` sees `config.json` exists and never opens the setup webserver; `checkIfUserExists` finds the superadmin and passes.
+5. Caddy site and Cloudflare A record deploy unconditionally in the same `auberge deploy` invocation.
 
-To rotate the admin password later, run `gokapi --deployment-password <new>` as root on the host (binary at `{{ gokapi_install_path }}/gokapi`); it sets the password on the existing super-admin and exits.
+## Rotating the admin password
+
+Auberge does not propagate password changes automatically (the marker file blocks the one-shot from re-running). To rotate, delete the marker (path is `gokapi_bootstrap_marker`, default `{{ gokapi_data_dir }}/.bootstrap_done`) and redeploy:
+
+```bash
+ssh <host> sudo rm /var/lib/gokapi/.bootstrap_done   # default path; adjust if you override gokapi_bootstrap_marker or gokapi_data_dir
+auberge deploy gokapi
+```
+
+The next deploy sees the marker missing, re-runs `--deployment-password` with the new value from `config.toml`. `EditSuperAdmin` updates the existing superadmin's password and exits 0.
 
 ## Management
 
