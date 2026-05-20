@@ -454,7 +454,6 @@ mod tests {
             "grimmory",
             "headscale",
             "navidrome",
-            "webdav",
             "yourls",
         ]
         .iter()

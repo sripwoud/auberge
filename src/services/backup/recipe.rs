@@ -73,17 +73,17 @@ mod tests {
     }
 
     #[test]
-    fn test_discover_backuppable_apps_returns_all_nine() {
+    fn test_discover_backuppable_apps_returns_expected_set() {
         let apps = discover_backuppable_apps(&project_playbooks_dir()).unwrap();
         for expected in [
             "baikal",
             "bichon",
             "calibre",
             "freshrss",
+            "gokapi",
             "headscale",
             "navidrome",
             "paperless",
-            "webdav",
             "yourls",
         ] {
             assert!(

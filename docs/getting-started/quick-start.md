@@ -41,5 +41,5 @@ Services are available at subdomains of your primary domain:
 - `https://rss.yourdomain.com` - FreshRSS
 - `https://musique.yourdomain.com` - Navidrome
 - `https://lire.yourdomain.com` - Grimmory
-- `https://webdav.yourdomain.com` - WebDAV
+- `https://share.yourdomain.com` - Gokapi
 - `https://url.yourdomain.com` - YOURLS

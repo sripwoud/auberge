@@ -175,14 +175,6 @@ keys:
     secret: true
     doc: "Telegram bot token for the Too Good To Go notifier bot"
 
-  webdav_password:
-    secret: true
-    doc: "Password for the WebDAV server"
-
-  webdav_subdomain:
-    secret: false
-    doc: "Subdomain for the WebDAV server"
-
   yourls_admin_password:
     secret: true
     doc: "Password for the YOURLS admin account"

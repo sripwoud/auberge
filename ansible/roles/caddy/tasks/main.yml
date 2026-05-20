@@ -52,7 +52,6 @@
       ansible.builtin.command: |
         xcaddy build \
           --with github.com/mholt/caddy-l4@{{ caddy_l4_version }} \
-          --with github.com/mholt/caddy-webdav@{{ caddy_webdav_version }} \
           --with github.com/caddy-dns/cloudflare@{{ caddy_cloudflare_plugin_version }} \
           --output {{ caddy_binary }}
       register: caddy_build_result

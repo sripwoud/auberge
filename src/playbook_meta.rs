@@ -204,14 +204,6 @@ mod tests {
     }
 
     #[test]
-    fn test_webdav_meta_backup_recipe() {
-        let backup = load_meta("webdav").backup.unwrap();
-        assert_eq!(backup.paths, vec!["/var/www/webdav-files"]);
-        assert!(backup.owner.is_none());
-        assert!(backup.systemd_services.is_empty());
-    }
-
-    #[test]
     fn test_yourls_meta_backup_recipe() {
         let backup = load_meta("yourls").backup.unwrap();
         assert_eq!(backup.paths, vec!["/var/www/yourls"]);

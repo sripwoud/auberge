@@ -45,7 +45,8 @@ Bootstrap creates an admin user, disables root SSH login, and changes the SSH po
 auberge config set domain example.com
 auberge config set cloudflare_dns_api_token your-token
 auberge config set baikal_admin_password your-password
-auberge config set webdav_password your-password
+auberge config set gokapi_admin_user admin
+auberge config set gokapi_admin_password your-password
 ```
 
 ?> Run `auberge config init` (no flags) to print all known config keys.

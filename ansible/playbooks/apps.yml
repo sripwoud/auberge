@@ -30,8 +30,6 @@
       tags: [apps, sync, syncthing]
     - role: tgtg
       tags: [apps, notifications, tgtg]
-    - role: webdav
-      tags: [apps, storage, webdav]
     - role: wireguard
       tags: [apps, network, vpn, wireguard]
     - role: yourls

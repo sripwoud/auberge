@@ -43,7 +43,8 @@ auberge config set admin_user_email you@example.com
 auberge config set domain example.com
 auberge config set cloudflare_dns_api_token your-token
 auberge config set baikal_admin_password your-password
-auberge config set webdav_password your-password
+auberge config set gokapi_admin_user admin
+auberge config set gokapi_admin_password your-password
 auberge config set tailscale_authkey your-authkey
 auberge config set ssh_port 22022
 ```
