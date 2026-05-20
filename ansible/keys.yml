@@ -63,6 +63,18 @@ keys:
     secret: false
     doc: "Subdomain for the FreshRSS feed reader"
 
+  gokapi_admin_password:
+    secret: true
+    doc: "Password for the Gokapi admin account (entered manually in /setup wizard on first deploy)"
+
+  gokapi_admin_user:
+    secret: false
+    doc: "Username for the Gokapi admin account (entered manually in /setup wizard on first deploy)"
+
+  gokapi_subdomain:
+    secret: false
+    doc: "Subdomain for the Gokapi file-sharing service"
+
   grimmory_admin_password:
     secret: true
     doc: "Password for the Grimmory admin account"
