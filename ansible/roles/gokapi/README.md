@@ -25,15 +25,18 @@ Deploys [Gokapi](https://github.com/Forceu/Gokapi) — a Go single-binary, self-
 
 ## First-deploy setup wizard
 
-Gokapi has no environment-variable bootstrap for admin credentials. On the first deploy, after Ansible finishes:
+Gokapi has no environment-variable bootstrap for admin credentials, and its `/setup` endpoint is unauthenticated until completion — anyone reaching the listener first becomes admin. The role mitigates this by **gating public exposure** on `config.json` existing:
 
-1. Visit `https://{{ gokapi_domain }}/setup` from a browser.
-2. Enter the admin username and password matching `gokapi_admin_user` and `gokapi_admin_password` from `config.toml`.
-3. Pick SQLite (local disk). Save and the wizard exits.
+- **First deploy**: gokapi binary + systemd unit installed only. Caddy site and Cloudflare DNS record are deliberately NOT created. Gokapi listens on `:53842` but UFW blocks that port from the public internet, so the only path in is an SSH tunnel from the operator's laptop.
+- Operator runs:
+  ```bash
+  ssh -L 53842:127.0.0.1:53842 <ansible-user>@<host>
+  # in a browser: http://localhost:53842/setup
+  ```
+  Enter the admin username and password matching `gokapi_admin_user` / `gokapi_admin_password` from `config.toml`, pick SQLite, save.
+- **Second deploy**: `config.json` now exists, so the role deploys the Caddy site and creates the Cloudflare A record. `https://{{ gokapi_domain }}` is now live.
 
-The `/setup` endpoint is unauthenticated until completion. Caddy will already be proxying the public hostname when Ansible finishes, so do this immediately after the deploy.
-
-Subsequent deploys are idempotent: `config.json` exists, so Gokapi skips the wizard.
+Subsequent deploys are fully idempotent — no manual step.
 
 To rotate the admin password later, run `gokapi --deployment-password <new>` as root on the host (binary at `{{ gokapi_install_path }}/gokapi`); it sets the password on the existing super-admin and exits.
 
