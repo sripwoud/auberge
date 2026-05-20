@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0](https://github.com/sripwoud/auberge/compare/v0.12.3...v0.13.0) - 2026-05-20
+
+### Added
+
+- *(gokapi)* [**breaking**] add public app for expiring-link file sharing; remove webdav ([#339](https://github.com/sripwoud/auberge/pull/339))
+
+### Fixed
+
+- *(config)* source `config set` picker from key registry ([#340](https://github.com/sripwoud/auberge/pull/340))
+
 ## [0.12.3](https://github.com/sripwoud/auberge/compare/v0.12.2...v0.12.3) - 2026-05-18
 
 ### Fixed
