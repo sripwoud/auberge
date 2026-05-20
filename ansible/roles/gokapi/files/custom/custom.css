@@ -1,0 +1,26 @@
+/* Gokapi custom stylesheet
+ *
+ * Loaded automatically by Gokapi when present at
+ *   /var/lib/gokapi/custom/custom.css   (on the host)
+ * Served as
+ *   /custom/custom.v<N>.css             (with N from version.txt)
+ *
+ * Add or remove rules below, then bump version.txt to bust browser caches.
+ * Inspect the upstream templates at internal/webserver/web/templates/ to
+ * find class/element targets.
+ */
+
+/* Example: tighten the header on desktop */
+/*
+h1 {
+  letter-spacing: 0.04em;
+}
+*/
+
+/* Example: dark-mode override */
+/*
+body {
+  background: #0f1115;
+  color: #e8e8e8;
+}
+*/
