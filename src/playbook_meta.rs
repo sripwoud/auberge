@@ -187,6 +187,17 @@ mod tests {
     }
 
     #[test]
+    fn test_gokapi_meta_backup_recipe() {
+        let backup = load_meta("gokapi").backup.unwrap();
+        assert_eq!(backup.systemd_services, vec!["gokapi"]);
+        assert_eq!(backup.paths, vec!["/var/lib/gokapi"]);
+        assert_eq!(
+            backup.owner,
+            Some(("gokapi".to_string(), "gokapi".to_string()))
+        );
+    }
+
+    #[test]
     fn test_headscale_meta_backup_recipe() {
         let backup = load_meta("headscale").backup.unwrap();
         assert_eq!(backup.systemd_services, vec!["headscale"]);
