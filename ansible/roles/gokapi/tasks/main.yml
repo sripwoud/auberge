@@ -113,6 +113,16 @@
         group: root
         mode: "0644"
 
+    - name: Template Gokapi config.json (first deploy only; preserves operator edits via admin UI)
+      ansible.builtin.template:
+        src: templates/config.json.j2
+        dest: "{{ gokapi_config_dir }}/config.json"
+        owner: "{{ gokapi_sys_user }}"
+        group: "{{ gokapi_sys_group }}"
+        mode: "0640"
+        force: false
+      notify: Restart gokapi
+
     - name: Deploy Gokapi systemd service file
       ansible.builtin.template:
         src: templates/gokapi.service.j2
@@ -122,6 +132,35 @@
         mode: "0644"
       notify: Restart gokapi
 
+    - name: Check if Gokapi superadmin has been bootstrapped
+      ansible.builtin.stat:
+        path: "{{ gokapi_bootstrap_marker }}"
+      register: gokapi_bootstrap_check
+
+    - name: Bootstrap Gokapi superadmin via --deployment-password (one-shot)
+      when: not gokapi_bootstrap_check.stat.exists
+      ansible.builtin.command:
+        argv:
+          - "{{ gokapi_install_path }}/gokapi"
+          - "--deployment-password"
+          - "{{ gokapi_admin_password }}"
+      environment:
+        GOKAPI_CONFIG_DIR: "{{ gokapi_config_dir }}"
+        GOKAPI_DATA_DIR: "{{ gokapi_data_dir }}/data"
+      become: true
+      become_user: "{{ gokapi_sys_user }}"
+      no_log: true
+      changed_when: true
+
+    - name: Mark Gokapi superadmin bootstrap as complete
+      when: not gokapi_bootstrap_check.stat.exists
+      ansible.builtin.file:
+        path: "{{ gokapi_bootstrap_marker }}"
+        state: touch
+        owner: "{{ gokapi_sys_user }}"
+        group: "{{ gokapi_sys_group }}"
+        mode: "0640"
+
     - name: Enable and start Gokapi service
       ansible.builtin.systemd_service:
         name: gokapi
@@ -129,13 +168,7 @@
         state: started
         daemon_reload: true
 
-    - name: Check if Gokapi setup wizard has been completed
-      ansible.builtin.stat:
-        path: "{{ gokapi_config_dir }}/config.json"
-      register: gokapi_config_check
-
     - name: Deploy Gokapi Caddyfile
-      when: gokapi_config_check.stat.exists
       ansible.builtin.template:
         src: templates/Caddyfile.j2
         dest: "/etc/caddy/sites/{{ gokapi_domain }}.caddyfile"
@@ -145,29 +178,9 @@
       notify: Restart caddy
 
     - name: Ensure Cloudflare DNS A record exists for {{ gokapi_subdomain + '.' + domain }}
-      when: gokapi_config_check.stat.exists
       ansible.builtin.include_role:
         name: dns_record
       vars:
         dns_record_subdomain: "{{ gokapi_subdomain }}"
         dns_record_domain: "{{ domain }}"
         dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"
-
-    - name: Print first-deploy setup wizard instructions
-      when: not gokapi_config_check.stat.exists
-      ansible.builtin.debug:
-        msg: |
-          Gokapi is installed but not yet configured. Caddy site and DNS A
-          record are intentionally NOT deployed until you complete the setup
-          wizard, so the unauthenticated /setup endpoint is never exposed
-          publicly.
-
-          Complete first-time setup:
-            1. From your laptop, open an SSH tunnel:
-                 ssh -L 53842:127.0.0.1:{{ gokapi_port }} {{ ansible_user }}@{{ inventory_hostname }}
-            2. In a browser, open:
-                 http://localhost:53842/setup
-            3. Enter the admin credentials matching gokapi_admin_user and
-               gokapi_admin_password from your config.toml.
-            4. Re-run: auberge deploy --tags gokapi
-               The Caddy site and DNS record will be created on this second deploy.
