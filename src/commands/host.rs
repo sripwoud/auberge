@@ -348,7 +348,7 @@ pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn resolve_ssh_key(host: &Host) -> Result<PathBuf> {
+pub fn resolve_ssh_key(host: &Host) -> Result<PathBuf> {
     let key = match host.ssh_key.as_ref() {
         Some(p) => PathBuf::from(shellexpand::tilde(p).into_owned()),
         None => dirs::home_dir()

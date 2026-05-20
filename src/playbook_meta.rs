@@ -13,6 +13,16 @@ pub struct PlaybookMeta {
     pub tailnet_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subdomain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_deploy_setup: Option<FirstDeploySetup>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FirstDeploySetup {
+    pub port: u16,
+    pub marker_path: String,
+    pub setup_url_path: String,
+    pub wizard_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -195,6 +205,42 @@ mod tests {
             backup.owner,
             Some(("gokapi".to_string(), "gokapi".to_string()))
         );
+    }
+
+    #[test]
+    fn test_gokapi_meta_first_deploy_setup() {
+        let setup = load_meta("gokapi")
+            .first_deploy_setup
+            .expect("gokapi declares first_deploy_setup");
+        assert_eq!(setup.port, 53842);
+        assert_eq!(setup.marker_path, "/var/lib/gokapi/config/config.json");
+        assert_eq!(setup.setup_url_path, "/setup");
+        assert_eq!(setup.wizard_name, "Gokapi setup wizard");
+    }
+
+    #[test]
+    fn test_meta_without_first_deploy_setup_parses_to_none() {
+        let yaml = "required_keys: []\n";
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        assert!(meta.first_deploy_setup.is_none());
+    }
+
+    #[test]
+    fn test_first_deploy_setup_all_fields_parse() {
+        let yaml = r#"
+required_keys: []
+first_deploy_setup:
+  port: 8443
+  marker_path: /var/lib/app/.bootstrap_done
+  setup_url_path: /install
+  wizard_name: App setup
+"#;
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        let setup = meta.first_deploy_setup.expect("first_deploy_setup present");
+        assert_eq!(setup.port, 8443);
+        assert_eq!(setup.marker_path, "/var/lib/app/.bootstrap_done");
+        assert_eq!(setup.setup_url_path, "/install");
+        assert_eq!(setup.wizard_name, "App setup");
     }
 
     #[test]

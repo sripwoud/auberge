@@ -1,6 +1,9 @@
 use crate::ansible_assets::AnsibleAssets;
+use crate::commands::host::resolve_ssh_key;
 use crate::config::Config;
+use crate::hosts::HostManager;
 use crate::output;
+use crate::playbook_meta::PlaybookMeta;
 use crate::prompt::{confirm, select_multi};
 use crate::services::ansible_runner::{InventoryHost, run_playbook};
 use crate::services::dependency_resolver::{
@@ -9,7 +12,9 @@ use crate::services::dependency_resolver::{
 use crate::services::dns_verify::{
     AppVerifyConfig, HickoryLookup, app_verify_config, format_dns_error, verify_a_record,
 };
+use crate::services::first_deploy_bootstrap;
 use crate::services::inventory::{Host, select_or_arg};
+use crate::ssh_session::SshSession;
 use clap::Args;
 use eyre::Result;
 
@@ -209,6 +214,56 @@ fn run_dns_checks_for_run(
     Ok(())
 }
 
+fn meta_candidates_for_run(run: &PlaybookRun) -> Vec<std::path::PathBuf> {
+    let Some(parent) = run.path.parent() else {
+        return Vec::new();
+    };
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if run.is_apps() {
+        for tag in &run.tags {
+            candidates.push(parent.join(format!("{tag}.meta.yml")));
+        }
+    } else if let Some(stem) = run.path.file_stem().and_then(|s| s.to_str()) {
+        candidates.push(parent.join(format!("{stem}.meta.yml")));
+    }
+    candidates
+}
+
+fn maybe_run_first_deploy_bootstrap(run: &PlaybookRun, host_name: &str) -> Result<bool> {
+    let pending_setups: Vec<_> = meta_candidates_for_run(run)
+        .into_iter()
+        .filter(|p| p.exists())
+        .map(|p| PlaybookMeta::load(&p))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .filter_map(|m| m.first_deploy_setup)
+        .collect();
+
+    if pending_setups.is_empty() {
+        return Ok(false);
+    }
+
+    let host = HostManager::get_host(host_name).map_err(|e| {
+        eyre::eyre!(
+            "Cannot resolve host '{}' from hosts.toml for first-deploy bootstrap: {}. Add it with 'auberge host add'.",
+            host_name,
+            e
+        )
+    })?;
+    let ssh_key = resolve_ssh_key(&host)?;
+    let session = SshSession::new(&host, &ssh_key);
+
+    let mut ran_any = false;
+    for setup in &pending_setups {
+        if first_deploy_bootstrap::marker_exists(&session, &setup.marker_path)? {
+            continue;
+        }
+        first_deploy_bootstrap::run_bootstrap(&session, setup)?;
+        ran_any = true;
+    }
+    Ok(ran_any)
+}
+
 pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
     let available_apps = get_app_names()?;
     if available_apps.is_empty() {
@@ -318,6 +373,34 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         output::success(&format!("{} completed successfully", playbook_name));
 
         if !cmd.check {
+            if maybe_run_first_deploy_bootstrap(run, &host.name)? {
+                output::info(&format!(
+                    "Re-running {} to deploy reverse proxy and DNS after first-deploy bootstrap",
+                    playbook_name
+                ));
+                let mut progress = crate::services::progress::TerminalProgress::new("");
+                let result = run_playbook(
+                    preflight,
+                    &run.path,
+                    &inventory_host,
+                    cmd.check,
+                    run_tags,
+                    None,
+                    None,
+                    false,
+                    false,
+                    &mut progress,
+                )?;
+                if !result.success {
+                    eyre::bail!(
+                        "{} re-run after bootstrap failed with exit code {}",
+                        playbook_name,
+                        result.exit_code
+                    );
+                }
+                output::success(&format!("{} completed after bootstrap", playbook_name));
+            }
+
             run_dns_checks_for_run(run, &config, &host, cmd.verify_public_dns)?;
         }
     }
@@ -356,6 +439,45 @@ mod tests {
     fn test_validate_apps_empty_requested() {
         let available = vec!["paperless".to_string()];
         assert!(validate_apps(&[], &available).is_ok());
+    }
+
+    #[test]
+    fn test_meta_candidates_for_apps_run_uses_per_tag_files() {
+        let assets = AnsibleAssets::prepare().unwrap();
+        let apps_path = std::fs::canonicalize(assets.playbooks_dir().join("apps.yml")).unwrap();
+        let run = PlaybookRun {
+            path: apps_path,
+            tags: vec!["gokapi".to_string(), "freshrss".to_string()],
+        };
+        let candidates = meta_candidates_for_run(&run);
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates[0].ends_with("gokapi.meta.yml"));
+        assert!(candidates[1].ends_with("freshrss.meta.yml"));
+    }
+
+    #[test]
+    fn test_meta_candidates_for_direct_playbook_uses_playbook_stem() {
+        let assets = AnsibleAssets::prepare().unwrap();
+        let gokapi_path = std::fs::canonicalize(assets.playbooks_dir().join("gokapi.yml")).unwrap();
+        let run = PlaybookRun {
+            path: gokapi_path,
+            tags: vec![],
+        };
+        let candidates = meta_candidates_for_run(&run);
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].ends_with("gokapi.meta.yml"));
+    }
+
+    #[test]
+    fn test_meta_candidates_for_apps_run_with_no_tags_is_empty() {
+        let assets = AnsibleAssets::prepare().unwrap();
+        let apps_path = std::fs::canonicalize(assets.playbooks_dir().join("apps.yml")).unwrap();
+        let run = PlaybookRun {
+            path: apps_path,
+            tags: vec![],
+        };
+        let candidates = meta_candidates_for_run(&run);
+        assert!(candidates.is_empty());
     }
 
     #[test]

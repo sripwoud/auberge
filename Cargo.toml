@@ -33,6 +33,7 @@ shell-escape = "0.1.5"
 ctrlc = "3.5.2"
 hickory-resolver = { version = "0.26", features = ["tokio"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+open = "5"
 
 [dev-dependencies]
 wiremock = "0.6"

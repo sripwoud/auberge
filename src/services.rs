@@ -4,5 +4,6 @@ pub mod bichon;
 pub mod dependency_resolver;
 pub mod dns;
 pub mod dns_verify;
+pub mod first_deploy_bootstrap;
 pub mod inventory;
 pub mod progress;

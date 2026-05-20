@@ -6,3 +6,8 @@ backup:
   systemd_services: [gokapi]
   paths: [/var/lib/gokapi]
   owner: [gokapi, gokapi]
+first_deploy_setup:
+  port: 53842
+  marker_path: /var/lib/gokapi/config/config.json
+  setup_url_path: /setup
+  wizard_name: Gokapi setup wizard

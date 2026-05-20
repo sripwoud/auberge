@@ -52,6 +52,14 @@ _Avoid_: Infrastructure component, shared service, platform service
 The act of making an App's hostname resolvable, performed during deploy. For Public Apps it is a Cloudflare A record; for Tailnet-only Apps it is a Blocky `customDNS` entry. Either is part of `auberge deploy`'s success criterion — a deploy that completes without a working DNS answer is treated as a failure.
 _Avoid_: DNS setup, record creation, A-record provisioning
 
+**First-Deploy Bootstrap**:
+The one-time interactive step required by some Apps before DNS Publication can safely complete — typically an unauthenticated setup wizard that creates the first admin account. Declared on a Playbook Meta via a `first_deploy_setup` block (port, marker path, setup URL path). `auberge deploy` orchestrates it by spawning a local SSH tunnel to the wizard port, opening the operator's browser, polling for the Bootstrap Marker, then re-running the Playbook so the gated Caddy + DNS tasks execute. See ADR-0009.
+_Avoid_: Setup wizard, bootstrap step, initial setup
+
+**Bootstrap Marker**:
+A file path on the remote whose presence indicates a First-Deploy Bootstrap has completed (e.g. Gokapi's `/var/lib/gokapi/config/config.json`, written by the wizard on success). The Ansible role's `when:` clauses already gate public exposure on this file's existence; auberge polls it via SSH during the bootstrap window to know when to tear down the tunnel and re-run the Playbook.
+_Avoid_: Sentinel, lock file, setup flag
+
 **Backup Recipe**:
 The declarative `backup:` section of a Playbook Meta describing how to back up the App: services to stop, paths to rsync, optional database dump, optional `post_restore_command`. Pure data — no imperative branching. Most Recipes capture an App's on-disk state directly; for Bichon the Recipe rsyncs an **Email Archive** instead, see ADR-0006.
 _Avoid_: Backup config, backup plan, strategy
@@ -93,6 +101,7 @@ _Avoid_: Logger, reporter
 - The **Recipe Executor** consumes one **Backup Recipe**; the **Backup Session** consumes many.
 - All runners report through **Progress**; none touch terminal output directly.
 - An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
+- A **Playbook Meta** declares zero or one **First-Deploy Bootstrap**. When declared, **DNS Publication** waits for the **Bootstrap Marker** to appear before completing.
 
 ## Example dialogue
 
