@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0](https://github.com/sripwoud/auberge/compare/v0.13.0...v0.14.0) - 2026-05-20
+
+### Added
+
+- *(gokapi)* [**breaking**] headless bootstrap via templated config + --deployment-password ([#346](https://github.com/sripwoud/auberge/pull/346))
+
+### Other
+
+- *(deps)* bump openssl from 0.10.79 to 0.10.80 in the cargo group across 1 directory ([#342](https://github.com/sripwoud/auberge/pull/342))
+
 ## [0.13.0](https://github.com/sripwoud/auberge/compare/v0.12.3...v0.13.0) - 2026-05-20
 
 ### Added
