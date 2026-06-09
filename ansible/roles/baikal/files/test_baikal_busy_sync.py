@@ -322,3 +322,16 @@ def test_read_only_db_not_modified(db_path, out_path):
     run(db_path, out_path)
 
     assert Path(db_path).read_bytes() == before
+
+
+def test_wal_mode_db_readable(db_path, out_path):
+    start = datetime.now(timezone.utc) + timedelta(days=2)
+    end = start + timedelta(hours=1)
+    build_db(db_path, [("work", [("a.ics", make_event("evt-1", utc_stamp(start), utc_stamp(end)))])])
+    wal = sqlite3.connect(db_path)
+    wal.execute("PRAGMA journal_mode=WAL")
+    wal.close()
+
+    events = run(db_path, out_path)
+
+    assert len(events) == 1
