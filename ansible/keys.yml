@@ -17,7 +17,7 @@ keys:
 
   baikal_busy_feed_token:
     secret: true
-    doc: "Token required in the X-Auberge-Busy-Token header to fetch Baïkal's Busy Feed (/busy.ics). Guards the busy/free pattern from internet scrapers; it protects no event detail (see ADR-0010)."
+    doc: "Token for the X-Auberge-Busy-Token header that gates the Busy Feed (/busy.ics); guards the busy/free pattern, protects no event detail (ADR-0010)."
 
   baikal_subdomain:
     secret: false
