@@ -21,8 +21,8 @@ DEFAULT_OUT_PATH = "/opt/baikal/busy/busy.ics"
 @dataclass(frozen=True)
 class BusyBlock:
     uid: str
-    start: date
-    end: date
+    start: date | datetime
+    end: date | datetime
     all_day: bool
 
 

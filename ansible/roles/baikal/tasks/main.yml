@@ -328,6 +328,8 @@
         mode: "0755"
 
     - name: Provision busy feed virtualenv with dependencies
+      become: true
+      become_user: "{{ baikal_sys_user }}"
       ansible.builtin.pip:
         name:
           - icalendar
