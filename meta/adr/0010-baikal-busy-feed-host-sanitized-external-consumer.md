@@ -1,4 +1,4 @@
-# ADR-0009: Baikal Busy Feed — host-sanitized availability, consumed by an external script
+# ADR-0010: Baikal Busy Feed — host-sanitized availability, consumed by an external script
 
 ## Status
 
