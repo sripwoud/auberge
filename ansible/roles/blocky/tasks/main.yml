@@ -231,6 +231,7 @@
 
 - name: Configure Tailscale DNS to use Blocky
   when:
+    - tailscale_login_server is not defined or tailscale_login_server | length == 0
     - tailscale_api_key is defined and tailscale_api_key | length > 0
     - blocky_tailscale_ipv4 is defined and blocky_tailscale_ipv4 | length > 0
   no_log: true
