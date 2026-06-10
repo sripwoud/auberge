@@ -46,6 +46,14 @@ A **pull from a public feed is forced by rejecting OAuth**: a _push_ from auberg
 - The token lives in the org account (acceptable — it guards no detail).
 - Adds `icalendar` + `recurring-ical-events` in a venv on the baikal Host (the existing `baikal-birthday-sync.py` is stdlib-only); justified by correct timezone/recurrence/override expansion, where a silent miss means a double-booking.
 
+## Amendment (2026-06-10): optional external CalDAV source
+
+`baikal-busy-sync.py` may merge one additional source: a read-only external CalDAV calendar (the operator's case: an Apple iCloud shared calendar). The Host fetches it over CalDAV (`caldav` library against `caldav.icloud.com`), runs it through the **same** `recurring-ical-events` expansion + `STATUS`/`TRANSP` filter + hashed-UID sanitization as Baikal's calendars, and merges it into the one `busy.ics`. iCloud objects are raw ICS strings shaped like Baikal's `calendarobjects.calendardata`, so the sanitize pipeline is unchanged — only the source list grows.
+
+This does not move the privacy boundary: external event detail is sanitized on the Host exactly like Baikal's, and the external CalDAV credential (an Apple app-specific password) is resident only on the VPS — delivered via a `0600` `EnvironmentFile` (the bichon-archive pattern), never argv, never reaching Google. The source is opt-in: with no iCloud config the feed is Baikal-only, as before. Per the project's fail-fast rule, a configured-but-failing iCloud fetch exits non-zero (red timer) and leaves the prior `busy.ics` intact, rather than silently emitting a Baikal-only feed that would under-report busy time.
+
+Adds `caldav` to the busy-feed venv, justified the same way as `recurring-ical-events`: a silent miss is a double-booking. New optional Key Registry keys: `baikal_busy_icloud_username`, `baikal_busy_icloud_app_password` (secret), `baikal_busy_icloud_calendar` (display name or CalDAV URL; empty = all calendars under the account).
+
 ## References
 
 - ADR-0006 — Bichon archive feeds the Backup Recipe. Same shape: a host-side script produces a tool-agnostic artifact on a timer; auberge ships no consumer and no Rust.

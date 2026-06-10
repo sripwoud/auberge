@@ -81,7 +81,7 @@ The auberge-driven step that reads each Bichon account's live folder list (`GET 
 _Avoid_: Account sync, account update, account migration.
 
 **Busy Feed**:
-A privacy-sanitized iCalendar feed of the operator's busy intervals, derived from **Baikal**'s calendar data by a host-side script on a systemd timer and served publicly behind a secret token. Contains only opaque `Busy` `VEVENT`s (UTC start/end + a hashed per-instance UID); never event titles, locations, guests, descriptions, or the source UID. Sanitization happens on the Host, so no personal event content ever leaves the VPS — the feed is the privacy boundary. A **Busy Feed** is a tool-agnostic artifact like the **Email Archive**: auberge produces and serves it but does not ship its consumers (see ADR-0010).
+A privacy-sanitized iCalendar feed of the operator's busy intervals, derived from the operator's Host-side calendar sources — **Baikal**'s calendar data plus, optionally, a read-only external CalDAV calendar (e.g. iCloud) fetched on the Host — by a host-side script on a systemd timer and served publicly behind a secret token. Contains only opaque `Busy` `VEVENT`s (UTC start/end + a hashed per-instance UID); never event titles, locations, guests, descriptions, or the source UID. Sanitization happens on the Host, so no personal event content (and no external CalDAV credential) ever leaves the VPS — the feed is the privacy boundary. A **Busy Feed** is a tool-agnostic artifact like the **Email Archive**: auberge produces and serves it but does not ship its consumers (see ADR-0010).
 _Avoid_: Free/busy feed (deliberately not a `VFREEBUSY` component — discrete `VEVENT`s carry per-instance UIDs for diffing), calendar sync, availability export.
 
 **Progress**:
@@ -97,7 +97,7 @@ _Avoid_: Logger, reporter
 - The **Recipe Executor** consumes one **Backup Recipe**; the **Backup Session** consumes many.
 - All runners report through **Progress**; none touch terminal output directly.
 - An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
-- The **Busy Feed** is derived from **Baikal**'s calendar data and served on its **Public App** site (Google's servers must reach it); auberge produces and serves it but ships no consumer.
+- The **Busy Feed** is derived from **Baikal**'s calendar data — plus, optionally, a read-only external CalDAV calendar fetched Host-side — and served on Baikal's **Public App** site (Google's servers must reach it); auberge produces and serves it but ships no consumer.
 
 ## Example dialogue
 
