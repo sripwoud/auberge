@@ -7,6 +7,7 @@ Type=oneshot
 User={{ baikal_sys_user }}
 Group={{ baikal_sys_user }}
 WorkingDirectory={{ baikal_install_dir }}
+EnvironmentFile=-{{ baikal_busy_env_path }}
 ExecStart={{ baikal_busy_venv }}/bin/python {{ baikal_install_dir }}/baikal-busy-sync.py {{ baikal_data_dir }}/db/db.sqlite {{ baikal_busy_dir }}/busy.ics
 StandardOutput=journal
 StandardError=journal

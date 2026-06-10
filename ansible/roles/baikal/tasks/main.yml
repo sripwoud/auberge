@@ -338,6 +338,16 @@
         virtualenv: "{{ baikal_busy_venv }}"
         virtualenv_command: python3 -m venv
 
+    - name: Deploy busy sync environment file
+      ansible.builtin.template:
+        src: templates/baikal-busy-sync.env.j2
+        dest: "{{ baikal_busy_env_path }}"
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0600"
+      no_log: true
+      notify: Restart busy sync timer
+
     - name: Deploy busy sync script
       ansible.builtin.copy:
         src: baikal-busy-sync.py

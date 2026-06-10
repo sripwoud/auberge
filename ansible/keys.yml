@@ -19,6 +19,18 @@ keys:
     secret: true
     doc: "Token for the X-Auberge-Busy-Token header that gates the Busy Feed (/busy.ics); guards the busy/free pattern, protects no event detail (ADR-0010)."
 
+  baikal_busy_icloud_app_password:
+    secret: true
+    doc: "Apple app-specific password for iCloud CalDAV merged into the Busy Feed (optional). Stays on the VPS; never sent to Google (ADR-0010)."
+
+  baikal_busy_icloud_calendar:
+    secret: false
+    doc: "Which iCloud calendar to merge into the Busy Feed: its display name, or a full CalDAV URL; empty = all calendars (optional)."
+
+  baikal_busy_icloud_username:
+    secret: false
+    doc: "Apple ID email for the iCloud CalDAV account whose calendar feeds the Busy Feed (optional)."
+
   baikal_subdomain:
     secret: false
     doc: "Subdomain for the Baïkal CalDAV/CardDAV server"
