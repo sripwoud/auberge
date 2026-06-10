@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.3](https://github.com/sripwoud/auberge/compare/v0.14.2...v0.14.3) - 2026-06-10
+
+### Added
+
+- *(baikal)* host-sanitized Busy Feed (Baikal + optional iCloud) behind a token ([#355](https://github.com/sripwoud/auberge/pull/355))
+
+### Fixed
+
+- *(blocky)* skip api.tailscale.com DNS calls on Headscale tailnets ([#357](https://github.com/sripwoud/auberge/pull/357))
+
 ## [0.14.2](https://github.com/sripwoud/auberge/compare/v0.14.1...v0.14.2) - 2026-05-20
 
 ### Fixed
