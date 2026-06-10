@@ -3,6 +3,7 @@ import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -335,3 +336,125 @@ def test_wal_mode_db_readable(db_path, out_path):
     events = run(db_path, out_path)
 
     assert len(events) == 1
+
+
+class FakeCalObject:
+    def __init__(self, data):
+        self.data = data
+
+
+class FakeCalendar:
+    def __init__(self, name, objects):
+        self.name = name
+        self._objects = objects
+
+    def search(self, start, end, event, expand):
+        return [FakeCalObject(ics) for ics in self._objects]
+
+
+def fake_caldav_client(calendars, by_url=None):
+    client = mock.MagicMock()
+    client.principal.return_value.calendars.return_value = calendars
+    client.calendar.return_value = by_url
+    return client
+
+
+def window():
+    now = datetime.now(timezone.utc)
+    return now - timedelta(days=1), now + timedelta(days=60)
+
+
+def test_icloud_ics_merged_and_sanitized(db_path, out_path):
+    start = datetime.now(timezone.utc) + timedelta(days=2)
+    icloud_start = start + timedelta(hours=4)
+    baikal_ics = make_event("baikal-1", utc_stamp(start), utc_stamp(start + timedelta(hours=1)))
+    icloud_ics = make_event(
+        "icloud-1",
+        utc_stamp(icloud_start),
+        utc_stamp(icloud_start + timedelta(hours=1)),
+        summary="Dentist appointment",
+        extra_lines=("LOCATION:Clinic", "ATTENDEE:mailto:doc@example.com"),
+    )
+    sync = busy.BaikalBusySync(db_path, out_path)
+    ws, we = window()
+
+    blocks = sync._busy_blocks([baikal_ics, icloud_ics], ws, we)
+    text = sync._render(blocks)
+
+    assert text.count("SUMMARY:Busy") == 2
+    assert "Dentist" not in text
+    assert "Clinic" not in text
+    assert "icloud-1" not in text
+
+
+def test_icloud_calendar_name_filter():
+    start = datetime.now(timezone.utc) + timedelta(days=3)
+    shared = make_event("s-1", utc_stamp(start), utc_stamp(start + timedelta(hours=1)))
+    other = make_event("o-1", utc_stamp(start), utc_stamp(start + timedelta(hours=1)))
+    calendars = [FakeCalendar("Personal", [other]), FakeCalendar("Shared Team", [shared])]
+    config = busy.IcloudConfig(username="u@me.com", app_password="pw", calendar_ref="shared team")
+    ws, we = window()
+
+    with mock.patch("caldav.DAVClient", return_value=fake_caldav_client(calendars)):
+        data = busy._icloud_calendar_data(config, ws, we)
+
+    assert data == [shared]
+
+
+def test_icloud_missing_named_calendar_raises():
+    calendars = [FakeCalendar("Personal", [])]
+    config = busy.IcloudConfig(username="u@me.com", app_password="pw", calendar_ref="Nonexistent")
+    ws, we = window()
+
+    with mock.patch("caldav.DAVClient", return_value=fake_caldav_client(calendars)):
+        with pytest.raises(RuntimeError, match="iCloud calendar not found"):
+            busy._icloud_calendar_data(config, ws, we)
+
+
+def test_icloud_url_ref_addresses_directly():
+    start = datetime.now(timezone.utc) + timedelta(days=3)
+    shared = make_event("u-1", utc_stamp(start), utc_stamp(start + timedelta(hours=1)))
+    url = "https://p01-caldav.icloud.com/123/calendars/abc/"
+    config = busy.IcloudConfig(username="u@me.com", app_password="pw", calendar_ref=url)
+    client = fake_caldav_client([], by_url=FakeCalendar("Shared", [shared]))
+    ws, we = window()
+
+    with mock.patch("caldav.DAVClient", return_value=client):
+        data = busy._icloud_calendar_data(config, ws, we)
+
+    assert data == [shared]
+    client.calendar.assert_called_once_with(url=url)
+    client.principal.assert_not_called()
+
+
+def test_icloud_config_from_env_absent(monkeypatch):
+    monkeypatch.delenv("BAIKAL_BUSY_ICLOUD_USERNAME", raising=False)
+    monkeypatch.delenv("BAIKAL_BUSY_ICLOUD_APP_PASSWORD", raising=False)
+
+    assert busy._icloud_config_from_env() is None
+
+
+def test_icloud_config_from_env_present(monkeypatch):
+    monkeypatch.setenv("BAIKAL_BUSY_ICLOUD_USERNAME", "u@me.com")
+    monkeypatch.setenv("BAIKAL_BUSY_ICLOUD_APP_PASSWORD", "app-pw")
+    monkeypatch.setenv("BAIKAL_BUSY_ICLOUD_CALENDAR", "Shared Team")
+
+    config = busy._icloud_config_from_env()
+
+    assert config == busy.IcloudConfig(username="u@me.com", app_password="app-pw", calendar_ref="Shared Team")
+
+
+def test_generate_merges_icloud_source(db_path, out_path):
+    start = datetime.now(timezone.utc) + timedelta(days=2)
+    icloud_start = start + timedelta(hours=6)
+    build_db(
+        db_path, [("work", [("a.ics", make_event("b-1", utc_stamp(start), utc_stamp(start + timedelta(hours=1))))])]
+    )
+    icloud_ics = make_event("ic-1", utc_stamp(icloud_start), utc_stamp(icloud_start + timedelta(hours=1)))
+    config = busy.IcloudConfig(username="u@me.com", app_password="pw", calendar_ref="Shared")
+
+    with mock.patch.object(busy, "_icloud_calendar_data", return_value=[icloud_ics]):
+        assert busy.BaikalBusySync(db_path, out_path, icloud=config).generate()
+
+    events = parse_feed(Path(out_path).read_text())
+    assert len(events) == 2

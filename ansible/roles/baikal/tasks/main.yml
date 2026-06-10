@@ -334,6 +334,7 @@
         name:
           - icalendar
           - recurring-ical-events
+          - caldav
         virtualenv: "{{ baikal_busy_venv }}"
         virtualenv_command: python3 -m venv
 
