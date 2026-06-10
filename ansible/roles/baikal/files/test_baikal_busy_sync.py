@@ -417,15 +417,16 @@ def test_icloud_missing_named_calendar_raises():
 def test_icloud_url_ref_addresses_directly():
     start = datetime.now(timezone.utc) + timedelta(days=3)
     shared = make_event("u-1", utc_stamp(start), utc_stamp(start + timedelta(hours=1)))
-    url = "https://p01-caldav.icloud.com/123/calendars/abc/"
+    url = "https://p108-caldav.icloud.com/123/calendars/abc/"
     config = busy.IcloudConfig(username="u@me.com", app_password="pw", calendar_ref=url)
     client = fake_caldav_client([], by_url=FakeCalendar("Shared", [shared]))
     ws, we = window()
 
-    with mock.patch("caldav.DAVClient", return_value=client):
+    with mock.patch("caldav.DAVClient", return_value=client) as dav_client:
         data = busy._icloud_calendar_data(config, ws, we)
 
     assert data == [shared]
+    dav_client.assert_called_once_with(url=url, username="u@me.com", password="pw")
     client.calendar.assert_called_once_with(url=url)
     client.principal.assert_not_called()
 

@@ -64,9 +64,14 @@ def _is_busy(component):
 
 
 def _icloud_calendar_data(config, window_start, window_end):
-    client = caldav.DAVClient(url=ICLOUD_CALDAV_URL, username=config.username, password=config.app_password)
     ref = config.calendar_ref
-    if ref.startswith("http"):
+    is_url = ref.startswith("http")
+    client = caldav.DAVClient(
+        url=ref if is_url else ICLOUD_CALDAV_URL,
+        username=config.username,
+        password=config.app_password,
+    )
+    if is_url:
         calendars = [client.calendar(url=ref)]
     else:
         calendars = client.principal().calendars()
