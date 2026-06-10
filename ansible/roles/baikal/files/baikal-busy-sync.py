@@ -71,9 +71,10 @@ def _icloud_calendar_data(config, window_start, window_end):
     else:
         calendars = client.principal().calendars()
         if ref:
-            calendars = [cal for cal in calendars if str(cal.name).casefold() == ref.casefold()]
+            by_name = {str(cal.get_display_name()): cal for cal in calendars}
+            calendars = [cal for name, cal in by_name.items() if name.casefold() == ref.casefold()]
             if not calendars:
-                raise RuntimeError(f"iCloud calendar not found: {ref}")
+                raise RuntimeError(f"iCloud calendar not found: {ref!r}. Available: {sorted(by_name)}")
     return [
         obj.data
         for cal in calendars

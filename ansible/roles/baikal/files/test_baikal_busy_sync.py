@@ -345,8 +345,11 @@ class FakeCalObject:
 
 class FakeCalendar:
     def __init__(self, name, objects):
-        self.name = name
+        self._name = name
         self._objects = objects
+
+    def get_display_name(self):
+        return self._name
 
     def search(self, start, end, event, expand):
         return [FakeCalObject(ics) for ics in self._objects]
@@ -407,7 +410,7 @@ def test_icloud_missing_named_calendar_raises():
     ws, we = window()
 
     with mock.patch("caldav.DAVClient", return_value=fake_caldav_client(calendars)):
-        with pytest.raises(RuntimeError, match="iCloud calendar not found"):
+        with pytest.raises(RuntimeError, match="iCloud calendar not found.*Personal"):
             busy._icloud_calendar_data(config, ws, we)
 
 
