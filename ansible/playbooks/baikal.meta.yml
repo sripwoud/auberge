@@ -1,4 +1,4 @@
-required_keys: []
+required_keys: [baikal_busy_feed_token]
 subdomain: baikal
 backup:
   paths: [/opt/baikal/Specific]

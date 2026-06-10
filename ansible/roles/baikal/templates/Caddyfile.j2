@@ -1,20 +1,31 @@
 {{ baikal_domain }} {
-	root * {{ baikal_install_dir }}/html
-
-	php_fastcgi unix/{{ baikal_fpm_socket }} {
-		env SERVER_SOFTWARE Caddy
-		env REQUEST_SCHEME https
-	}
-
-	file_server
-
 	encode gzip
 
-	@forbidden {
-		path /Specific/*
-		path *.db
+	@busy path /busy.ics
+	handle @busy {
+		@unauthorized not header X-Auberge-Busy-Token "{{ baikal_busy_feed_token }}"
+		respond @unauthorized 403
+
+		root * {{ baikal_busy_dir }}
+		file_server
 	}
-	respond @forbidden 403
+
+	handle {
+		root * {{ baikal_install_dir }}/html
+
+		php_fastcgi unix/{{ baikal_fpm_socket }} {
+			env SERVER_SOFTWARE Caddy
+			env REQUEST_SCHEME https
+		}
+
+		file_server
+
+		@forbidden {
+			path /Specific/*
+			path *.db
+		}
+		respond @forbidden 403
+	}
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
@@ -29,5 +40,8 @@
 
 	log {
 		output file /var/log/caddy/{{ baikal_domain }}.log
+		format filter {
+			request>headers>X-Auberge-Busy-Token delete
+		}
 	}
 }

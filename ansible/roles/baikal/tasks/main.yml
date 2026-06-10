@@ -14,6 +14,7 @@
           - curl
           - sqlite3
           - python3
+          - python3-venv
         state: present
         update_cache: true
 
@@ -314,6 +315,68 @@
     - name: Enable and start birthday sync timer
       ansible.builtin.systemd_service:
         name: baikal-birthday-sync.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Create busy feed output directory
+      ansible.builtin.file:
+        path: "{{ baikal_busy_dir }}"
+        state: directory
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0755"
+
+    - name: Provision busy feed virtualenv with dependencies
+      become: true
+      become_user: "{{ baikal_sys_user }}"
+      ansible.builtin.pip:
+        name:
+          - icalendar
+          - recurring-ical-events
+          - caldav
+        virtualenv: "{{ baikal_busy_venv }}"
+        virtualenv_command: python3 -m venv
+
+    - name: Deploy busy sync environment file
+      ansible.builtin.template:
+        src: templates/baikal-busy-sync.env.j2
+        dest: "{{ baikal_busy_env_path }}"
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0600"
+      no_log: true
+      notify: Restart busy sync timer
+
+    - name: Deploy busy sync script
+      ansible.builtin.copy:
+        src: baikal-busy-sync.py
+        dest: "{{ baikal_install_dir }}/baikal-busy-sync.py"
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0750"
+
+    - name: Deploy busy sync systemd service
+      ansible.builtin.template:
+        src: templates/baikal-busy-sync.service.j2
+        dest: /etc/systemd/system/baikal-busy-sync.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart busy sync timer
+
+    - name: Deploy busy sync systemd timer
+      ansible.builtin.template:
+        src: templates/baikal-busy-sync.timer.j2
+        dest: /etc/systemd/system/baikal-busy-sync.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart busy sync timer
+
+    - name: Enable and start busy sync timer
+      ansible.builtin.systemd_service:
+        name: baikal-busy-sync.timer
         enabled: true
         state: started
         daemon_reload: true
