@@ -3,6 +3,8 @@
   hosts: vps
   become: true
   roles:
+    - role: swap
+      tags: [infrastructure, system, swap]
     - role: apt
       tags: [infrastructure, packages, apt]
     - role: bash
