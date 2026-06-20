@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.4](https://github.com/sripwoud/auberge/compare/v0.14.3...v0.14.4) - 2026-06-20
+
+### Added
+
+- *(swap)* provision 4G swap file via infrastructure playbook ([#360](https://github.com/sripwoud/auberge/pull/360))
+
+### Fixed
+
+- *(hooks)* bump hk config schema to 1.47.0 ([#359](https://github.com/sripwoud/auberge/pull/359))
+
 ## [0.14.3](https://github.com/sripwoud/auberge/compare/v0.14.2...v0.14.3) - 2026-06-10
 
 ### Added
