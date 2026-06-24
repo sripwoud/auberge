@@ -63,5 +63,5 @@ auberge ssh keygen --host my-host --user ansible
 
 ## Related
 
-- [Hosts Configuration](./hosts.md) - hosts.toml management
-- [SSH Keys](./ssh-keys.md) - SSH key configuration
+- [Hosts Configuration](configuration/hosts.md) - hosts.toml management
+- [SSH Keys](configuration/ssh-keys.md) - SSH key configuration

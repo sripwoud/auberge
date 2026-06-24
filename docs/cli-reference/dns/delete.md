@@ -43,6 +43,6 @@ auberge dns delete -s calibre --production --yes   # CI / no prompts
 | `fqdn`       | string  | Fully-qualified domain name targeted         |
 | `production` | boolean | Whether the production API was used          |
 
-JSON goes to stdout; human-format chrome goes to stderr. The `deleted` field distinguishes an actual deletion from an idempotent no-op — see [ADR-0004](../../../meta/adr/0004-cli-structured-output.md).
+JSON goes to stdout; human-format chrome goes to stderr. The `deleted` field distinguishes an actual deletion from an idempotent no-op — see [ADR-0004](https://github.com/sripwoud/auberge/blob/master/meta/adr/0004-cli-structured-output.md).
 
 </details>

@@ -28,4 +28,4 @@ All values live in `~/.config/auberge/config.toml`. Manage with `auberge config 
 
 ?> **Tailnet-only subdomains**: setting `<app>_tailscale_ip` causes `dns set-all` to point that subdomain's A record at the Tailscale CGNAT IP (`100.64.0.0/10`) instead of the public server IP. Public internet cannot route CGNAT addresses, so no firewall rules are needed. `dns migrate` skips records whose current IP is in the CGNAT range.
 
-?> All values support `!` command syntax to fetch secrets from a password manager: `auberge config set restic_password '!pass show auberge/restic'`. See [Secrets Management](../configuration/secrets.md#password-commands).
+?> All values support `!` command syntax to fetch secrets from a password manager: `auberge config set restic_password '!pass show auberge/restic'`. See [Secrets Management](configuration/secrets.md#password-commands).

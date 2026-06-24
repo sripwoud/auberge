@@ -2,7 +2,7 @@
 
 Email archiving service with continuous IMAP sync and full-text search. Docs: [github.com/rustmailer/bichon](https://github.com/rustmailer/bichon)
 
-- **URL**: tailnet only — see [Tailnet-only apps](../../cli-reference/dns/set-all.md#tailnet-only-apps)
+- **URL**: tailnet only — see [Tailnet-only apps](cli-reference/dns/set-all.md#tailnet-only-apps)
 - **Port**: internal (Caddy proxy)
 - **Data**: `/opt/bichon/data` (internal store), `/var/lib/bichon-archive` (EML mirror, backed up)
 

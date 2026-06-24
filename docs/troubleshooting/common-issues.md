@@ -34,7 +34,7 @@ auberge config set KEY value
 
 | Error                        | Cause                                | Fix                                                                                                     |
 | ---------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `"Unreachable"`              | SSH connectivity failure             | See [SSH Problems](ssh-problems.md)                                                                     |
+| `"Unreachable"`              | SSH connectivity failure             | See [SSH Problems](troubleshooting/ssh-problems.md)                                                                     |
 | `"Permission denied"` (sudo) | ansible user lacks passwordless sudo | `ssh ansible@vps "sudo -n true"`; re-run `auberge ansible bootstrap my-vps --ip 203.0.113.10` if needed |
 | Handler not running          | Config task reported no change       | Restart manually: `ssh ansible@vps "sudo systemctl restart service-name"`                               |
 
@@ -56,7 +56,7 @@ ssh ansible@vps "journalctl -u caddy -n 50"
 ssh ansible@vps "sudo systemctl restart caddy"
 ```
 
-Causes: Cloudflare API token wrong, DNS not pointing to VPS, port 80/443 blocked. See [DNS Issues](dns-issues.md).
+Causes: Cloudflare API token wrong, DNS not pointing to VPS, port 80/443 blocked. See [DNS Issues](troubleshooting/dns-issues.md).
 
 ## Performance
 

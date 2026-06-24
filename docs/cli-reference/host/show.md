@@ -21,7 +21,7 @@ If `NAME` is omitted, you'll be prompted to select a host.
 | -------- | ------------------------------- |
 | NAME     | Host name (omit to be prompted) |
 
-This command has no `--output` flag. Output is always YAML. To get machine-readable JSON for a specific host, use `auberge host list --output json | jq '.[] | select(.name=="myserver")'`. See [ADR-0004](../../../meta/adr/0004-cli-structured-output.md) for the reasoning.
+This command has no `--output` flag. Output is always YAML. To get machine-readable JSON for a specific host, use `auberge host list --output json | jq '.[] | select(.name=="myserver")'`. See [ADR-0004](https://github.com/sripwoud/auberge/blob/master/meta/adr/0004-cli-structured-output.md) for the reasoning.
 
 ## Examples
 

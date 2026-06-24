@@ -26,4 +26,4 @@ Default thresholds are defined in `ansible/roles/fail2ban/defaults/main.yml`.
 
 ## Related
 
-- [Applications Overview](../overview.md)
+- [Applications Overview](applications/overview.md)
