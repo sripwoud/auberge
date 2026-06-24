@@ -20,5 +20,5 @@ Auberge configures Caddy to:
 
 ## Related
 
-- [Cloudflare Setup](../../dns/cloudflare-setup.md)
-- [Applications Overview](../overview.md)
+- [Cloudflare Setup](dns/cloudflare-setup.md)
+- [Applications Overview](applications/overview.md)

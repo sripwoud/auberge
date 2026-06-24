@@ -2,7 +2,7 @@
 
 Document management system for organizing and searching scanned documents. Docs: [docs.paperless-ngx.com](https://docs.paperless-ngx.com)
 
-- **URL**: tailnet only — see [Tailnet-only apps](../../cli-reference/dns/set-all.md#tailnet-only-apps)
+- **URL**: tailnet only — see [Tailnet-only apps](cli-reference/dns/set-all.md#tailnet-only-apps)
 - **Port**: internal (Caddy proxy)
 - **Data**: `/opt/paperless/data`, `/opt/paperless/media`
 

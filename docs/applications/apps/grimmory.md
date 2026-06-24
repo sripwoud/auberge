@@ -22,4 +22,4 @@ auberge deploy grimmory
 
 ## Notes
 
-Backed up by default (book library + metadata database). See [Backup & Restore](../../backup-restore/overview.md).
+Backed up by default (book library + metadata database). See [Backup & Restore](backup-restore/overview.md).

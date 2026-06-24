@@ -91,7 +91,7 @@ The platforms above solve real problems. Auberge targets a narrower set of prior
 - **Pick your tools**: Caddy over Nginx, Blocky over Dnsmasq, Headscale for mesh networking — opinionated defaults, but the Ansible roles are yours to modify
 - **FOSS licensing**: AGPL-3.0, no commercial pivot risk
 
-Auberge is selfware — software I built to manage my own infrastructure. My needs drive every decision. That said, if you share similar priorities — minimal footprint, reproducibility, direct control — you might find it useful too. Contributions, feedback, and ideas are welcome. The [Contributing guide](../development/contributing.md) is a good place to start.
+Auberge is selfware — software I built to manage my own infrastructure. My needs drive every decision. That said, if you share similar priorities — minimal footprint, reproducibility, direct control — you might find it useful too. Contributions, feedback, and ideas are welcome. The [Contributing guide](development/contributing.md) is a good place to start.
 
 The platforms above do more than I need in some places, less in others. Auberge is shaped around my specific priorities.
 

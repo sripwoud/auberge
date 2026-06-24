@@ -16,4 +16,4 @@ Auberge sets up WireGuard for secure VPN access to your VPS.
 
 ## Related
 
-- [Applications Overview](../overview.md)
+- [Applications Overview](applications/overview.md)
