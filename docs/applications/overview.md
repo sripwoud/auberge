@@ -4,8 +4,8 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 
 ## Infrastructure
 
-| Application                            | Description                        |
-| -------------------------------------- | ---------------------------------- |
+| Application                                         | Description                        |
+| --------------------------------------------------- | ---------------------------------- |
 | [Caddy](applications/infrastructure/caddy.md)       | Reverse proxy with automatic HTTPS |
 | [Cockpit](applications/infrastructure/cockpit.md)   | Web-based server administration    |
 | [fail2ban](applications/infrastructure/fail2ban.md) | Intrusion prevention system        |
@@ -13,8 +13,8 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 
 ## Networking
 
-| Application                          | Description                          |
-| ------------------------------------ | ------------------------------------ |
+| Application                                       | Description                          |
+| ------------------------------------------------- | ------------------------------------ |
 | [Blocky](applications/networking/blocky.md)       | DNS server with ad/tracking blocking |
 | [Headscale](applications/networking/headscale.md) | Self-hosted Tailscale control server |
 | [WireGuard](applications/networking/wireguard.md) | Fast, modern VPN                     |
@@ -22,8 +22,8 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 
 ## Apps
 
-| Application                        | Description                             |
-| ---------------------------------- | --------------------------------------- |
+| Application                                     | Description                             |
+| ----------------------------------------------- | --------------------------------------- |
 | [Baikal](applications/apps/baikal.md)           | CalDAV/CardDAV server                   |
 | [Bichon](applications/apps/bichon.md)           | Email archiving and search              |
 | [Grimmory](applications/apps/grimmory.md)       | Multi-user digital library              |
@@ -38,14 +38,14 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 
 ## Notifications
 
-| Application              | Description                               |
-| ------------------------ | ----------------------------------------- |
+| Application                           | Description                               |
+| ------------------------------------- | ----------------------------------------- |
 | [TGTG Bot](applications/apps/tgtg.md) | Too Good To Go availability notifications |
 
 ## AI
 
-| Application                    | Description                          |
-| ------------------------------ | ------------------------------------ |
+| Application                                 | Description                          |
+| ------------------------------------------- | ------------------------------------ |
 | [Hermes Agent](applications/apps/hermes.md) | Self-improving personal AI assistant |
 
 ## Deployment
