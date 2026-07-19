@@ -68,9 +68,41 @@ fn validate_config_for_playbook(playbook_name: &str, tags: Option<&[String]>) ->
     config.preflight_for(playbook_name, tags)
 }
 
+fn resolve_playbook_name(arg: &Path, playbooks: &[PathBuf]) -> Result<PathBuf> {
+    let query = arg
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| eyre::eyre!("Invalid playbook name: {}", arg.display()))?;
+
+    if let Some(found) = playbooks
+        .iter()
+        .find(|p| p.file_stem().and_then(|s| s.to_str()) == Some(query))
+    {
+        return Ok(found.clone());
+    }
+
+    let mut names: Vec<&str> = playbooks
+        .iter()
+        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()))
+        .collect();
+    names.sort_unstable();
+
+    eyre::bail!(
+        "Playbook '{}' not found. Available playbooks: {}",
+        query,
+        names.join(", ")
+    )
+}
+
 fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<PathBuf> {
     match playbook_arg {
-        Some(path) => Ok(path),
+        Some(path) => {
+            if path.is_file() {
+                return Ok(path);
+            }
+            let playbooks = get_playbooks(None)?;
+            resolve_playbook_name(&path, &playbooks)
+        }
         None => {
             let playbooks = get_playbooks(None)?;
             select_item(
@@ -537,5 +569,41 @@ mod tests {
         assert!(validate_ip("localhost").is_err());
         assert!(validate_ip("192.168.1.1 ").is_err());
         assert!(validate_ip(" 192.168.1.1").is_err());
+    }
+
+    fn sample_playbooks() -> Vec<PathBuf> {
+        vec![
+            PathBuf::from("/pb/hardening.yml"),
+            PathBuf::from("/pb/infrastructure.yml"),
+            PathBuf::from("/pb/apps.yml"),
+            PathBuf::from("/pb/hermes.yml"),
+        ]
+    }
+
+    #[test]
+    fn test_resolve_playbook_name_bare() {
+        let resolved = resolve_playbook_name(Path::new("hermes"), &sample_playbooks()).unwrap();
+        assert_eq!(resolved, PathBuf::from("/pb/hermes.yml"));
+    }
+
+    #[test]
+    fn test_resolve_playbook_name_with_yml_extension() {
+        let resolved = resolve_playbook_name(Path::new("hermes.yml"), &sample_playbooks()).unwrap();
+        assert_eq!(resolved, PathBuf::from("/pb/hermes.yml"));
+    }
+
+    #[test]
+    fn test_resolve_playbook_name_ignores_leading_dirs() {
+        let resolved =
+            resolve_playbook_name(Path::new("some/dir/apps.yml"), &sample_playbooks()).unwrap();
+        assert_eq!(resolved, PathBuf::from("/pb/apps.yml"));
+    }
+
+    #[test]
+    fn test_resolve_playbook_name_unknown_lists_available() {
+        let err = resolve_playbook_name(Path::new("nope"), &sample_playbooks()).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Playbook 'nope' not found"));
+        assert!(msg.contains("apps, hardening, hermes, infrastructure"));
     }
 }
