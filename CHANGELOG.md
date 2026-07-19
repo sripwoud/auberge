@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.5](https://github.com/sripwoud/auberge/compare/v0.14.4...v0.14.5) - 2026-07-19
+
+### Added
+
+- *(cli)* make standalone playbooks reachable via ansible run -t ([#369](https://github.com/sripwoud/auberge/pull/369))
+
+### Fixed
+
+- *(cli)* resolve bare playbook name in ansible run -p ([#364](https://github.com/sripwoud/auberge/pull/364))
+- *(hermes)* gate standalone playbook on hermes group membership ([#366](https://github.com/sripwoud/auberge/pull/366))
+
+### Other
+
+- suppress rust/cleartext-logging via advanced CodeQL setup ([#370](https://github.com/sripwoud/auberge/pull/370))
+- *(deps)* resolve dependabot alerts for serde_with and atty ([#367](https://github.com/sripwoud/auberge/pull/367))
+- fmt
+- fix internal links for Docsify root-relative resolution ([#362](https://github.com/sripwoud/auberge/pull/362))
+
 ## [0.14.4](https://github.com/sripwoud/auberge/compare/v0.14.3...v0.14.4) - 2026-06-20
 
 ### Added
