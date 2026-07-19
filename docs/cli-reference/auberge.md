@@ -18,8 +18,8 @@ auberge [GLOBAL OPTIONS] <COMMAND>
 
 ## Commands
 
-| Command                               | Alias | Purpose                             |
-| ------------------------------------- | ----- | ----------------------------------- |
+| Command                                             | Alias | Purpose                             |
+| --------------------------------------------------- | ----- | ----------------------------------- |
 | [deploy](cli-reference/deploy.md)                   | `dp`  | Deploy apps with auto-hardening     |
 | [ansible](cli-reference/ansible/run.md)             | `a`   | Run Ansible playbooks               |
 | [backup](cli-reference/backup/create.md)            | `b`   | Backup / restore / push / prune     |
