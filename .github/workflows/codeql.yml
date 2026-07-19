@@ -1,0 +1,41 @@
+name: codeql
+permissions:
+  contents: read
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Mirror the languages default setup scanned (actions, python, rust) so
+        # switching to advanced setup does not drop coverage.
+        include:
+          - language: actions
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: rust
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
