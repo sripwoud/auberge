@@ -20,17 +20,17 @@ auberge [GLOBAL OPTIONS] <COMMAND>
 
 | Command                               | Alias | Purpose                             |
 | ------------------------------------- | ----- | ----------------------------------- |
-| [deploy](deploy.md)                   | `dp`  | Deploy apps with auto-hardening     |
-| [ansible](ansible/run.md)             | `a`   | Run Ansible playbooks               |
-| [backup](backup/create.md)            | `b`   | Backup / restore / push / prune     |
-| [dns](dns/list.md)                    | `d`   | Cloudflare DNS management           |
-| [host](host/add.md)                   | `h`   | Manage `hosts.toml`                 |
-| [ssh](ssh/keygen.md)                  | `ss`  | SSH key generation and deployment   |
-| [sync](sync/music.md)                 | `sy`  | rsync media to the VPS              |
-| [headscale](headscale/add-user.md)    | `hs`  | Headscale users and nodes           |
-| [bichon](bichon/reconcile-folders.md) | —     | Bichon folder reconciliation        |
-| [config](config/overview.md)          | `c`   | Manage `config.toml`                |
-| [select](select/host.md)              | `se`  | Interactive host / playbook pickers |
+| [deploy](cli-reference/deploy.md)                   | `dp`  | Deploy apps with auto-hardening     |
+| [ansible](cli-reference/ansible/run.md)             | `a`   | Run Ansible playbooks               |
+| [backup](cli-reference/backup/create.md)            | `b`   | Backup / restore / push / prune     |
+| [dns](cli-reference/dns/list.md)                    | `d`   | Cloudflare DNS management           |
+| [host](cli-reference/host/add.md)                   | `h`   | Manage `hosts.toml`                 |
+| [ssh](cli-reference/ssh/keygen.md)                  | `ss`  | SSH key generation and deployment   |
+| [sync](cli-reference/sync/music.md)                 | `sy`  | rsync media to the VPS              |
+| [headscale](cli-reference/headscale/add-user.md)    | `hs`  | Headscale users and nodes           |
+| [bichon](cli-reference/bichon/reconcile-folders.md) | —     | Bichon folder reconciliation        |
+| [config](cli-reference/config/overview.md)          | `c`   | Manage `config.toml`                |
+| [select](cli-reference/select/host.md)              | `se`  | Interactive host / playbook pickers |
 
 ## Files
 
@@ -41,7 +41,7 @@ auberge [GLOBAL OPTIONS] <COMMAND>
 | Backups  | `~/.local/share/auberge/backups/` |
 | SSH keys | `~/.ssh/identities/`              |
 
-See [Configuration](../configuration/hosts.md) for details on the config files.
+See [Configuration](configuration/hosts.md) for details on the config files.
 
 ## Examples
 

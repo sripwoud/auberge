@@ -26,4 +26,4 @@ auberge deploy gokapi
 
 ?> Rotating `gokapi_admin_password` is not automatic. Delete the bootstrap marker on the host and redeploy — see [role README](https://github.com/sripwoud/auberge/blob/master/ansible/roles/gokapi/README.md#rotating-the-admin-password).
 
-Replaces the removed `webdav` role for the link-share use case. Gokapi is **not** a WebDAV server — it does not expose its storage over the WebDAV protocol. If you need mountable network storage, use [Syncthing](syncthing.md) instead.
+Replaces the removed `webdav` role for the link-share use case. Gokapi is **not** a WebDAV server — it does not expose its storage over the WebDAV protocol. If you need mountable network storage, use [Syncthing](applications/apps/syncthing.md) instead.

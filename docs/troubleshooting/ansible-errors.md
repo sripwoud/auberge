@@ -4,7 +4,7 @@
 
 | Error                            | Cause                                | Fix                                                                                 |
 | -------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------- |
-| `UNREACHABLE`                    | SSH connectivity                     | See [SSH Problems](ssh-problems.md)                                                 |
+| `UNREACHABLE`                    | SSH connectivity                     | See [SSH Problems](troubleshooting/ssh-problems.md)                                                 |
 | `Permission denied`              | ansible user lacks passwordless sudo | `ssh ansible@vps "sudo -n true"`; re-bootstrap if needed                            |
 | `apt lock`                       | Concurrent apt process               | Wait 60s; or via console: `sudo killall apt apt-get && sudo rm /var/lib/dpkg/lock*` |
 | `Package not found`              | Stale apt cache                      | `ssh ansible@vps "sudo apt update"`                                                 |
