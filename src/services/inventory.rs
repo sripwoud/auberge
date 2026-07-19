@@ -283,10 +283,15 @@ pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<PathBuf>> {
         .wrap_err_with(|| format!("Failed to read {}", path.display()))?
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
-            entry
-                .path()
+            let path = entry.path();
+            let is_yaml = path
                 .extension()
-                .is_some_and(|ext| ext == "yml" || ext == "yaml")
+                .is_some_and(|ext| ext == "yml" || ext == "yaml");
+            let is_meta = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .is_some_and(|stem| stem.ends_with(".meta"));
+            is_yaml && !is_meta
         })
         .filter_map(|entry| std::fs::canonicalize(entry.path()).ok())
         .collect();
@@ -298,4 +303,26 @@ pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<PathBuf>> {
     }
 
     Ok(playbooks)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_get_playbooks_excludes_meta_sidecars() {
+        let dir = tempfile::tempdir().unwrap();
+        for file in ["hermes.yml", "hermes.meta.yml", "apps.yml", "apps.meta.yml"] {
+            fs::write(dir.path().join(file), "---\n").unwrap();
+        }
+
+        let playbooks = get_playbooks(Some(dir.path())).unwrap();
+        let stems: Vec<String> = playbooks
+            .iter()
+            .map(|p| p.file_stem().and_then(|s| s.to_str()).unwrap().to_string())
+            .collect();
+
+        assert_eq!(stems, vec!["apps", "hermes"]);
+    }
 }

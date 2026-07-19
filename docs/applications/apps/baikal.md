@@ -31,7 +31,7 @@ Birthday sync reads `BDAY` fields from contacts and populates a dedicated "Birth
 sudo systemctl start baikal-birthday-sync.service
 ```
 
-Backed up by default (`/opt/baikal/Specific`). See [Backup & Restore](../../backup-restore/overview.md).
+Backed up by default (`/opt/baikal/Specific`). See [Backup & Restore](backup-restore/overview.md).
 
 ## Busy Feed
 

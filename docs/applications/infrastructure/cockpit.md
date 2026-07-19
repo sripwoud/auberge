@@ -29,6 +29,6 @@ Cockpit itself listens on `127.0.0.1:9090` (localhost only) via a systemd socket
 
 ## Related
 
-- [Caddy](caddy.md)
-- [Tailscale](../networking/tailscale.md)
-- [Applications Overview](../overview.md)
+- [Caddy](applications/infrastructure/caddy.md)
+- [Tailscale](applications/networking/tailscale.md)
+- [Applications Overview](applications/overview.md)

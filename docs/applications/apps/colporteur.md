@@ -32,7 +32,7 @@ senders = ["hello@newsletter.com"]
 
 ## Notes
 
-?> Set `colporteur_freshrss_sync = true` in `~/.config/auberge/config.toml` to auto-import feeds into [FreshRSS](freshrss.md) on each deploy. Requires FreshRSS on the same server.
+?> Set `colporteur_freshrss_sync = true` in `~/.config/auberge/config.toml` to auto-import feeds into [FreshRSS](applications/apps/freshrss.md) on each deploy. Requires FreshRSS on the same server.
 
 Runs every 15 minutes via systemd timer. Check status:
 
