@@ -6,3 +6,4 @@
   roles:
     - role: hermes
       tags: [hermes]
+      when: "'hermes' in group_names"
