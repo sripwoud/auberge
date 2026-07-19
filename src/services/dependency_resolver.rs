@@ -89,6 +89,30 @@ fn build_tag_playbook_map() -> Result<HashMap<String, Vec<PathBuf>>> {
 
 const PLAYBOOK_ORDER: &[&str] = &["hardening.yml", "infrastructure.yml", "apps.yml"];
 
+/// Resolves `name` to a standalone playbook (one outside [`PLAYBOOK_ORDER`]),
+/// excluding `.meta.yml` sidecars.
+pub fn find_standalone_playbook(name: &str) -> Result<Option<PathBuf>> {
+    if name.ends_with(".meta") || name.contains(['/', '\\']) {
+        return Ok(None);
+    }
+
+    let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
+    for ext in ["yml", "yaml"] {
+        let filename = format!("{name}.{ext}");
+        if PLAYBOOK_ORDER.contains(&filename.as_str()) {
+            return Ok(None);
+        }
+        let path = playbooks_dir.join(&filename);
+        if path.is_file() {
+            let canonical = std::fs::canonicalize(&path)
+                .wrap_err_with(|| format!("Failed to canonicalize: {}", path.display()))?;
+            return Ok(Some(canonical));
+        }
+    }
+
+    Ok(None)
+}
+
 pub fn get_app_names() -> Result<Vec<String>> {
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
     let apps_path = playbooks_dir.join("apps.yml");
@@ -341,5 +365,40 @@ mod tests {
 
         assert!(runs.is_empty());
         assert_eq!(unknown, vec!["paperles"]);
+    }
+
+    #[test]
+    fn test_find_standalone_playbook_resolves_all_standalones() {
+        for name in [
+            "bootstrap",
+            "calibre",
+            "gokapi",
+            "hermes",
+            "remove-radicale",
+            "vibecoder",
+        ] {
+            let path = find_standalone_playbook(name).unwrap().unwrap();
+            assert_eq!(
+                path.file_name().unwrap().to_str().unwrap(),
+                format!("{name}.yml")
+            );
+        }
+    }
+
+    #[test]
+    fn test_find_standalone_playbook_excludes_aggregators() {
+        for name in ["hardening", "infrastructure", "apps"] {
+            assert!(find_standalone_playbook(name).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn test_find_standalone_playbook_excludes_meta_sidecars() {
+        assert!(find_standalone_playbook("hermes.meta").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_find_standalone_playbook_unknown_name() {
+        assert!(find_standalone_playbook("nope").unwrap().is_none());
     }
 }

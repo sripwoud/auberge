@@ -17,13 +17,14 @@ auberge ansible run [OPTIONS]
 | `--skip-tags TAGS`    | Comma-separated tags to skip                                               | None        |
 | `-f, --force`         | Skip confirmation prompts (CI/CD)                                          | `false`     |
 
-?> **Auto-resolution**: when `--tags` is set and `--playbook` is omitted, app tags (e.g. `paperless`) trigger a full `infrastructure.yml` run first (idempotent), then `apps.yml` with only those tags. Pass `--playbook` to bypass.
+?> **Auto-resolution**: when `--tags` is set and `--playbook` is omitted, app tags (e.g. `paperless`) trigger a full `infrastructure.yml` run first (idempotent), then `apps.yml` with only those tags. A tag matching a standalone playbook name (e.g. `hermes`, `calibre`) runs that playbook in full, after any aggregator runs. Aggregator tags win: `gokapi` resolves as an `apps.yml` tag, not the standalone playbook. Pass `--playbook` to bypass.
 
 ## Examples
 
 ```bash
 auberge ansible run                                                      # interactive
 auberge ansible run --host my-vps --tags paperless                       # auto-resolves infra + apps
+auberge ansible run --host my-vps --tags hermes                          # standalone playbook by name
 auberge ansible run --host my-vps --playbook ansible/playbooks/apps.yml --tags freshrss,baikal --check
 auberge ansible run --host my-vps --skip-tags navidrome -f               # CI/CD
 ```
