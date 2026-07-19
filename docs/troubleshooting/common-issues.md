@@ -34,7 +34,7 @@ auberge config set KEY value
 
 | Error                        | Cause                                | Fix                                                                                                     |
 | ---------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `"Unreachable"`              | SSH connectivity failure             | See [SSH Problems](troubleshooting/ssh-problems.md)                                                                     |
+| `"Unreachable"`              | SSH connectivity failure             | See [SSH Problems](troubleshooting/ssh-problems.md)                                                     |
 | `"Permission denied"` (sudo) | ansible user lacks passwordless sudo | `ssh ansible@vps "sudo -n true"`; re-run `auberge ansible bootstrap my-vps --ip 203.0.113.10` if needed |
 | Handler not running          | Config task reported no change       | Restart manually: `ssh ansible@vps "sudo systemctl restart service-name"`                               |
 
