@@ -2,7 +2,9 @@ use crate::config::{Config, Preflight};
 use crate::output;
 use crate::prompt::select_item;
 use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
-use crate::services::dependency_resolver::resolve_tags_to_playbook_runs;
+use crate::services::dependency_resolver::{
+    find_standalone_playbook, resolve_tags_to_playbook_runs,
+};
 use crate::services::inventory::{Host, get_playbooks, select_or_arg};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
@@ -28,7 +30,7 @@ pub enum AnsibleCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Comma-separated tags to run (auto-deploys infra dependencies)"
+            help = "Comma-separated tags to run (auto-deploys infra dependencies; a standalone playbook name runs that playbook)"
         )]
         tags: Option<Vec<String>>,
         #[arg(long, value_delimiter = ',', help = "Skip tasks with these tags")]
@@ -166,16 +168,17 @@ fn run_auto_resolved(
     ask_pass: bool,
     force: bool,
 ) -> Result<()> {
-    let (runs, unknown_tags) = resolve_tags_to_playbook_runs(tags)?;
+    let (runs, unresolved_tags) = resolve_tags_to_playbook_runs(tags)?;
+    let (standalone_playbooks, unknown_tags) = split_standalone_redirects(unresolved_tags)?;
 
     if !unknown_tags.is_empty() {
         output::warn(&format!(
-            "Unknown tags (not in infrastructure.yml or apps.yml): {}",
+            "Unknown tags (no matching role, tag, or standalone playbook): {}",
             unknown_tags.join(", ")
         ));
     }
 
-    if runs.is_empty() {
+    if runs.is_empty() && standalone_playbooks.is_empty() {
         output::info("No auto-resolvable playbooks found, falling back to playbook selection");
         let selected_playbook = select_or_use_playbook(None)?;
         return run_single_playbook(
@@ -192,7 +195,7 @@ fn run_auto_resolved(
 
     output::info(&format!(
         "Resolved {} playbook run(s) for tags: {}",
-        runs.len(),
+        runs.len() + standalone_playbooks.len(),
         tags.join(", ")
     ));
 
@@ -269,8 +272,26 @@ fn run_auto_resolved(
         output::success(&format!("{} completed successfully", playbook_stem));
     }
 
+    for playbook in &standalone_playbooks {
+        run_single_playbook(
+            host, playbook, check, None, skip_tags, user, ask_pass, force,
+        )?;
+    }
+
     output::success("All playbook runs completed successfully");
     Ok(())
+}
+
+fn split_standalone_redirects(tags: Vec<String>) -> Result<(Vec<PathBuf>, Vec<String>)> {
+    let mut playbooks = Vec::new();
+    let mut unknown = Vec::new();
+    for tag in tags {
+        match find_standalone_playbook(&tag)? {
+            Some(path) => playbooks.push(path),
+            None => unknown.push(tag),
+        }
+    }
+    Ok((playbooks, unknown))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -560,6 +581,27 @@ mod tests {
         assert!(validate_ip("192.168.1").is_err());
         assert!(validate_ip("192.168.1.1.1").is_err());
         assert!(validate_ip("192.168.-1.1").is_err());
+    }
+
+    #[test]
+    fn test_split_standalone_redirects_partitions_tags() {
+        let (playbooks, unknown) =
+            split_standalone_redirects(vec!["hermes".to_string(), "nope".to_string()]).unwrap();
+
+        assert_eq!(playbooks.len(), 1);
+        assert_eq!(
+            playbooks[0].file_name().unwrap().to_str().unwrap(),
+            "hermes.yml"
+        );
+        assert_eq!(unknown, vec!["nope"]);
+    }
+
+    #[test]
+    fn test_split_standalone_redirects_keeps_aggregator_stems_unknown() {
+        let (playbooks, unknown) = split_standalone_redirects(vec!["apps".to_string()]).unwrap();
+
+        assert!(playbooks.is_empty());
+        assert_eq!(unknown, vec!["apps"]);
     }
 
     #[test]
