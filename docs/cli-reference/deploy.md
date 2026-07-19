@@ -29,7 +29,7 @@ auberge deploy paperless --host prod --verify-public-dns
 
 ## Execution order
 
-Every deploy runs `hardening → infrastructure → apps` in that order. Hardening (firewall, fail2ban, kernel) is mandatory and untagged. To skip it, use [`auberge ansible run`](ansible/run.md) directly.
+Every deploy runs `hardening → infrastructure → apps` in that order. Hardening (firewall, fail2ban, kernel) is mandatory and untagged. To skip it, use [`auberge ansible run`](cli-reference/ansible/run.md) directly.
 
 The CLI shows the resolved plan before running (suppress with `-f`):
 

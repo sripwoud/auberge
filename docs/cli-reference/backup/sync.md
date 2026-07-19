@@ -28,7 +28,7 @@ The local staging copy is ephemeral — restic handles long-term retention with 
 
 ## Prerequisites
 
-Same as [backup push](push.md) — requires `restic_repository` and `restic_password` config values, plus `restic` and `rclone` installed.
+Same as [backup push](cli-reference/backup/push.md) — requires `restic_repository` and `restic_password` config values, plus `restic` and `rclone` installed.
 
 ## Examples
 

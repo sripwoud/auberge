@@ -42,7 +42,7 @@ tailscale_ip = "100.99.62.26"  # optional, see below
 
 ### Optional fields
 
-- `tailscale_ip` — cached Tailscale CGNAT IPv4 of the host. Populated by [`auberge host detect-tailscale-ip <name>`](../cli-reference/host/detect-tailscale-ip.md) and consumed by `auberge dns set-all` to auto-fill DNS records for tailnet-only apps without per-app overrides.
+- `tailscale_ip` — cached Tailscale CGNAT IPv4 of the host. Populated by [`auberge host detect-tailscale-ip <name>`](cli-reference/host/detect-tailscale-ip.md) and consumed by `auberge dns set-all` to auto-fill DNS records for tailnet-only apps without per-app overrides.
 
 ## Ansible Inventory (Recommended for developers)
 

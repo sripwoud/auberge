@@ -19,4 +19,4 @@ Sync music files to the VPS:
 auberge sync music --host my-vps --source ~/Music
 ```
 
-Backed up by default (database and config only; music excluded to save space). To include music: `auberge backup create --include-music`. See [Backup & Restore](../../backup-restore/overview.md).
+Backed up by default (database and config only; music excluded to save space). To include music: `auberge backup create --include-music`. See [Backup & Restore](backup-restore/overview.md).

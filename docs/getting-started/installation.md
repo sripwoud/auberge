@@ -14,4 +14,4 @@ cargo uninstall auberge       # remove
 
 No platform-specific dependencies on Linux or macOS.
 
-Continue: [Quick Start](quick-start.md) · [First Deployment](first-deployment.md)
+Continue: [Quick Start](getting-started/quick-start.md) · [First Deployment](getting-started/first-deployment.md)

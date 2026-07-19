@@ -23,4 +23,4 @@ All other ports are blocked by default.
 
 ## Related
 
-- [Applications Overview](../overview.md)
+- [Applications Overview](applications/overview.md)
