@@ -137,7 +137,41 @@ fn make_recipe_progress(app: &str) -> Box<dyn Progress> {
     Box::new(TerminalProgress::hidden(&format!("Backing up {}", app)))
 }
 
-pub fn restic_push(restic_repo: &str, restic_password: &str, backup_dir: &Path) -> Result<()> {
+fn backup_args(backup_dir: &Path, host: &str) -> Vec<std::ffi::OsString> {
+    vec![
+        "backup".into(),
+        "--json".into(),
+        "--tag".into(),
+        host.into(),
+        backup_dir.into(),
+    ]
+}
+
+fn forget_args(dry_run: bool) -> Vec<&'static str> {
+    let mut args = vec![
+        "forget",
+        "--group-by",
+        "tags",
+        "--keep-daily",
+        "7",
+        "--keep-weekly",
+        "4",
+        "--keep-monthly",
+        "12",
+        "--prune",
+    ];
+    if dry_run {
+        args.push("--dry-run");
+    }
+    args
+}
+
+pub fn restic_push(
+    restic_repo: &str,
+    restic_password: &str,
+    backup_dir: &Path,
+    host: &str,
+) -> Result<()> {
     output::info(&format!("Pushing {} to restic", backup_dir.display()));
 
     let mut progress = TerminalProgress::new("Checking restic repository");
@@ -197,9 +231,7 @@ pub fn restic_push(restic_repo: &str, restic_password: &str, backup_dir: &Path) 
     let result = output::stream_command_stdout(
         "restic",
         Command::new("restic")
-            .arg("backup")
-            .arg("--json")
-            .arg(backup_dir)
+            .args(backup_args(backup_dir, host))
             .env("RESTIC_REPOSITORY", restic_repo)
             .env("RESTIC_PASSWORD", restic_password)
             .env_remove("RESTIC_PASSWORD_COMMAND"),
@@ -243,21 +275,10 @@ pub fn restic_prune(restic_repo: &str, restic_password: &str, dry_run: bool) -> 
     let mut progress = TerminalProgress::new("Pruning restic snapshots");
 
     let mut cmd = Command::new("restic");
-    cmd.arg("forget")
-        .arg("--keep-daily")
-        .arg("7")
-        .arg("--keep-weekly")
-        .arg("4")
-        .arg("--keep-monthly")
-        .arg("12")
-        .arg("--prune")
+    cmd.args(forget_args(dry_run))
         .env("RESTIC_REPOSITORY", restic_repo)
         .env("RESTIC_PASSWORD", restic_password)
         .env_remove("RESTIC_PASSWORD_COMMAND");
-
-    if dry_run {
-        cmd.arg("--dry-run");
-    }
 
     let prune_output = cmd.output().wrap_err("Failed to run restic forget")?;
 
@@ -359,6 +380,36 @@ mod tests {
             timestamp: "2026-04-28_03-00-00".to_string(),
             parameters: HashMap::new(),
         }
+    }
+
+    #[test]
+    fn backup_args_tags_snapshot_with_host() {
+        let args = backup_args(
+            Path::new("/backups/myserver/2026-04-28_03-00-00"),
+            "myserver",
+        );
+
+        let tag_pos = args.iter().position(|a| a == "--tag").unwrap();
+        assert_eq!(args[tag_pos + 1], "myserver");
+        assert_eq!(
+            args.last().unwrap(),
+            &std::ffi::OsString::from("/backups/myserver/2026-04-28_03-00-00")
+        );
+    }
+
+    #[test]
+    fn forget_args_group_by_tags_so_retention_spans_snapshots() {
+        let args = forget_args(false);
+
+        assert!(args.windows(2).any(|w| w == ["--group-by", "tags"]));
+        assert!(args.windows(2).any(|w| w == ["--keep-daily", "7"]));
+        assert!(args.contains(&"--prune"));
+        assert!(!args.contains(&"--dry-run"));
+    }
+
+    #[test]
+    fn forget_args_dry_run_appends_flag() {
+        assert!(forget_args(true).contains(&"--dry-run"));
     }
 
     #[test]

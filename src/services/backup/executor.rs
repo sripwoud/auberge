@@ -63,7 +63,7 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
             if let Some(db) = &recipe.db {
                 progress.task_started(&format!("pg_dump {}", db.name));
                 let cmd = format!(
-                    "sudo -u postgres pg_dump -Fc {} > {}",
+                    "sudo -u postgres pg_dump -Fc -Z0 {} > {}",
                     db.name, db.dump_path
                 );
                 let dump = self.session.run(&cmd)?;
@@ -406,7 +406,7 @@ mod tests {
         );
         match &calls[1] {
             SshOp::Run(cmd) => {
-                assert!(cmd.contains("pg_dump"));
+                assert!(cmd.contains("pg_dump -Fc -Z0"));
                 assert!(cmd.contains("paperless"));
                 assert!(cmd.contains("/tmp/paperless_db.dump"));
             }

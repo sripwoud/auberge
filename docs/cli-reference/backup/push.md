@@ -8,6 +8,8 @@ auberge backup push [OPTIONS]
 
 The repository is initialized automatically on first push.
 
+?> `push` is upload-only — it never applies the retention policy. [backup sync](cli-reference/backup/sync.md) is the retention-enforcing entrypoint (it runs prune after push); standalone pushes accumulate snapshots until the next `sync` or manual [backup prune](cli-reference/backup/prune.md).
+
 ## Options
 
 | Option               | Description               | Default                         |
