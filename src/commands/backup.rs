@@ -1116,7 +1116,18 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
     let backup_dir =
         resolve_backup_dir(&backup_root, host_filter.as_deref(), backup_id.as_deref())?;
 
-    restic_push(&restic_repo, &restic_password, &backup_dir)
+    let host = backup_dir
+        .parent()
+        .and_then(Path::file_name)
+        .map(|h| h.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "Cannot determine host from backup dir: {}",
+                backup_dir.display()
+            )
+        })?;
+
+    restic_push(&restic_repo, &restic_password, &backup_dir, &host)
 }
 
 pub fn run_backup_prune(dry_run: bool) -> Result<()> {
