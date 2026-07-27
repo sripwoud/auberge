@@ -18,6 +18,8 @@ auberge backup prune [OPTIONS]
 - 4 weekly snapshots
 - 12 monthly snapshots
 
+Retention applies per host: each snapshot is tagged with its host name at push, and `forget` groups by tag (`--group-by tags`). Hosts sharing one repository never evict each other's snapshots.
+
 ## Prerequisites
 
 Same as [backup push](cli-reference/backup/push.md) — requires `restic_repository` and `restic_password` config values.
