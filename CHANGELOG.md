@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.6](https://github.com/sripwoud/auberge/compare/v0.14.5...v0.14.6) - 2026-07-27
+
+### Fixed
+
+- *(backup)* make restic prune actually forget old snapshots ([#372](https://github.com/sripwoud/auberge/pull/372))
+
 ## [0.14.5](https://github.com/sripwoud/auberge/compare/v0.14.4...v0.14.5) - 2026-07-19
 
 ### Added
