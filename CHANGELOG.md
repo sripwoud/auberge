@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.8](https://github.com/sripwoud/auberge/compare/v0.14.7...v0.14.8) - 2026-07-29
+
+### Added
+
+- *(backup)* verify the newest snapshot holding the app ([#381](https://github.com/sripwoud/auberge/pull/381))
+
+### Other
+
+- enforce one ADR number per file and full index coverage
+- *(adr)* index every per-decision ADR in meta/adr.md
+- *(adr)* renumber CodeQL cleartext-logging ADR to 0011
+- *(adr)* merge duplicate ADR-0007 files into one
+
 ## [0.14.7](https://github.com/sripwoud/auberge/compare/v0.14.6...v0.14.7) - 2026-07-29
 
 ### Added
