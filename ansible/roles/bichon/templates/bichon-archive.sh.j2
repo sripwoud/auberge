@@ -11,6 +11,14 @@ set -euo pipefail
 OVERLAP_MS=$((BICHON_ARCHIVE_OVERLAP_SECONDS * 1000))
 TOTAL_FAILURES=0
 
+# Both write paths below stage through mktemp, which creates 0600 whatever the
+# umask, and publish with mv, a same-filesystem rename that preserves the mode.
+# The unit's UMask=0027 therefore never reaches an archived file, so the mode is
+# set explicitly instead. It must stay group-readable: examples/bichon-expunge.sh
+# counts .meta.json sidecars over ssh as a member of the archive group, without
+# sudo, and unreadable sidecars make its coverage gate count zero.
+ARCHIVE_FILE_MODE=0640
+
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2
 }
@@ -53,6 +61,7 @@ download_message() {
   local account_id="$1" message_id="$2" out_path="$3"
   local tmp
   tmp=$(mktemp "${out_path}.XXXXXX")
+  chmod "$ARCHIVE_FILE_MODE" "$tmp"
   if curl_auth --output "$tmp" \
       "${BICHON_BASE_URL}/api/v1/download-message/${account_id}/${message_id}"; then
     mv "$tmp" "$out_path"
@@ -66,6 +75,7 @@ write_meta_sidecar() {
   local out_path="$1" envelope_json="$2"
   local tmp
   tmp=$(mktemp "${out_path}.XXXXXX")
+  chmod "$ARCHIVE_FILE_MODE" "$tmp"
   printf '%s' "$envelope_json" | jq '{folder: .mailbox_name, tags: .tags}' >"$tmp"
   mv "$tmp" "$out_path"
 }
