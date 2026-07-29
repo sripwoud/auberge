@@ -3,7 +3,7 @@ name: auberge CodeQL config
 # rust/cleartext-logging treats every println!/writeln! as a log sink. auberge is
 # a single-operator CLI: stdout is the operator's TTY, not a persisted log. The repo
 # has no tracing/log/file-sink usage, so the query's risk model does not apply and it
-# only produces false positives on intended command data output. See ADR-0009.
+# only produces false positives on intended command data output. See ADR-0011.
 #
 # No `queries:` key -> keep the default suite (matches prior default-setup behavior).
 query-filters:
