@@ -68,9 +68,17 @@ _Avoid_: Backup job, backup workflow
 The verdict `auberge backup verify` reaches about a Host's newest offsite restic snapshot — or, with `-a`, the newest snapshot _holding that App_, which a partial sync can leave behind an App-less newer push — as a fail-fast checklist: repository reachable → a snapshot exists → it contains an App → it is younger than a threshold, carried by the exit code (0 verified, 1 a check failed, 2 operational error). A pure function of `restic snapshots --json` plus one containment probe per candidate snapshot, so the whole decision is unit-tested without invoking restic. Asserts the "backup is current" half of ADR-0007's boundary; it says nothing about the **Upstream Mailbox**, which would be coverage-check and stays out of scope.
 _Avoid_: Health check, audit, validation, integrity check (restic's own `check` verifies repository integrity — a different question).
 
+**Internal Store**:
+Bichon's own on-disk state (`/opt/bichon/data`) — a Tantivy index of envelopes plus a content-addressed blob store of raw messages. A **rebuildable cache, not a store of record**: when an **Upstream Mailbox** changes a folder's `UIDVALIDITY`, Bichon discards that folder's envelopes _and_ their blobs and refetches from the server, so any message no longer present upstream is lost from the Internal Store. Deliberately not backed up (ADR-0006); the **Email Archive** is the durable copy. Everything the web UI renders is served from here, which is why a purge costs searchability even when the Archive is intact.
+_Avoid_: Bichon database, index, cache (understates that it holds the only searchable copy), data dir.
+
 **Email Archive**:
-A Bichon-independent on-disk mirror of email messages, produced by an hourly systemd timer on the bichon Host that walks Bichon's REST API and writes one `.eml` per message under `/var/lib/bichon-archive/`, with a `.meta.json` sidecar capturing folder + tags. Distinct from a **Backup Recipe**: an Archive is consumable without Bichon (any MBOX/EML-aware client can read it), and is the _source_ the bichon Backup Recipe rsyncs — Bichon's encrypted internal store (`/opt/bichon/data`) is deliberately not backed up. See ADR-0006.
+A Bichon-independent on-disk mirror of email _bodies_, produced by an hourly systemd timer on the bichon Host that walks Bichon's REST API and writes one `.eml` per message under `/var/lib/bichon-archive/<account>/YYYY/MM/`, with a `.meta.json` sidecar recording the folder. Append-only in the strong sense — **entries are written once and never revisited** — so it faithfully preserves what is immutable (bodies, attachments) and captures folder at first sight; mutable metadata lives in the **Tag Snapshot** instead. Distinct from a **Backup Recipe**: an Archive is consumable without Bichon (any MBOX/EML-aware client can read it), and is the _source_ the bichon Backup Recipe rsyncs. Folder is carried in the sidecar rather than the path, because Bichon's own importer derives folder from the full relative directory path and would read the date partitions as part of the folder name. See ADR-0006, ADR-0012.
 _Avoid_: backup (collides with Backup Recipe), dump, export.
+
+**Tag Snapshot**:
+A per-account `tags.json` beside the **Email Archive**, mapping RFC 5322 `Message-ID` → tags, rewritten in full on every archive run. The mutable-metadata counterpart to the Archive: tags are operator annotations applied _after_ ingestion and revised indefinitely, which an append-only store cannot represent. Keyed on `Message-ID` because Bichon regenerates its own envelope identifier on re-import. Costs one API call per run while no tags exist. See ADR-0012.
+_Avoid_: tag index, label export, metadata sidecar (collides with the Archive's per-message `.meta.json`).
 
 **Upstream Mailbox**:
 The third-party IMAP (or Gmail-API) server that Bichon syncs _from_ — e.g. the operator's Gmail, Fastmail, ProtonMail Bridge endpoint. Distinct from the **Email Archive** (Bichon-side, append-only) and from any **Backup Recipe** target. Operations on the Upstream Mailbox (e.g. expunging old mail to reclaim quota) are out-of-scope for `auberge deploy` and `auberge backup`; any future tooling that touches it must treat it as authoritative-but-untrusted.
@@ -100,6 +108,8 @@ _Avoid_: Logger, reporter
 - A **Preflight** binds one **Playbook Meta** to a validated **Config**.
 - The **Recipe Executor** consumes one **Backup Recipe**; the **Backup Session** consumes many.
 - A **Backup Verdict** reads only what a **Backup Session** already pushed, attributing a snapshot to a **Host** by the restic tag push writes (the same tag prune groups retention by).
+- Bichon syncs from an **Upstream Mailbox** into its **Internal Store**; the **Email Archive** and **Tag Snapshot** are derived from the Internal Store; the **Backup Recipe** rsyncs those two and never the Internal Store.
+- Restoring a purged **Internal Store** means replaying the **Email Archive** (bodies, foldered from the sidecars) and then the **Tag Snapshot** (tags), both via `examples/bichon-restore.sh`. Neither the Archive nor the Snapshot is searchable on its own.
 - All runners report through **Progress**; none touch terminal output directly.
 - An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
 - The **Busy Feed** is derived from **Baikal**'s calendar data — plus, optionally, a read-only external CalDAV calendar fetched Host-side — and served on Baikal's **Public App** site (Google's servers must reach it); auberge produces and serves it but ships no consumer.
@@ -116,6 +126,7 @@ _Avoid_: Logger, reporter
 
 - "Backup runner" was used loosely for both per-recipe and multi-recipe execution. Resolved: use **Recipe Executor** (one recipe) and **Backup Session** (many recipes) — never "runner" without qualification.
 - "Spec" was used early in the design conversation for what became **Playbook Meta**. Resolved: avoid "spec" — it conflicts with Rust's `cargo spec` and reads ambiguous next to "schema."
+- "Append-only" was used of the **Email Archive** to mean "nothing is ever deleted," and was silently read as "everything is faithfully preserved." Resolved: it also means _nothing is ever updated_, which is correct for immutable bodies and wrong for mutable metadata. Say **append-only** of bodies and folder; say **snapshot** of tags (see **Tag Snapshot**, ADR-0012).
 
 ## Stdout discipline
 

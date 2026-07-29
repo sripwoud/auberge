@@ -19,6 +19,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0009 | [Gokapi headless first-deploy via templated config](./adr/0009-gokapi-headless-bootstrap.md)                                         |
 | 0010 | [Baikal Busy Feed — host-sanitized availability, external consumer](./adr/0010-baikal-busy-feed-host-sanitized-external-consumer.md) |
 | 0011 | [Exclude `rust/cleartext-logging` via advanced CodeQL setup](./adr/0011-suppress-codeql-cleartext-logging-on-cli-stdout.md)          |
+| 0012 | [Email Archive splits immutable bodies from mutable metadata](./adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md)   |
 
 ## No Docker
 
