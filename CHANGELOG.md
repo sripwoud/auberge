@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.9](https://github.com/sripwoud/auberge/compare/v0.14.8...v0.14.9) - 2026-07-29
+
+### Added
+
+- *(bichon)* restore archived mail with folders and tags ([#387](https://github.com/sripwoud/auberge/pull/387))
+
+### Fixed
+
+- *(bichon)* make archived files group-readable ([#385](https://github.com/sripwoud/auberge/pull/385))
+
+### Other
+
+- update ADR and context:wq
+- *(examples)* stop bichon-expunge stalling on a himalaya prompt
+- *(examples)* preflight bichon-expunge before it prompts
+
 ## [0.14.8](https://github.com/sripwoud/auberge/compare/v0.14.7...v0.14.8) - 2026-07-29
 
 ### Added
