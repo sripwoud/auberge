@@ -48,6 +48,7 @@ A write-once tree of `.eml` files is the inverse of all three failure modes: pla
 **Negative:**
 
 - Recovery from total Host loss is slower than rsync-and-go: re-deploy bichon via ansible, then import the EML archive through Bichon's import tooling. Acceptable trade — the restore is _possible without Bichon at all_ (any IMAP/MBOX-aware client can ingest the EML), which is the point.
+- Restore as designed here recovers bodies only: `bichonctl`'s importer derives the folder from the directory path, which a date-partitioned archive defeats, and no Bichon tool reads the sidecar's tags. Corrected by ADR-0012, which makes the sidecar's `folder` authoritative, moves tags to a per-account Tag Snapshot, and replaces the import-tooling appeal with `examples/bichon-restore.sh`.
 - An archive timer that wedges silently (e.g. 401 from a revoked token) lags freshness until the operator notices. Mitigation: `ExecStartPre` token check exits non-zero, surfacing as red in `systemctl list-timers` and in the journal. No data is lost — upstream IMAP retains messages until the next successful run.
 - Archive cadence is hourly; up to one hour of mail is not yet in the archive at any given moment. The off-host backup cadence (operator-driven `auberge backup create`) is independent, so the worst-case "lost mail in restic" window is hourly + the time since the last `backup create`.
 
