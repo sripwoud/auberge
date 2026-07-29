@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.7](https://github.com/sripwoud/auberge/compare/v0.14.6...v0.14.7) - 2026-07-29
+
+### Added
+
+- *(backup)* add verify command for offsite snapshot freshness ([#377](https://github.com/sripwoud/auberge/pull/377))
+
+### Other
+
+- *(deps)* bump quinn-proto from 0.11.14 to 0.11.16 in the cargo group across 1 directory ([#378](https://github.com/sripwoud/auberge/pull/378))
+- *(examples)* make bichon-expunge interactive and guard-railed ([#376](https://github.com/sripwoud/auberge/pull/376))
+
 ## [0.14.6](https://github.com/sripwoud/auberge/compare/v0.14.5...v0.14.6) - 2026-07-27
 
 ### Fixed
