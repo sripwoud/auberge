@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::process::Command;
 
 #[derive(Debug, Deserialize)]
 pub struct ResticStatus {
@@ -27,6 +28,19 @@ pub enum ResticMessage {
 
 pub fn parse_restic_message(line: &str) -> Option<ResticMessage> {
     serde_json::from_str(line).ok()
+}
+
+/// A `restic` invocation carrying the repository credentials.
+///
+/// `RESTIC_PASSWORD_COMMAND` is removed because restic prefers it over
+/// `RESTIC_PASSWORD`: an operator with it exported would have every auberge
+/// restic call resolve the wrong password.
+pub fn command(repo: &str, password: &str) -> Command {
+    let mut cmd = Command::new("restic");
+    cmd.env("RESTIC_REPOSITORY", repo)
+        .env("RESTIC_PASSWORD", password)
+        .env_remove("RESTIC_PASSWORD_COMMAND");
+    cmd
 }
 
 #[cfg(test)]
@@ -84,6 +98,27 @@ mod tests {
             }
             _ => panic!("expected Status"),
         }
+    }
+
+    #[test]
+    fn command_sets_repo_and_password_and_drops_password_command() {
+        let cmd = command("rclone:filen:auberge-backup", "s3cret");
+        let envs: Vec<(String, Option<String>)> = cmd
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+
+        assert!(envs.contains(&(
+            "RESTIC_REPOSITORY".to_string(),
+            Some("rclone:filen:auberge-backup".to_string())
+        )));
+        assert!(envs.contains(&("RESTIC_PASSWORD".to_string(), Some("s3cret".to_string()))));
+        assert!(envs.contains(&("RESTIC_PASSWORD_COMMAND".to_string(), None)));
     }
 
     #[test]
