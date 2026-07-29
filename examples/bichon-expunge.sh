@@ -226,6 +226,15 @@ check_prerequisites() {
   note 'auberge, himalaya, jq, ssh ok'
 }
 
+# Guard a value that crossed back from the Host before it reaches (( )).
+# Arithmetic evaluation expands command substitutions, so a non-numeric value
+# there would be more than a wrong answer.
+require_number() {
+  local label="$1" value="$2"
+  [[ "${value}" =~ ^[0-9]+$ ]] \
+    || die 1 "${host} returned a non-numeric ${label}: ${value}"
+}
+
 # Print UTC date offset by -$1 days, formatted with $2.
 # GNU coreutils (Linux) and BSD (macOS) take incompatible flags; dispatch on
 # whichever the operator's `date` binary accepts.
@@ -285,6 +294,8 @@ REMOTE
     || die 1 'bichon-archive.service has never completed a run' \
       "start it: ssh ${host} sudo systemctl start bichon-archive.service"
 
+  require_number 'archive run age' "${age_seconds}"
+
   [[ "${result}" == 'success' ]] \
     || die 1 "the last bichon-archive.service run ended with Result=${result}" \
       "read the failure: ssh ${host} journalctl -u bichon-archive.service -n 50" \
@@ -331,12 +342,16 @@ gate_folder_coverage() {
   # `folder expunge` removes every \Deleted-flagged message in the folder, not
   # only the ones this script flags. A pre-existing flag would therefore be
   # collateral damage, so refuse rather than widen the blast radius.
-  local already_deleted
-  already_deleted=$(himalaya --output json envelope list \
+  local deleted_json already_deleted
+  deleted_json=$(himalaya --output json envelope list \
     --account "${account}" \
     --folder "${folder}" \
     --page-size "${PAGE_SIZE}" \
-    flag deleted 2>/dev/null | jq 'length')
+    flag deleted 2>/dev/null) \
+    || die 1 "himalaya could not list deleted-flagged mail in ${folder}" \
+      'this script must know what the expunge would take along, so it will' \
+      'not continue without that answer'
+  already_deleted=$(printf '%s' "${deleted_json}" | jq 'length')
 
   ((already_deleted == 0)) \
     || die 1 "${already_deleted} message(s) in ${folder} already carry the deleted flag" \
@@ -371,6 +386,7 @@ find "$archive_dir" -regextype posix-extended \
 REMOTE
   )
   note "archive .eml files in window: ${eml_count}"
+  require_number 'archive file count' "${eml_count}"
 
   ((eml_count >= IMAP_COUNT)) \
     || die 1 "coverage gap: archive has ${eml_count} files, IMAP has ${IMAP_COUNT} messages" \
