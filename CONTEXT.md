@@ -65,7 +65,7 @@ The Rust module that orchestrates multiple Recipe Executor invocations across a 
 _Avoid_: Backup job, backup workflow
 
 **Backup Verdict**:
-The verdict `auberge backup verify` reaches about the newest offsite restic snapshot for a Host, as a fail-fast checklist — repository reachable → a snapshot exists → it contains an App → it is younger than a threshold — carried by the exit code (0 verified, 1 a check failed, 2 operational error). A pure function of `restic snapshots --json` plus one containment probe, so the whole decision is unit-tested without invoking restic. Asserts the "backup is current" half of ADR-0007's boundary; it says nothing about the **Upstream Mailbox**, which would be coverage-check and stays out of scope.
+The verdict `auberge backup verify` reaches about a Host's newest offsite restic snapshot — or, with `-a`, the newest snapshot _holding that App_, which a partial sync can leave behind an App-less newer push — as a fail-fast checklist: repository reachable → a snapshot exists → it contains an App → it is younger than a threshold, carried by the exit code (0 verified, 1 a check failed, 2 operational error). A pure function of `restic snapshots --json` plus one containment probe per candidate snapshot, so the whole decision is unit-tested without invoking restic. Asserts the "backup is current" half of ADR-0007's boundary; it says nothing about the **Upstream Mailbox**, which would be coverage-check and stays out of scope.
 _Avoid_: Health check, audit, validation, integrity check (restic's own `check` verifies repository integrity — a different question).
 
 **Email Archive**:

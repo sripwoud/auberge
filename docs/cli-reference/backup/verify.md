@@ -1,6 +1,6 @@
 # auberge backup verify
 
-Assert that the latest offsite restic snapshot is fresh and holds an app's backup. Read-only — it never writes to the repository. Alias: `auberge b v`.
+Assert that an offsite restic snapshot is fresh — for a host, or for one app's backup. Read-only — it never writes to the repository. Alias: `auberge b v`.
 
 ```bash
 auberge backup verify [OPTIONS]
@@ -8,12 +8,12 @@ auberge backup verify [OPTIONS]
 
 ## Options
 
-| Option                | Description                                    | Default                                       |
-| --------------------- | ---------------------------------------------- | --------------------------------------------- |
-| `-H, --host HOST`     | Host whose snapshots to check                  | The sole configured host; required if several |
-| `-a, --app APP`       | Also assert this app is in the latest snapshot | No app check                                  |
-| `--max-age DURATION`  | Freshness threshold, `<number><s\|m\|h\|d>`    | `24h`                                         |
-| `-o, --output FORMAT` | `human` or `json`                              | `human`                                       |
+| Option                | Description                                 | Default                                       |
+| --------------------- | ------------------------------------------- | --------------------------------------------- |
+| `-H, --host HOST`     | Host whose snapshots to check               | The sole configured host; required if several |
+| `-a, --app APP`       | Check the newest snapshot holding this app  | No app check                                  |
+| `--max-age DURATION`  | Freshness threshold, `<number><s\|m\|h\|d>` | `24h`                                         |
+| `-o, --output FORMAT` | `human` or `json`                           | `human`                                       |
 
 Verify never prompts, so it is safe in scripts and timers.
 
@@ -23,27 +23,39 @@ Fail-fast, in order:
 
 1. The restic repository answers `restic snapshots --json`.
 2. At least one snapshot exists for the host.
-3. The latest snapshot contains the app's directory — only with `--app`.
-4. The latest snapshot is younger than `--max-age`.
+3. A snapshot contains the app's directory — only with `--app`.
+4. The selected snapshot is younger than `--max-age`.
+
+Without `--app` the selected snapshot is the host's newest. With `--app` it is the newest snapshot **holding that app**, which need not be the newest push: a partial sync (`backup sync --apps paperless`) leaves a snapshot holding only `paperless`, and every other app is still verified against the full sync that holds it. The walk stops at the first snapshot holding the app, so a repository synced in full costs one containment probe.
 
 ```bash
 $ auberge backup verify --app bichon
 ✓ repository reachable
-✓ latest snapshot for myserver: a1b2c3d4 (2026-07-29T03:00Z, 6h ago)
+✓ latest snapshot containing bichon: a1b2c3d4 (2026-07-29T03:00Z, 6h ago)
 ✓ contains bichon (…/myserver/2026-07-29_03-00-00/bichon)
 ✓ younger than 24h
 verified
+```
+
+When no snapshot holds the app, that line names the host's newest push instead and `contains` fails:
+
+```bash
+$ auberge backup verify --app bichon
+✓ repository reachable
+✓ latest snapshot for myserver: 4b461b62 (2026-07-29T12:11Z, 3h ago)
+✗ contains bichon
+not verified
 ```
 
 The checklist is data on stdout; remediation for a failed check goes to stderr.
 
 ## Exit codes
 
-| Code | Meaning                                                                                               |
-| ---- | ----------------------------------------------------------------------------------------------------- |
-| `0`  | Verified — every check passed                                                                         |
-| `1`  | A check failed — no snapshot for the host, app missing, or snapshot older than `--max-age`            |
-| `2`  | Operational error — restic not installed, repository unreachable, config keys or `--max-age` unusable |
+| Code | Meaning                                                                                                             |
+| ---- | ------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Verified — every check passed                                                                                       |
+| `1`  | A check failed — no snapshot for the host, no snapshot holds the app, or the selected one is older than `--max-age` |
+| `2`  | Operational error — restic not installed, repository unreachable, config keys or `--max-age` unusable               |
 
 Gate a destructive step on it:
 
@@ -97,19 +109,19 @@ Same as [backup push](cli-reference/backup/push.md) — requires `restic_reposit
 }
 ```
 
-| Field                  | Type           | Description                                                             |
-| ---------------------- | -------------- | ----------------------------------------------------------------------- |
-| `verified`             | boolean        | `true` only when every check passed                                     |
-| `status`               | string         | `verified`, `check_failed`, or `operational_error`                      |
-| `host`                 | string         | Host the snapshots were filtered by                                     |
-| `app`                  | string \| null | App asserted with `--app`; `null` when omitted                          |
-| `max_age`              | string         | Threshold as passed on the command line                                 |
-| `snapshot`             | object \| null | Resolved snapshot; `null` when none was found                           |
-| `snapshot.short_id`    | string         | First 8 characters of `snapshot.id`, as restic displays it              |
-| `snapshot.age_seconds` | number         | Snapshot age at the time of the check                                   |
-| `checks`               | array          | Checks that ran, in order — fail-fast, so it stops at the first failure |
-| `checks[].name`        | string         | `repository_reachable`, `snapshot_exists`, `contains_app`, or `fresh`   |
-| `checks[].remediation` | string \| null | Command to fix a failed check; `null` when it passed                    |
+| Field                  | Type           | Description                                                                                            |
+| ---------------------- | -------------- | ------------------------------------------------------------------------------------------------------ |
+| `verified`             | boolean        | `true` only when every check passed                                                                    |
+| `status`               | string         | `verified`, `check_failed`, or `operational_error`                                                     |
+| `host`                 | string         | Host the snapshots were filtered by                                                                    |
+| `app`                  | string \| null | App asserted with `--app`; `null` when omitted                                                         |
+| `max_age`              | string         | Threshold as passed on the command line                                                                |
+| `snapshot`             | object \| null | Snapshot the verdict is about — with `--app`, the newest one holding it; `null` when the host has none |
+| `snapshot.short_id`    | string         | First 8 characters of `snapshot.id`, as restic displays it                                             |
+| `snapshot.age_seconds` | number         | Snapshot age at the time of the check                                                                  |
+| `checks`               | array          | Checks that ran, in order — fail-fast, so it stops at the first failure                                |
+| `checks[].name`        | string         | `repository_reachable`, `snapshot_exists`, `contains_app`, or `fresh`                                  |
+| `checks[].remediation` | string \| null | Command to fix a failed check; `null` when it passed                                                   |
 
 JSON goes to stdout; human-format chrome goes to stderr.
 

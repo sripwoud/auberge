@@ -65,8 +65,9 @@ The deciding principle is **asymmetric automation along the silent-vs-loud failu
 ## Amendment (2026-07-29): offsite snapshot verification moves into the binary
 
 `auberge backup verify [-H <host>] [-a <app>] [--max-age <duration>]` ships as a read-only
-command: it asserts that the newest restic snapshot for a Host exists, contains an App's backup,
-and is younger than a freshness threshold. Exit `0` verified, `1` a check failed, `2` operational
+command: it asserts that a restic snapshot for a Host exists and is younger than a freshness
+threshold — with `-a`, the newest snapshot **holding that App's backup**, so one partial sync
+cannot false-alarm every other App (#380). Exit `0` verified, `1` a check failed, `2` operational
 error, so it composes as a gate in a script.
 
 This does **not** reopen alternative (γ). Coverage-check compares the **Email Archive** against the
