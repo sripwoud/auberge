@@ -2,6 +2,24 @@
 
 Why Auberge is built the way it is. This file is the curated overview of foundational decisions. Granular per-decision ADRs live in [`meta/adr/`](./adr/).
 
+## Per-decision ADRs
+
+One number, one file. Every file in `meta/adr/` is listed here; a number that appears twice is a bug, enforced by `.github/scripts/check-adr-numbering.sh`.
+
+| #    | Decision                                                                                                                             |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 0001 | [Declarative YAML backup recipes, not a Rust trait](./adr/0001-declarative-backup-recipes.md)                                        |
+| 0002 | [Three small utilities, not a god-runner, for command orchestration](./adr/0002-no-god-runner-for-commands.md)                       |
+| 0003 | [Tailnet-only Apps publish DNS via Blocky only](./adr/0003-tailnet-only-app-dns.md)                                                  |
+| 0004 | [CLI structured output is `--output {human,json}`](./adr/0004-cli-structured-output.md)                                              |
+| 0005 | [Substrate Apps live in `infrastructure.yml`](./adr/0005-substrate-apps-in-infrastructure.md)                                        |
+| 0006 | [Bichon archive feeds the Backup Recipe; internal store is not backed up](./adr/0006-bichon-archive-feeds-backup-recipe.md)          |
+| 0007 | [Auberge owns folder reconcile; expunge and verification stay external](./adr/0007-auberge-folder-reconcile-scope.md)                |
+| 0008 | [WebDAV role removed in favor of Gokapi](./adr/0008-webdav-removed-in-favor-of-gokapi.md)                                            |
+| 0009 | [Gokapi headless first-deploy via templated config](./adr/0009-gokapi-headless-bootstrap.md)                                         |
+| 0010 | [Baikal Busy Feed — host-sanitized availability, external consumer](./adr/0010-baikal-busy-feed-host-sanitized-external-consumer.md) |
+| 0011 | [Exclude `rust/cleartext-logging` via advanced CodeQL setup](./adr/0011-suppress-codeql-cleartext-logging-on-cli-stdout.md)          |
+
 ## No Docker
 
 **Decision:** Use systemd services instead of containers.
