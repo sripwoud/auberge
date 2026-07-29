@@ -41,17 +41,16 @@ Backups are stored locally in `~/.local/share/auberge/backups/` with the followi
 ```
 backups/
 └── {hostname}/
-    ├── baikal/
-    │   ├── 2026-01-23_14-30-00/
-    │   ├── 2026-01-23_18-45-12/
-    │   └── latest -> 2026-01-23_18-45-12
-    ├── freshrss/
-    ├── gokapi/
-    ├── navidrome/
-    └── calibre/
+    ├── 2026-01-23_14-30-00/
+    │   ├── baikal/
+    │   ├── freshrss/
+    │   └── navidrome/
+    └── 2026-01-23_18-45-12/
+        ├── baikal/
+        └── freshrss/
 ```
 
-Each app has a `latest` symlink pointing to the most recent backup for easy access.
+One directory per run, holding one directory per app backed up in that run. `auberge backup push` uploads a whole timestamped run, and `backup verify` reads the same `{hostname}/{timestamp}` layout back out of the repository.
 
 ## Technical Details
 
@@ -62,7 +61,6 @@ Each app has a `latest` symlink pointing to the most recent backup for easy acce
 3. Data is synced from remote using `rsync` with SSH
 4. Database dumps are downloaded via `scp` and cleaned up on remote
 5. Services are restarted via `systemctl start {service}`
-6. `latest` symlink is updated to point to new backup
 
 ### Restore Process
 
@@ -83,6 +81,7 @@ Local backups can be pushed to an offsite restic repository for disaster recover
 1. Create a local backup with `auberge backup create`
 2. Push it offsite with `auberge backup push`
 3. Apply retention policies with `auberge backup prune` (7 daily, 4 weekly, 12 monthly)
+4. Confirm it landed with `auberge backup verify` — the only step that reads the repository back. See [backup verify](cli-reference/backup/verify.md)
 
 For automated daily backups, use `auberge backup sync` which runs the full pipeline (create → push → prune → cleanup) in one command and removes local staging after a successful push. Prune failures are non-fatal. See [backup sync](cli-reference/backup/sync.md).
 
