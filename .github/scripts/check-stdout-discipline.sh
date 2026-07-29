@@ -25,13 +25,13 @@ readonly PATTERN='\b(println|print)!'
 readonly ALLOWLIST='src/output\.rs:|src/commands/((backup|config_cmd|dns|headscale|host|select)|bichon/reconcile)\.rs:'
 
 self_test() {
-  echo 'println!()' | grep -qE "${PATTERN}" ||
-    {
+  echo 'println!()' | grep -qE "${PATTERN}" \
+    || {
       echo "self-test FAILED: regex did not match println!"
       exit 2
     }
-  echo 'print!()' | grep -qE "${PATTERN}" ||
-    {
+  echo 'print!()' | grep -qE "${PATTERN}" \
+    || {
       echo "self-test FAILED: regex did not match print!"
       exit 2
     }

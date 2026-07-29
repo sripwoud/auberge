@@ -12,7 +12,9 @@ local linters  = new Mapping<String, Step> {
     fix = "dprint fmt"
     stage = "*"
   }
-  
+  ["shellcheck"] = Builtins.shellcheck
+  // shfmt reads .editorconfig for the Google Shell Style Guide settings.
+  ["shfmt"] = Builtins.shfmt
 }
 
 hooks {

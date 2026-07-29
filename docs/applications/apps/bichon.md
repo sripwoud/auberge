@@ -53,4 +53,22 @@ Default credentials: `admin` / `admin@bichon`. Change after first login.
 
 !> Check journal for errors before expunging — do not rely on archive mtime or message count alone. Unticked folders are not archived. Do not automate expunge on a cron.
 
-Reference script: [`examples/bichon-expunge.sh`](https://github.com/sripwoud/auberge/blob/master/examples/bichon-expunge.sh) (prints the expunge command, does not run it).
+**Reference script**: [`examples/bichon-expunge.sh`](https://github.com/sripwoud/auberge/blob/master/examples/bichon-expunge.sh) turns the ordering above into five gates and, once they all pass, executes the expunge.
+
+```bash
+bash examples/bichon-expunge.sh --host <hostname> --account you@example.com
+```
+
+| Gate | Assertion                                                          |
+| ---- | ------------------------------------------------------------------ |
+| 1    | `auberge backup verify --app bichon` exits 0                       |
+| 2    | last `bichon-archive.service` run succeeded, less than 3h ago      |
+| 3    | archived `.eml` count >= IMAP count, scoped to `--folder`          |
+| 4    | summary: exact himalaya commands, message count, snapshot evidence |
+| 5    | operator types the folder name at a prompt                         |
+
+Defaults: `--folder INBOX`, `--window-days 90`, `--archive-path /var/lib/bichon-archive`. On a TTY, a missing `--host` or `--account` is prompted for. Gate 3 also aborts if anything in the folder already carries the `\Deleted` flag, since the expunge would take it along.
+
+Deletion is `himalaya flag add … deleted` followed by `himalaya folder expunge` — messages are removed in place, not moved to Trash, so mailbox quota is actually reclaimed.
+
+!> The expunge needs an interactive TTY. There is no `--yes`/`--force`; `--no-input` and non-TTY stdin run every gate and then refuse to expunge. Per [ADR-0007](https://github.com/sripwoud/auberge/blob/master/meta/adr/0007-bichon-folder-reconcile-scope-and-silent-vs-loud.md) no unattended expunge path exists, and the script is not shipped in the `auberge` binary.
