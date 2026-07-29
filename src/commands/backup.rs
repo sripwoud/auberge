@@ -1,15 +1,17 @@
 use crate::config::Config;
-use crate::hosts::{Host, select_or_arg as hosts_select_or_arg};
+use crate::hosts::{Host, HostManager, select_or_arg as hosts_select_or_arg};
 use crate::output;
 use crate::prompt::confirm;
 use crate::services::backup::executor::RecipeExecutor;
 use crate::services::backup::recipe::{
     assets_playbooks_dir, discover_backuppable_apps, load_app_recipe,
 };
+use crate::services::backup::restic;
 use crate::services::backup::session::{
     BackupSession, CreateOutcome, SessionOpts, restic_prune, restic_push,
 };
 use crate::services::backup::ssh::LiveSshSession;
+use crate::services::backup::verify::{self, MaxAge, Status, Verdict, VerifyRequest};
 use crate::ssh_session::SshSession;
 use chrono::Utc;
 use clap::Subcommand;
@@ -173,6 +175,34 @@ pub enum BackupCommands {
     Prune {
         #[arg(short = 'n', long, help = "Show what would be pruned without removing")]
         dry_run: bool,
+    },
+    #[command(
+        alias = "v",
+        about = "Check the latest offsite snapshot is fresh and holds an app's backup"
+    )]
+    Verify {
+        #[arg(
+            short = 'H',
+            long,
+            help = "Host whose snapshots to check (default: the sole configured host)"
+        )]
+        host: Option<String>,
+        #[arg(short, long, help = "Also assert this app is in the latest snapshot")]
+        app: Option<String>,
+        #[arg(
+            long,
+            default_value = "24h",
+            help = "Freshness threshold as <number><s|m|h|d>"
+        )]
+        max_age: String,
+        #[arg(
+            short = 'o',
+            long,
+            value_enum,
+            default_value = "human",
+            help = "Output format"
+        )]
+        output: OutputFormat,
     },
     #[command(alias = "io", about = "Import OPML file to FreshRSS")]
     ImportOpml {
@@ -1135,6 +1165,141 @@ pub fn run_backup_prune(dry_run: bool) -> Result<()> {
     restic_prune(&restic_repo, &restic_password, dry_run)
 }
 
+pub struct VerifyOptions {
+    pub host: Option<String>,
+    pub app: Option<String>,
+    pub max_age: String,
+    pub format: OutputFormat,
+}
+
+/// Returns the process exit code: 0 verified, 1 a check failed, 2 operational
+/// error. Verify is a gate for destructive downstream work, so the caller must
+/// be able to branch on which of the three happened.
+pub fn run_backup_verify(opts: VerifyOptions) -> i32 {
+    verify_exit_code(verify_and_report(opts))
+}
+
+fn verify_exit_code(result: Result<Status>) -> i32 {
+    match result {
+        Ok(status) => status.exit_code(),
+        Err(e) => {
+            eprintln!("✗ {e:#}");
+            Status::OperationalError.exit_code()
+        }
+    }
+}
+
+fn verify_and_report(opts: VerifyOptions) -> Result<Status> {
+    let max_age = MaxAge::parse(&opts.max_age)?;
+    let (restic_repo, restic_password) = load_restic_config()?;
+    let host = resolve_snapshot_host(opts.host)?;
+
+    let request = VerifyRequest {
+        host: &host,
+        app: opts.app.as_deref(),
+        max_age: &max_age,
+        now: Utc::now(),
+    };
+
+    let verdict = match restic::snapshots_json(&restic_repo, &restic_password) {
+        Ok(snapshots_json) => verify::verdict(&request, &snapshots_json, |snapshot, path| {
+            restic::snapshot_contains_path(&restic_repo, &restic_password, &snapshot.id, path)
+        }),
+        Err(e) => Verdict::unreachable(&format!("{e:#}")),
+    };
+
+    match opts.format {
+        OutputFormat::Human => print_verify_checklist(&verdict),
+        OutputFormat::Json => print_verify_json(&request, &verdict)?,
+    }
+
+    for remediation in verdict
+        .checks
+        .iter()
+        .filter_map(|check| check.remediation.as_deref())
+    {
+        eprintln!("{}", remediation);
+    }
+
+    Ok(verdict.status)
+}
+
+fn resolve_snapshot_host(host_arg: Option<String>) -> Result<String> {
+    match host_arg {
+        Some(name) => Ok(name),
+        None => sole_configured_host(&HostManager::load_hosts()?),
+    }
+}
+
+/// Verify is a scripted gate, so it never prompts: a single configured Host is
+/// implied, anything else makes `--host` mandatory.
+fn sole_configured_host(hosts: &[Host]) -> Result<String> {
+    match hosts {
+        [only] => Ok(only.name.clone()),
+        [] => eyre::bail!(
+            "No hosts configured. Pass --host <name> or add one with `auberge host add`"
+        ),
+        many => {
+            let names: Vec<&str> = many.iter().map(|h| h.name.as_str()).collect();
+            eyre::bail!(
+                "{} hosts configured; pass --host <{}>",
+                many.len(),
+                names.join("|")
+            )
+        }
+    }
+}
+
+fn print_verify_checklist(verdict: &Verdict) {
+    for check in &verdict.checks {
+        println!("{} {}", if check.passed { "✓" } else { "✗" }, check.message);
+    }
+    println!(
+        "{}",
+        match verdict.is_verified() {
+            true => "verified",
+            false => "not verified",
+        }
+    );
+}
+
+fn print_verify_json(request: &VerifyRequest<'_>, verdict: &Verdict) -> Result<()> {
+    let checks: Vec<_> = verdict
+        .checks
+        .iter()
+        .map(|check| {
+            serde_json::json!({
+                "name": check.name,
+                "passed": check.passed,
+                "message": check.message,
+                "remediation": check.remediation,
+            })
+        })
+        .collect();
+
+    let snapshot = verdict.snapshot.as_ref().map(|snapshot| {
+        serde_json::json!({
+            "id": snapshot.id,
+            "short_id": snapshot.short_id,
+            "time": snapshot.time.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "age_seconds": snapshot.age_seconds,
+        })
+    });
+
+    let json = serde_json::to_string_pretty(&serde_json::json!({
+        "verified": verdict.is_verified(),
+        "status": verdict.status.as_str(),
+        "host": request.host,
+        "app": request.app,
+        "max_age": request.max_age.label(),
+        "snapshot": snapshot,
+        "checks": checks,
+    }))?;
+
+    println!("{}", json);
+    Ok(())
+}
+
 fn resolve_backup_dir(
     backup_root: &Path,
     host_filter: Option<&str>,
@@ -1447,6 +1612,56 @@ mod tests {
     #[test]
     fn test_prune_variant_exists() {
         let _prune = BackupCommands::Prune { dry_run: true };
+    }
+
+    #[test]
+    fn test_verify_variant_exists() {
+        let _verify = BackupCommands::Verify {
+            host: None,
+            app: Some("bichon".to_string()),
+            max_age: "24h".to_string(),
+            output: OutputFormat::Human,
+        };
+    }
+
+    #[test]
+    fn sole_configured_host_is_implied() {
+        let hosts = vec![test_host()];
+        assert_eq!(sole_configured_host(&hosts).unwrap(), "test");
+    }
+
+    #[test]
+    fn sole_configured_host_errors_without_hosts() {
+        let err = sole_configured_host(&[]).unwrap_err().to_string();
+        assert!(err.contains("No hosts configured"), "{err}");
+    }
+
+    #[test]
+    fn sole_configured_host_errors_with_several_hosts() {
+        let second = Host {
+            name: "other".to_string(),
+            ..test_host()
+        };
+        let err = sole_configured_host(&[test_host(), second])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("2 hosts configured"), "{err}");
+        assert!(err.contains("--host <test|other>"), "{err}");
+    }
+
+    #[test]
+    fn verify_exit_code_maps_each_status() {
+        assert_eq!(verify_exit_code(Ok(Status::Verified)), 0);
+        assert_eq!(verify_exit_code(Ok(Status::CheckFailed)), 1);
+        assert_eq!(verify_exit_code(Ok(Status::OperationalError)), 2);
+    }
+
+    #[test]
+    fn verify_exit_code_treats_setup_errors_as_operational() {
+        assert_eq!(
+            verify_exit_code(Err(eyre::eyre!("restic_password missing"))),
+            2
+        );
     }
 
     #[test]

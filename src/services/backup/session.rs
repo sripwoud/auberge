@@ -1,14 +1,13 @@
 use crate::output;
 use crate::playbook_meta::BackupRecipe;
 use crate::services::backup::executor::RecipeExecutor;
-use crate::services::backup::restic::{ResticMessage, parse_restic_message};
+use crate::services::backup::restic::{self, ResticMessage, parse_restic_message};
 use crate::services::backup::ssh::SshSession;
 use crate::services::progress::{Progress, TerminalProgress};
 use eyre::{Context, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 #[derive(Debug, Clone)]
 pub struct SessionOpts {
@@ -175,12 +174,9 @@ pub fn restic_push(
     output::info(&format!("Pushing {} to restic", backup_dir.display()));
 
     let mut progress = TerminalProgress::new("Checking restic repository");
-    let snapshots_check = Command::new("restic")
+    let snapshots_check = restic::command(restic_repo, restic_password)
         .arg("snapshots")
         .arg("--json")
-        .env("RESTIC_REPOSITORY", restic_repo)
-        .env("RESTIC_PASSWORD", restic_password)
-        .env_remove("RESTIC_PASSWORD_COMMAND")
         .output();
 
     let needs_init = match snapshots_check {
@@ -204,11 +200,8 @@ pub fn restic_push(
 
     if needs_init {
         progress.task_started("Initializing restic repository");
-        let init_output = Command::new("restic")
+        let init_output = restic::command(restic_repo, restic_password)
             .arg("init")
-            .env("RESTIC_REPOSITORY", restic_repo)
-            .env("RESTIC_PASSWORD", restic_password)
-            .env_remove("RESTIC_PASSWORD_COMMAND")
             .output()
             .wrap_err("Failed to initialize restic repository")?;
         let stderr_text = String::from_utf8_lossy(&init_output.stderr);
@@ -230,11 +223,7 @@ pub fn restic_push(
 
     let result = output::stream_command_stdout(
         "restic",
-        Command::new("restic")
-            .args(backup_args(backup_dir, host))
-            .env("RESTIC_REPOSITORY", restic_repo)
-            .env("RESTIC_PASSWORD", restic_password)
-            .env_remove("RESTIC_PASSWORD_COMMAND"),
+        restic::command(restic_repo, restic_password).args(backup_args(backup_dir, host)),
         |line| match parse_restic_message(line) {
             Some(ResticMessage::Status(s)) => {
                 if let (Some(total), Some(done)) = (s.total_bytes, s.bytes_done) {
@@ -248,7 +237,8 @@ pub fn restic_push(
             Some(ResticMessage::Summary(s)) => {
                 snapshot_id = Some(s.snapshot_id);
             }
-            None => {}
+            // restic reports failures on stderr, surfaced via `result.status` below.
+            Some(ResticMessage::ExitError(_)) | None => {}
         },
     )
     .wrap_err("Failed to run restic backup")?;
@@ -274,11 +264,8 @@ pub fn restic_push(
 pub fn restic_prune(restic_repo: &str, restic_password: &str, dry_run: bool) -> Result<()> {
     let mut progress = TerminalProgress::new("Pruning restic snapshots");
 
-    let mut cmd = Command::new("restic");
-    cmd.args(forget_args(dry_run))
-        .env("RESTIC_REPOSITORY", restic_repo)
-        .env("RESTIC_PASSWORD", restic_password)
-        .env_remove("RESTIC_PASSWORD_COMMAND");
+    let mut cmd = restic::command(restic_repo, restic_password);
+    cmd.args(forget_args(dry_run));
 
     let prune_output = cmd.output().wrap_err("Failed to run restic forget")?;
 

@@ -14,8 +14,9 @@ mod ssh_session;
 use clap::{Parser, Subcommand};
 use commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ansible_run};
 use commands::backup::{
-    BackupCommands, RestoreOptions, run_backup_create, run_backup_list, run_backup_prune,
-    run_backup_push, run_backup_restore, run_backup_sync, run_export_opml, run_import_opml,
+    BackupCommands, RestoreOptions, VerifyOptions, run_backup_create, run_backup_list,
+    run_backup_prune, run_backup_push, run_backup_restore, run_backup_sync, run_backup_verify,
+    run_export_opml, run_import_opml,
 };
 use commands::bichon::{BichonCommands, run_bichon_command};
 use commands::config_cmd::{
@@ -231,6 +232,17 @@ async fn main() -> Result<()> {
                 signal::with_ctrlc(|| run_backup_push(host, backup_id))
             }
             BackupCommands::Prune { dry_run } => signal::with_ctrlc(|| run_backup_prune(dry_run)),
+            BackupCommands::Verify {
+                host,
+                app,
+                max_age,
+                output,
+            } => std::process::exit(run_backup_verify(VerifyOptions {
+                host,
+                app,
+                max_age,
+                format: output,
+            })),
             BackupCommands::ExportOpml {
                 host,
                 output,

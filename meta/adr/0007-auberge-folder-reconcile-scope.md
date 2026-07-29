@@ -10,7 +10,7 @@ Auberge ships `auberge bichon reconcile-folders --host <h>` — an idempotent CL
 
 Folder identity is matched primarily by RFC 6154 SPECIAL-USE attributes (`AttributeEnum::{Junk, Trash}` on Bichon's `MailBox` struct — language-portable, hierarchy-portable across `[Gmail]/`, `INBOX.`, etc.), with case-insensitive name matching as fallback for legacy IMAP servers that don't advertise SPECIAL-USE. The default exclusion set is `{Junk/Spam, Trash}`. An operator-supplied per-account additive override (`extra_excluded_folders`) is supported in `config.toml`; subtracting from the default exclusions (e.g. archiving Trash anyway) requires a separate explicit flag and is deliberately a foot-gun.
 
-Auberge **does not** ship tooling for archive verification (coverage-check) or **Upstream Mailbox** expunge. The Email Archive is exposed as a primitive for operators to compose with external tools (`himalaya`, `imap-tools`, Bichon's UI). The `bichon.md` documentation captures the recommended archived-then-expunge workflow, including ordering invariants and a reference shell script at `examples/bichon-expunge.sh`.
+Auberge **does not** ship tooling for archive verification (coverage-check) or **Upstream Mailbox** expunge. (Amended 2026-07-29: verifying auberge's _own_ offsite snapshots is in scope — see below.) The Email Archive is exposed as a primitive for operators to compose with external tools (`himalaya`, `imap-tools`, Bichon's UI). The `bichon.md` documentation captures the recommended archived-then-expunge workflow, including ordering invariants and a reference shell script at `examples/bichon-expunge.sh`.
 
 ## Why
 
@@ -53,6 +53,35 @@ The deciding principle is **asymmetric automation along the silent-vs-loud failu
 - Operator must remember to invoke `reconcile-folders` after creating an account in Bichon's UI. Mitigated by `bichon.md` docs and (likely) a sentence in the `auberge ansible run --tags bichon` post-task output ("Reminder: run `auberge bichon reconcile-folders --apply` if you've added accounts since the last reconcile.").
 - Folder _drift_ (operator creates a new IMAP folder, never re-runs reconcile, new folder isn't in `sync_folders`) is silent until next reconcile. Acceptable: drift in this direction means the new folder isn't archived (loud-ish — the operator notices missing mail in search) rather than the wrong folder _is_ archived (silent, append-only). Direction of failure matters.
 - Expunge tooling lives outside auberge — operators who want one-command expunge must either build a wrapper script or accept the two-tool workflow (reconcile + himalaya). Documented as the recommended pattern.
+
+## Amendment (2026-07-29): offsite snapshot verification moves into the binary
+
+`auberge backup verify [-H <host>] [-a <app>] [--max-age <duration>]` ships as a read-only
+command: it asserts that the newest restic snapshot for a Host exists, contains an App's backup,
+and is younger than a freshness threshold. Exit `0` verified, `1` a check failed, `2` operational
+error, so it composes as a gate in a script.
+
+This does **not** reopen alternative (γ). Coverage-check compares the **Email Archive** against the
+**Upstream Mailbox** — two-sided, needs IMAP credentials auberge deliberately doesn't hold, and its
+failure mode is loud. That stays out. `backup verify` is one-sided and reads only state auberge
+itself produced: its own snapshots, in its own repository, under its own
+`…/backups/<host>/<timestamp>` layout. The sibling ADR-0007 draws the boundary at "archive is
+current and **backup is current**"; verify makes the second clause executable instead of leaving it
+as prose an operator re-derives with `restic snapshots --json | jq` each time.
+
+What changed since (γ) was rejected is the argument, not the convenience. (γ) was refused because
+"auberge has unique knowledge" collapsed — every path was filesystem-readable. That still holds for
+the archive. It does not hold for the restic repository: the repository URL and password live in
+`config.toml` (both supporting `!command` indirection), the host↔snapshot mapping is auberge's own
+path convention, and `RESTIC_PASSWORD_COMMAND` must be unset or restic silently resolves the wrong
+password. An external script must reimplement all four to be correct, and a verifier that is
+_subtly_ wrong is not loud — it prints a green check against the wrong snapshot. That inverts the
+silent-vs-loud test that decided this ADR.
+
+Scope is held down by construction: no repository writes, no IMAP, no expunge, no new config keys,
+no new dependencies. A snapshot is attributed to a Host by the tag `backup push` writes (#371) —
+the same tag `backup prune` groups retention by — with the `…/backups/<host>/<timestamp>` path
+covering snapshots pushed before tagging landed.
 
 ## References
 

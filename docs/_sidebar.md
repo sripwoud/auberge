@@ -27,6 +27,7 @@
     - [push](cli-reference/backup/push.md)
     - [prune](cli-reference/backup/prune.md)
     - [sync](cli-reference/backup/sync.md)
+    - [verify](cli-reference/backup/verify.md)
     - [export-opml](cli-reference/backup/export-opml.md)
     - [import-opml](cli-reference/backup/import-opml.md)
   - DNS

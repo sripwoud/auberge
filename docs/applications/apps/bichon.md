@@ -48,7 +48,11 @@ Default credentials: `admin` / `admin@bichon`. Change after first login.
 
 1. Folders ticked in Bichon UI, `bichon.service` syncing.
 2. `bichon-archive.timer` ran successfully — check `journalctl -u bichon-archive.service`.
-3. `auberge backup sync` completed — archive is off-host.
+3. Archive is off-host — `auberge backup sync`, then confirm it landed:
+   ```bash
+   auberge backup verify --app bichon
+   ```
+   Exit `0` means the newest offsite snapshot contains the archive and is younger than 24h. Anything else: stop, do not expunge. See [backup verify](cli-reference/backup/verify.md).
 4. Operator expunges manually (e.g. `himalaya`).
 
 !> Check journal for errors before expunging — do not rely on archive mtime or message count alone. Unticked folders are not archived. Do not automate expunge on a cron.
