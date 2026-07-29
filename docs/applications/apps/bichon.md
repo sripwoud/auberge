@@ -71,7 +71,13 @@ bash examples/bichon-expunge.sh --host <hostname> --account you@example.com
 | 4    | summary: exact himalaya commands, message count, snapshot evidence |
 | 5    | operator types the folder name at a prompt                         |
 
-Defaults: `--folder INBOX`, `--window-days 90`, `--archive-path /var/lib/bichon-archive`. On a TTY, a missing `--host` or `--account` is prompted for. Gate 3 also aborts if anything in the folder already carries the `\Deleted` flag, since the expunge would take it along.
+Defaults: `--folder INBOX`, `--window-days 90`, `--archive-path /var/lib/bichon-archive`. On a TTY, a missing `--host` is chosen from `auberge host list` and a missing `--account` from `himalaya account list`. Gate 3 also aborts if anything in the folder already carries the `\Deleted` flag, since the expunge would take it along.
+
+A preflight runs before the gates, resolving one value at a time: tools on `PATH` (all missing ones reported at once), `auberge backup verify` present, himalaya holding at least one configured account, ssh reachability, then the Email Archive root.
+
+`--account` must be the mailbox email address. himalaya account names are arbitrary labels, but bichon keys archive directories by email (`sanitize_email` in `bichon-archive.sh.j2`) and the script passes one value to both — so the himalaya account has to be named after the address. The menu offers only accounts present on both sides; a mismatched `--account` is rejected by name before gate 1.
+
+!> The ssh user must be in the `bichon` group. The archive is `0750 bichon:bichon` and gate 3 counts `.eml` files without sudo, so without it the gate cannot read anything. Grant with `ssh <host> 'sudo usermod -aG bichon $(whoami)'`, then reconnect.
 
 Deletion is `himalaya flag add … deleted` followed by `himalaya folder expunge` — messages are removed in place, not moved to Trash, so mailbox quota is actually reclaimed.
 

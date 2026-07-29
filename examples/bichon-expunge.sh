@@ -23,9 +23,15 @@
 #
 # Prerequisites:
 #   - auberge with the `backup verify` subcommand (>= the release carrying it)
-#   - himalaya  (https://github.com/pimalaya/himalaya — Rust, project ethos)
+#   - himalaya  (https://github.com/pimalaya/himalaya — Rust, project ethos),
+#     configured, with an account named after the mailbox email address:
+#     bichon keys the Email Archive by email (see sanitize_email in
+#     ansible/roles/bichon/templates/bichon-archive.sh.j2), and this script
+#     passes one value to both himalaya --account and the archive path
 #   - jq
 #   - key-based ssh access to the Bichon Host, with journal/systemctl read
+#   - that ssh user in the `bichon` group: the Email Archive is 0750
+#     bichon:bichon and gate 3 counts files inside it without sudo
 #
 # Exit codes:
 #   0 — expunged, or (non-interactive) all gates passed and expunge skipped
@@ -54,6 +60,15 @@ window_days="${DEFAULT_WINDOW_DAYS}"
 archive_path="${DEFAULT_ARCHIVE_PATH}"
 no_input=false
 
+# Captured by check_tools, reused by the --account menu so himalaya is only
+# asked once.
+HIMALAYA_ACCOUNTS_JSON=''
+
+# Newline-separated Email Archive directory names, captured by
+# check_archive_root so one ssh round trip serves the menu and the per-account
+# check that follows it.
+ARCHIVE_ACCOUNTS=''
+
 # Gate findings, threaded from the gate that computes them to the summary and
 # the expunge.
 BACKUP_EVIDENCE=''
@@ -69,8 +84,12 @@ Usage: ${PROGRAM_NAME} [options]
 
 Options:
   -H, --host HOST            ssh target of the Bichon Host, also passed to
-                             \`auberge backup verify --host\` (prompted if a TTY)
-  -a, --account ADDRESS      himalaya account to expunge from (prompted if a TTY)
+                             \`auberge backup verify --host\` (on a TTY, chosen
+                             from \`auberge host list\`)
+  -a, --account ADDRESS      himalaya account to expunge from; must be the
+                             mailbox email address, since it also names the
+                             Email Archive directory (on a TTY, chosen from
+                             \`himalaya account list\`)
   -f, --folder NAME          folder to expunge (default: ${DEFAULT_FOLDER})
   -w, --window-days DAYS     expunge mail older than DAYS (default: ${DEFAULT_WINDOW_DAYS})
       --archive-path PATH    Email Archive root on the Host
@@ -153,38 +172,116 @@ parse_args() {
   done
 }
 
-# Read one value from the operator. Prompt on stderr so stdout stays clean.
-prompt_for() {
-  local label="$1" value
-  printf '%s: ' "${label}" >&2
-  IFS= read -r value || die 2 "stdin closed while reading ${label}"
-  printf '%s' "${value}"
+# Present a numbered menu and echo the chosen entry. `select` writes both the
+# menu and PS3 to stderr, so command substitution captures the choice alone and
+# stdout stays reserved for the outcome line.
+choose_from() {
+  local label="$1"
+  shift
+  # `select` over an empty list never enters its body and never reads stdin, so
+  # without this the post-loop check would report an empty menu as EOF.
+  (($# > 0)) || die 2 "nothing to choose from for ${label}"
+
+  local PS3="${label}: " choice=''
+  note ''
+  select choice in "$@"; do
+    [[ -n "${choice}" ]] && break
+    note 'enter the number next to your choice'
+  done
+  [[ -n "${choice}" ]] || die 2 "stdin closed while choosing ${label}"
+  printf '%s' "${choice}"
 }
 
-resolve_missing_flags() {
-  if [[ -z "${host}" ]]; then
-    interactive || die 2 'missing --host' \
-      'a non-interactive run must pass every value as a flag'
-    host=$(prompt_for 'Bichon Host (ssh target)')
-  fi
+# `auberge host list` is the same registry `auberge backup verify --host`
+# resolves against, so a name picked here is guaranteed to mean something to
+# gate 1. Whether it is also an ssh target is what check_host_reachable proves.
+choose_host() {
+  local hosts_json host_names names=()
+  hosts_json=$(auberge host list --output json) \
+    || die 2 'auberge host list failed' \
+      'pass the ssh target directly: --host HOST'
 
-  if [[ -z "${account}" ]]; then
-    interactive || die 2 'missing --account' \
-      'a non-interactive run must pass every value as a flag'
-    account=$(prompt_for 'himalaya account (email address)')
-  fi
+  # jq is read for its exit status here rather than through mapfile: mapfile
+  # reports only its own success, so unparseable JSON would reach the operator
+  # as "no configured hosts" instead of as a parse failure.
+  host_names=$(printf '%s' "${hosts_json}" | jq -r '.[].name') \
+    || die 2 'auberge host list returned JSON this script cannot read' \
+      'pass the ssh target directly: --host HOST'
+
+  [[ -n "${host_names}" ]] \
+    || die 2 'auberge has no configured hosts to choose from' \
+      'add one: auberge host add' \
+      'or pass the ssh target directly: --host HOST'
+
+  mapfile -t names <<<"${host_names}"
+  choose_from 'Bichon Host' "${names[@]}"
 }
 
-validate_flags() {
+# bichon names each Email Archive directory after the mailbox email address,
+# with '/' replaced. Keep in step with sanitize_email in
+# ansible/roles/bichon/templates/bichon-archive.sh.j2.
+archive_dir_for() {
+  printf '%s' "${1//\//_}"
+}
+
+# Offer only accounts that himalaya knows AND that have an Email Archive
+# directory. himalaya account names are arbitrary labels, so nothing forces one
+# to equal the mailbox email that names the archive directory — but this script
+# passes a single value to both. Intersecting here makes the mismatch
+# unselectable instead of surfacing it as a phantom coverage gap in gate 3.
+choose_account() {
+  local account_names name candidates=()
+  # Same reason as choose_host: a `while read` fed by a process substitution
+  # cannot see jq's exit status either.
+  account_names=$(printf '%s' "${HIMALAYA_ACCOUNTS_JSON}" | jq -r '.[].name') \
+    || die 2 'himalaya account list returned JSON this script cannot read'
+
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+    grep -qxF -- "$(archive_dir_for "${name}")" <<<"${ARCHIVE_ACCOUNTS}" \
+      && candidates+=("${name}")
+  done <<<"${account_names}"
+
+  ((${#candidates[@]} > 0)) \
+    || die 2 "no himalaya account matches an Email Archive directory on ${host}" \
+      "himalaya accounts: $(printf '%s' "${account_names}" | paste -sd' ' -)" \
+      "archive directories: $(printf '%s' "${ARCHIVE_ACCOUNTS}" | paste -sd' ' -)" \
+      'name the himalaya account after the mailbox email address: bichon keys' \
+      'the archive by email, and --account feeds both'
+
+  choose_from 'himalaya account' "${candidates[@]}"
+}
+
+resolve_host() {
+  [[ -n "${host}" ]] && return 0
+  interactive || die 2 'missing --host' \
+    'a non-interactive run must pass every value as a flag'
+  host=$(choose_host)
+}
+
+resolve_account() {
+  [[ -n "${account}" ]] && return 0
+  interactive || die 2 'missing --account' \
+    'a non-interactive run must pass every value as a flag'
+  account=$(choose_account)
+}
+
+validate_host() {
   # A host starting with '-' would be parsed by ssh as an option, so the
   # character class is a guard, not cosmetics.
   [[ "${host}" =~ ^[A-Za-z0-9][A-Za-z0-9._@-]*$ ]] \
     || die 2 "not a usable ssh target: ${host}" \
       'expected a hostname, ssh_config alias, or user@host'
+}
 
+validate_account() {
   [[ "${account}" == *[![:space:]]* ]] \
     || die 2 'account must not be empty'
+}
 
+# The options that depend on neither the Host nor the account, so they can
+# reject a typo before anything reaches the network.
+validate_options() {
   [[ "${folder}" == *[![:space:]]* ]] \
     || die 2 'folder must not be empty'
 
@@ -200,15 +297,21 @@ validate_flags() {
     || die 2 "archive-path must be absolute, got: ${archive_path}"
 }
 
-check_prerequisites() {
-  step 'Checking prerequisites…'
+# Everything that can be checked without knowing the Host or the account. Runs
+# before any prompting, so a missing tool costs one line instead of two typed
+# answers and two network round trips.
+check_tools() {
+  step 'Checking tools…'
 
-  local tool
+  # Report every missing tool at once; discovering them one re-run at a time is
+  # the failure mode this ordering exists to remove.
+  local tool missing=()
   for tool in auberge himalaya jq ssh; do
-    command -v "${tool}" >/dev/null 2>&1 \
-      || die 2 "${tool} is not on PATH" \
-        'install it before running this script'
+    command -v "${tool}" >/dev/null 2>&1 || missing+=("${tool}")
   done
+  ((${#missing[@]} == 0)) \
+    || die 2 "not on PATH: ${missing[*]}" \
+      'see the Prerequisites block at the top of this script'
 
   # Gate 1 needs `auberge backup verify`. clap exits non-zero on an unknown
   # subcommand, which is exactly the signal for "your auberge is too old".
@@ -218,12 +321,86 @@ check_prerequisites() {
       'gate 1 asserts the archive reached the off-host restic repository;' \
       'there is no weaker substitute for it'
 
+  # `account list` reads the config only — no IMAP connection — so this is a
+  # cheap proof that gate 3 and the expunge will have a usable himalaya. stdin
+  # is /dev/null because an unconfigured himalaya otherwise launches its
+  # interactive setup wizard and takes over the terminal mid-preflight.
+  HIMALAYA_ACCOUNTS_JSON=$(himalaya --output json account list </dev/null 2>/dev/null) \
+    || die 2 'himalaya is installed but has no usable configuration' \
+      'expected accounts in ~/.config/himalaya/config.toml, or wherever' \
+      'HIMALAYA_CONFIG points' \
+      'create one: himalaya account configure' \
+      'gate 3 and the expunge both read the Upstream Mailbox through himalaya'
+
+  note 'auberge, himalaya, jq, ssh ok'
+}
+
+check_host_reachable() {
+  step "Checking ssh to ${host}…"
+
   ssh "${SSH_OPTS[@]}" "${host}" true 2>/dev/null \
     || die 2 "cannot ssh to ${host}" \
       "check: ssh ${host}" \
       'key-based auth is required (this script runs ssh in BatchMode)'
 
-  note 'auberge, himalaya, jq, ssh ok'
+  note "ssh to ${host} ok"
+}
+
+# Gate 3 counts archived .eml files by reading the Email Archive over the same
+# ssh connection, and it suppresses find's stderr. An unreadable archive root
+# therefore produces a bare non-zero exit with no explanation, so prove the
+# directory is readable here, where the reason can still be named.
+check_archive_root() {
+  step "Checking the Email Archive on ${host}…"
+
+  local rc=0
+  # shellcheck disable=SC2029  # intentional: %q-quote the path locally, then expand into ssh cmd
+  ARCHIVE_ACCOUNTS=$(
+    ssh "${SSH_OPTS[@]}" "${host}" \
+      "bash -s -- $(printf '%q' "${archive_path}")" <<'REMOTE'
+set -euo pipefail
+archive_path=$1
+[ -d "$archive_path" ] || exit 3
+{ [ -r "$archive_path" ] && [ -x "$archive_path" ]; } || exit 4
+find "$archive_path" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+REMOTE
+  ) || rc=$?
+
+  case "${rc}" in
+    0) ;;
+    3)
+      die 2 "no Email Archive at ${archive_path} on ${host}" \
+        "seed it: ssh ${host} sudo systemctl start bichon-archive.service" \
+        'or point --archive-path at the right root'
+      ;;
+    4)
+      die 2 "cannot read ${archive_path} on ${host}" \
+        'bichon creates the archive 0750 bichon:bichon, so the ssh user has to' \
+        'be in that group to count anything in it' \
+        "inspect: ssh ${host} stat -c '%U:%G %a' ${archive_path}" \
+        "grant: ssh ${host} 'sudo usermod -aG bichon \$(whoami)', then reconnect"
+      ;;
+    *)
+      die 2 "could not inspect ${archive_path} on ${host}"
+      ;;
+  esac
+
+  [[ -n "${ARCHIVE_ACCOUNTS}" ]] \
+    || die 2 "the Email Archive at ${archive_path} on ${host} holds no accounts" \
+      "run the archive: ssh ${host} sudo systemctl start bichon-archive.service"
+
+  note "archive accounts: $(printf '%s' "${ARCHIVE_ACCOUNTS}" | paste -sd' ' -)"
+}
+
+# An --account passed as a flag skips the intersection the menu applies, so
+# check the same coupling here.
+check_account_archive() {
+  grep -qxF -- "$(archive_dir_for "${account}")" <<<"${ARCHIVE_ACCOUNTS}" \
+    || die 2 "no Email Archive directory for ${account} on ${host}" \
+      "expected: ${archive_path}/$(archive_dir_for "${account}")" \
+      "found: $(printf '%s' "${ARCHIVE_ACCOUNTS}" | paste -sd' ' -)" \
+      '--account must be the mailbox email address, since bichon keys the' \
+      'archive by email, and it must also name a himalaya account'
 }
 
 # Guard a value that crossed back from the Host before it reaches (( )).
@@ -362,9 +539,8 @@ gate_folder_coverage() {
   # the <id>.meta.json sidecar. The IMAP query is folder-scoped, so the archive
   # count must be too — counting account-wide .eml files would over-count and
   # pass this gate while the target folder is only partially archived.
-  local safe_account archive_dir eml_count
-  safe_account=$(printf '%s' "${account}" | tr '/' '_')
-  archive_dir="${archive_path}/${safe_account}"
+  local archive_dir eml_count
+  archive_dir="${archive_path}/$(archive_dir_for "${account}")"
 
   # Remote args go through printf %q so ${folder} / ${archive_dir} cannot break
   # out of argument quoting and execute on the Host. The heredoc body is
@@ -463,10 +639,21 @@ expunge() {
 
 main() {
   parse_args "$@"
-  resolve_missing_flags
-  validate_flags
 
-  check_prerequisites
+  # Resolve one value at a time, cheapest check first, and validate each before
+  # it is used to reach the next. Nothing prompts until the tools behind the
+  # menus are known to work, and the account menu can only be built once the
+  # Host has answered with its Email Archive contents.
+  validate_options
+  check_tools
+  resolve_host
+  validate_host
+  check_host_reachable
+  check_archive_root
+  resolve_account
+  validate_account
+  check_account_archive
+
   gate_backup_verified
   gate_archive_fresh
   gate_folder_coverage
