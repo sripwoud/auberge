@@ -44,6 +44,23 @@ Default credentials: `admin` / `admin@bichon`. Change after first login.
 
 **Backup**: `auberge backup create --apps bichon` rsyncs `/var/lib/bichon-archive` (not the internal store). The timer must have run at least once before the first backup. See [ADR-0006](https://github.com/sripwoud/auberge/blob/master/meta/adr/0006-bichon-archive-feeds-backup-recipe.md).
 
+The archive holds one `.eml` per message (byte-exact), a `.meta.json` sidecar recording its folder, and one `tags.json` per account mapping RFC 5322 `Message-ID` to tags. `tags.json` is rewritten in full on every archive run — tags are mutable, so they are snapshotted rather than captured once. Sidecars written before [ADR-0012](https://github.com/sripwoud/auberge/blob/master/meta/adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md) also carry an inert `tags` field that nothing reads.
+
+**Restore ordering** (do not skip steps):
+
+1. `auberge deploy bichon`, then add the account via **Accounts → Add account** — restore does not create accounts.
+2. Let folders sync, then reconcile: `auberge bichon reconcile-folders --host <hostname> --apply`. Bichon only imports into folders it already knows.
+3. Restore `/var/lib/bichon-archive` from restic if it is not still on the Host.
+4. Run [`examples/bichon-restore.sh`](https://github.com/sripwoud/auberge/blob/master/examples/bichon-restore.sh):
+   ```bash
+   BICHON_API_TOKEN=… bash examples/bichon-restore.sh \
+     --host http://127.0.0.1:15630 --account you@example.com
+   ```
+
+The script imports every `.eml` into the folder its sidecar records, then replays `tags.json` onto the imported messages with `action: Add`, so re-running the tag replay never removes anything. `--dry-run` prints the folder and tag-set plan without touching the API. It reports `imported / tagged / skipped / failed` counts and exits non-zero on any failure.
+
+!> Re-running a completed restore duplicates messages — Bichon's import mints a new envelope id per message. And messages that arrived without a `Message-ID` header carry a synthetic one that does not survive re-import: their tags are logged and counted as skipped, the bodies restore fine.
+
 **Archived-then-expunge ordering** (do not skip steps):
 
 1. Folders ticked in Bichon UI, `bichon.service` syncing.
