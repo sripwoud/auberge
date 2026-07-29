@@ -34,12 +34,15 @@ jobs:
             [tasks]
             "check-format" = { run = "dprint check --excludes mise.toml" }
             "check-lint" = { run = "ansible-lint", dir = "ansible" }
+            "check-shell" = { run = ["shellcheck $(git ls-files '*.sh')", "shfmt -d --apply-ignore $(git ls-files '*.sh')"] }
             "check" = { depends = "check-*" }
             [tools]
             dprint = "latest"
             pipx = "latest"
             "pipx:ansible-core" = "latest"
             "pipx:ansible-lint" = "latest"
+            shellcheck = "latest"
+            shfmt = "latest"
       - run: mise settings experimental=true
 
       - name: Install Ansible collections with retry

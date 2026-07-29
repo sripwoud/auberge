@@ -27,6 +27,13 @@ quiet = true
 run = "cargo clippy"
 quiet = true
 
+[tasks.lint-shell]
+run = [
+  "shellcheck $(git ls-files '*.sh')",
+  "shfmt -d --apply-ignore $(git ls-files '*.sh')",
+]
+quiet = true
+
 [tasks.lint]
 alias = "l"
 depends = "lint-*"
@@ -49,6 +56,8 @@ ansible = "latest"
 "pipx:ansible-dev-tools" = "latest"
 "pipx:ansible-lint" = "latest"
 rust = "latest"
+shellcheck = "latest"
+shfmt = "latest"
 "cargo:cargo-nextest" = "latest"
 "npm:docsify-cli" = "latest"
 

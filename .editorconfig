@@ -1,0 +1,9 @@
+root = true
+
+# Google Shell Style Guide, as shfmt reads it: 2-space indent, indented switch
+# cases, binary operators starting the continuation line.
+[*.sh]
+indent_style = space
+indent_size = 2
+switch_case_indent = true
+binary_next_line = true
