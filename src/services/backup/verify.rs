@@ -188,12 +188,17 @@ pub struct VerifyRequest<'a> {
 /// Fail-fast checklist: snapshot list readable, a snapshot exists for the host,
 /// it contains the app (only with `app`), and it is younger than `max_age`.
 ///
-/// `contains_app` receives the resolved snapshot and the app path to look for;
-/// it is the only step that needs a second restic call.
+/// Without `app` the verdict is about the newest snapshot for the host. With
+/// `app` it is about the newest snapshot that holds the app, which a partial
+/// sync (`backup sync --apps X`) can leave behind an app-less newer push.
+///
+/// `contains_app` receives a candidate snapshot and the app path to look for;
+/// it is the only step that needs a second restic call, once per candidate
+/// until the app is found.
 pub fn verdict(
     request: &VerifyRequest<'_>,
     snapshots_json: &str,
-    contains_app: impl FnOnce(&Snapshot, &str) -> Result<bool>,
+    mut contains_app: impl FnMut(&Snapshot, &str) -> Result<bool>,
 ) -> Verdict {
     let snapshots: Vec<Snapshot> = match serde_json::from_str(snapshots_json) {
         Ok(snapshots) => snapshots,
@@ -205,7 +210,8 @@ pub fn verdict(
         "repository reachable".to_string(),
     )];
 
-    let Some(host_snapshot) = latest_for_host(&snapshots, request.host) else {
+    let candidates = host_snapshots_newest_first(&snapshots, request.host);
+    let Some(newest) = candidates.first() else {
         checks.push(Check::failed(
             CHECK_SNAPSHOT,
             format!("latest snapshot for {}", request.host),
@@ -214,7 +220,17 @@ pub fn verdict(
         return Verdict::new(Status::CheckFailed, checks, None);
     };
 
-    let snapshot = host_snapshot.snapshot;
+    let held = match request.app {
+        None => Ok(None),
+        Some(app) => newest_holding_app(&candidates, app, &mut contains_app),
+    };
+
+    // Falls back to the newest push whenever the app could not be located, so a
+    // failing checklist still names a snapshot and reports its age.
+    let snapshot = match &held {
+        Ok(Some(held)) => held.snapshot,
+        _ => newest.snapshot,
+    };
     let age = request.now - snapshot.time;
     let summary = Some(SnapshotSummary {
         id: snapshot.id.clone(),
@@ -223,11 +239,16 @@ pub fn verdict(
         age_seconds: age.num_seconds(),
     });
 
+    // Says what the snapshot was selected for: with `--app` it may be older than
+    // the newest push, and a line claiming otherwise would misread as stale.
+    let selected_for = match (request.app, &held) {
+        (Some(app), Ok(Some(_))) => format!("latest snapshot containing {app}"),
+        _ => format!("latest snapshot for {}", request.host),
+    };
     checks.push(Check::passed(
         CHECK_SNAPSHOT,
         format!(
-            "latest snapshot for {}: {} ({}, {} ago)",
-            request.host,
+            "{selected_for}: {} ({}, {} ago)",
             snapshot.short_id(),
             snapshot.time.format("%Y-%m-%dT%H:%MZ"),
             format_age(age),
@@ -235,8 +256,7 @@ pub fn verdict(
     ));
 
     if let Some(app) = request.app {
-        let app_path = format!("{}/{}", host_snapshot.root.trim_end_matches('/'), app);
-        match contains_app(snapshot, &app_path) {
+        match held {
             Err(e) => {
                 checks.push(Check::failed(
                     CHECK_CONTAINS_APP,
@@ -245,7 +265,7 @@ pub fn verdict(
                 ));
                 return Verdict::new(Status::OperationalError, checks, summary);
             }
-            Ok(false) => {
+            Ok(None) => {
                 checks.push(Check::failed(
                     CHECK_CONTAINS_APP,
                     format!("contains {app}"),
@@ -256,9 +276,9 @@ pub fn verdict(
                 ));
                 return Verdict::new(Status::CheckFailed, checks, summary);
             }
-            Ok(true) => checks.push(Check::passed(
+            Ok(Some(held)) => checks.push(Check::passed(
                 CHECK_CONTAINS_APP,
-                format!("contains {app} ({})", abbreviate(&app_path)),
+                format!("contains {app} ({})", abbreviate(&held.app_path)),
             )),
         }
     }
@@ -282,12 +302,42 @@ struct HostSnapshot<'a> {
     root: &'a str,
 }
 
-/// Newest snapshot belonging to `host`.
-fn latest_for_host<'a>(snapshots: &'a [Snapshot], host: &str) -> Option<HostSnapshot<'a>> {
-    snapshots
+/// The snapshot an app was found in, and the path that proved it.
+struct HeldApp<'a> {
+    snapshot: &'a Snapshot,
+    app_path: String,
+}
+
+/// Snapshots belonging to `host`, newest first.
+fn host_snapshots_newest_first<'a>(snapshots: &'a [Snapshot], host: &str) -> Vec<HostSnapshot<'a>> {
+    let mut candidates: Vec<HostSnapshot<'a>> = snapshots
         .iter()
         .filter_map(|snapshot| host_snapshot(snapshot, host))
-        .max_by_key(|candidate| candidate.snapshot.time)
+        .collect();
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.snapshot.time));
+    candidates
+}
+
+/// Newest candidate holding `app`.
+///
+/// The walk stops at the first hit, so a repository synced in full costs one
+/// probe. A probe error aborts it instead of falling through to an older
+/// snapshot: a repository that cannot be read must not read as "app missing".
+fn newest_holding_app<'a>(
+    candidates: &[HostSnapshot<'a>],
+    app: &str,
+    contains_app: &mut impl FnMut(&Snapshot, &str) -> Result<bool>,
+) -> Result<Option<HeldApp<'a>>> {
+    for candidate in candidates {
+        let app_path = format!("{}/{}", candidate.root.trim_end_matches('/'), app);
+        if contains_app(candidate.snapshot, &app_path)? {
+            return Ok(Some(HeldApp {
+                snapshot: candidate.snapshot,
+                app_path,
+            }));
+        }
+    }
+    Ok(None)
 }
 
 /// A snapshot belongs to a Host if `backup push` tagged it with the Host name,
@@ -379,6 +429,7 @@ fn one_line(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
 
     const ROOT: &str = "/home/op/.local/share/auberge/backups";
 
@@ -412,6 +463,40 @@ mod tests {
             "2026-07-29T03:00:00Z",
             &format!("{ROOT}/myserver/2026-07-29_03-00-00"),
         )])
+    }
+
+    /// A full sync at 00:00 holding every app, then a 06:00 partial sync holding
+    /// only `paperless` — the shape that used to false-alarm every other app.
+    fn partial_sync_snapshots() -> String {
+        snapshots_json(&[
+            (
+                "part2222bbbb",
+                "2026-07-29T06:00:00Z",
+                &format!("{ROOT}/myserver/2026-07-29_06-00-00"),
+            ),
+            (
+                "full1111aaaa",
+                "2026-07-29T00:00:00Z",
+                &format!("{ROOT}/myserver/2026-07-29_00-00-00"),
+            ),
+        ])
+    }
+
+    /// Answers the containment probe from the full sync only, and records the
+    /// order candidates were probed in.
+    fn bichon_in_full_sync(
+        probed: &RefCell<Vec<String>>,
+    ) -> impl FnMut(&Snapshot, &str) -> Result<bool> + '_ {
+        |snapshot, path| {
+            probed.borrow_mut().push(snapshot.short_id().to_string());
+            Ok(path == format!("{ROOT}/myserver/2026-07-29_00-00-00/bichon"))
+        }
+    }
+
+    fn newest_for_host<'a>(snapshots: &'a [Snapshot], host: &str) -> Option<HostSnapshot<'a>> {
+        host_snapshots_newest_first(snapshots, host)
+            .into_iter()
+            .next()
     }
 
     fn request<'a>(host: &'a str, app: Option<&'a str>, max_age: &'a MaxAge) -> VerifyRequest<'a> {
@@ -494,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn latest_for_host_picks_the_newest_regardless_of_array_order() {
+    fn host_snapshots_are_ordered_newest_first_regardless_of_array_order() {
         let json = snapshots_json(&[
             (
                 "aaa",
@@ -514,14 +599,23 @@ mod tests {
         ]);
         let snapshots: Vec<Snapshot> = serde_json::from_str(&json).unwrap();
 
-        let latest = latest_for_host(&snapshots, "myserver").unwrap();
+        let candidates = host_snapshots_newest_first(&snapshots, "myserver");
 
-        assert_eq!(latest.snapshot.id, "ccc");
-        assert_eq!(latest.root, format!("{ROOT}/myserver/2026-07-29_03-00-00"));
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|c| c.snapshot.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ccc", "aaa", "bbb"]
+        );
+        assert_eq!(
+            candidates[0].root,
+            format!("{ROOT}/myserver/2026-07-29_03-00-00")
+        );
     }
 
     #[test]
-    fn latest_for_host_ignores_other_hosts() {
+    fn host_snapshots_ignore_other_hosts() {
         let json = snapshots_json(&[
             (
                 "aaa",
@@ -537,14 +631,14 @@ mod tests {
         let snapshots: Vec<Snapshot> = serde_json::from_str(&json).unwrap();
 
         assert_eq!(
-            latest_for_host(&snapshots, "myserver").unwrap().snapshot.id,
+            newest_for_host(&snapshots, "myserver").unwrap().snapshot.id,
             "bbb"
         );
-        assert!(latest_for_host(&snapshots, "absent").is_none());
+        assert!(host_snapshots_newest_first(&snapshots, "absent").is_empty());
     }
 
     #[test]
-    fn latest_for_host_matches_the_push_tag() {
+    fn host_snapshot_matches_the_push_tag() {
         let json = tagged_snapshots_json(&[(
             "aaa",
             "2026-07-29T03:00:00Z",
@@ -553,14 +647,14 @@ mod tests {
         )]);
         let snapshots: Vec<Snapshot> = serde_json::from_str(&json).unwrap();
 
-        let latest = latest_for_host(&snapshots, "myserver").unwrap();
+        let latest = newest_for_host(&snapshots, "myserver").unwrap();
 
         assert_eq!(latest.snapshot.id, "aaa");
         assert_eq!(latest.root, "/srv/staging/2026-07-29_03-00-00");
     }
 
     #[test]
-    fn latest_for_host_ignores_a_tag_naming_another_host() {
+    fn host_snapshot_ignores_a_tag_naming_another_host() {
         let json = tagged_snapshots_json(&[(
             "aaa",
             "2026-07-29T03:00:00Z",
@@ -569,11 +663,11 @@ mod tests {
         )]);
         let snapshots: Vec<Snapshot> = serde_json::from_str(&json).unwrap();
 
-        assert!(latest_for_host(&snapshots, "myserver").is_none());
+        assert!(newest_for_host(&snapshots, "myserver").is_none());
     }
 
     #[test]
-    fn latest_for_host_prefers_the_host_path_as_root_when_both_agree() {
+    fn host_snapshot_prefers_the_host_path_as_root_when_both_agree() {
         let json = tagged_snapshots_json(&[(
             "aaa",
             "2026-07-29T03:00:00Z",
@@ -583,17 +677,17 @@ mod tests {
         let snapshots: Vec<Snapshot> = serde_json::from_str(&json).unwrap();
 
         assert_eq!(
-            latest_for_host(&snapshots, "myserver").unwrap().root,
+            newest_for_host(&snapshots, "myserver").unwrap().root,
             format!("{ROOT}/myserver/2026-07-29_03-00-00")
         );
     }
 
     #[test]
-    fn latest_for_host_reads_untagged_snapshots_pushed_before_tagging() {
+    fn host_snapshot_reads_untagged_snapshots_pushed_before_tagging() {
         let snapshots: Vec<Snapshot> = serde_json::from_str(&myserver_snapshots()).unwrap();
 
         assert!(snapshots[0].tags.is_empty());
-        assert!(latest_for_host(&snapshots, "myserver").is_some());
+        assert!(newest_for_host(&snapshots, "myserver").is_some());
     }
 
     #[test]
@@ -686,6 +780,129 @@ mod tests {
             check(&verdict, CHECK_CONTAINS_APP).unwrap().message,
             "contains bichon (…/myserver/2026-07-29_03-00-00/bichon)"
         );
+    }
+
+    #[test]
+    fn verdict_probes_only_the_newest_snapshot_when_it_holds_the_app() {
+        let age = max_age("24h");
+        let probed = RefCell::new(Vec::new());
+
+        let verdict = verdict(
+            &request("myserver", Some("paperless"), &age),
+            &partial_sync_snapshots(),
+            |snapshot, _| {
+                probed.borrow_mut().push(snapshot.short_id().to_string());
+                Ok(true)
+            },
+        );
+
+        assert_eq!(verdict.status, Status::Verified);
+        assert_eq!(*probed.borrow(), vec!["part2222"]);
+    }
+
+    #[test]
+    fn verdict_verifies_the_newest_snapshot_holding_the_app_after_a_partial_sync() {
+        let age = max_age("24h");
+        let probed = RefCell::new(Vec::new());
+
+        let verdict = verdict(
+            &request("myserver", Some("bichon"), &age),
+            &partial_sync_snapshots(),
+            bichon_in_full_sync(&probed),
+        );
+
+        assert_eq!(verdict.status, Status::Verified);
+        assert_eq!(*probed.borrow(), vec!["part2222", "full1111"]);
+        assert_eq!(
+            check(&verdict, CHECK_SNAPSHOT).unwrap().message,
+            "latest snapshot containing bichon: full1111 (2026-07-29T00:00Z, 9h ago)"
+        );
+        assert_eq!(
+            check(&verdict, CHECK_CONTAINS_APP).unwrap().message,
+            "contains bichon (…/myserver/2026-07-29_00-00-00/bichon)"
+        );
+        let summary = verdict.snapshot.unwrap();
+        assert_eq!(summary.short_id, "full1111");
+        assert_eq!(summary.age_seconds, 9 * 3600);
+    }
+
+    #[test]
+    fn verdict_measures_freshness_against_the_snapshot_holding_the_app() {
+        let age = max_age("5h");
+        let probed = RefCell::new(Vec::new());
+
+        let verdict = verdict(
+            &request("myserver", Some("bichon"), &age),
+            &partial_sync_snapshots(),
+            bichon_in_full_sync(&probed),
+        );
+
+        assert_eq!(verdict.status, Status::CheckFailed);
+        assert!(check(&verdict, CHECK_CONTAINS_APP).unwrap().passed);
+        let failed = check(&verdict, CHECK_FRESH).unwrap();
+        assert!(!failed.passed, "the 9h-old bichon snapshot is stale at 5h");
+        assert_eq!(verdict.snapshot.unwrap().short_id, "full1111");
+    }
+
+    #[test]
+    fn verdict_names_the_newest_push_when_no_snapshot_holds_the_app() {
+        let age = max_age("24h");
+        let probed = RefCell::new(Vec::new());
+
+        let verdict = verdict(
+            &request("myserver", Some("absent"), &age),
+            &partial_sync_snapshots(),
+            bichon_in_full_sync(&probed),
+        );
+
+        assert_eq!(verdict.status, Status::CheckFailed);
+        assert_eq!(*probed.borrow(), vec!["part2222", "full1111"]);
+        assert_eq!(
+            check(&verdict, CHECK_SNAPSHOT).unwrap().message,
+            "latest snapshot for myserver: part2222 (2026-07-29T06:00Z, 3h ago)"
+        );
+        assert_eq!(
+            check(&verdict, CHECK_CONTAINS_APP)
+                .unwrap()
+                .remediation
+                .as_deref(),
+            Some("run: auberge backup sync --host myserver --apps absent")
+        );
+    }
+
+    #[test]
+    fn verdict_ignores_older_snapshots_without_an_app() {
+        let age = max_age("24h");
+        let verdict = verdict(
+            &request("myserver", None, &age),
+            &partial_sync_snapshots(),
+            |_, _| panic!("containment must not be probed without an app"),
+        );
+
+        assert_eq!(verdict.status, Status::Verified);
+        assert_eq!(
+            check(&verdict, CHECK_SNAPSHOT).unwrap().message,
+            "latest snapshot for myserver: part2222 (2026-07-29T06:00Z, 3h ago)"
+        );
+        assert_eq!(verdict.snapshot.unwrap().short_id, "part2222");
+    }
+
+    #[test]
+    fn verdict_is_operational_when_a_later_candidate_probe_fails() {
+        let age = max_age("24h");
+
+        let verdict = verdict(
+            &request("myserver", Some("bichon"), &age),
+            &partial_sync_snapshots(),
+            |snapshot, _| match snapshot.short_id() {
+                "part2222" => Ok(false),
+                _ => Err(eyre!("restic ls failed (exit status: 1)")),
+            },
+        );
+
+        assert_eq!(verdict.status, Status::OperationalError);
+        assert_eq!(verdict.status.exit_code(), 2);
+        assert!(check(&verdict, CHECK_FRESH).is_none());
     }
 
     #[test]
