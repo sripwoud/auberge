@@ -384,7 +384,9 @@ set -euo pipefail
 archive_path=$1
 [ -d "$archive_path" ] || exit 3
 { [ -r "$archive_path" ] && [ -x "$archive_path" ]; } || exit 4
-find "$archive_path" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+# Skip dot-directories: bichon keeps its sync cursors in .state alongside the
+# per-account directories, and it is not a mailbox.
+find "$archive_path" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n' | sort
 REMOTE
   ) || rc=$?
 
@@ -582,7 +584,11 @@ find "$archive_dir" -regextype posix-extended \
   | while IFS= read -r meta; do
     ym=$(printf '%s' "$meta" | awk -F/ '{ print $(NF-2)"/"$(NF-1) }')
     [ "$ym" \> "$cutoff_ym" ] && continue
-    jq -e --arg f "$folder" '.folder == $f' "$meta" >/dev/null 2>&1 && printf '.\n'
+    # An unreadable sidecar is not "a message in another folder" — it is a
+    # broken count. Fail loudly rather than let jq's error be swallowed and
+    # report a coverage gap that is really a permission problem.
+    [ -r "$meta" ] || { printf 'cannot read %s\n' "$meta" >&2; exit 1; }
+    jq -e --arg f "$folder" '.folder == $f' "$meta" >/dev/null && printf '.\n'
   done | wc -l
 REMOTE
   )
@@ -593,6 +599,7 @@ REMOTE
     || die 1 "coverage gap: archive has ${eml_count} files, IMAP has ${IMAP_COUNT} messages" \
       "read the journal: ssh ${host} journalctl -u bichon-archive.service" \
       "check ${folder} is a Synced Folder: auberge bichon reconcile-folders --host ${host}" \
+      "check the sidecars are group-readable: ssh ${host} find ${archive_path} -type f ! -perm -g=r" \
       'do not expunge until the counts reconcile'
 
   note "coverage ok (${eml_count} >= ${IMAP_COUNT})"

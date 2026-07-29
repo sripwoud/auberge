@@ -223,6 +223,29 @@
         - "{{ bichon_archive_dir }}"
         - "{{ bichon_archive_state_dir }}"
 
+    # Files written before the archive script set the mode explicitly are 0600,
+    # because mktemp ignores the unit's UMask. Reconcile them so a deploy is
+    # enough and no manual chmod is needed. Files only: the directories above
+    # are 0750 and would lose traversal at 0640.
+    - name: Make existing archive files group-readable
+      ansible.builtin.command:
+        argv:
+          - find
+          - "{{ bichon_archive_dir }}"
+          - -type
+          - f
+          - "!"
+          - -perm
+          - -g=r
+          - -print
+          - -exec
+          - chmod
+          - "0640"
+          - "{}"
+          - +
+      register: bichon_archive_mode_reconcile
+      changed_when: bichon_archive_mode_reconcile.stdout | length > 0
+
     - name: Deploy archive script
       ansible.builtin.template:
         src: bichon-archive.sh.j2
