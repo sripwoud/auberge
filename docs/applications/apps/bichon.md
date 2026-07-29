@@ -75,4 +75,4 @@ Defaults: `--folder INBOX`, `--window-days 90`, `--archive-path /var/lib/bichon-
 
 Deletion is `himalaya flag add … deleted` followed by `himalaya folder expunge` — messages are removed in place, not moved to Trash, so mailbox quota is actually reclaimed.
 
-!> The expunge needs an interactive TTY. There is no `--yes`/`--force`; `--no-input` and non-TTY stdin run every gate and then refuse to expunge. Per [ADR-0007](https://github.com/sripwoud/auberge/blob/master/meta/adr/0007-bichon-folder-reconcile-scope-and-silent-vs-loud.md) no unattended expunge path exists, and the script is not shipped in the `auberge` binary.
+!> The expunge needs an interactive TTY. There is no `--yes`/`--force`; `--no-input` and non-TTY stdin run every gate and then refuse to expunge. Per [ADR-0007](https://github.com/sripwoud/auberge/blob/master/meta/adr/0007-auberge-folder-reconcile-scope.md) no unattended expunge path exists, and the script is not shipped in the `auberge` binary.

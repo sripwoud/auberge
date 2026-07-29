@@ -2,15 +2,23 @@
 
 ## Status
 
-Accepted, 2026-05-07.
+Accepted, 2026-05-07. Amended 2026-07-29 — see the Amendment section below.
 
 ## Decision
 
 Auberge ships `auberge bichon reconcile-folders --host <h>` — an idempotent CLI command (dry-run by default, `--apply` to commit) that reads each Bichon account's live folder list from `GET /api/v1/list-mailboxes/<id>?remote=true`, computes the **Synced Folder** set per the rules below, and PATCHes Bichon's per-account `sync_folders`. **Account creation** (IMAP host, credentials, OAuth2 web-flow consent) remains UI-driven; reconcile is the only state auberge writes to Bichon.
 
-Folder identity is matched primarily by RFC 6154 SPECIAL-USE attributes (`AttributeEnum::{Junk, Trash}` on Bichon's `MailBox` struct — language-portable, hierarchy-portable across `[Gmail]/`, `INBOX.`, etc.), with case-insensitive name matching as fallback for legacy IMAP servers that don't advertise SPECIAL-USE. The default exclusion set is `{Junk/Spam, Trash}`. An operator-supplied per-account additive override (`extra_excluded_folders`) is supported in `config.toml`; subtracting from the default exclusions (e.g. archiving Trash anyway) requires a separate explicit flag and is deliberately a foot-gun.
+Folder identity is matched primarily by RFC 6154 SPECIAL-USE attributes (`AttributeEnum::{Junk, Trash}` on Bichon's `MailBox` struct — language-portable, hierarchy-portable across `[Gmail]/`, `INBOX.`, etc.), with case-insensitive name matching as fallback for legacy IMAP servers that don't advertise SPECIAL-USE (`Spam`, `Junk`, `Junk Mail`, `Trash`, `Deleted Items`, `Bin`, `Papierkorb`, `Éléments supprimés`, `Pourriels`). The default exclusion set is `{Junk/Spam, Trash}`; everything else — `INBOX`, `Sent`, `Drafts`, `Archive`, and any custom labels — is included. An operator-supplied per-account additive override (`extra_excluded_folders`) is supported in `config.toml`; subtracting from the default exclusions (e.g. archiving Trash anyway) requires a separate explicit flag and is deliberately a foot-gun.
+
+Those two folders are excluded because their contents are already-rejected mail:
+
+- `\Junk` holds messages the provider or user classified as unwanted. Archiving them inflates the corpus and degrades full-text search signal without adding recoverable value.
+- `\Trash` holds messages the user already deleted. The **Email Archive** is a durable archive, not a recycle bin; re-ingesting deleted mail contradicts the operator's intent.
+- Both turn over at high velocity, adding restic churn for no durable gain.
 
 Auberge **does not** ship tooling for archive verification (coverage-check) or **Upstream Mailbox** expunge. (Amended 2026-07-29: verifying auberge's _own_ offsite snapshots is in scope — see below.) The Email Archive is exposed as a primitive for operators to compose with external tools (`himalaya`, `imap-tools`, Bichon's UI). The `bichon.md` documentation captures the recommended archived-then-expunge workflow, including ordering invariants and a reference shell script at `examples/bichon-expunge.sh`.
+
+This draws the responsibility boundary at a single sentence: **auberge's responsibility ends at "archive is current and backup is current"; the operator's begins at "verify the ordering invariant, then expunge with a tool of their choice."** `himalaya` is the recommended IMAP-side tool (Rust, matches project ethos), but the boundary is what matters, not the tool.
 
 ## Why
 
@@ -65,9 +73,9 @@ This does **not** reopen alternative (γ). Coverage-check compares the **Email A
 **Upstream Mailbox** — two-sided, needs IMAP credentials auberge deliberately doesn't hold, and its
 failure mode is loud. That stays out. `backup verify` is one-sided and reads only state auberge
 itself produced: its own snapshots, in its own repository, under its own
-`…/backups/<host>/<timestamp>` layout. The sibling ADR-0007 draws the boundary at "archive is
-current and **backup is current**"; verify makes the second clause executable instead of leaving it
-as prose an operator re-derives with `restic snapshots --json | jq` each time.
+`…/backups/<host>/<timestamp>` layout. The boundary above is "archive is current and **backup is
+current**"; verify makes the second clause executable instead of leaving it as prose an operator
+re-derives with `restic snapshots --json | jq` each time.
 
 What changed since (γ) was rejected is the argument, not the convenience. (γ) was refused because
 "auberge has unique knowledge" collapsed — every path was filesystem-readable. That still holds for
@@ -83,6 +91,22 @@ no new dependencies. A snapshot is attributed to a Host by the tag `backup push`
 the same tag `backup prune` groups retention by — with the `…/backups/<host>/<timestamp>` path
 covering snapshots pushed before tagging landed.
 
+The binary still ships no expunge tool.
+
+### The reference script may now execute the expunge
+
+`examples/bichon-expunge.sh` (#375) runs `himalaya message expunge` after (a) every gate passes and
+(b) the operator types the exact folder name at an interactive terminal. This supersedes the
+original script's "print the command, stop short of running it" behavior.
+
+The human pause survives as a mechanism instead of a copy-paste step. There is no `--yes`/`--force`
+and no non-interactive execution path: `--no-input` and non-TTY stdin run every gate and then refuse
+to expunge. The concern that decided this ADR — "automating expunge on a cron would normalize
+destructive operations" — is now enforced structurally rather than by convention, because an
+unattended run cannot pass the typed-name gate. The typed name doubles as an intent checksum: a
+mangled `FOLDER` variable fails the comparison and aborts. The script remains version-controlled as
+a reference and is **not** shipped in the `auberge` binary.
+
 ## References
 
 - ADR-0001 — Declarative Backup Recipes. Same principle: state-as-data, not state-as-imperative-code.
@@ -90,3 +114,6 @@ covering snapshots pushed before tagging landed.
 - CONTEXT.md — defines **Email Archive**, **Upstream Mailbox**, **Synced Folder**, **Account Reconcile**.
 - RFC 6154 — IMAP LIST Extension for Special-Use Mailboxes.
 - Bichon API: `POST /api/v1/account/<id>` with `AccountUpdateRequest.sync_folders` (`crates/core/src/account/payload.rs:155`).
+- Issue #329 — `auberge bichon reconcile-folders` implementation.
+- Issue #374 — `auberge backup verify` offsite snapshot verification.
+- Issue #375 — interactive `bichon-expunge.sh` with typed-confirm execute.
