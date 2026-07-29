@@ -67,6 +67,10 @@ jobs:
         shell: bash
         run: ./.github/scripts/check-stdout-discipline.sh
 
+      - name: ADR numbering — one number per file, all indexed
+        shell: bash
+        run: ./.github/scripts/check-adr-numbering.sh
+
   _test:
     needs: changed-files
     if: needs.changed-files.outputs.any_rs_changed == 'true'
