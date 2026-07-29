@@ -237,7 +237,8 @@ pub fn restic_push(
             Some(ResticMessage::Summary(s)) => {
                 snapshot_id = Some(s.snapshot_id);
             }
-            None => {}
+            // restic reports failures on stderr, surfaced via `result.status` below.
+            Some(ResticMessage::ExitError(_)) | None => {}
         },
     )
     .wrap_err("Failed to run restic backup")?;
