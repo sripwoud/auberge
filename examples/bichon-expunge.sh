@@ -297,6 +297,17 @@ validate_options() {
     || die 2 "archive-path must be absolute, got: ${archive_path}"
 }
 
+# Where himalaya looks for its config. HIMALAYA_CONFIG wins and holds a
+# colon-separated list whose first entry is the primary file — the one whose
+# absence triggers the wizard.
+himalaya_config_path() {
+  if [[ -n "${HIMALAYA_CONFIG:-}" ]]; then
+    printf '%s' "${HIMALAYA_CONFIG%%:*}"
+    return 0
+  fi
+  printf '%s' "${XDG_CONFIG_HOME:-${HOME}/.config}/himalaya/config.toml"
+}
+
 # Everything that can be checked without knowing the Host or the account. Runs
 # before any prompting, so a missing tool costs one line instead of two typed
 # answers and two network round trips.
@@ -321,16 +332,27 @@ check_tools() {
       'gate 1 asserts the archive reached the off-host restic repository;' \
       'there is no weaker substitute for it'
 
-  # `account list` reads the config only — no IMAP connection — so this is a
-  # cheap proof that gate 3 and the expunge will have a usable himalaya. stdin
-  # is /dev/null because an unconfigured himalaya otherwise launches its
-  # interactive setup wizard and takes over the terminal mid-preflight.
-  HIMALAYA_ACCOUNTS_JSON=$(himalaya --output json account list </dev/null 2>/dev/null) \
-    || die 2 'himalaya is installed but has no usable configuration' \
-      'expected accounts in ~/.config/himalaya/config.toml, or wherever' \
-      'HIMALAYA_CONFIG points' \
-      'create one: himalaya account configure' \
-      'gate 3 and the expunge both read the Upstream Mailbox through himalaya'
+  # With no config himalaya opens its first-run wizard, and that wizard reads
+  # /dev/tty rather than stdin — redirecting stdin cannot stop it. So prove the
+  # config exists instead of discovering it by blocking on a prompt.
+  local himalaya_config
+  himalaya_config=$(himalaya_config_path)
+  [[ -r "${himalaya_config}" ]] \
+    || die 2 'himalaya has no configuration this script can find' \
+      "looked for: ${himalaya_config}" \
+      'create it: himalaya account configure your.address@example.com' \
+      'name the account after the mailbox email address — bichon keys the' \
+      'Email Archive by email and --account feeds both' \
+      'or point HIMALAYA_CONFIG at an existing config'
+
+  # `account list` reads the config only, opening no IMAP connection, so it is a
+  # cheap proof that gate 3 and the expunge will have a usable himalaya.
+  # --quiet keeps a successful listing silent; stderr is deliberately left
+  # connected so a config error — or any prompt this script failed to
+  # anticipate — is visible rather than a silent stall.
+  HIMALAYA_ACCOUNTS_JSON=$(himalaya --quiet --output json account list </dev/null) \
+    || die 2 "himalaya could not read its accounts from ${himalaya_config}" \
+      'himalaya printed the reason above'
 
   note 'auberge, himalaya, jq, ssh ok'
 }
@@ -500,11 +522,14 @@ gate_folder_coverage() {
   # --output json: the default table format adds headers and box drawing, so
   # `wc -l` is off by a few. jq counts envelopes precisely. The filter query is
   # a trailing positional in himalaya, so it must come after every flag.
-  ENVELOPE_JSON=$(himalaya --output json envelope list \
+  # --quiet rather than 2>/dev/null: himalaya prompts on /dev/tty when it needs
+  # a secret it cannot read non-interactively, and a discarded stderr turns that
+  # prompt into an unexplained stall.
+  ENVELOPE_JSON=$(himalaya --quiet --output json envelope list \
     --account "${account}" \
     --folder "${folder}" \
     --page-size "${PAGE_SIZE}" \
-    before "${cutoff_date}" 2>/dev/null) \
+    before "${cutoff_date}") \
     || die 1 "himalaya could not list ${folder} for ${account}" \
       "check the account exists: himalaya account list" \
       "check the folder exists: himalaya folder list --account ${account}"
@@ -520,11 +545,11 @@ gate_folder_coverage() {
   # only the ones this script flags. A pre-existing flag would therefore be
   # collateral damage, so refuse rather than widen the blast radius.
   local deleted_json already_deleted
-  deleted_json=$(himalaya --output json envelope list \
+  deleted_json=$(himalaya --quiet --output json envelope list \
     --account "${account}" \
     --folder "${folder}" \
     --page-size "${PAGE_SIZE}" \
-    flag deleted 2>/dev/null) \
+    flag deleted) \
     || die 1 "himalaya could not list deleted-flagged mail in ${folder}" \
       'this script must know what the expunge would take along, so it will' \
       'not continue without that answer'
@@ -553,7 +578,7 @@ gate_folder_coverage() {
 set -euo pipefail
 archive_dir=$1; folder=$2; cutoff_ym=$3
 find "$archive_dir" -regextype posix-extended \
-  -regex '.*/[0-9]{4}/[0-9]{2}/[^/]+\.meta\.json' 2>/dev/null \
+  -regex '.*/[0-9]{4}/[0-9]{2}/[^/]+\.meta\.json' \
   | while IFS= read -r meta; do
     ym=$(printf '%s' "$meta" | awk -F/ '{ print $(NF-2)"/"$(NF-1) }')
     [ "$ym" \> "$cutoff_ym" ] && continue
