@@ -64,6 +64,10 @@ _Avoid_: Backup runner, recipe runner
 The Rust module that orchestrates multiple Recipe Executor invocations across a Host's Apps, plus restic push and prune. Owns cross-recipe concerns; per-recipe semantics live in the Recipe Executor.
 _Avoid_: Backup job, backup workflow
 
+**Backup Verdict**:
+The verdict `auberge backup verify` reaches about the newest offsite restic snapshot for a Host, as a fail-fast checklist — repository reachable → a snapshot exists → it contains an App → it is younger than a threshold — carried by the exit code (0 verified, 1 a check failed, 2 operational error). A pure function of `restic snapshots --json` plus one containment probe, so the whole decision is unit-tested without invoking restic. Asserts the "backup is current" half of ADR-0007's boundary; it says nothing about the **Upstream Mailbox**, which would be coverage-check and stays out of scope.
+_Avoid_: Health check, audit, validation, integrity check (restic's own `check` verifies repository integrity — a different question).
+
 **Email Archive**:
 A Bichon-independent on-disk mirror of email messages, produced by an hourly systemd timer on the bichon Host that walks Bichon's REST API and writes one `.eml` per message under `/var/lib/bichon-archive/`, with a `.meta.json` sidecar capturing folder + tags. Distinct from a **Backup Recipe**: an Archive is consumable without Bichon (any MBOX/EML-aware client can read it), and is the _source_ the bichon Backup Recipe rsyncs — Bichon's encrypted internal store (`/opt/bichon/data`) is deliberately not backed up. See ADR-0006.
 _Avoid_: backup (collides with Backup Recipe), dump, export.
@@ -95,6 +99,7 @@ _Avoid_: Logger, reporter
 - A **Playbook Meta** declares zero or one **Backup Recipe**.
 - A **Preflight** binds one **Playbook Meta** to a validated **Config**.
 - The **Recipe Executor** consumes one **Backup Recipe**; the **Backup Session** consumes many.
+- A **Backup Verdict** reads only what a **Backup Session** already pushed, attributing a snapshot to a **Host** by the restic tag push writes (the same tag prune groups retention by).
 - All runners report through **Progress**; none touch terminal output directly.
 - An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
 - The **Busy Feed** is derived from **Baikal**'s calendar data — plus, optionally, a read-only external CalDAV calendar fetched Host-side — and served on Baikal's **Public App** site (Google's servers must reach it); auberge produces and serves it but ships no consumer.
