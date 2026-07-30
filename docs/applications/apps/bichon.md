@@ -44,7 +44,17 @@ Default credentials: `admin` / `admin@bichon`. Change after first login.
 
 **Backup**: `auberge backup create --apps bichon` rsyncs `/var/lib/bichon-archive` (not the internal store). The timer must have run at least once before the first backup. See [ADR-0006](https://github.com/sripwoud/auberge/blob/master/meta/adr/0006-bichon-archive-feeds-backup-recipe.md).
 
-The archive holds one `.eml` per message (byte-exact), a `.meta.json` sidecar recording its folder, and one `tags.json` per account mapping RFC 5322 `Message-ID` to tags. `tags.json` is rewritten in full on every archive run — tags are mutable, so they are snapshotted rather than captured once. Sidecars written before [ADR-0012](https://github.com/sripwoud/auberge/blob/master/meta/adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md) also carry an inert `tags` field that nothing reads.
+The archive holds one `.eml` per message (byte-exact), a `.meta.json` sidecar recording its folder and its `message_id`, and one `tags.json` per account mapping RFC 5322 `Message-ID` to tags. `tags.json` is rewritten in full on every archive run — tags are mutable, so they are snapshotted rather than captured once.
+
+The `<envelope-id>` in a filename is storage, not identity: Bichon mints a fresh envelope identifier on re-import, so one message can occupy several `.eml` files. `message_id` is the message's canonicalized RFC 5322 `Message-ID`, read from the body; a body with no such header is keyed by its `sha256`. Count distinct `message_id`, never files:
+
+```bash
+# messages in the archive, not copies
+ssh <hostname> "sudo find /var/lib/bichon-archive -name '*.meta.json' \
+  -exec jq -r .message_id {} + | sort -u | wc -l"
+```
+
+Sidecars written before [ADR-0013](https://github.com/sripwoud/auberge/blob/master/meta/adr/0013-archive-message-identity-is-the-message-id.md) carry no `message_id`. The next `bichon-archive.service` run repairs every one of them and drops the inert `tags` field [ADR-0012](https://github.com/sripwoud/auberge/blob/master/meta/adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md) left behind; until it has, gate 3 of `bichon-expunge.sh` refuses to run.
 
 **Restore ordering** (do not skip steps):
 
@@ -94,7 +104,7 @@ A preflight runs before the gates, resolving one value at a time: tools on `PATH
 
 `--account` must be the mailbox email address. himalaya account names are arbitrary labels, but bichon keys archive directories by email (`sanitize_email` in `bichon-archive.sh.j2`) and the script passes one value to both — so the himalaya account has to be named after the address. The menu offers only accounts present on both sides; a mismatched `--account` is rejected by name before gate 1.
 
-!> The ssh user must be in the `bichon` group. The archive is `0750 bichon:bichon` and gate 3 counts `.eml` files without sudo, so without it the gate cannot read anything. Grant with `ssh <host> 'sudo usermod -aG bichon $(whoami)'`, then reconnect.
+!> The ssh user must be in the `bichon` group. The archive is `0750 bichon:bichon` and gate 3 reads `.meta.json` sidecars without sudo, so without it the gate cannot read anything. Grant with `ssh <host> 'sudo usermod -aG bichon $(whoami)'`, then reconnect.
 
 Deletion is `himalaya flag add … deleted` followed by `himalaya folder expunge` — messages are removed in place, not moved to Trash, so mailbox quota is actually reclaimed.
 

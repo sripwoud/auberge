@@ -10,7 +10,8 @@
 #
 #   1. off-host backup    `auberge backup verify --app bichon` exits 0
 #   2. archive freshness  last bichon-archive.service run succeeded, recently
-#   3. folder coverage    archive .eml count >= IMAP count, scoped to --folder
+#   3. folder coverage    distinct archived Message-IDs >= IMAP count, scoped
+#                         to --folder
 #   4. summary            exact commands, message count, snapshot evidence
 #   5. typed confirmation operator types the folder name on a TTY
 #
@@ -75,6 +76,14 @@ BACKUP_EVIDENCE=''
 CUTOFF_DATE=''
 ENVELOPE_JSON=''
 IMAP_COUNT=0
+
+# Set by count_distinct_message_ids, which reports through globals rather than
+# stdout: an abort has to carry which sidecar caused it, and a command
+# substitution would run the whole check in a subshell where neither the count nor
+# that path survives — leaving the caller to read an empty result as zero
+# coverage rather than as a broken sidecar.
+ARCHIVE_COUNT=0
+UNKEYED_SIDECAR=''
 
 usage() {
   cat <<EOF
@@ -436,6 +445,35 @@ require_number() {
     || die 1 "${host} returned a non-numeric ${label}: ${value}"
 }
 
+# Reads "<sidecar path>\t<message id>" rows on stdin and sets ARCHIVE_COUNT to
+# the number of distinct ids. Distinct, not row count: Bichon regenerates
+# envelope identifiers on re-import, so one message can hold several
+# `<envelope-id>.eml` copies, and counting files credits the archive with
+# coverage it does not have.
+#
+# A row with no id means a sidecar predating Message-ID keying. That is an
+# unknown, not a zero: it returns non-zero with the path in UNKEYED_SIDECAR
+# rather than falling back to counting files, which is the inflation this gate
+# exists to refuse.
+count_distinct_message_ids() {
+  local path message_id
+  local -A distinct=()
+
+  ARCHIVE_COUNT=0
+  UNKEYED_SIDECAR=''
+
+  while IFS=$'\t' read -r path message_id; do
+    [[ -n "${path}" ]] || continue
+    if [[ -z "${message_id}" ]]; then
+      UNKEYED_SIDECAR="${path}"
+      return 1
+    fi
+    distinct["${message_id}"]=1
+  done
+
+  ARCHIVE_COUNT="${#distinct[@]}"
+}
+
 # Print UTC date offset by -$1 days, formatted with $2.
 # GNU coreutils (Linux) and BSD (macOS) take incompatible flags; dispatch on
 # whichever the operator's `date` binary accepts.
@@ -511,8 +549,9 @@ REMOTE
 }
 
 # Gate 3 — every in-window IMAP message has an archived counterpart.
-# Sets IMAP_COUNT and ENVELOPE_JSON; the expunge reuses the same envelope set,
-# so the messages counted here are exactly the messages deleted later.
+# Sets IMAP_COUNT, ENVELOPE_JSON and ARCHIVE_COUNT; the expunge reuses the same
+# envelope set, so the messages counted here are exactly the messages deleted
+# later.
 gate_folder_coverage() {
   step "Gate 3/5 — coverage for ${folder} older than ${window_days} days…"
 
@@ -562,19 +601,22 @@ gate_folder_coverage() {
       "inspect them: himalaya envelope list --account ${account} --folder ${folder} flag deleted" \
       'clear or expunge them separately — this script only expunges what it flags'
 
-  # Archive paths encode the message Date as YYYY/MM; folder identity lives in
-  # the <id>.meta.json sidecar. The IMAP query is folder-scoped, so the archive
-  # count must be too — counting account-wide .eml files would over-count and
-  # pass this gate while the target folder is only partially archived.
-  local archive_dir eml_count
+  # Archive paths encode the message Date as YYYY/MM; folder identity and message
+  # identity both live in the <envelope-id>.meta.json sidecar. The IMAP query is
+  # folder-scoped, so the archive count must be too — counting account-wide
+  # sidecars would over-count and pass this gate while the target folder is only
+  # partially archived.
+  local archive_dir sidecar_rows
   archive_dir="${archive_path}/$(archive_dir_for "${account}")"
 
   # Remote args go through printf %q so ${folder} / ${archive_dir} cannot break
   # out of argument quoting and execute on the Host. The heredoc body is
   # single-quoted ('REMOTE') to disable local expansion — only positional
-  # parameters are used.
+  # parameters are used. It emits one row per in-window sidecar of the folder and
+  # leaves deduplication to the caller, so the sidecar that breaks the count can
+  # be named in the error.
   # shellcheck disable=SC2029  # intentional: %q-quote args locally, then expand into ssh cmd
-  eml_count=$(
+  sidecar_rows=$(
     ssh "${SSH_OPTS[@]}" "${host}" \
       "bash -s -- $(printf '%q ' "${archive_dir}" "${folder}" "${cutoff_ym}")" <<'REMOTE'
 set -euo pipefail
@@ -588,21 +630,33 @@ find "$archive_dir" -regextype posix-extended \
     # broken count. Fail loudly rather than let jq's error be swallowed and
     # report a coverage gap that is really a permission problem.
     [ -r "$meta" ] || { printf 'cannot read %s\n' "$meta" >&2; exit 1; }
-    jq -e --arg f "$folder" '.folder == $f' "$meta" >/dev/null && printf '.\n'
-  done | wc -l
+    row=$(jq -r --arg f "$folder" --arg p "$meta" \
+      'select(.folder == $f) | $p + "\t" + (.message_id // "")' "$meta")
+    if [ -n "$row" ]; then printf '%s\n' "$row"; fi
+  done
 REMOTE
-  )
-  note "archive .eml files in window: ${eml_count}"
-  require_number 'archive file count' "${eml_count}"
+  ) || die 1 "could not read the archived sidecars for ${folder} on ${host}" \
+    'ssh or the Host printed the reason above' \
+    "if a sidecar was unreadable: ssh ${host} find ${archive_path} -type f ! -perm -g=r" \
+    "if ssh itself failed: ssh ${host} true"
 
-  ((eml_count >= IMAP_COUNT)) \
-    || die 1 "coverage gap: archive has ${eml_count} files, IMAP has ${IMAP_COUNT} messages" \
+  count_distinct_message_ids <<<"${sidecar_rows}" \
+    || die 1 "an archived sidecar carries no message_id: ${UNKEYED_SIDECAR}" \
+      'that sidecar predates Message-ID keying, so this gate cannot tell whether' \
+      'it covers a message it has already counted' \
+      "backfill it: ssh ${host} sudo systemctl start bichon-archive.service" \
+      'one run repairs every sidecar in the account; re-run this script after it'
+
+  note "archived messages in window: ${ARCHIVE_COUNT}"
+
+  ((ARCHIVE_COUNT >= IMAP_COUNT)) \
+    || die 1 "coverage gap: archive has ${ARCHIVE_COUNT} messages, IMAP has ${IMAP_COUNT} messages" \
       "read the journal: ssh ${host} journalctl -u bichon-archive.service" \
       "check ${folder} is a Synced Folder: auberge bichon reconcile-folders --host ${host}" \
       "check the sidecars are group-readable: ssh ${host} find ${archive_path} -type f ! -perm -g=r" \
       'do not expunge until the counts reconcile'
 
-  note "coverage ok (${eml_count} >= ${IMAP_COUNT})"
+  note "coverage ok (${ARCHIVE_COUNT} >= ${IMAP_COUNT})"
 }
 
 # Gate 4 — show the operator exactly what is about to happen.
@@ -705,4 +759,6 @@ main() {
   printf 'expunged: %s message(s) from %s\n' "${IMAP_COUNT}" "${folder}"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

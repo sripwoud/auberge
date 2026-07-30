@@ -71,6 +71,15 @@ jobs:
         shell: bash
         run: ./.github/scripts/check-adr-numbering.sh
 
+      # In `check` rather than in `_test`: that job is gated on Rust and ansible
+      # changes, and these cover the reference scripts under examples/ and the
+      # bichon role's templates.
+      - name: Shell unit tests
+        shell: bash
+        run: |
+          ./tests/bichon-archive.test.sh
+          ./tests/bichon-expunge.test.sh
+
   _test:
     needs: changed-files
     if: needs.changed-files.outputs.any_rs_changed == 'true'

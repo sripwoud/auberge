@@ -43,7 +43,7 @@ A write-once tree of `.eml` files is the inverse of all three failure modes: pla
 - Backups survive any future where Bichon stops being maintainable. The encryption password's blast radius shrinks to "the live install only"; no archived corpus depends on it.
 - restic dedup degenerates to near-zero new bytes per snapshot in steady state (only newly-arrived `.eml` files are new content).
 - Adding Bichon to the existing `Recipe Executor` pipeline is a one-line change to `bichon.meta.yml` (`paths:` value); no new code path in `auberge`.
-- The archive is observable: `find /var/lib/bichon-archive -name '*.eml' | wc -l` answers "how many emails do I have backed up?" without any tooling.
+- The archive is observable: `find /var/lib/bichon-archive -name '*.eml' | wc -l` answers "how many emails do I have backed up?" without any tooling. Corrected by ADR-0013: that counts _copies_, and Bichon mints a fresh envelope id per import, so the message count is `jq -r .message_id` over the sidecars piped through `sort -u`.
 
 **Negative:**
 
