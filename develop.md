@@ -155,6 +155,29 @@ cargo build --release
 
 Binary output: `target/release/auberge`
 
+## Ansible Assets
+
+The `ansible/` tree is embedded in the binary at compile time. At runtime it
+resolves in this order:
+
+1. `AUBERGE_DEV` set, and `./ansible/{playbooks,roles}` exist — run straight
+   from the working tree, no extraction.
+2. Otherwise — extract the embedded copy to `~/.local/share/auberge/ansible`.
+
+The extracted copy carries a `.auberge-version` stamp of
+`<version>+<content-hash>`, where the hash covers the path and bytes of every
+embedded file. Editing a playbook, role or template changes the hash, so the
+next run re-extracts. `build.rs` declares `ansible/` a build input, so adding
+or deleting a file rebuilds too.
+
+Deploying an unreleased ansible change therefore needs no env var — `cargo
+build` is enough. `AUBERGE_DEV=1` still helps when iterating without
+recompiling, since it reads the working tree on every run; it only works from
+the repository root, as the path is relative.
+
+Re-extraction preserves the `ansible-galaxy` cache in `.ansible/collections`
+unless `requirements.yml` itself changed.
+
 ## Testing
 
 ```bash
