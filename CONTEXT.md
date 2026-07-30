@@ -82,6 +82,10 @@ _Avoid_: backup (collides with Backup Recipe), dump, export. Never call the `<en
 A per-account `tags.json` beside the **Email Archive**, mapping RFC 5322 `Message-ID` → tags, rewritten in full on every archive run. The mutable-metadata counterpart to the Archive: tags are operator annotations applied _after_ ingestion and revised indefinitely, which an append-only store cannot represent. Keyed on `Message-ID` because Bichon regenerates its own envelope identifier on re-import. Costs one API call per run while no tags exist. See ADR-0012.
 _Avoid_: tag index, label export, metadata sidecar (collides with the Archive's per-message `.meta.json`).
 
+**Rebuild Latch**:
+A file on the bichon Host (`/var/lib/bichon-uidvalidity-watch/rebuilds.log`) holding one line per detected **Internal Store** purge, written by an hourly timer that reads `bichon.service`'s journal from a saved cursor for Bichon's `detected with changed uid_validity` line. **Latched, not edge-triggered**: the unit exits non-zero while the file is non-empty, so the finding is republished every tick and clears only when an operator deletes the file — systemd clears a unit's failed state on the next successful start, so an exit code alone would erase the alert within the hour. The failed unit is the alert surface (`systemctl --failed`, Cockpit → Services); deleting the file is both the acknowledgement and the record that someone saw it. Exit codes match the **Backup Verdict**'s (0 clean, 1 recorded, 2 could not read the journal), so a watch that cannot read the journal is distinguishable from one that found nothing. Carries no delivery channel: it is a condition to be found, not a message that is sent. See ADR-0014.
+_Avoid_: Alert file, flag, sentinel, marker (understates that the unit fails on it), monitor.
+
 **Upstream Mailbox**:
 The third-party IMAP (or Gmail-API) server that Bichon syncs _from_ — e.g. the operator's Gmail, Fastmail, ProtonMail Bridge endpoint. Distinct from the **Email Archive** (Bichon-side, append-only) and from any **Backup Recipe** target. Operations on the Upstream Mailbox (e.g. expunging old mail to reclaim quota) are out-of-scope for `auberge deploy` and `auberge backup`; any future tooling that touches it must treat it as authoritative-but-untrusted.
 _Avoid_: IMAP server, mail provider, source mailbox.
@@ -112,6 +116,7 @@ _Avoid_: Logger, reporter
 - A **Backup Verdict** reads only what a **Backup Session** already pushed, attributing a snapshot to a **Host** by the restic tag push writes (the same tag prune groups retention by).
 - Bichon syncs from an **Upstream Mailbox** into its **Internal Store**; the **Email Archive** and **Tag Snapshot** are derived from the Internal Store; the **Backup Recipe** rsyncs those two and never the Internal Store.
 - Restoring a purged **Internal Store** means replaying the **Email Archive** (bodies, foldered from the sidecars) and then the **Tag Snapshot** (tags), both via `examples/bichon-restore.sh`. Neither the Archive nor the Snapshot is searchable on its own.
+- A purge of the **Internal Store** is announced by the **Rebuild Latch**, which detects it and nothing more: it neither prevents the purge nor triggers the replay.
 - All runners report through **Progress**; none touch terminal output directly.
 - An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
 - The **Busy Feed** is derived from **Baikal**'s calendar data — plus, optionally, a read-only external CalDAV calendar fetched Host-side — and served on Baikal's **Public App** site (Google's servers must reach it); auberge produces and serves it but ships no consumer.

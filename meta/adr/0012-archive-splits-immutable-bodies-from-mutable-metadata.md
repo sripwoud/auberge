@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, 2026-07-29. **Amended by ADR-0013**, which adds `message_id` to the sidecar, reverses the backfill rejection below on the grounds that rejection named, and narrows "written once and never revisited" to observations rather than to the file.
+Accepted, 2026-07-29. **Amended by ADR-0013**, which adds `message_id` to the sidecar, reverses the backfill rejection below on the grounds that rejection named, and narrows "written once and never revisited" to observations rather than to the file. **Followed by ADR-0014**, which builds the journal alert this ADR's Consequences name and leave unbuilt.
 
 ## Decision
 
@@ -81,7 +81,7 @@ The hazard that surfaced this: on `UIDVALIDITY` mismatch Bichon calls `rebuild_m
 - `tags.json` is rewritten hourly, so every snapshot holds a new copy. Negligible at realistic tag counts, but it is the first Archive artifact that does not dedup across snapshots.
 - Sidecars written before this ADR carry an inert `tags` field. Harmless but untidy, and a reader who trusts it will conclude the corpus has no tags — which is true today and may not be later.
 - Folder is still captured at first sight. A message moved between folders upstream after archiving keeps its original sidecar value. Accepted: moves are rare, and a message whose upstream folder changed within the 24h overlap window is re-archived under a second envelope id — pre-existing behaviour, unchanged by this ADR.
-- A `UIDVALIDITY` purge still costs searchability until an operator notices and restores. Detection is out of scope here; Bichon logs the trigger at info level (`flow.rs:490`) and sets the folder status to `UID validity changed, rebuilding...`, so a journal alert is the cheap follow-up.
+- A `UIDVALIDITY` purge still costs searchability until an operator notices and restores. Detection is out of scope here; Bichon logs the trigger at info level (`flow.rs:490`) and sets the folder status to `UID validity changed, rebuilding...`, so a journal alert is the cheap follow-up. **Built by ADR-0014** as the **Rebuild Latch**, which watches the journal line rather than the folder status.
 
 ## References
 
