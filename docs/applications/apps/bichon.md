@@ -5,6 +5,7 @@ Email archiving service with continuous IMAP sync and full-text search. Docs: [g
 - **URL**: tailnet only — see [Tailnet-only apps](cli-reference/dns/set-all.md#tailnet-only-apps)
 - **Port**: internal (Caddy proxy)
 - **Data**: `/opt/bichon/data` (internal store), `/var/lib/bichon-archive` (EML mirror, backed up)
+- **Timers**: `bichon-archive.timer` (hourly archive), `bichon-uidvalidity-watch.timer` (hourly [rebuild alert](#uidvalidity-rebuild-alert))
 
 ## Deploy
 
@@ -55,6 +56,36 @@ ssh <hostname> "sudo find /var/lib/bichon-archive -name '*.meta.json' \
 ```
 
 Sidecars written before [ADR-0013](https://github.com/sripwoud/auberge/blob/master/meta/adr/0013-archive-message-identity-is-the-message-id.md) carry no `message_id`. The next `bichon-archive.service` run repairs every one of them and drops the inert `tags` field [ADR-0012](https://github.com/sripwoud/auberge/blob/master/meta/adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md) left behind; until it has, gate 3 of `bichon-expunge.sh` refuses to run.
+
+## UIDVALIDITY rebuild alert
+
+When an Upstream Mailbox changes a folder's `UIDVALIDITY`, Bichon deletes that folder's envelopes and blobs from the internal store and refetches. Mail already expunged upstream **cannot be refetched** — its searchability and tags are gone until you replay the archive. Bichon logs this at info level and carries on.
+
+`bichon-uidvalidity-watch.timer` reads `bichon.service`'s journal hourly and records every occurrence. It shows up as a failed unit:
+
+```bash
+systemctl --failed
+systemctl status bichon-uidvalidity-watch.service   # names the folder and when
+```
+
+The alert is **latched**: it is reported on every run until you acknowledge it, because systemd would otherwise clear the failed state on the next tick. The full record is `/var/lib/bichon-uidvalidity-watch/rebuilds.log`.
+
+| Exit | Meaning                                  |
+| ---- | ---------------------------------------- |
+| 0    | no rebuild recorded                      |
+| 1    | a rebuild is recorded and unacknowledged |
+| 2    | the journal could not be read            |
+
+To respond: restore the affected folder per **Restore ordering** below, then acknowledge — deleting the file is the acknowledgement.
+
+```bash
+sudo rm /var/lib/bichon-uidvalidity-watch/rebuilds.log
+sudo systemctl start bichon-uidvalidity-watch.service   # exits 0, clears the failed state
+```
+
+!> Acknowledge only after restoring. Nothing else records that a purge happened, so deleting the latch without restoring discards the only notice you get. The first run after deploy reports rebuilds already in the retained journal — that is deliberate, not a false alarm.
+
+See [ADR-0014](https://github.com/sripwoud/auberge/blob/master/meta/adr/0014-uidvalidity-rebuild-alert-is-a-latched-failing-unit.md). The alert is passive by design: it carries no push channel, so it reaches you when you look at the Host or Cockpit.
 
 **Restore ordering** (do not skip steps):
 
