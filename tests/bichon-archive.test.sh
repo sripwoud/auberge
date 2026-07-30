@@ -356,6 +356,94 @@ chmod 644 "${BACKFILL_DIR}/15.eml"
 rm "${BACKFILL_DIR}/15.eml" "${BACKFILL_DIR}/15.meta.json" \
   "${BACKFILL_DIR}/16.eml" "${BACKFILL_DIR}/16.meta.json"
 
+printf '\n== repair_broken_bodies\n'
+
+REPAIR_DIR="${BICHON_ARCHIVE_DIR}/e@f.com/2026/03"
+mkdir -p "${REPAIR_DIR}"
+
+# What the corpus holds today: a 0-byte body published by curl --fail, and a
+# sidecar keyed on the hash of nothing because that is what the extractor read.
+: >"${REPAIR_DIR}/20.eml"
+printf '{"folder":"Sent","message_id":"%s"}\n' "$(sha256_of "${REPAIR_DIR}/20.eml")" \
+  >"${REPAIR_DIR}/20.meta.json"
+
+# Left alone by the sweep: a body that is already a message, and one that opens
+# with an mbox From_ line.
+printf 'Message-ID: <intact@example.com>\n\nbody\n' >"${REPAIR_DIR}/21.eml"
+printf '{"folder":"INBOX","message_id":"intact@example.com"}\n' >"${REPAIR_DIR}/21.meta.json"
+printf 'From someone@example.com Mon Jul 27 09:00:00 2026\nMessage-ID: <mbox@example.com>\n\nbody\n' \
+  >"${REPAIR_DIR}/22.eml"
+printf '{"folder":"INBOX","message_id":"mbox@example.com"}\n' >"${REPAIR_DIR}/22.meta.json"
+
+INTACT_MTIME="$(stat -c '%Y' "${REPAIR_DIR}/21.eml")"
+MBOX_MTIME="$(stat -c '%Y' "${REPAIR_DIR}/22.eml")"
+
+STUB_PAYLOAD='Message-ID: <refetched@example.com>
+
+the body that was there all along
+'
+assert_succeeds 'an account whose broken body can be refetched repairs cleanly' \
+  repair_broken_bodies 7 'e@f.com'
+
+assert_eq 'the empty body is replaced by the message' \
+  'Message-ID: <refetched@example.com>' \
+  "$(head -1 "${REPAIR_DIR}/20.eml")"
+
+# The stale key is sha256: of nothing, which every empty body shares. Re-keying
+# is the point of the repair, not a side effect of it.
+assert_eq 'the sidecar is re-keyed off the refetched body, keeping its folder' \
+  '{"folder":"Sent","message_id":"refetched@example.com"}' \
+  "$(jq -cS . "${REPAIR_DIR}/20.meta.json")"
+
+assert_eq 'the repaired body is group-readable' '640' \
+  "$(stat -c '%a' "${REPAIR_DIR}/20.eml")"
+
+assert_eq 'an intact body is not refetched' \
+  "${INTACT_MTIME}" "$(stat -c '%Y' "${REPAIR_DIR}/21.eml")"
+assert_eq 'an mbox From_ body is not refetched' \
+  "${MBOX_MTIME}" "$(stat -c '%Y' "${REPAIR_DIR}/22.eml")"
+
+assert_succeeds 'a second pass finds nothing to do' \
+  repair_broken_bodies 7 'e@f.com'
+assert_eq 'the repaired body is not rewritten by the second pass' \
+  'Message-ID: <refetched@example.com>' \
+  "$(head -1 "${REPAIR_DIR}/20.eml")"
+
+assert_succeeds 'an account with no archive directory is a no-op' \
+  repair_broken_bodies 7 'absent@e.com'
+
+# Bichon no longer holds the envelope, or answers 200 with nothing again. The
+# archive does not have that message and cannot fetch it, so the run fails every
+# tick until an operator removes the entry.
+: >"${REPAIR_DIR}/23.eml"
+printf '{"folder":"INBOX","message_id":"stale"}\n' >"${REPAIR_DIR}/23.meta.json"
+STUB_STATUS=1
+assert_fails 'a body that cannot be refetched fails the run' \
+  repair_broken_bodies 7 'e@f.com'
+assert_eq 'a body that cannot be refetched is left as it was' '0' \
+  "$(stat -c '%s' "${REPAIR_DIR}/23.eml")"
+STUB_STATUS=0
+
+STUB_PAYLOAD='Message-ID: <orphan@example.com>
+
+body
+'
+rm "${REPAIR_DIR}/23.meta.json"
+assert_fails 'a body with no sidecar fails the run' \
+  repair_broken_bodies 7 'e@f.com'
+assert_eq 'the body is still refetched before the sidecar is missed' \
+  'Message-ID: <orphan@example.com>' \
+  "$(head -1 "${REPAIR_DIR}/23.eml")"
+rm "${REPAIR_DIR}/23.eml"
+
+: >"${REPAIR_DIR}/24.eml"
+printf '{"message_id":"stale"}\n' >"${REPAIR_DIR}/24.meta.json"
+assert_fails 'a sidecar with no folder to preserve fails the run' \
+  repair_broken_bodies 7 'e@f.com'
+assert_eq 'that sidecar is left as it was' '{"message_id":"stale"}' \
+  "$(jq -cS . "${REPAIR_DIR}/24.meta.json")"
+rm "${REPAIR_DIR}/24.eml" "${REPAIR_DIR}/24.meta.json"
+
 printf '\n== write_meta_sidecar refuses to publish a sidecar it could not build\n'
 
 printf 'Message-ID: <unpublished@example.com>\n\nbody\n' >"${NEW_DIR}/2.eml"

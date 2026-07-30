@@ -160,6 +160,24 @@ canonical_message_id() {
   printf '%s' "$message_id"
 }
 
+# Rewrites a sidecar to {folder, message_id}, keeping the folder it already
+# records — an observation made at first sight that no pass may re-observe
+# (ADR-0012:83). Fails without touching the sidecar if there is no folder to
+# keep, and drops the `tags` field ADR-0012 left vestigial.
+rekey_sidecar() {
+  local meta_path="$1" message_id="$2"
+  local tmp
+  tmp=$(mktemp "${meta_path}.XXXXXX")
+  chmod "$ARCHIVE_FILE_MODE" "$tmp"
+  if ! jq --arg message_id "$message_id" \
+    'if (.folder | type) == "string" then {folder, message_id: $message_id} else error("no folder") end' \
+    "$meta_path" >"$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$meta_path"
+}
+
 write_meta_sidecar() {
   local out_path="$1" eml_path="$2" envelope_json="$3"
   local tmp message_id
@@ -192,7 +210,7 @@ backfill_message_ids() {
   stale=$(grep -rL --include='*.meta.json' -e '"message_id"' "$account_dir" || true)
   [ -z "$stale" ] && return 0
 
-  local repaired=0 failures=0 meta eml message_id tmp
+  local repaired=0 failures=0 meta eml message_id
   while IFS= read -r meta; do
     [ -z "$meta" ] && continue
     eml="${meta%.meta.json}.eml"
@@ -206,21 +224,74 @@ backfill_message_ids() {
       failures=$((failures + 1))
       continue
     fi
-    tmp=$(mktemp "${meta}.XXXXXX")
-    chmod "$ARCHIVE_FILE_MODE" "$tmp"
-    if ! jq --arg message_id "$message_id" \
-      'if (.folder | type) == "string" then {folder, message_id: $message_id} else error("no folder") end' \
-      "$meta" >"$tmp"; then
+    if ! rekey_sidecar "$meta" "$message_id"; then
       log "backfill failed account=${safe_email} sidecar=${meta} reason=no_folder"
-      rm -f "$tmp"
       failures=$((failures + 1))
       continue
     fi
-    mv "$tmp" "$meta"
     repaired=$((repaired + 1))
   done <<<"$stale"
 
   log "account=${safe_email} backfill repaired=${repaired} failures=${failures}"
+  [ "$failures" -eq 0 ]
+}
+
+# The download-time refusal cannot reach a body already in the archive: the
+# cursor advances past that message's date, so the search never offers its
+# envelope again. Sweep for bodies that are not messages instead and re-download
+# each by the envelope id its filename carries — the only identifier the archive
+# can reconstruct without an envelope in hand.
+#
+# Sanctioned by the reasoning that put the sidecar backfill here (ADR-0013): the
+# pass converges on the next hourly tick with no operator action, and it
+# re-observes nothing. A payload that was never a message is a write that did
+# not happen, not a fact to revise. The sidecar is re-keyed with it, because the
+# body it was keyed on has changed: every empty body hashes alike, so the key it
+# holds is `sha256:` of nothing.
+#
+# A body whose envelope Bichon no longer holds fails here on every run. That is
+# the honest report — the archive does not have that message and cannot fetch it
+# — and it clears when an operator deletes the body and its sidecar.
+repair_broken_bodies() {
+  local account_id="$1" safe_email="$2"
+  local account_dir="${BICHON_ARCHIVE_DIR}/${safe_email}"
+  [ -d "$account_dir" ] || return 0
+
+  local repaired=0 failures=0 eml meta envelope_id message_id
+  while IFS= read -r eml; do
+    [ -z "$eml" ] && continue
+    has_header_block "$eml" && continue
+
+    envelope_id="${eml##*/}"
+    envelope_id="${envelope_id%.eml}"
+    if ! download_message "$account_id" "$envelope_id" "$eml"; then
+      log "body repair failed account=${safe_email} body=${eml} reason=download"
+      failures=$((failures + 1))
+      continue
+    fi
+
+    meta="${eml%.eml}.meta.json"
+    if [ ! -f "$meta" ]; then
+      log "body repair failed account=${safe_email} body=${eml} reason=no_sidecar"
+      failures=$((failures + 1))
+      continue
+    fi
+    if ! message_id=$(canonical_message_id "$eml"); then
+      log "body repair failed account=${safe_email} body=${eml} reason=unreadable_body"
+      failures=$((failures + 1))
+      continue
+    fi
+    if ! rekey_sidecar "$meta" "$message_id"; then
+      log "body repair failed account=${safe_email} sidecar=${meta} reason=no_folder"
+      failures=$((failures + 1))
+      continue
+    fi
+    repaired=$((repaired + 1))
+  done < <(find "$account_dir" -type f -name '*.eml')
+
+  if [ "$repaired" -gt 0 ] || [ "$failures" -gt 0 ]; then
+    log "account=${safe_email} body_repair repaired=${repaired} failures=${failures}"
+  fi
   [ "$failures" -eq 0 ]
 }
 
@@ -302,9 +373,14 @@ process_account() {
 
   log "account=${safe_email} id=${account_id} cursor_ms=${cursor_ms} since_ms=${since_ms}"
 
-  # Counted against the run, not against the account: an unrepairable sidecar
+  # Both counted against the run, not against the account: an unrepairable entry
   # must fail the unit loudly, but freezing the cursor would stop archiving new
-  # mail over a defect in an old entry.
+  # mail over a defect in an old one. Bodies first — the backfill keys sidecars
+  # off the body beside them, so it must not read one this pass is about to
+  # replace.
+  if ! repair_broken_bodies "$account_id" "$safe_email"; then
+    TOTAL_FAILURES=$((TOTAL_FAILURES + 1))
+  fi
   if ! backfill_message_ids "$safe_email"; then
     TOTAL_FAILURES=$((TOTAL_FAILURES + 1))
   fi
