@@ -95,7 +95,7 @@ download_message() {
 # Message-ID is keyed by its own sha256 — Bichon's synthetic id regenerates on
 # re-import, so the hash is the only stable answer the backfill can also reach.
 canonical_message_id() {
-  local eml_path="$1" message_id
+  local eml_path="$1" message_id digest
   message_id=$(LC_ALL=C awk '
     /^\r?$/ { exit }
     folded && /^[ \t]/ {
@@ -120,10 +120,12 @@ canonical_message_id() {
       sub(/>$/, "", message_id)
       print message_id
     }
-  ' "$eml_path")
+  ' "$eml_path") || return 1
 
   if [ -z "$message_id" ]; then
-    message_id="sha256:$(sha256sum "$eml_path" | cut -d' ' -f1)"
+    digest=$(sha256sum "$eml_path" | cut -d' ' -f1) || return 1
+    [ -n "$digest" ] || return 1
+    message_id="sha256:${digest}"
   fi
   printf '%s' "$message_id"
 }
@@ -131,11 +133,14 @@ canonical_message_id() {
 write_meta_sidecar() {
   local out_path="$1" eml_path="$2" envelope_json="$3"
   local tmp message_id
-  message_id=$(canonical_message_id "$eml_path")
+  message_id=$(canonical_message_id "$eml_path") || return 1
   tmp=$(mktemp "${out_path}.XXXXXX")
   chmod "$ARCHIVE_FILE_MODE" "$tmp"
-  printf '%s' "$envelope_json" \
-    | jq --arg message_id "$message_id" '{folder: .mailbox_name, message_id: $message_id}' >"$tmp"
+  if ! printf '%s' "$envelope_json" \
+    | jq --arg message_id "$message_id" '{folder: .mailbox_name, message_id: $message_id}' >"$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
   mv "$tmp" "$out_path"
 }
 
@@ -166,7 +171,11 @@ backfill_message_ids() {
       failures=$((failures + 1))
       continue
     fi
-    message_id=$(canonical_message_id "$eml")
+    if ! message_id=$(canonical_message_id "$eml"); then
+      log "backfill failed account=${safe_email} sidecar=${meta} reason=unreadable_body"
+      failures=$((failures + 1))
+      continue
+    fi
     tmp=$(mktemp "${meta}.XXXXXX")
     chmod "$ARCHIVE_FILE_MODE" "$tmp"
     if ! jq --arg message_id "$message_id" \
@@ -313,7 +322,11 @@ process_account() {
           continue
         fi
       fi
-      write_meta_sidecar "$meta_path" "$eml_path" "$envelope"
+      if ! write_meta_sidecar "$meta_path" "$eml_path" "$envelope"; then
+        log "sidecar failed account=${safe_email} id=${id}"
+        account_failures=$((account_failures + 1))
+        continue
+      fi
       processed=$((processed + 1))
     done < <(printf '%s' "$body" | jq -c '.items[]?')
 

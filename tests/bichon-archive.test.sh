@@ -143,6 +143,20 @@ assert_eq 'an empty body still yields an id' \
   "$(sha256_of "${WORK}/empty.eml")" \
   "$(canonical_message_id "${WORK}/empty.eml")"
 
+# The function must fail on its own rather than rely on a caller checking
+# readability first. Falling through to the hash branch when awk cannot read the
+# file yields a bare "sha256:", which every unreadable body would then share.
+printf 'Message-ID: <unreadable@example.com>\n\nbody\n' >"${WORK}/noperm.eml"
+chmod 000 "${WORK}/noperm.eml"
+assert_fails 'an unreadable body returns non-zero, not a bare prefix' \
+  canonical_message_id "${WORK}/noperm.eml"
+assert_eq 'an unreadable body prints no id' '' \
+  "$(canonical_message_id "${WORK}/noperm.eml" 2>/dev/null || true)"
+chmod 644 "${WORK}/noperm.eml"
+
+assert_fails 'a missing body returns non-zero' \
+  canonical_message_id "${WORK}/does-not-exist.eml"
+
 printf '\n== write_meta_sidecar\n'
 
 mkdir -p "${BICHON_ARCHIVE_DIR}/a@b.com/2026/07"
@@ -210,5 +224,32 @@ assert_fails 'a sidecar with no folder to preserve fails the run' \
   backfill_message_ids 'c@d.com'
 assert_eq 'an unrepairable sidecar is left as it was' '{"tags":[]}' \
   "$(jq -cS . "${BACKFILL_DIR}/14.meta.json")"
+rm "${BACKFILL_DIR}/14.eml" "${BACKFILL_DIR}/14.meta.json"
+
+# An unreadable body must be one counted failure, not an abort. The pass runs
+# per account inside the hourly archive, so aborting would stop new mail being
+# archived for every account after this one.
+printf 'Message-ID: <locked@example.com>\n\nbody\n' >"${BACKFILL_DIR}/15.eml"
+printf '{"folder":"INBOX","tags":[]}\n' >"${BACKFILL_DIR}/15.meta.json"
+printf 'Message-ID: <after@example.com>\n\nbody\n' >"${BACKFILL_DIR}/16.eml"
+printf '{"folder":"INBOX","tags":[]}\n' >"${BACKFILL_DIR}/16.meta.json"
+chmod 000 "${BACKFILL_DIR}/15.eml"
+
+assert_fails 'an unreadable body fails the run' backfill_message_ids 'c@d.com'
+assert_eq 'a later sidecar is still repaired after an unreadable body' \
+  '{"folder":"INBOX","message_id":"after@example.com"}' \
+  "$(jq -cS . "${BACKFILL_DIR}/16.meta.json")"
+
+chmod 644 "${BACKFILL_DIR}/15.eml"
+rm "${BACKFILL_DIR}/15.eml" "${BACKFILL_DIR}/15.meta.json" \
+  "${BACKFILL_DIR}/16.eml" "${BACKFILL_DIR}/16.meta.json"
+
+printf '\n== write_meta_sidecar refuses to publish a sidecar it could not build\n'
+
+printf 'Message-ID: <unpublished@example.com>\n\nbody\n' >"${NEW_DIR}/2.eml"
+assert_fails 'a malformed envelope fails rather than publishing' \
+  write_meta_sidecar "${NEW_DIR}/2.meta.json" "${NEW_DIR}/2.eml" 'not json'
+assert_eq 'no sidecar is left behind by the failed write' '' \
+  "$(find "${NEW_DIR}" -name '2.meta.json*' -printf '%f\n')"
 
 report 'bichon-archive'
