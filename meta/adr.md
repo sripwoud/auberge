@@ -21,6 +21,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0011 | [Exclude `rust/cleartext-logging` via advanced CodeQL setup](./adr/0011-suppress-codeql-cleartext-logging-on-cli-stdout.md)          |
 | 0012 | [Email Archive splits immutable bodies from mutable metadata](./adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md)   |
 | 0013 | [Archive message identity is the Message-ID, read from the body](./adr/0013-archive-message-identity-is-the-message-id.md)           |
+| 0014 | [The UIDVALIDITY rebuild alert is a latched failing unit](./adr/0014-uidvalidity-rebuild-alert-is-a-latched-failing-unit.md)         |
 
 ## No Docker
 
