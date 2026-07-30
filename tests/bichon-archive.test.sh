@@ -2,15 +2,18 @@
 #
 # tests/bichon-archive.test.sh
 #
-# Unit tests for the Email Archive's message identity: the extractor that keys a
-# sidecar on the body's Message-ID, and the pass that repairs sidecars written
-# before that key existed (ADR-0013).
+# Unit tests for what the Email Archive accepts as a message and how it keys it:
+# the check that a downloaded payload is a body at all, the extractor that keys a
+# sidecar on that body's Message-ID, and the passes that repair entries written
+# before either existed (ADR-0013, ADR-0015).
 #
-# No Bichon, no API, no live archive — every case is a body written into a temp
-# directory. The extractor is the piece worth pinning: the defect that motivated
-# ADR-0013 was first mis-measured with a Message-ID reader that did not unfold
-# RFC 5322 continuation lines, which reported 106 duplicate bodies where the
-# corpus held none.
+# No Bichon, no live archive — every case is a body written into a temp
+# directory, and the one function that would reach the API is stubbed. Both
+# checks are worth pinning because both were first written in the obvious form
+# and the obvious form was wrong: a Message-ID reader that did not unfold RFC
+# 5322 continuation lines reported 106 duplicate bodies where the corpus held
+# none, and a payload check anchored on the first line would reject the three
+# live bodies that open with an mbox From_ line.
 #
 # Run: ./tests/bichon-archive.test.sh
 
@@ -156,6 +159,115 @@ chmod 644 "${WORK}/noperm.eml"
 
 assert_fails 'a missing body returns non-zero' \
   canonical_message_id "${WORK}/does-not-exist.eml"
+
+printf '\n== has_header_block\n'
+
+# Write $2 as a body and answer whether the archive would accept it.
+body_of() {
+  printf '%s' "$2" >"${WORK}/$1.eml"
+  printf '%s' "${WORK}/$1.eml"
+}
+
+assert_succeeds 'headers followed by a blank line are a message' \
+  has_header_block "$(body_of hb_plain 'From: a@b
+Subject: s
+
+body
+')"
+
+assert_succeeds 'a CRLF separator is a separator' \
+  has_header_block "$(
+    printf 'From: a@b\r\nSubject: s\r\n\r\nbody\r\n' >"${WORK}/hb_crlf.eml"
+    printf '%s' "${WORK}/hb_crlf.eml"
+  )"
+
+# Three bodies in the live corpus open with an mbox From_ line. A first-line
+# "must look like a header field" rule would reject all three on every run,
+# re-downloading them forever — this is the case that ruled that rule out.
+assert_succeeds 'an mbox From_ line before the headers is still a message' \
+  has_header_block "$(body_of hb_mbox 'From someone@example.com Mon Jul 27 09:00:00 2026
+From: a@b
+
+body
+')"
+
+# The defect: Bichon answers 200 with nothing when its blob store holds no
+# content for an envelope it still indexes, and curl --fail reports success.
+: >"${WORK}/hb_empty.eml"
+assert_fails 'an empty payload is not a message' \
+  has_header_block "${WORK}/hb_empty.eml"
+
+assert_fails 'headers cut off before the separator are not a message' \
+  has_header_block "$(body_of hb_cut 'From: a@b
+Subject: truncated mid')"
+
+assert_fails 'a separator with no headers before it is not a message' \
+  has_header_block "$(body_of hb_nofields '
+body only
+')"
+
+# The skip guard asks this of every envelope it sees, including ones never
+# archived, so a missing path is an ordinary answer rather than an error.
+assert_fails 'a path that does not exist is not a message' \
+  has_header_block "${WORK}/hb_absent.eml"
+
+printf 'From: a@b\n\nbody\n' >"${WORK}/hb_locked.eml"
+chmod 000 "${WORK}/hb_locked.eml"
+assert_fails 'an unreadable body is not credited as a message' \
+  has_header_block "${WORK}/hb_locked.eml"
+chmod 644 "${WORK}/hb_locked.eml"
+
+printf '\n== download_message\n'
+
+# The suite's only stub. curl_auth is the seam between the archive and Bichon,
+# and what is under test is what the archive does with a payload — not how the
+# payload arrived. STUB_PAYLOAD is written wherever --output points, and
+# STUB_STATUS is curl's verdict, which for this defect is always success.
+STUB_PAYLOAD=''
+STUB_STATUS=0
+curl_auth() {
+  local out=''
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --output)
+        out="$2"
+        shift 2
+        ;;
+      *) shift ;;
+    esac
+  done
+  [ -n "${out}" ] && printf '%s' "${STUB_PAYLOAD}" >"${out}"
+  return "${STUB_STATUS}"
+}
+
+DL_DIR="${WORK}/download"
+mkdir -p "${DL_DIR}"
+
+STUB_PAYLOAD=''
+assert_fails 'an empty 200 is refused' download_message 1 900 "${DL_DIR}/900.eml"
+assert_eq 'the refusal leaves neither a body nor a temp file' '' \
+  "$(find "${DL_DIR}" -name '900.eml*' -printf '%f\n')"
+
+STUB_PAYLOAD='From: a@b
+Subject: cut off here'
+assert_fails 'a 200 truncated inside the headers is refused' \
+  download_message 1 901 "${DL_DIR}/901.eml"
+assert_eq 'a refused truncation leaves nothing behind' '' \
+  "$(find "${DL_DIR}" -name '901.eml*' -printf '%f\n')"
+
+STUB_PAYLOAD='Message-ID: <downloaded@example.com>
+
+body
+'
+assert_succeeds 'a payload with a header block is published' \
+  download_message 1 902 "${DL_DIR}/902.eml"
+assert_eq 'the published body is group-readable' '640' \
+  "$(stat -c '%a' "${DL_DIR}/902.eml")"
+
+STUB_STATUS=1
+assert_fails 'a curl failure is still a failure' \
+  download_message 1 903 "${DL_DIR}/903.eml"
+STUB_STATUS=0
 
 printf '\n== write_meta_sidecar\n'
 

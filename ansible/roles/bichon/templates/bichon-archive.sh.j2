@@ -73,6 +73,33 @@ search_tagged_messages() {
     "${BICHON_BASE_URL}/api/v1/search-messages"
 }
 
+# The archive's proof that a payload is a message: at least one header field
+# line, then the empty line RFC 5322 §2.1 puts between the headers and the body.
+# curl cannot assert this — `--fail` judges the status code, and Bichon answers
+# 200 with a zero-length body when its blob store holds no content for an
+# envelope it still indexes, which is how a 0-byte .eml reached the corpus.
+# `--retry-all-errors` retried nothing, because nothing reported an error.
+#
+# Reading stops at the separator, so this costs one page of a body rather than
+# all of it, and awk's own failure to open the file is the answer "not a message"
+# — which is what the caller asks of a path that does not exist yet.
+#
+# Deliberately not an equality check against the envelope's `size`: Bichon takes
+# that from the IMAP server's RFC822.SIZE (`extractor.rs:54`) and rebuilds the
+# served body by re-attaching detached attachments, so the number and the bytes
+# have different producers and no documented reason to agree.
+#
+# Deliberately not "the first line is a header field" either: three bodies in the
+# live corpus open with an mbox `From ` separator line, and a rule that rejects
+# them would re-download all three on every run without ever converging.
+has_header_block() {
+  LC_ALL=C awk '
+    /^\r?$/ { if (fields) separated = 1; exit }
+    { fields = 1 }
+    END { exit !separated }
+  ' "$1" 2>/dev/null
+}
+
 download_message() {
   local account_id="$1" message_id="$2" out_path="$3"
   local tmp
@@ -80,8 +107,11 @@ download_message() {
   chmod "$ARCHIVE_FILE_MODE" "$tmp"
   if curl_auth --output "$tmp" \
       "${BICHON_BASE_URL}/api/v1/download-message/${account_id}/${message_id}"; then
-    mv "$tmp" "$out_path"
-    return 0
+    if has_header_block "$tmp"; then
+      mv "$tmp" "$out_path"
+      return 0
+    fi
+    log "download rejected id=${message_id} bytes=$(stat -c '%s' "$tmp") reason=no_header_block"
   fi
   rm -f "$tmp"
   return 1
@@ -308,14 +338,19 @@ process_account() {
       eml_path="${out_dir}/${id}.eml"
       meta_path="${out_dir}/${id}.meta.json"
 
-      if [ -f "$eml_path" ] && [ -f "$meta_path" ]; then
+      # Existence is not the question the skip asks. A 0-byte .eml satisfies
+      # `-f` and is not a message, so a file guard promises coverage the archive
+      # does not have and never asks again. Both guards read the same predicate,
+      # so a body that is not a message is downloaded again on the next run the
+      # envelope appears in.
+      if has_header_block "$eml_path" && [ -f "$meta_path" ]; then
         skipped=$((skipped + 1))
         continue
       fi
 
       mkdir -p "$out_dir"
 
-      if [ ! -f "$eml_path" ]; then
+      if ! has_header_block "$eml_path"; then
         if ! download_message "$account_id" "$id" "$eml_path"; then
           log "download failed account=${safe_email} id=${id}"
           account_failures=$((account_failures + 1))
