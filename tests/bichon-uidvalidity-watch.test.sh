@@ -93,6 +93,11 @@ assert_eq 'unremarkable entries exit 0' '0' \
 
 assert_eq 'and write no latch' '' "$(latch_of quiet)"
 
+# "latch file exists" must mean "a rebuild was recorded", so a clean run may not
+# leave an empty one behind — an operator acknowledges by deleting this file.
+assert_fails 'and create no latch file at all' \
+  test -e "${WORK}/state/quiet/rebuilds.log"
+
 assert_eq 'an empty journal exits 0' '0' "$(run_case empty 0)"
 
 printf '\n== a detected rebuild\n'
@@ -127,12 +132,39 @@ assert_eq 'without duplicating the latched line' '1' "$(latch_of persist | wc -l
 rm "${WORK}/state/persist/rebuilds.log"
 assert_eq 'deleting the latch acknowledges the alert' '0' "$(run_case persist 0)"
 
+printf '\n== the report stays bounded\n'
+
+# The report is republished every tick until acknowledged. An account thrashing
+# UIDVALIDITY unnoticed latches thousands of lines; echoing all of them hourly
+# would spam the journal this unit exists to keep readable.
+flood=()
+for _ in $(seq 25); do flood+=("${SIGNAL_LINE}"); done
+assert_eq '25 latched lines still exit 1' '1' "$(run_case flood 0 "${flood[@]}")"
+
+assert_eq 'all 25 are kept in the latch file' '25' "$(latch_of flood | wc -l)"
+
+assert_eq 'but only 20 are echoed' '20' \
+  "$(grep -cF "${SIGNAL_LINE}" "${WORK}/flood.stderr")"
+
+assert_succeeds 'and the remainder is counted, not dropped silently' \
+  grep -qF 'and 5 more, in' "${WORK}/flood.stderr"
+
+assert_succeeds 'the total is reported' \
+  grep -qF '25 unacknowledged' "${WORK}/flood.stderr"
+
 printf '\n== operational errors\n'
 
 # An unreadable journal must not be reported as "no rebuild": the run could not
 # answer the question, which is exit 2 everywhere else in auberge.
 assert_eq 'an unreadable journal exits 2' '2' "$(run_case unreadable 1)"
 assert_eq 'and writes no latch' '' "$(latch_of unreadable)"
+
+# The journal is staged through a file to bound the unbounded first read. It is
+# scratch, not state: a leftover would be grepped again on the next tick.
+assert_fails 'the journal scratch file is not left behind on failure' \
+  test -e "${WORK}/state/unreadable/journal.scratch"
+
+assert_fails 'nor on success' test -e "${WORK}/state/detect/journal.scratch"
 
 assert_eq 'a rebuild latches' '1' "$(run_case both 0 "${SIGNAL_LINE}")"
 assert_eq 'an unreadable journal then outranks the latch' '2' "$(run_case both 1)"

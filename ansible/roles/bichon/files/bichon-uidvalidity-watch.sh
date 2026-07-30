@@ -42,16 +42,29 @@ readonly SIGNAL='detected with changed uid_validity'
 
 readonly CURSOR_FILE="${BICHON_UIDVALIDITY_STATE_DIR}/cursor"
 readonly REBUILD_LOG="${BICHON_UIDVALIDITY_STATE_DIR}/rebuilds.log"
+readonly SCRATCH_FILE="${BICHON_UIDVALIDITY_STATE_DIR}/journal.scratch"
 readonly SELF_UNIT='bichon-uidvalidity-watch.service'
+
+# The report is republished every tick until acknowledged, so it has to stay
+# bounded: an account thrashing UIDVALIDITY unnoticed for weeks latches thousands
+# of lines, and echoing all of them hourly would spam the journal this unit
+# exists to keep readable. The latch file keeps the complete record.
+readonly REPORT_MAX_LINES=20
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2
 }
 
-# journalctl advances the cursor file to the last entry it showed, so a run that
-# reads nothing new still records where it stopped and no entry is read twice.
-# Scoping to one unit also keeps this script's own output — which quotes SIGNAL
-# back when it reports — from ever matching on a later run.
+# journalctl advances the cursor file to the last entry it examined, so a run
+# that reads nothing new still records where it stopped and no entry is read
+# twice. Scoping to one unit also keeps this script's own output — which quotes
+# SIGNAL back when it reports — from ever matching on a later run.
+#
+# Filtering here with journalctl's own --grep would be the obvious economy, and
+# is wrong: --grep exits 1 when nothing matched, which is the same status an
+# unreadable or misnamed unit returns. A renamed bichon.service would then read
+# as "no rebuild" forever, and silent-vs-loud (ADR-0007 §1) is the whole point
+# of this unit. grep -F downstream keeps journalctl's status unambiguous.
 read_new_entries() {
   journalctl \
     --unit="${BICHON_UIDVALIDITY_UNIT}" \
@@ -69,14 +82,20 @@ read_new_entries() {
 # which spills them onto continuation lines; the mailbox name and the timestamp
 # are both on the line that matches, and the discarded values name a generation
 # counter nobody acts on.
+# Staged through a file rather than a variable because the first run is unbounded
+# — a VPS journal holding months of bichon.service is hundreds of thousands of
+# lines, and buffering that in the shell costs tens of MB for a single grep.
+# Every later run is bounded by the cursor to one tick's worth.
 record_rebuilds() {
-  local entries matches
-  if ! entries=$(read_new_entries); then
+  local matches
+  if ! read_new_entries >"${SCRATCH_FILE}"; then
+    rm -f "${SCRATCH_FILE}"
     log "journal read failed for unit ${BICHON_UIDVALIDITY_UNIT}"
     return 2
   fi
 
-  matches=$(printf '%s\n' "${entries}" | grep -F "${SIGNAL}" || true)
+  matches=$(grep -F "${SIGNAL}" "${SCRATCH_FILE}" || true)
+  rm -f "${SCRATCH_FILE}"
   [[ -z "${matches}" ]] && return 0
 
   printf '%s\n' "${matches}" >>"${REBUILD_LOG}"
@@ -92,10 +111,16 @@ report() {
     return 0
   }
 
-  log "MAILBOX CACHE REBUILD DETECTED — the Internal Store dropped envelopes for:"
+  local total line
+  total=$(wc -l <"${REBUILD_LOG}")
+
+  log "MAILBOX CACHE REBUILD DETECTED — ${total} unacknowledged, the Internal Store dropped:"
   while IFS= read -r line; do
     log "  ${line}"
-  done <"${REBUILD_LOG}"
+  done < <(head -n "${REPORT_MAX_LINES}" "${REBUILD_LOG}")
+  if [[ "${total}" -gt "${REPORT_MAX_LINES}" ]]; then
+    log "  … and $((total - REPORT_MAX_LINES)) more, in ${REBUILD_LOG}"
+  fi
   log "Mail still on the Upstream Mailbox was refetched; mail already expunged there was not."
   log "Replay the Email Archive with examples/bichon-restore.sh, then acknowledge with:"
   log "  rm ${REBUILD_LOG} && systemctl start ${SELF_UNIT}"
