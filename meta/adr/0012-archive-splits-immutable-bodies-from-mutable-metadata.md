@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, 2026-07-29.
+Accepted, 2026-07-29. **Amended by ADR-0013**, which adds `message_id` to the sidecar, reverses the backfill rejection below on the grounds that rejection named, and narrows "written once and never revisited" to observations rather than to the file.
 
 ## Decision
 
@@ -59,7 +59,7 @@ The hazard that surfaced this: on `UIDVALIDITY` mismatch Bichon calls `rebuild_m
 
 - **Keep tags in the sidecar; refresh sidecars on a periodic full sweep.** Rejected: this is ADR-0006's already-rejected "pure skip-if-exists, no cursor" alternative returning under another name — paginating the entire envelope list to discover what changed, ~1000 API calls per sweep for a 100k-message corpus. The Tag Snapshot pages only the _tagged_ subset, so cost scales with a set the operator controls and is one call when that set is empty.
 
-- **Backfill existing sidecars to drop the vestigial `tags` field.** Rejected: it buys tidiness at the cost of rewriting every sidecar in the corpus, and the field is inert — the restore script reads `folder` only. Documented as vestigial instead.
+- **Backfill existing sidecars to drop the vestigial `tags` field.** Rejected: it buys tidiness at the cost of rewriting every sidecar in the corpus, and the field is inert — the restore script reads `folder` only. Documented as vestigial instead. (Reversed by ADR-0013: once the sidecar carries the key a safety gate counts, backfill buys correctness rather than tidiness and the field is no longer inert. The `tags` field goes with that rewrite.)
 
 - **A `NoSync` vault account inside Bichon.** Bichon supports accounts of type `NoSync` (`crates/core/src/account/migration.rs:64`) which are never scheduled for sync (`trigger_start` is gated on `AccountType::IMAP`, `migration.rs:319`; `process_imap_download` asserts it, `download/mod.rs:45`) and whose imported mailboxes carry no `UIDVALIDITY` (`crates/core/src/import/mod.rs:92-105`). Continuously importing the Archive into such an account would make it structurally immune to a rebuild, and would additionally pin the shared blobs, since `cleanup_unused_content` deletes a blob only when no envelope anywhere still references its hash (`store/tantivy/envelope.rs:823`). Rejected: it is eager re-import where ADR-0006 chose lazy, it places the durable searchable copy inside the store we deliberately do not back up, it introduces a component that can go silently stale, and it needs its own dedup ledger because import assigns a fresh `Uuid::new_v4()` per envelope (`extractor.rs:160`) and is therefore not idempotent. Once the restore path is faithful, it buys nothing the Archive does not already provide.
 
