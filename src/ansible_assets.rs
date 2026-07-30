@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const VERSION_STAMP: &str = ".auberge-version";
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 static EMBEDDED_ANSIBLE: Dir = include_dir!("$CARGO_MANIFEST_DIR/ansible");
 
@@ -35,23 +37,10 @@ impl AnsibleAssets {
         }
 
         let ansible_dir = crate::config::Config::data_dir()?.join("ansible");
-        let stamp = ansible_dir.join(VERSION_STAMP);
+        let fingerprint = embedded_fingerprint();
 
-        let needs_extract = !stamp.exists()
-            || std::fs::read_to_string(&stamp)
-                .map(|v| v.trim() != VERSION)
-                .unwrap_or(true);
-
-        if needs_extract {
-            if ansible_dir.exists() {
-                std::fs::remove_dir_all(&ansible_dir)
-                    .wrap_err("Failed to remove stale ansible dir")?;
-            }
-            std::fs::create_dir_all(&ansible_dir).wrap_err("Failed to create ansible dir")?;
-            extract_dir(&EMBEDDED_ANSIBLE, &ansible_dir)?;
-            write_ansible_cfg(&ansible_dir)?;
-            std::fs::write(&stamp, VERSION).wrap_err("Failed to write version stamp")?;
-            eprintln!("Extracted ansible assets for v{}", VERSION);
+        if ensure_extracted(&ansible_dir, &fingerprint)? {
+            eprintln!("Extracted ansible assets for v{}", fingerprint);
         }
 
         Ok(Self { ansible_dir })
@@ -101,6 +90,67 @@ impl AnsibleAssets {
 
         Ok(())
     }
+}
+
+fn embedded_fingerprint() -> String {
+    fingerprint(hash_dir(&EMBEDDED_ANSIBLE))
+}
+
+fn fingerprint(content_hash: u64) -> String {
+    format!("{}+{:016x}", VERSION, content_hash)
+}
+
+fn hash_dir(dir: &Dir<'static>) -> u64 {
+    let mut files = Vec::new();
+    collect_files(dir, &mut files);
+    files.sort_unstable_by_key(|(path, _)| *path);
+    hash_files(&files)
+}
+
+fn collect_files(dir: &Dir<'static>, files: &mut Vec<(&'static Path, &'static [u8])>) {
+    for entry in dir.entries() {
+        match entry {
+            include_dir::DirEntry::Dir(sub) => collect_files(sub, files),
+            include_dir::DirEntry::File(file) => files.push((file.path(), file.contents())),
+        }
+    }
+}
+
+fn hash_files(files: &[(&Path, &[u8])]) -> u64 {
+    let mut hash = FNV_OFFSET;
+    for (path, contents) in files {
+        hash = hash_chunk(hash, path.as_os_str().as_encoded_bytes());
+        hash = hash_chunk(hash, contents);
+    }
+    hash
+}
+
+fn hash_chunk(hash: u64, bytes: &[u8]) -> u64 {
+    hash_bytes(hash_bytes(hash, &(bytes.len() as u64).to_le_bytes()), bytes)
+}
+
+fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
+fn ensure_extracted(ansible_dir: &Path, fingerprint: &str) -> Result<bool> {
+    let stamp = ansible_dir.join(VERSION_STAMP);
+    if std::fs::read_to_string(&stamp).is_ok_and(|stamped| stamped.trim() == fingerprint) {
+        return Ok(false);
+    }
+
+    if ansible_dir.exists() {
+        std::fs::remove_dir_all(ansible_dir).wrap_err("Failed to remove stale ansible dir")?;
+    }
+    std::fs::create_dir_all(ansible_dir).wrap_err("Failed to create ansible dir")?;
+    extract_dir(&EMBEDDED_ANSIBLE, ansible_dir)?;
+    write_ansible_cfg(ansible_dir)?;
+    std::fs::write(&stamp, fingerprint).wrap_err("Failed to write version stamp")?;
+    Ok(true)
 }
 
 fn extract_dir(dir: &Dir, base: &Path) -> Result<()> {
@@ -177,6 +227,83 @@ mod tests {
         assert!(base.join("roles").is_dir());
         assert!(base.join("requirements.yml").is_file());
         assert!(base.join("playbooks/apps.yml").is_file());
+    }
+
+    #[test]
+    fn test_ensure_extracted_writes_assets_and_stamp() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("ansible");
+
+        assert!(ensure_extracted(&dir, &fingerprint(1)).unwrap());
+
+        assert!(dir.join("playbooks/apps.yml").is_file());
+        assert!(dir.join("ansible.cfg").is_file());
+        assert_eq!(
+            std::fs::read_to_string(dir.join(VERSION_STAMP)).unwrap(),
+            fingerprint(1)
+        );
+    }
+
+    #[test]
+    fn test_ensure_extracted_skips_when_fingerprint_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("ansible");
+        ensure_extracted(&dir, &fingerprint(1)).unwrap();
+        std::fs::write(dir.join("sentinel"), "kept").unwrap();
+
+        assert!(!ensure_extracted(&dir, &fingerprint(1)).unwrap());
+
+        assert!(dir.join("sentinel").is_file());
+    }
+
+    #[test]
+    fn test_changed_tree_at_same_version_triggers_reextract() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("ansible");
+        ensure_extracted(&dir, &fingerprint(1)).unwrap();
+        std::fs::write(dir.join("sentinel"), "wiped").unwrap();
+
+        assert!(ensure_extracted(&dir, &fingerprint(2)).unwrap());
+
+        assert!(!dir.join("sentinel").exists());
+        assert!(dir.join("playbooks/apps.yml").is_file());
+        assert_eq!(
+            std::fs::read_to_string(dir.join(VERSION_STAMP)).unwrap(),
+            fingerprint(2)
+        );
+    }
+
+    #[test]
+    fn test_fingerprints_share_version_but_differ_on_content() {
+        assert!(fingerprint(1).starts_with(VERSION));
+        assert!(fingerprint(2).starts_with(VERSION));
+        assert_ne!(fingerprint(1), fingerprint(2));
+    }
+
+    #[test]
+    fn test_hash_files_detects_content_change() {
+        let before = hash_files(&[(Path::new("roles/bichon/tasks/main.yml"), b"- name: a")]);
+        let after = hash_files(&[(Path::new("roles/bichon/tasks/main.yml"), b"- name: b")]);
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn test_hash_files_detects_renamed_file() {
+        let before = hash_files(&[(Path::new("playbooks/apps.yml"), b"same")]);
+        let after = hash_files(&[(Path::new("playbooks/infra.yml"), b"same")]);
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn test_hash_files_is_unambiguous_across_boundaries() {
+        let split = hash_files(&[(Path::new("a"), b"bc"), (Path::new("d"), b"e")]);
+        let shifted = hash_files(&[(Path::new("ab"), b"c"), (Path::new("de"), b"")]);
+        assert_ne!(split, shifted);
+    }
+
+    #[test]
+    fn test_hash_dir_is_deterministic() {
+        assert_eq!(hash_dir(&EMBEDDED_ANSIBLE), hash_dir(&EMBEDDED_ANSIBLE));
     }
 
     #[test]
