@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const VERSION_STAMP: &str = ".auberge-version";
+const COLLECTIONS_CACHE: &str = ".ansible";
+const REQUIREMENTS: &str = "requirements.yml";
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
@@ -55,12 +57,12 @@ impl AnsibleAssets {
     }
 
     pub fn ensure_collections(&self) -> Result<()> {
-        let collections_dir = self.ansible_dir.join(".ansible/collections");
+        let collections_dir = self.ansible_dir.join(COLLECTIONS_CACHE).join("collections");
         if collections_dir.join("ansible_collections").exists() {
             return Ok(());
         }
 
-        let requirements = self.ansible_dir.join("requirements.yml");
+        let requirements = self.ansible_dir.join(REQUIREMENTS);
         if !requirements.exists() {
             return Ok(());
         }
@@ -144,13 +146,38 @@ fn ensure_extracted(ansible_dir: &Path, fingerprint: &str) -> Result<bool> {
     }
 
     if ansible_dir.exists() {
-        std::fs::remove_dir_all(ansible_dir).wrap_err("Failed to remove stale ansible dir")?;
+        clear_extracted(ansible_dir, collections_are_current(ansible_dir))?;
     }
     std::fs::create_dir_all(ansible_dir).wrap_err("Failed to create ansible dir")?;
     extract_dir(&EMBEDDED_ANSIBLE, ansible_dir)?;
     write_ansible_cfg(ansible_dir)?;
     std::fs::write(&stamp, fingerprint).wrap_err("Failed to write version stamp")?;
     Ok(true)
+}
+
+fn collections_are_current(ansible_dir: &Path) -> bool {
+    let embedded = EMBEDDED_ANSIBLE
+        .get_file(REQUIREMENTS)
+        .map(|f| f.contents());
+    let extracted = std::fs::read(ansible_dir.join(REQUIREMENTS)).ok();
+    embedded == extracted.as_deref()
+}
+
+fn clear_extracted(ansible_dir: &Path, keep_collections: bool) -> Result<()> {
+    for entry in std::fs::read_dir(ansible_dir).wrap_err("Failed to read stale ansible dir")? {
+        let entry = entry.wrap_err("Failed to read stale ansible dir entry")?;
+        if keep_collections && entry.file_name() == COLLECTIONS_CACHE {
+            continue;
+        }
+        let path = entry.path();
+        let removed = if entry.file_type()?.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        removed.wrap_err_with(|| format!("Failed to remove stale asset: {}", path.display()))?;
+    }
+    Ok(())
 }
 
 fn extract_dir(dir: &Dir, base: &Path) -> Result<()> {
@@ -190,7 +217,10 @@ fn write_ansible_cfg(ansible_dir: &Path) -> Result<()> {
          remote_tmp = /tmp\n\
          collections_path = {collections}\n",
         roles = ansible_dir.join("roles").display(),
-        collections = ansible_dir.join(".ansible/collections").display(),
+        collections = ansible_dir
+            .join(COLLECTIONS_CACHE)
+            .join("collections")
+            .display(),
     );
     std::fs::write(ansible_dir.join("ansible.cfg"), cfg).wrap_err("Failed to write ansible.cfg")?;
     Ok(())
@@ -271,6 +301,38 @@ mod tests {
             std::fs::read_to_string(dir.join(VERSION_STAMP)).unwrap(),
             fingerprint(2)
         );
+    }
+
+    #[test]
+    fn test_reextract_keeps_collections_when_requirements_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("ansible");
+        ensure_extracted(&dir, &fingerprint(1)).unwrap();
+        let installed = dir
+            .join(COLLECTIONS_CACHE)
+            .join("collections/ansible_collections");
+        std::fs::create_dir_all(&installed).unwrap();
+
+        ensure_extracted(&dir, &fingerprint(2)).unwrap();
+
+        assert!(installed.is_dir());
+        assert!(dir.join("playbooks/apps.yml").is_file());
+    }
+
+    #[test]
+    fn test_reextract_drops_collections_when_requirements_change() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("ansible");
+        ensure_extracted(&dir, &fingerprint(1)).unwrap();
+        let installed = dir
+            .join(COLLECTIONS_CACHE)
+            .join("collections/ansible_collections");
+        std::fs::create_dir_all(&installed).unwrap();
+        std::fs::write(dir.join(REQUIREMENTS), "collections: []").unwrap();
+
+        ensure_extracted(&dir, &fingerprint(2)).unwrap();
+
+        assert!(!installed.exists());
     }
 
     #[test]
