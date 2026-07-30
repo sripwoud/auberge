@@ -39,9 +39,20 @@ alias = "l"
 depends = "lint-*"
 quiet = true
 
+[tasks.test-rust]
+run = "cargo nextest run"
+quiet = true
+
+[tasks.test-shell]
+run = [
+  "./tests/bichon-archive.test.sh",
+  "./tests/bichon-expunge.test.sh",
+]
+quiet = true
+
 [tasks.test]
 alias = "t"
-run = "cargo nextest run"
+depends = "test-*"
 quiet = true
 
 [tools]
