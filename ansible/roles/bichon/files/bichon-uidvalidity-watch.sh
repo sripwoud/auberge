@@ -78,14 +78,17 @@ read_new_entries() {
 # Deliberate: a rebuild that already happened is precisely what the operator was
 # never told about, and seeding a silent baseline would bury it.
 #
-# Only the matching line is kept. Bichon formats the uid values with {:#?},
-# which spills them onto continuation lines; the mailbox name and the timestamp
-# are both on the line that matches, and the discarded values name a generation
+# Staged through a file rather than a variable because that first run is
+# unbounded — a VPS journal holding months of bichon.service is hundreds of
+# thousands of lines, and buffering it in the shell costs tens of MB for one
+# grep. Every later run is bounded by the cursor to one tick's worth. The name is
+# fixed, not per-pid, so a crashed run's leftover is overwritten rather than
+# accumulating; systemd will not run this oneshot concurrently with itself.
+#
+# Only the matching line is kept. Bichon formats the uid values with {:#?}, which
+# spills them onto continuation lines; the mailbox name and the timestamp are
+# both on the line that matches, and the discarded values name a generation
 # counter nobody acts on.
-# Staged through a file rather than a variable because the first run is unbounded
-# — a VPS journal holding months of bichon.service is hundreds of thousands of
-# lines, and buffering that in the shell costs tens of MB for a single grep.
-# Every later run is bounded by the cursor to one tick's worth.
 record_rebuilds() {
   local matches
   if ! read_new_entries >"${SCRATCH_FILE}"; then
