@@ -16,3 +16,9 @@
     name: bichon-archive.timer
     state: restarted
     daemon_reload: true
+
+- name: Restart bichon-uidvalidity-watch timer
+  ansible.builtin.systemd_service:
+    name: bichon-uidvalidity-watch.timer
+    state: restarted
+    daemon_reload: true

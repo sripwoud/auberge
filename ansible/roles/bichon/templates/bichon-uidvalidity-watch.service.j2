@@ -1,0 +1,26 @@
+[Unit]
+Description=Watch bichon's journal for a UIDVALIDITY mailbox cache rebuild
+# Deliberately no Requires=bichon.service, unlike bichon-archive.service which
+# calls bichon's API: this unit only reads the journal, and must still republish
+# a latched rebuild while bichon is down.
+
+[Service]
+Type=oneshot
+User={{ bichon_sys_user }}
+Group={{ bichon_sys_group }}
+# bichon.service is a system unit, so journald writes its entries to the system
+# journal, which is readable by root, adm and systemd-journal only. This grants
+# the read without running the watch as root.
+SupplementaryGroups=systemd-journal
+Environment=BICHON_UIDVALIDITY_STATE_DIR={{ bichon_uidvalidity_watch_state_dir }}
+Environment=BICHON_UIDVALIDITY_UNIT=bichon.service
+ExecStart={{ bichon_uidvalidity_watch_script_path }}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths={{ bichon_uidvalidity_watch_state_dir }}
+UMask=0027

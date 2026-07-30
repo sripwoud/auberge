@@ -290,6 +290,48 @@
         state: started
         daemon_reload: true
 
+    - name: Create UIDVALIDITY watch state directory
+      ansible.builtin.file:
+        path: "{{ bichon_uidvalidity_watch_state_dir }}"
+        state: directory
+        owner: "{{ bichon_sys_user }}"
+        group: "{{ bichon_sys_group }}"
+        mode: "0750"
+
+    - name: Deploy UIDVALIDITY watch script
+      ansible.builtin.copy:
+        src: bichon-uidvalidity-watch.sh
+        dest: "{{ bichon_uidvalidity_watch_script_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart bichon-uidvalidity-watch timer
+
+    - name: Deploy UIDVALIDITY watch systemd service unit
+      ansible.builtin.template:
+        src: bichon-uidvalidity-watch.service.j2
+        dest: /etc/systemd/system/bichon-uidvalidity-watch.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart bichon-uidvalidity-watch timer
+
+    - name: Deploy UIDVALIDITY watch systemd timer unit
+      ansible.builtin.template:
+        src: bichon-uidvalidity-watch.timer.j2
+        dest: /etc/systemd/system/bichon-uidvalidity-watch.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart bichon-uidvalidity-watch timer
+
+    - name: Enable and start UIDVALIDITY watch timer
+      ansible.builtin.systemd_service:
+        name: bichon-uidvalidity-watch.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
     - name: Display deployment summary
       ansible.builtin.debug:
         msg:
@@ -306,3 +348,7 @@
           - "  systemctl status bichon"
           - "  systemctl status bichon-archive.timer"
           - "  systemctl list-timers bichon-archive.timer"
+          - ""
+          - "A UIDVALIDITY mailbox cache rebuild shows up as a failed unit:"
+          - "  systemctl --failed"
+          - "  systemctl status bichon-uidvalidity-watch.service"

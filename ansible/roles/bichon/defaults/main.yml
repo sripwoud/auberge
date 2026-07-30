@@ -23,3 +23,6 @@ bichon_archive_script_path: /usr/local/bin/bichon-archive
 bichon_archive_env_path: /etc/default/bichon-archive
 bichon_archive_overlap_seconds: 86400
 bichon_archive_page_size: 100
+
+bichon_uidvalidity_watch_script_path: /usr/local/bin/bichon-uidvalidity-watch
+bichon_uidvalidity_watch_state_dir: /var/lib/bichon-uidvalidity-watch

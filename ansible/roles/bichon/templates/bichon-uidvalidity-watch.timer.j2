@@ -1,0 +1,10 @@
+[Unit]
+Description=Check hourly for a bichon UIDVALIDITY mailbox cache rebuild
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=bichon-uidvalidity-watch.service
+
+[Install]
+WantedBy=timers.target
