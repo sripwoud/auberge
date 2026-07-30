@@ -79,6 +79,7 @@ jobs:
         run: |
           ./tests/bichon-archive.test.sh
           ./tests/bichon-expunge.test.sh
+          ./tests/bichon-uidvalidity-watch.test.sh
 
   _test:
     needs: changed-files
