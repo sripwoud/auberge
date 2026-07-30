@@ -139,6 +139,52 @@ write_meta_sidecar() {
   mv "$tmp" "$out_path"
 }
 
+# Sidecars written before ADR-0013 record only `folder`. Repair them from the
+# sibling body, which is the same immutable input the writer reads, so the pass
+# is idempotent and converges in one run: grep finds nothing to do on every
+# later tick. It rewrites the whole sidecar, which drops the `tags` field
+# ADR-0012 left vestigial.
+#
+# A sidecar with no sibling body, or no `folder` to preserve, is not repairable
+# here and fails the run rather than being skipped quietly — the coverage gate in
+# examples/bichon-expunge.sh cannot count it either.
+backfill_message_ids() {
+  local safe_email="$1"
+  local account_dir="${BICHON_ARCHIVE_DIR}/${safe_email}"
+  [ -d "$account_dir" ] || return 0
+
+  local stale
+  stale=$(grep -rL --include='*.meta.json' -e '"message_id"' "$account_dir" || true)
+  [ -z "$stale" ] && return 0
+
+  local repaired=0 failures=0 meta eml message_id tmp
+  while IFS= read -r meta; do
+    [ -z "$meta" ] && continue
+    eml="${meta%.meta.json}.eml"
+    if [ ! -f "$eml" ]; then
+      log "backfill failed account=${safe_email} sidecar=${meta} reason=no_body"
+      failures=$((failures + 1))
+      continue
+    fi
+    message_id=$(canonical_message_id "$eml")
+    tmp=$(mktemp "${meta}.XXXXXX")
+    chmod "$ARCHIVE_FILE_MODE" "$tmp"
+    if ! jq --arg message_id "$message_id" \
+      'if (.folder | type) == "string" then {folder, message_id: $message_id} else error("no folder") end' \
+      "$meta" >"$tmp"; then
+      log "backfill failed account=${safe_email} sidecar=${meta} reason=no_folder"
+      rm -f "$tmp"
+      failures=$((failures + 1))
+      continue
+    fi
+    mv "$tmp" "$meta"
+    repaired=$((repaired + 1))
+  done <<<"$stale"
+
+  log "account=${safe_email} backfill repaired=${repaired} failures=${failures}"
+  [ "$failures" -eq 0 ]
+}
+
 write_tag_snapshot() {
   local account_id="$1" safe_email="$2"
   local snapshot_path="${BICHON_ARCHIVE_DIR}/${safe_email}/tags.json"
@@ -216,6 +262,13 @@ process_account() {
   if [ "$since_ms" -lt 0 ]; then since_ms=0; fi
 
   log "account=${safe_email} id=${account_id} cursor_ms=${cursor_ms} since_ms=${since_ms}"
+
+  # Counted against the run, not against the account: an unrepairable sidecar
+  # must fail the unit loudly, but freezing the cursor would stop archiving new
+  # mail over a defect in an old entry.
+  if ! backfill_message_ids "$safe_email"; then
+    TOTAL_FAILURES=$((TOTAL_FAILURES + 1))
+  fi
 
   local page=1
   local total_pages=1
