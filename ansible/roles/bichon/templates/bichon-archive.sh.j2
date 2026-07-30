@@ -87,12 +87,55 @@ download_message() {
   return 1
 }
 
+# The archive's dedup key, read from the body rather than from Bichon's envelope
+# because only the body survives re-import unchanged (ADR-0013). Canonical form
+# is unfolded, trimmed, and stripped of one pair of angle brackets: RFC 5322
+# folding puts the value on a continuation line for 108 bodies in the live
+# corpus, which is what a naive '^Message-ID:' match gets wrong. A body with no
+# Message-ID is keyed by its own sha256 — Bichon's synthetic id regenerates on
+# re-import, so the hash is the only stable answer the backfill can also reach.
+canonical_message_id() {
+  local eml_path="$1" message_id
+  message_id=$(LC_ALL=C awk '
+    /^\r?$/ { exit }
+    folded && /^[ \t]/ {
+      continuation = $0
+      sub(/^[ \t]+/, "", continuation)
+      message_id = message_id continuation
+      next
+    }
+    !found && tolower($0) ~ /^message-id:/ {
+      message_id = $0
+      sub(/^[^:]*:/, "", message_id)
+      sub(/^[ \t]+/, "", message_id)
+      found = 1
+      folded = 1
+      next
+    }
+    { folded = 0 }
+    END {
+      gsub(/\r/, "", message_id)
+      sub(/[ \t]+$/, "", message_id)
+      sub(/^</, "", message_id)
+      sub(/>$/, "", message_id)
+      print message_id
+    }
+  ' "$eml_path")
+
+  if [ -z "$message_id" ]; then
+    message_id="sha256:$(sha256sum "$eml_path" | cut -d' ' -f1)"
+  fi
+  printf '%s' "$message_id"
+}
+
 write_meta_sidecar() {
-  local out_path="$1" envelope_json="$2"
-  local tmp
+  local out_path="$1" eml_path="$2" envelope_json="$3"
+  local tmp message_id
+  message_id=$(canonical_message_id "$eml_path")
   tmp=$(mktemp "${out_path}.XXXXXX")
   chmod "$ARCHIVE_FILE_MODE" "$tmp"
-  printf '%s' "$envelope_json" | jq '{folder: .mailbox_name}' >"$tmp"
+  printf '%s' "$envelope_json" \
+    | jq --arg message_id "$message_id" '{folder: .mailbox_name, message_id: $message_id}' >"$tmp"
   mv "$tmp" "$out_path"
 }
 
@@ -217,7 +260,7 @@ process_account() {
           continue
         fi
       fi
-      write_meta_sidecar "$meta_path" "$envelope"
+      write_meta_sidecar "$meta_path" "$eml_path" "$envelope"
       processed=$((processed + 1))
     done < <(printf '%s' "$body" | jq -c '.items[]?')
 
@@ -253,4 +296,6 @@ main() {
   if [ "$TOTAL_FAILURES" -gt 0 ]; then exit 1; fi
 }
 
-main "$@"
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi
