@@ -77,9 +77,11 @@ CUTOFF_DATE=''
 ENVELOPE_JSON=''
 IMAP_COUNT=0
 
-# Set by count_distinct_message_ids. It cannot report through a command
-# substitution: the subshell would swallow the die, and the caller would read an
-# empty count as zero coverage instead of as a broken sidecar.
+# Set by count_distinct_message_ids, which reports through globals rather than
+# stdout: an abort has to carry which sidecar caused it, and a command
+# substitution would run the whole check in a subshell where neither the count nor
+# that path survives — leaving the caller to read an empty result as zero
+# coverage rather than as a broken sidecar.
 ARCHIVE_COUNT=0
 UNKEYED_SIDECAR=''
 
@@ -634,8 +636,9 @@ find "$archive_dir" -regextype posix-extended \
   done
 REMOTE
   ) || die 1 "could not read the archived sidecars for ${folder} on ${host}" \
-    'the Host printed the reason above' \
-    "check the sidecars are group-readable: ssh ${host} find ${archive_path} -type f ! -perm -g=r"
+    'ssh or the Host printed the reason above' \
+    "if a sidecar was unreadable: ssh ${host} find ${archive_path} -type f ! -perm -g=r" \
+    "if ssh itself failed: ssh ${host} true"
 
   count_distinct_message_ids <<<"${sidecar_rows}" \
     || die 1 "an archived sidecar carries no message_id: ${UNKEYED_SIDECAR}" \
