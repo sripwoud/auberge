@@ -97,7 +97,7 @@ The third-party IMAP (or Gmail-API) server that Bichon syncs _from_ — e.g. the
 _Avoid_: IMAP server, mail provider, source mailbox.
 
 **Synced Folder**:
-A folder on an **Upstream Mailbox** that Bichon ingests into the **Email Archive**. The set is computed at **Account Reconcile** time as `(remote folder list) − (exclusion set)`, where the default exclusion set is `{Spam, Trash}` — folders whose user-meaning is "not real mail" or "I'm done with this", which an Archive must not invert. The result is written into Bichon's per-account `sync_folders` field.
+A folder on an **Upstream Mailbox** that Bichon ingests into the **Email Archive**. The set is computed at **Account Reconcile** time as `(remote folder list) − (exclusion set)`, where the default exclusion set is `{Spam, Trash}` — folders whose user-meaning is "not real mail" or "I'm done with this", which an Archive must not invert. The result is written into Bichon's per-account `sync_folders` field. **Only a Synced Folder is an eligible expunge target**: the Archive can vouch only for folders it continuously ingests, so `examples/bichon-expunge.sh` neither offers nor accepts anything else — a folder outside the set (e.g. Trash, whose pre-exclusion sidecars linger in the append-only Archive) could pass a count-based coverage check on stale evidence.
 _Avoid_: All folders, every folder, full mailbox, watched folder.
 
 **Account Reconcile**:
