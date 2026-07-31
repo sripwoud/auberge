@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.10](https://github.com/sripwoud/auberge/compare/v0.14.9...v0.14.10) - 2026-07-31
+
+### Added
+
+- *(bichon)* add rescan command to re-archive backdated mail ([#399](https://github.com/sripwoud/auberge/pull/399))
+- *(bichon)* alert when a mailbox cache rebuild purges the internal store ([#396](https://github.com/sripwoud/auberge/pull/396))
+
+### Fixed
+
+- *(bichon)* refuse to archive a body that is not a message ([#398](https://github.com/sripwoud/auberge/pull/398))
+- *(cli)* re-extract ansible assets when the embedded tree changes ([#397](https://github.com/sripwoud/auberge/pull/397))
+- *(bichon)* key archive dedup on Message-ID, not envelope id ([#391](https://github.com/sripwoud/auberge/pull/391))
+
 ## [0.14.9](https://github.com/sripwoud/auberge/compare/v0.14.8...v0.14.9) - 2026-07-29
 
 ### Added
