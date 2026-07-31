@@ -121,12 +121,30 @@ pub fn start_service_command() -> String {
     format!("sudo systemctl start {ARCHIVE_SERVICE}")
 }
 
-pub fn invocation_id_command() -> String {
-    format!("sudo systemctl show -p InvocationID --value {ARCHIVE_SERVICE}")
+pub fn journal_cursor_command() -> String {
+    "sudo journalctl -n0 --show-cursor --quiet --no-pager".to_string()
 }
 
-pub fn journal_command(invocation_id: &str) -> String {
-    format!("sudo journalctl _SYSTEMD_INVOCATION_ID={invocation_id} -o cat --no-pager")
+pub fn parse_journal_cursor(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("-- cursor: "))
+        .map(|cursor| cursor.trim().to_string())
+        .filter(|cursor| !cursor.is_empty())
+}
+
+fn validate_cursor_for_shell(cursor: &str) -> Result<()> {
+    let ok = cursor.chars().all(|c| {
+        c.is_ascii_alphanumeric() || matches!(c, '=' | ';' | '-' | '_' | '.' | ':' | '+' | '/')
+    });
+    if !ok {
+        eyre::bail!("journal cursor '{cursor}' contains characters unsafe for a remote shell");
+    }
+    Ok(())
+}
+
+pub fn journal_after_cursor_command(cursor: &str) -> String {
+    format!("sudo journalctl -u {ARCHIVE_SERVICE} --after-cursor '{cursor}' -o cat --no-pager")
 }
 
 fn token_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
@@ -225,20 +243,24 @@ pub fn execute_rescan(
         }
     }
 
+    // The run's report is read from the journal after a cursor captured
+    // here, not by InvocationID: systemd drops that property once it
+    // unloads an inactive oneshot, so it can be gone by the time the pass
+    // finishes. Same pattern as the uidvalidity watch.
+    let cursor_capture = ssh.run(&journal_cursor_command())?;
+    let Some(cursor) = parse_journal_cursor(&cursor_capture.stdout_str()) else {
+        eyre::bail!(
+            "could not capture a journal cursor: {}",
+            cursor_capture.stderr_str().trim()
+        );
+    };
+    validate_cursor_for_shell(&cursor)?;
+
     // Type=oneshot: start blocks until the archive pass finishes, and a
     // non-zero exit is a verdict to report, not an error to bail on.
     let start = ssh.run(&start_service_command())?;
 
-    let invocation = ssh.run(&invocation_id_command())?;
-    let invocation_id = invocation.stdout_str().trim().to_string();
-    if invocation_id.is_empty() || !invocation_id.chars().all(|c| c.is_ascii_hexdigit()) {
-        eyre::bail!(
-            "could not read InvocationID for {ARCHIVE_SERVICE}: {}",
-            invocation.stderr_str().trim()
-        );
-    }
-
-    let journal = ssh.run(&journal_command(&invocation_id))?;
+    let journal = ssh.run(&journal_after_cursor_command(&cursor))?;
     if !journal.success {
         eyre::bail!(
             "could not read the archive run journal: {}",
@@ -280,7 +302,7 @@ mod tests {
         }
     }
 
-    const INVOCATION_ID: &str = "0123456789abcdef0123456789abcdef";
+    const CURSOR_STDOUT: &str = "-- cursor: s=0123456789ab;i=1f2;b=00aa;m=bb;t=cc;x=dd\n";
 
     fn emails(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
@@ -326,8 +348,8 @@ mod tests {
         mock.stage_run_result(ok_with_stdout(""));
         mock.stage_run_result(failed_with("inactive\n", "", 3));
         mock.stage_run_result(CommandResult::ok());
+        mock.stage_run_result(ok_with_stdout(CURSOR_STDOUT));
         mock.stage_run_result(CommandResult::ok());
-        mock.stage_run_result(ok_with_stdout(&format!("{INVOCATION_ID}\n")));
         mock.stage_run_result(ok_with_stdout(
             "2026-07-31T09:00:00Z account=dev@x.io id=1 cursor_ms=0 since_ms=0\n\
              2026-07-31T09:00:01Z account=dev@x.io backfill repaired=0 failures=0\n\
@@ -375,7 +397,14 @@ mod tests {
             SshOp::Run(cursor_reset_command("dev@x.io")),
             "only the selected account's cursor is reset"
         );
-        assert_eq!(calls[3], SshOp::Run(start_service_command()));
+        assert_eq!(calls[3], SshOp::Run(journal_cursor_command()));
+        assert_eq!(calls[4], SshOp::Run(start_service_command()));
+        assert_eq!(
+            calls[5],
+            SshOp::Run(journal_after_cursor_command(
+                "s=0123456789ab;i=1f2;b=00aa;m=bb;t=cc;x=dd"
+            ))
+        );
     }
 
     #[test]
@@ -384,8 +413,8 @@ mod tests {
         mock.stage_run_result(ok_with_stdout(""));
         mock.stage_run_result(failed_with("inactive\n", "", 3));
         mock.stage_run_result(CommandResult::ok());
+        mock.stage_run_result(ok_with_stdout(CURSOR_STDOUT));
         mock.stage_run_result(failed_with("", "Job for bichon-archive.service failed", 1));
-        mock.stage_run_result(ok_with_stdout(&format!("{INVOCATION_ID}\n")));
         mock.stage_run_result(ok_with_stdout(
             "account=dev@x.io processed=10 skipped=2 failures=3\ntotal_failures=3\n",
         ));
@@ -406,8 +435,8 @@ mod tests {
         mock.stage_run_result(ok_with_stdout(""));
         mock.stage_run_result(failed_with("inactive\n", "", 3));
         mock.stage_run_result(CommandResult::ok());
+        mock.stage_run_result(ok_with_stdout(CURSOR_STDOUT));
         mock.stage_run_result(failed_with("", "Job failed", 1));
-        mock.stage_run_result(ok_with_stdout(&format!("{INVOCATION_ID}\n")));
         mock.stage_run_result(ok_with_stdout(
             "2026-07-31T09:00:00Z auth check failed: GET /api/v1/current-user did not return 2xx\n",
         ));
@@ -486,16 +515,40 @@ mod tests {
     }
 
     #[test]
-    fn malformed_invocation_id_is_an_error() {
+    fn missing_journal_cursor_is_an_error() {
         let mock = MockSshSession::new();
         mock.stage_run_result(ok_with_stdout(""));
         mock.stage_run_result(failed_with("inactive\n", "", 3));
         mock.stage_run_result(CommandResult::ok());
-        mock.stage_run_result(CommandResult::ok());
-        mock.stage_run_result(ok_with_stdout("not hex; drop table\n"));
+        mock.stage_run_result(ok_with_stdout(""));
 
         let err = execute_rescan(&mock, &emails(&["a@x.io"]), &emails(&["a@x.io"])).unwrap_err();
-        assert!(format!("{err}").contains("InvocationID"));
+        assert!(format!("{err}").contains("journal cursor"));
+        // The service is never started without a cursor to scope its report.
+        assert_eq!(mock.calls().len(), 4);
+    }
+
+    #[test]
+    fn unquotable_journal_cursor_is_an_error() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(ok_with_stdout(""));
+        mock.stage_run_result(failed_with("inactive\n", "", 3));
+        mock.stage_run_result(CommandResult::ok());
+        mock.stage_run_result(ok_with_stdout("-- cursor: s=abc'; rm -rf / #\n"));
+
+        let err = execute_rescan(&mock, &emails(&["a@x.io"]), &emails(&["a@x.io"])).unwrap_err();
+        assert!(format!("{err}").contains("unsafe"));
+        assert_eq!(mock.calls().len(), 4);
+    }
+
+    #[test]
+    fn parse_journal_cursor_reads_the_cursor_line() {
+        assert_eq!(
+            parse_journal_cursor(CURSOR_STDOUT),
+            Some("s=0123456789ab;i=1f2;b=00aa;m=bb;t=cc;x=dd".to_string())
+        );
+        assert_eq!(parse_journal_cursor(""), None);
+        assert_eq!(parse_journal_cursor("-- cursor: \n"), None);
     }
 
     #[test]
