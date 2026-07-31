@@ -10,8 +10,8 @@ use crate::services::backup::restic;
 use crate::services::backup::session::{
     BackupSession, CreateOutcome, SessionOpts, restic_prune, restic_push,
 };
-use crate::services::backup::ssh::LiveSshSession;
 use crate::services::backup::verify::{self, MaxAge, Status, Verdict, VerifyRequest};
+use crate::services::ssh::LiveSshSession;
 use crate::ssh_session::SshSession;
 use chrono::Utc;
 use clap::Subcommand;
