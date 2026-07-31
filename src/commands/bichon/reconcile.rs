@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::hosts::HostManager;
-use crate::output::OutputFormat;
+use crate::output::{self, OutputFormat};
 use crate::services::bichon::api::{Account, BichonApiClient};
 use crate::services::bichon::derive_base_url;
 use crate::services::bichon::folder_filter::is_excluded;
@@ -40,6 +40,17 @@ pub async fn run_reconcile_folders(
 ) -> Result<()> {
     let result = compute_reconcile(host, apply, account_filter).await?;
     emit_output(&result, output)?;
+    if result.apply && result.summary.added > 0 {
+        let account_flag = result
+            .account
+            .as_ref()
+            .map(|a| format!(" --account {a}"))
+            .unwrap_or_default();
+        output::warn(&format!(
+            "added {} folder(s); mail already in them with a Date behind the archive cursor is never archived by the hourly run — run `auberge bichon rescan --host {}{}` to backfill",
+            result.summary.added, result.host, account_flag
+        ));
+    }
     Ok(())
 }
 
