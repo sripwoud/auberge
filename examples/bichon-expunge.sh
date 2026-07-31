@@ -56,7 +56,7 @@ readonly SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10)
 
 host=''
 account=''
-folder="${DEFAULT_FOLDER}"
+folder=''
 window_days="${DEFAULT_WINDOW_DAYS}"
 archive_path="${DEFAULT_ARCHIVE_PATH}"
 no_input=false
@@ -69,6 +69,11 @@ HIMALAYA_ACCOUNTS_JSON=''
 # check_archive_root so one ssh round trip serves the menu and the per-account
 # check that follows it.
 ARCHIVE_ACCOUNTS=''
+
+# Newline-separated folder names of the resolved account, captured by
+# list_account_folders so one himalaya IMAP connection serves both the
+# --folder menu and the existence check.
+FOLDER_NAMES=''
 
 # Gate findings, threaded from the gate that computes them to the summary and
 # the expunge.
@@ -99,7 +104,9 @@ Options:
                              mailbox email address, since it also names the
                              Email Archive directory (on a TTY, chosen from
                              \`himalaya account list\`)
-  -f, --folder NAME          folder to expunge (default: ${DEFAULT_FOLDER})
+  -f, --folder NAME          folder to expunge (on a TTY, chosen from
+                             \`himalaya folder list\`; without one, defaults
+                             to ${DEFAULT_FOLDER})
   -w, --window-days DAYS     expunge mail older than DAYS (default: ${DEFAULT_WINDOW_DAYS})
       --archive-path PATH    Email Archive root on the Host
                              (default: ${DEFAULT_ARCHIVE_PATH})
@@ -261,6 +268,14 @@ choose_account() {
   choose_from 'himalaya account' "${candidates[@]}"
 }
 
+# FOLDER_NAMES already excludes nothing: unlike --account, no intersection
+# narrows it, so every folder himalaya reports is selectable here.
+choose_folder() {
+  local names=()
+  mapfile -t names <<<"${FOLDER_NAMES}"
+  choose_from 'folder to expunge' "${names[@]}"
+}
+
 resolve_host() {
   [[ -n "${host}" ]] && return 0
   interactive || die 2 'missing --host' \
@@ -273,6 +288,17 @@ resolve_account() {
   interactive || die 2 'missing --account' \
     'a non-interactive run must pass every value as a flag'
   account=$(choose_account)
+}
+
+# Unlike --host and --account, an omitted --folder has a documented default,
+# so a non-interactive run proceeds with it rather than dying.
+resolve_folder() {
+  [[ -n "${folder}" ]] && return 0
+  if interactive; then
+    folder=$(choose_folder)
+  else
+    folder="${DEFAULT_FOLDER}"
+  fi
 }
 
 validate_host() {
@@ -291,11 +317,10 @@ validate_account() {
 # The options that depend on neither the Host nor the account, so they can
 # reject a typo before anything reaches the network.
 validate_options() {
-  [[ "${folder}" == *[![:space:]]* ]] \
-    || die 2 'folder must not be empty'
-
-  # A newline in the folder name would desynchronise the typed-confirmation
-  # comparison from what the operator sees on screen.
+  # Empty means --folder was not passed; resolve_folder supplies the default
+  # or the menu answer later, so only a flag-passed value reaches this check.
+  # A newline in it would desynchronise the typed-confirmation comparison from
+  # what the operator sees on screen.
   [[ "${folder}" != *$'\n'* ]] \
     || die 2 'folder must not contain a newline'
 
@@ -434,6 +459,47 @@ check_account_archive() {
       "found: $(printf '%s' "${ARCHIVE_ACCOUNTS}" | paste -sd' ' -)" \
       '--account must be the mailbox email address, since bichon keys the' \
       'archive by email, and it must also name a himalaya account'
+}
+
+# Populates FOLDER_NAMES for the --folder menu and check_folder_exists — see
+# the global's comment for why one himalaya call serves both.
+list_account_folders() {
+  local folders_json
+  # --quiet rather than 2>/dev/null: himalaya prompts on /dev/tty when it
+  # needs a secret it cannot read non-interactively, and a discarded stderr
+  # turns that prompt into an unexplained stall.
+  folders_json=$(himalaya --quiet --output json folder list --account "${account}") \
+    || die 2 "himalaya could not list the folders of ${account}" \
+      'himalaya printed the reason above'
+
+  # pipefail is set, so a jq failure on unparseable JSON propagates through
+  # sort instead of being swallowed.
+  FOLDER_NAMES=$(printf '%s' "${folders_json}" | jq -r '.[].name' | sort) \
+    || die 2 'himalaya folder list returned JSON this script cannot read'
+
+  [[ -n "${FOLDER_NAMES}" ]] \
+    || die 2 "himalaya reports no folders for ${account}"
+}
+
+# IMAP treats every mailbox name but INBOX as case-sensitive, and the server's
+# own refusal ("Mailbox doesn't exist: SENT") names no alternative, so the
+# near miss is computed client-side where it can be named.
+folder_case_insensitive_match() {
+  grep -ixF -m1 -- "$1"
+}
+
+# A --folder passed as a flag skips what the menu guarantees exists, so check
+# it here — the same coupling check_account_archive applies to --account.
+check_folder_exists() {
+  grep -qxF -- "${folder}" <<<"${FOLDER_NAMES}" && return 0
+
+  local match='' lines=()
+  if match=$(folder_case_insensitive_match "${folder}" <<<"${FOLDER_NAMES}"); then
+    lines+=("did you mean: ${match} (IMAP folder names are case-sensitive)")
+  fi
+  lines+=("folders of ${account}: $(printf '%s' "${FOLDER_NAMES}" | paste -sd' ' -)")
+
+  die 2 "no folder named ${folder} for ${account}" "${lines[@]}"
 }
 
 # Guard a value that crossed back from the Host before it reaches (( )).
@@ -739,6 +805,9 @@ main() {
   resolve_account
   validate_account
   check_account_archive
+  list_account_folders
+  resolve_folder
+  check_folder_exists
 
   gate_backup_verified
   gate_archive_fresh

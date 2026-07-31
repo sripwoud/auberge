@@ -2,13 +2,15 @@
 #
 # tests/bichon-expunge.test.sh
 #
-# Unit tests for gate 3's coverage verdict in examples/bichon-expunge.sh — the
-# last check between an operator and permanently deleting mail from an Upstream
-# Mailbox. Exercises the deduplication and the refusal to guess, against
-# in-memory sidecar rows: no Host, no archive, no himalaya, no IMAP.
+# Unit tests for the pure, network-free logic in examples/bichon-expunge.sh —
+# the last checks between an operator and permanently deleting mail from an
+# Upstream Mailbox. Covers gate 3's coverage verdict (deduplication and the
+# refusal to guess), the case-insensitive folder-name near-miss, and the
+# --folder default/passthrough, all against in-memory input: no Host, no
+# archive, no himalaya, no IMAP.
 #
-# The Host-side emitter that produces those rows is not unit-tested here; it runs
-# on the Bichon Host and is exercised end to end by a `--no-input` run.
+# The Host-side emitter that produces gate 3's rows is not unit-tested here; it
+# runs on the Bichon Host and is exercised end to end by a `--no-input` run.
 #
 # Run: ./tests/bichon-expunge.test.sh
 
@@ -96,5 +98,37 @@ assert_eq 'a later clean call clears the earlier abort' '1' \
 
 count_distinct_message_ids <<<'/a/2026/07/9.meta.json	z@example.com'
 assert_eq 'a clean call leaves no sidecar named' '' "${UNKEYED_SIDECAR}"
+
+printf '\n== folder_case_insensitive_match\n'
+
+assert_eq 'a case mangled folder finds its advertised casing' 'Sent' \
+  "$(folder_case_insensitive_match SENT <<<$'Archive\nINBOX\nSent\nTrash')"
+
+assert_eq 'an exact name matches itself' 'INBOX' \
+  "$(folder_case_insensitive_match INBOX <<<$'Archive\nINBOX\nSent\nTrash')"
+
+assert_fails 'a substring is not a match' \
+  folder_case_insensitive_match Sen <<<$'Archive\nINBOX\nSent\nTrash'
+
+assert_fails 'no match returns non-zero' \
+  folder_case_insensitive_match Trashed <<<$'Archive\nINBOX\nSent\nTrash'
+
+assert_eq 'no match prints nothing' '' \
+  "$(folder_case_insensitive_match Trashed <<<$'Archive\nINBOX\nSent\nTrash')"
+
+printf '\n== resolve_folder\n'
+
+# Forces the non-interactive branch: on a developer TTY, interactive() would
+# otherwise open a real select menu and hang the suite.
+# shellcheck disable=SC2034  # intentional: read by interactive() in the sourced script
+no_input=true
+
+folder=''
+resolve_folder
+assert_eq 'an omitted folder falls back to INBOX non-interactively' 'INBOX' "${folder}"
+
+folder='Sent'
+resolve_folder
+assert_eq 'a passed folder is left untouched' 'Sent' "${folder}"
 
 report 'bichon-expunge'
