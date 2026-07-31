@@ -15,6 +15,9 @@
 #   4. summary            exact commands, message count, snapshot evidence
 #   5. typed confirmation operator types the folder name on a TTY
 #
+# Before any gate runs, --folder must be a Synced Folder: the Email Archive
+# can vouch for nothing else.
+#
 # Safety contract (ADR-0007) — load-bearing, do not "improve" away:
 #   - stdin must be a TTY; a non-TTY run refuses the expunge unconditionally
 #   - there is no --yes / --force, so no unattended expunge path exists
@@ -23,7 +26,10 @@
 # Designed for MXroute; works with any IMAP provider himalaya supports.
 #
 # Prerequisites:
-#   - auberge with the `backup verify` subcommand (>= the release carrying it)
+#   - auberge with the `backup verify` and `bichon reconcile-folders`
+#     subcommands (>= the release carrying both), and `bichon_api_token` set
+#     in its config: the script asks auberge for the Synced Folder set, which
+#     is the expunge eligibility rule
 #   - himalaya  (https://github.com/pimalaya/himalaya — Rust, project ethos),
 #     configured, with an account named after the mailbox email address:
 #     bichon keys the Email Archive by email (see sanitize_email in
@@ -75,6 +81,14 @@ ARCHIVE_ACCOUNTS=''
 # --folder menu and the existence check.
 FOLDER_NAMES=''
 
+# Newline-separated Synced Folder set of the resolved account, and the
+# Account Reconcile drift either side of it, captured by list_synced_folders
+# so one auberge call serves the --folder menu, the eligibility check, and
+# the drift warning.
+SYNCED_FOLDERS=''
+DRIFT_ADDED=''
+DRIFT_REMOVED=''
+
 # Gate findings, threaded from the gate that computes them to the summary and
 # the expunge.
 BACKUP_EVIDENCE=''
@@ -104,8 +118,8 @@ Options:
                              mailbox email address, since it also names the
                              Email Archive directory (on a TTY, chosen from
                              \`himalaya account list\`)
-  -f, --folder NAME          folder to expunge (on a TTY, chosen from
-                             \`himalaya folder list\`; without one, defaults
+  -f, --folder NAME          folder to expunge (on a TTY, chosen from the
+                             account's Synced Folders; without one, defaults
                              to ${DEFAULT_FOLDER})
   -w, --window-days DAYS     expunge mail older than DAYS (default: ${DEFAULT_WINDOW_DAYS})
       --archive-path PATH    Email Archive root on the Host
@@ -268,11 +282,20 @@ choose_account() {
   choose_from 'himalaya account' "${candidates[@]}"
 }
 
-# FOLDER_NAMES already excludes nothing: unlike --account, no intersection
-# narrows it, so every folder himalaya reports is selectable here.
+# The menu offers only folders that are both on the Upstream Mailbox and a
+# Synced Folder — the same intersection principle choose_account applies to
+# --account. comm -12 needs both inputs sorted, and both already are:
+# reconcile.rs sorts added/removed/unchanged before returning them, and
+# FOLDER_NAMES is piped through `sort` in list_account_folders.
 choose_folder() {
   local names=()
-  mapfile -t names <<<"${FOLDER_NAMES}"
+  mapfile -t names < <(comm -12 <(printf '%s\n' "${SYNCED_FOLDERS}") <(printf '%s\n' "${FOLDER_NAMES}"))
+
+  ((${#names[@]} > 0)) \
+    || die 2 "no Synced Folder of ${account} exists on the Upstream Mailbox" \
+      "synced folders: $(printf '%s' "${SYNCED_FOLDERS}" | paste -sd' ' -)" \
+      "mailbox folders: $(printf '%s' "${FOLDER_NAMES}" | paste -sd' ' -)"
+
   choose_from 'folder to expunge' "${names[@]}"
 }
 
@@ -365,6 +388,12 @@ check_tools() {
       'upgrade auberge: mise up auberge' \
       'gate 1 asserts the archive reached the off-host restic repository;' \
       'there is no weaker substitute for it'
+
+  # Same clap signal, for the subcommand the eligibility check needs.
+  auberge bichon reconcile-folders --help >/dev/null 2>&1 \
+    || die 2 'this auberge has no "bichon reconcile-folders" subcommand' \
+      'upgrade auberge: mise up auberge' \
+      'the eligibility check needs it to name the Synced Folder set'
 
   # With no config himalaya opens its first-run wizard, and that wizard reads
   # /dev/tty rather than stdin — redirecting stdin cannot stop it. So prove the
@@ -481,6 +510,44 @@ list_account_folders() {
     || die 2 "himalaya reports no folders for ${account}"
 }
 
+# The Email Archive can vouch only for folders Bichon continuously ingests, so
+# eligibility is the sync_folders set Account Reconcile maintains — asked from
+# auberge rather than recomputed here, so the exclusion rules (SPECIAL-USE
+# attributes, fallback names, extra_excluded_folders) keep a single owner; a
+# dry run PATCHes nothing.
+list_synced_folders() {
+  local reconcile_json
+  reconcile_json=$(auberge bichon reconcile-folders --host "${host}" --account "${account}" --output json) \
+    || die 2 "auberge could not read the Synced Folder set for ${account}" \
+      'auberge printed the reason above' \
+      'it needs bichon_api_token in its config and the Bichon API reachable'
+
+  local account_count
+  account_count=$(printf '%s' "${reconcile_json}" | jq '.accounts | length') \
+    || die 2 'auberge reconcile-folders returned JSON this script cannot read'
+  ((account_count > 0)) \
+    || die 2 "bichon knows no account ${account}"
+
+  SYNCED_FOLDERS=$(printf '%s' "${reconcile_json}" | jq -r '.accounts[0].unchanged[]?') \
+    || die 2 'auberge reconcile-folders returned JSON this script cannot read'
+  DRIFT_ADDED=$(printf '%s' "${reconcile_json}" | jq -r '.accounts[0].added[]?') \
+    || die 2 'auberge reconcile-folders returned JSON this script cannot read'
+  DRIFT_REMOVED=$(printf '%s' "${reconcile_json}" | jq -r '.accounts[0].removed[]?') \
+    || die 2 'auberge reconcile-folders returned JSON this script cannot read'
+
+  [[ -n "${SYNCED_FOLDERS}" ]] \
+    || die 2 "no Synced Folder for ${account} — nothing is eligible for expunge"
+
+  # Drift only blocks once it names the target folder — check_folder_synced
+  # re-checks that once --folder is known — so this is a warning, not a gate.
+  if [[ -n "${DRIFT_ADDED}" ]] || [[ -n "${DRIFT_REMOVED}" ]]; then
+    note "Account Reconcile drift for ${account} since the last --apply:"
+    [[ -z "${DRIFT_ADDED}" ]] || note "  not yet synced: $(printf '%s' "${DRIFT_ADDED}" | paste -sd' ' -)"
+    [[ -z "${DRIFT_REMOVED}" ]] || note "  pending removal: $(printf '%s' "${DRIFT_REMOVED}" | paste -sd' ' -)"
+    note "  fix: auberge bichon reconcile-folders --host ${host} --apply"
+  fi
+}
+
 # IMAP treats every mailbox name but INBOX as case-sensitive, and the server's
 # own refusal ("Mailbox doesn't exist: SENT") names no alternative, so the
 # near miss is computed client-side where it can be named.
@@ -500,6 +567,31 @@ check_folder_exists() {
   lines+=("folders of ${account}: $(printf '%s' "${FOLDER_NAMES}" | paste -sd' ' -)")
 
   die 2 "no folder named ${folder} for ${account}" "${lines[@]}"
+}
+
+# A --folder passed as a flag skips what the menu guarantees is a Synced
+# Folder, so re-apply eligibility here — the same coupling check_folder_exists
+# applies to existence.
+check_folder_synced() {
+  if grep -qxF -- "${folder}" <<<"${SYNCED_FOLDERS}"; then
+    return 0
+  elif grep -qxF -- "${folder}" <<<"${DRIFT_REMOVED}"; then
+    die 2 "${folder} is being removed from the Synced Folder set of ${account}" \
+      'the operator has excluded it, so its archive coverage is about to go stale' \
+      "apply the pending reconcile: auberge bichon reconcile-folders --host ${host} --apply" \
+      'then pick a folder the archive still vouches for'
+  elif grep -qxF -- "${folder}" <<<"${DRIFT_ADDED}"; then
+    die 2 "${folder} is not yet in the Synced Folder set of ${account}" \
+      "apply the pending reconcile: auberge bichon reconcile-folders --host ${host} --apply" \
+      "then backfill it: auberge bichon rescan --host ${host} --account ${account}" \
+      're-run once the archive has ingested it'
+  else
+    die 2 "${folder} is not a Synced Folder of ${account}" \
+      'bichon deliberately does not archive it, so the Email Archive cannot' \
+      'vouch for its contents and an expunge would delete mail that may exist' \
+      'nowhere else' \
+      "synced folders: $(printf '%s' "${SYNCED_FOLDERS}" | paste -sd' ' -)"
+  fi
 }
 
 # Guard a value that crossed back from the Host before it reaches (( )).
@@ -806,8 +898,10 @@ main() {
   validate_account
   check_account_archive
   list_account_folders
+  list_synced_folders
   resolve_folder
   check_folder_exists
+  check_folder_synced
 
   gate_backup_verified
   gate_archive_fresh
