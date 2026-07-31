@@ -1,5 +1,6 @@
 pub mod api;
 pub mod folder_filter;
+pub mod rescan;
 
 use crate::config::Config;
 use crate::hosts::Host;

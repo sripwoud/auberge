@@ -340,6 +340,12 @@ async fn main() -> Result<()> {
             ConfigCommands::Edit => run_config_edit(),
             ConfigCommands::Path => run_config_path(),
         },
-        Commands::Bichon(cmd) => run_bichon_command(cmd).await,
+        Commands::Bichon(cmd) => {
+            let code = run_bichon_command(cmd).await?;
+            if code != 0 {
+                std::process::exit(code);
+            }
+            Ok(())
+        }
     }
 }
