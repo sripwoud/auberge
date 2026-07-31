@@ -57,6 +57,13 @@ ssh <hostname> "sudo find /var/lib/bichon-archive -name '*.meta.json' \
 
 Sidecars written before [ADR-0013](https://github.com/sripwoud/auberge/blob/master/meta/adr/0013-archive-message-identity-is-the-message-id.md) carry no `message_id`. The next `bichon-archive.service` run repairs every one of them and drops the inert `tags` field [ADR-0012](https://github.com/sripwoud/auberge/blob/master/meta/adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md) left behind; until it has, gate 3 of `bichon-expunge.sh` refuses to run.
 
+A payload that is not a message is refused rather than archived — Bichon answers `200` with zero bytes when an envelope's blob store entry is empty, which `curl --fail` reads as success. One already in the archive is refetched by the envelope id in its filename on the next run ([ADR-0015](https://github.com/sripwoud/auberge/blob/master/meta/adr/0015-archive-publishes-a-body-only-if-it-is-a-message.md)). A body Bichon can no longer serve fails the unit on every run and is named in the journal; clearing it means deleting **both** the body and its sidecar, since a sidecar with no body fails the run too.
+
+```bash
+# bodies the archive should have refused (expect no output)
+ssh <hostname> "sudo find /var/lib/bichon-archive -name '*.eml' -empty"
+```
+
 ## UIDVALIDITY rebuild alert
 
 When an Upstream Mailbox changes a folder's `UIDVALIDITY`, Bichon deletes that folder's envelopes and blobs from the internal store and refetches. Mail already expunged upstream **cannot be refetched** — its searchability and tags are gone until you replay the archive. Bichon logs this at info level and carries on.

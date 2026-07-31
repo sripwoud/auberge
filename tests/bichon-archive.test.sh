@@ -2,15 +2,18 @@
 #
 # tests/bichon-archive.test.sh
 #
-# Unit tests for the Email Archive's message identity: the extractor that keys a
-# sidecar on the body's Message-ID, and the pass that repairs sidecars written
-# before that key existed (ADR-0013).
+# Unit tests for what the Email Archive accepts as a message and how it keys it:
+# the check that a downloaded payload is a body at all, the extractor that keys a
+# sidecar on that body's Message-ID, and the passes that repair entries written
+# before either existed (ADR-0013, ADR-0015).
 #
-# No Bichon, no API, no live archive — every case is a body written into a temp
-# directory. The extractor is the piece worth pinning: the defect that motivated
-# ADR-0013 was first mis-measured with a Message-ID reader that did not unfold
-# RFC 5322 continuation lines, which reported 106 duplicate bodies where the
-# corpus held none.
+# No Bichon, no live archive — every case is a body written into a temp
+# directory, and the one function that would reach the API is stubbed. Both
+# checks are worth pinning because both were first written in the obvious form
+# and the obvious form was wrong: a Message-ID reader that did not unfold RFC
+# 5322 continuation lines reported 106 duplicate bodies where the corpus held
+# none, and a payload check anchored on the first line would reject the three
+# live bodies that open with an mbox From_ line.
 #
 # Run: ./tests/bichon-archive.test.sh
 
@@ -157,6 +160,115 @@ chmod 644 "${WORK}/noperm.eml"
 assert_fails 'a missing body returns non-zero' \
   canonical_message_id "${WORK}/does-not-exist.eml"
 
+printf '\n== has_header_block\n'
+
+# Write $2 as a body and answer whether the archive would accept it.
+body_of() {
+  printf '%s' "$2" >"${WORK}/$1.eml"
+  printf '%s' "${WORK}/$1.eml"
+}
+
+assert_succeeds 'headers followed by a blank line are a message' \
+  has_header_block "$(body_of hb_plain 'From: a@b
+Subject: s
+
+body
+')"
+
+assert_succeeds 'a CRLF separator is a separator' \
+  has_header_block "$(
+    printf 'From: a@b\r\nSubject: s\r\n\r\nbody\r\n' >"${WORK}/hb_crlf.eml"
+    printf '%s' "${WORK}/hb_crlf.eml"
+  )"
+
+# Three bodies in the live corpus open with an mbox From_ line. A first-line
+# "must look like a header field" rule would reject all three on every run,
+# re-downloading them forever — this is the case that ruled that rule out.
+assert_succeeds 'an mbox From_ line before the headers is still a message' \
+  has_header_block "$(body_of hb_mbox 'From someone@example.com Mon Jul 27 09:00:00 2026
+From: a@b
+
+body
+')"
+
+# The defect: Bichon answers 200 with nothing when its blob store holds no
+# content for an envelope it still indexes, and curl --fail reports success.
+: >"${WORK}/hb_empty.eml"
+assert_fails 'an empty payload is not a message' \
+  has_header_block "${WORK}/hb_empty.eml"
+
+assert_fails 'headers cut off before the separator are not a message' \
+  has_header_block "$(body_of hb_cut 'From: a@b
+Subject: truncated mid')"
+
+assert_fails 'a separator with no headers before it is not a message' \
+  has_header_block "$(body_of hb_nofields '
+body only
+')"
+
+# The skip guard asks this of every envelope it sees, including ones never
+# archived, so a missing path is an ordinary answer rather than an error.
+assert_fails 'a path that does not exist is not a message' \
+  has_header_block "${WORK}/hb_absent.eml"
+
+printf 'From: a@b\n\nbody\n' >"${WORK}/hb_locked.eml"
+chmod 000 "${WORK}/hb_locked.eml"
+assert_fails 'an unreadable body is not credited as a message' \
+  has_header_block "${WORK}/hb_locked.eml"
+chmod 644 "${WORK}/hb_locked.eml"
+
+printf '\n== download_message\n'
+
+# The suite's only stub. curl_auth is the seam between the archive and Bichon,
+# and what is under test is what the archive does with a payload — not how the
+# payload arrived. STUB_PAYLOAD is written wherever --output points, and
+# STUB_STATUS is curl's verdict, which for this defect is always success.
+STUB_PAYLOAD=''
+STUB_STATUS=0
+curl_auth() {
+  local out=''
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --output)
+        out="$2"
+        shift 2
+        ;;
+      *) shift ;;
+    esac
+  done
+  [ -n "${out}" ] && printf '%s' "${STUB_PAYLOAD}" >"${out}"
+  return "${STUB_STATUS}"
+}
+
+DL_DIR="${WORK}/download"
+mkdir -p "${DL_DIR}"
+
+STUB_PAYLOAD=''
+assert_fails 'an empty 200 is refused' download_message 1 900 "${DL_DIR}/900.eml"
+assert_eq 'the refusal leaves neither a body nor a temp file' '' \
+  "$(find "${DL_DIR}" -name '900.eml*' -printf '%f\n')"
+
+STUB_PAYLOAD='From: a@b
+Subject: cut off here'
+assert_fails 'a 200 truncated inside the headers is refused' \
+  download_message 1 901 "${DL_DIR}/901.eml"
+assert_eq 'a refused truncation leaves nothing behind' '' \
+  "$(find "${DL_DIR}" -name '901.eml*' -printf '%f\n')"
+
+STUB_PAYLOAD='Message-ID: <downloaded@example.com>
+
+body
+'
+assert_succeeds 'a payload with a header block is published' \
+  download_message 1 902 "${DL_DIR}/902.eml"
+assert_eq 'the published body is group-readable' '640' \
+  "$(stat -c '%a' "${DL_DIR}/902.eml")"
+
+STUB_STATUS=1
+assert_fails 'a curl failure is still a failure' \
+  download_message 1 903 "${DL_DIR}/903.eml"
+STUB_STATUS=0
+
 printf '\n== write_meta_sidecar\n'
 
 mkdir -p "${BICHON_ARCHIVE_DIR}/a@b.com/2026/07"
@@ -243,6 +355,94 @@ assert_eq 'a later sidecar is still repaired after an unreadable body' \
 chmod 644 "${BACKFILL_DIR}/15.eml"
 rm "${BACKFILL_DIR}/15.eml" "${BACKFILL_DIR}/15.meta.json" \
   "${BACKFILL_DIR}/16.eml" "${BACKFILL_DIR}/16.meta.json"
+
+printf '\n== repair_broken_bodies\n'
+
+REPAIR_DIR="${BICHON_ARCHIVE_DIR}/e@f.com/2026/03"
+mkdir -p "${REPAIR_DIR}"
+
+# What the corpus holds today: a 0-byte body published by curl --fail, and a
+# sidecar keyed on the hash of nothing because that is what the extractor read.
+: >"${REPAIR_DIR}/20.eml"
+printf '{"folder":"Sent","message_id":"%s"}\n' "$(sha256_of "${REPAIR_DIR}/20.eml")" \
+  >"${REPAIR_DIR}/20.meta.json"
+
+# Left alone by the sweep: a body that is already a message, and one that opens
+# with an mbox From_ line.
+printf 'Message-ID: <intact@example.com>\n\nbody\n' >"${REPAIR_DIR}/21.eml"
+printf '{"folder":"INBOX","message_id":"intact@example.com"}\n' >"${REPAIR_DIR}/21.meta.json"
+printf 'From someone@example.com Mon Jul 27 09:00:00 2026\nMessage-ID: <mbox@example.com>\n\nbody\n' \
+  >"${REPAIR_DIR}/22.eml"
+printf '{"folder":"INBOX","message_id":"mbox@example.com"}\n' >"${REPAIR_DIR}/22.meta.json"
+
+INTACT_MTIME="$(stat -c '%Y' "${REPAIR_DIR}/21.eml")"
+MBOX_MTIME="$(stat -c '%Y' "${REPAIR_DIR}/22.eml")"
+
+STUB_PAYLOAD='Message-ID: <refetched@example.com>
+
+the body that was there all along
+'
+assert_succeeds 'an account whose broken body can be refetched repairs cleanly' \
+  repair_broken_bodies 7 'e@f.com'
+
+assert_eq 'the empty body is replaced by the message' \
+  'Message-ID: <refetched@example.com>' \
+  "$(head -1 "${REPAIR_DIR}/20.eml")"
+
+# The stale key is sha256: of nothing, which every empty body shares. Re-keying
+# is the point of the repair, not a side effect of it.
+assert_eq 'the sidecar is re-keyed off the refetched body, keeping its folder' \
+  '{"folder":"Sent","message_id":"refetched@example.com"}' \
+  "$(jq -cS . "${REPAIR_DIR}/20.meta.json")"
+
+assert_eq 'the repaired body is group-readable' '640' \
+  "$(stat -c '%a' "${REPAIR_DIR}/20.eml")"
+
+assert_eq 'an intact body is not refetched' \
+  "${INTACT_MTIME}" "$(stat -c '%Y' "${REPAIR_DIR}/21.eml")"
+assert_eq 'an mbox From_ body is not refetched' \
+  "${MBOX_MTIME}" "$(stat -c '%Y' "${REPAIR_DIR}/22.eml")"
+
+assert_succeeds 'a second pass finds nothing to do' \
+  repair_broken_bodies 7 'e@f.com'
+assert_eq 'the repaired body is not rewritten by the second pass' \
+  'Message-ID: <refetched@example.com>' \
+  "$(head -1 "${REPAIR_DIR}/20.eml")"
+
+assert_succeeds 'an account with no archive directory is a no-op' \
+  repair_broken_bodies 7 'absent@e.com'
+
+# Bichon no longer holds the envelope, or answers 200 with nothing again. The
+# archive does not have that message and cannot fetch it, so the run fails every
+# tick until an operator removes the entry.
+: >"${REPAIR_DIR}/23.eml"
+printf '{"folder":"INBOX","message_id":"stale"}\n' >"${REPAIR_DIR}/23.meta.json"
+STUB_STATUS=1
+assert_fails 'a body that cannot be refetched fails the run' \
+  repair_broken_bodies 7 'e@f.com'
+assert_eq 'a body that cannot be refetched is left as it was' '0' \
+  "$(stat -c '%s' "${REPAIR_DIR}/23.eml")"
+STUB_STATUS=0
+
+STUB_PAYLOAD='Message-ID: <orphan@example.com>
+
+body
+'
+rm "${REPAIR_DIR}/23.meta.json"
+assert_fails 'a body with no sidecar fails the run' \
+  repair_broken_bodies 7 'e@f.com'
+assert_eq 'the body is still refetched before the sidecar is missed' \
+  'Message-ID: <orphan@example.com>' \
+  "$(head -1 "${REPAIR_DIR}/23.eml")"
+rm "${REPAIR_DIR}/23.eml"
+
+: >"${REPAIR_DIR}/24.eml"
+printf '{"message_id":"stale"}\n' >"${REPAIR_DIR}/24.meta.json"
+assert_fails 'a sidecar with no folder to preserve fails the run' \
+  repair_broken_bodies 7 'e@f.com'
+assert_eq 'that sidecar is left as it was' '{"message_id":"stale"}' \
+  "$(jq -cS . "${REPAIR_DIR}/24.meta.json")"
+rm "${REPAIR_DIR}/24.eml" "${REPAIR_DIR}/24.meta.json"
 
 printf '\n== write_meta_sidecar refuses to publish a sidecar it could not build\n'
 
