@@ -54,6 +54,7 @@
     - [remove-user](cli-reference/headscale/remove-user.md)
   - Bichon
     - [reconcile-folders](cli-reference/bichon/reconcile-folders.md)
+    - [rescan](cli-reference/bichon/rescan.md)
   - Sync
     - [hermes](cli-reference/sync/hermes.md)
     - [music](cli-reference/sync/music.md)
