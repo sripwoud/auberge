@@ -114,7 +114,9 @@ pub fn is_service_active(stdout: &str) -> bool {
 
 pub fn cursor_reset_command(email: &str) -> String {
     let cursor = format!("{STATE_DIR}/{}.cursor", sanitize_email(email));
-    format!(r#"sudo -u {ARCHIVE_USER} sh -c 'mkdir -p {STATE_DIR} && printf "0\n" > {cursor}'"#)
+    format!(
+        r#"sudo -u {ARCHIVE_USER} sh -c 'umask 077; mkdir -p {STATE_DIR} && printf "0\n" > {cursor}'"#
+    )
 }
 
 pub fn start_service_command() -> String {
@@ -510,7 +512,7 @@ mod tests {
         let cmd = cursor_reset_command("dev/x@y.io");
         assert_eq!(
             cmd,
-            r#"sudo -u bichon sh -c 'mkdir -p /var/lib/bichon-archive/.state && printf "0\n" > /var/lib/bichon-archive/.state/dev_x@y.io.cursor'"#
+            r#"sudo -u bichon sh -c 'umask 077; mkdir -p /var/lib/bichon-archive/.state && printf "0\n" > /var/lib/bichon-archive/.state/dev_x@y.io.cursor'"#
         );
     }
 
