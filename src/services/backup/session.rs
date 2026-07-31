@@ -2,8 +2,8 @@ use crate::output;
 use crate::playbook_meta::BackupRecipe;
 use crate::services::backup::executor::RecipeExecutor;
 use crate::services::backup::restic::{self, ResticMessage, parse_restic_message};
-use crate::services::backup::ssh::SshSession;
 use crate::services::progress::{Progress, TerminalProgress};
+use crate::services::ssh::SshSession;
 use eyre::{Context, Result};
 use std::collections::HashMap;
 use std::fs;
@@ -322,7 +322,7 @@ fn calculate_dir_size(path: &Path) -> Result<u64> {
 mod tests {
     use super::*;
     use crate::playbook_meta::DbRecipe;
-    use crate::services::backup::ssh::{MockSshSession, SshOp};
+    use crate::services::ssh::{MockSshSession, SshOp};
 
     fn baikal_recipe() -> BackupRecipe {
         BackupRecipe {
@@ -463,7 +463,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let mock = MockSshSession::new();
         // Stage a failure for paperless's pg_dump (the first run() call).
-        mock.stage_run_result(crate::services::backup::ssh::CommandResult {
+        mock.stage_run_result(crate::services::ssh::CommandResult {
             success: false,
             exit_code: Some(1),
             stdout: Vec::new(),

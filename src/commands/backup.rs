@@ -10,8 +10,8 @@ use crate::services::backup::restic;
 use crate::services::backup::session::{
     BackupSession, CreateOutcome, SessionOpts, restic_prune, restic_push,
 };
-use crate::services::backup::ssh::LiveSshSession;
 use crate::services::backup::verify::{self, MaxAge, Status, Verdict, VerifyRequest};
+use crate::services::ssh::LiveSshSession;
 use crate::ssh_session::SshSession;
 use chrono::Utc;
 use clap::Subcommand;
@@ -1405,7 +1405,7 @@ fn default_backup_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
 
-fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
+pub(crate) fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(key_path) = override_key {
         if !key_path.exists() {
             eyre::bail!(

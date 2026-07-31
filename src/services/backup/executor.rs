@@ -1,6 +1,6 @@
 use crate::playbook_meta::BackupRecipe;
-use crate::services::backup::ssh::SshSession;
 use crate::services::progress::Progress;
+use crate::services::ssh::SshSession;
 use eyre::Result;
 use std::collections::HashMap;
 use std::path::Path;
@@ -226,7 +226,7 @@ fn is_warnings_only(text: &str) -> bool {
 mod tests {
     use super::*;
     use crate::playbook_meta::{BackupParameter, DbRecipe};
-    use crate::services::backup::ssh::{MockSshSession, SshOp};
+    use crate::services::ssh::{MockSshSession, SshOp};
 
     #[test]
     fn parse_rsync_canonical_line() {
@@ -640,7 +640,7 @@ mod tests {
     #[test]
     fn test_backup_failed_pg_dump_still_restarts_services() {
         let mock = MockSshSession::new();
-        mock.stage_run_result(crate::services::backup::ssh::CommandResult {
+        mock.stage_run_result(crate::services::ssh::CommandResult {
             success: false,
             exit_code: Some(1),
             stdout: Vec::new(),

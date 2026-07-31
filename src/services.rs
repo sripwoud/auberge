@@ -6,3 +6,4 @@ pub mod dns;
 pub mod dns_verify;
 pub mod inventory;
 pub mod progress;
+pub mod ssh;
