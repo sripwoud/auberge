@@ -164,6 +164,32 @@
         replace: '"MaxMemory": {{ gokapi_max_memory_mb }}'
       notify: Restart gokapi
 
+    # Replaces the Gokapi runtime fallback ("Gokapi" when PublicName is empty)
+    # while leaving any operator value set via the admin UI untouched.
+    - name: Migrate default PublicName to {{ gokapi_public_name }}
+      ansible.builtin.replace:
+        path: "{{ gokapi_config_dir }}/config.json"
+        regexp: '"PublicName":\s*"Gokapi"'
+        replace: '"PublicName": "{{ gokapi_public_name }}"'
+      notify: Restart gokapi
+
+    - name: Create Gokapi custom static content directory
+      ansible.builtin.file:
+        path: "{{ gokapi_custom_dir }}"
+        state: directory
+        owner: "{{ gokapi_sys_user }}"
+        group: "{{ gokapi_sys_group }}"
+        mode: "0750"
+
+    - name: Deploy Gokapi custom static content (CSS, version)
+      ansible.builtin.copy:
+        src: custom/
+        dest: "{{ gokapi_custom_dir }}/"
+        owner: "{{ gokapi_sys_user }}"
+        group: "{{ gokapi_sys_group }}"
+        mode: "0640"
+      notify: Restart gokapi
+
     - name: Deploy Gokapi systemd service file
       ansible.builtin.template:
         src: templates/gokapi.service.j2
