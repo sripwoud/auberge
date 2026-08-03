@@ -147,3 +147,18 @@ A preflight runs before the gates, resolving one value at a time: tools on `PATH
 Deletion is `himalaya flag add … deleted` followed by `himalaya folder expunge` — messages are removed in place, not moved to Trash, so mailbox quota is actually reclaimed.
 
 !> The expunge needs an interactive TTY. There is no `--yes`/`--force`; `--no-input` and non-TTY stdin run every gate and then refuse to expunge. Per [ADR-0007](https://github.com/sripwoud/auberge/blob/master/meta/adr/0007-auberge-folder-reconcile-scope.md) no unattended expunge path exists, and the script is not shipped in the `auberge` binary.
+
+**Expunge Sweep**: `--sweep` walks every eligible (account, Synced Folder) pair on the Host with one window, instead of one operator-chosen pair (ADR-0007, amendment 2026-08-03). Excludes `--account`/`--folder`.
+
+```bash
+bash examples/bichon-expunge.sh --sweep --host <hostname> --window-days 90
+```
+
+Gates 1–2 run once for the Host; gate 3 runs per pair, and a failing pair is skipped as a named **finding** instead of aborting the rest (coverage gap, pre-existing `\Deleted` mail, unkeyed sidecar, a listing the tools could not produce). An empty window, reconcile drift, or an account missing on either the himalaya or the archive side is a benign skip. Gates 4–5 become one summary table — every pair, its status, its count — and two typed checkpoints:
+
+1. **scope** — type the Bichon Host name
+2. **magnitude** — type the grand message total from the summary
+
+Exit codes: `0` clean sweep, `1` at least one finding (read the report), `2` operational error or an empty target set. A folder left with `\Deleted` mail by a mid-sweep failure is refused by the next run's pre-existing-flag check, so a partial sweep cannot compound silently.
+
+`--sweep --no-input` is a cron-safe fleet-wide coverage verification: every gate runs, nothing is expunged, exit `1` flags that a finding needs attention.
