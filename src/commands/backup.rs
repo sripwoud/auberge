@@ -54,7 +54,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to backup (baikal,bichon,freshrss,gokapi,headscale,navidrome,calibre,yourls,paperless). Default: all"
+            help = "Apps to backup (actual,baikal,bichon,freshrss,gokapi,headscale,navidrome,calibre,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(short, long, help = "Backup destination directory")]
@@ -81,7 +81,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to backup (baikal,bichon,freshrss,gokapi,headscale,navidrome,calibre,yourls,paperless). Default: all"
+            help = "Apps to backup (actual,baikal,bichon,freshrss,gokapi,headscale,navidrome,calibre,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(
@@ -130,7 +130,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to restore (baikal,bichon,freshrss,gokapi,headscale,navidrome,calibre,yourls,paperless). Default: all"
+            help = "Apps to restore (actual,baikal,bichon,freshrss,gokapi,headscale,navidrome,calibre,yourls,paperless). Default: all"
         )]
         apps: Option<Vec<String>>,
         #[arg(
