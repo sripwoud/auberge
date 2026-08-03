@@ -23,6 +23,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0013 | [Archive message identity is the Message-ID, read from the body](./adr/0013-archive-message-identity-is-the-message-id.md)           |
 | 0014 | [The UIDVALIDITY rebuild alert is a latched failing unit](./adr/0014-uidvalidity-rebuild-alert-is-a-latched-failing-unit.md)         |
 | 0015 | [The Archive publishes a downloaded body only if it is a message](./adr/0015-archive-publishes-a-body-only-if-it-is-a-message.md)    |
+| 0016 | [Actual deploys bare-metal from npm; bank sync uses Enable Banking](./adr/0016-actual-bare-metal-npm-enable-banking.md)              |
 
 ## No Docker
 
