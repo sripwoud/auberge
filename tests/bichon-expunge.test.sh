@@ -242,6 +242,36 @@ assert_succeeds 'a finding carries its reason' \
 assert_succeeds 'a ready row carries its count' \
   contains "${SWEEP_RENDERED}" '12'
 
+printf '\n== sidecar_rows_for_folder\n'
+
+SIDECAR_FIXTURE=$'/a/2026/07/1.meta.json\tINBOX\ta@example.com
+/a/2026/07/2.meta.json\tSent\tb@example.com
+/a/2026/07/3.meta.json\tINBOX\tc@example.com
+/a/2026/07/4.meta.json\tINBOX2\td@example.com'
+
+assert_eq 'a folder keeps only its own rows, in count_distinct shape' \
+  $'/a/2026/07/1.meta.json\ta@example.com\n/a/2026/07/3.meta.json\tc@example.com' \
+  "$(sidecar_rows_for_folder INBOX <<<"${SIDECAR_FIXTURE}")"
+
+# INBOX must not swallow INBOX2's rows: a substring match would credit the
+# folder with another folder's coverage.
+assert_eq 'the folder match is exact, not a prefix' \
+  $'/a/2026/07/4.meta.json\td@example.com' \
+  "$(sidecar_rows_for_folder INBOX2 <<<"${SIDECAR_FIXTURE}")"
+
+assert_eq 'a folder with no rows filters to nothing' '' \
+  "$(sidecar_rows_for_folder Drafts <<<"${SIDECAR_FIXTURE}")"
+
+assert_eq 'a folder name with spaces is taken whole' \
+  $'/a/2026/07/5.meta.json\te@example.com' \
+  "$(sidecar_rows_for_folder 'Junk Mail' <<<$'/a/2026/07/5.meta.json\tJunk Mail\te@example.com')"
+
+# An unkeyed sidecar's empty message_id must survive the filter as an empty
+# field, so count_distinct_message_ids still refuses it by name.
+assert_eq 'an unkeyed row keeps its trailing empty id' \
+  $'/a/2026/07/6.meta.json\t' \
+  "$(sidecar_rows_for_folder INBOX <<<$'/a/2026/07/6.meta.json\tINBOX\t')"
+
 printf '\n== collect_envelope_ids\n'
 
 ENVELOPE_JSON='[{"id":"1"},{"id":"2"},{"id":"3"}]'
