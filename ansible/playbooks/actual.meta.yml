@@ -1,0 +1,7 @@
+required_keys: []
+tailnet_only: true
+subdomain: actual
+backup:
+  systemd_services: [actual]
+  paths: [/var/lib/actual]
+  owner: [actual, actual]

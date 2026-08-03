@@ -159,6 +159,26 @@ mod tests {
     }
 
     #[test]
+    fn test_actual_meta_backup_recipe() {
+        let backup = load_meta("actual").backup.unwrap();
+        assert_eq!(backup.systemd_services, vec!["actual"]);
+        assert_eq!(backup.paths, vec!["/var/lib/actual"]);
+        assert_eq!(
+            backup.owner,
+            Some(("actual".to_string(), "actual".to_string()))
+        );
+        assert!(backup.db.is_none());
+    }
+
+    #[test]
+    fn test_actual_meta_is_tailnet_only() {
+        let meta = load_meta("actual");
+        assert!(meta.tailnet_only);
+        assert_eq!(meta.subdomain.as_deref(), Some("actual"));
+        assert!(meta.required_keys.is_empty());
+    }
+
+    #[test]
     fn test_baikal_meta_backup_recipe() {
         let backup = load_meta("baikal").backup.unwrap();
         assert_eq!(backup.paths, vec!["/opt/baikal/Specific"]);

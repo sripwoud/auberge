@@ -3,6 +3,8 @@
   hosts: vps
   become: true
   roles:
+    - role: actual
+      tags: [apps, finance, actual]
     - role: baikal
       tags: [apps, storage, caldav, baikal]
     - role: bichon

@@ -112,6 +112,18 @@ _Avoid_: All accounts / all folders (eligibility is the Synced Folder set, not t
 A privacy-sanitized iCalendar feed of the operator's busy intervals, derived from the operator's Host-side calendar sources — **Baikal**'s calendar data plus, optionally, a read-only external CalDAV calendar (e.g. iCloud) fetched on the Host — by a host-side script on a systemd timer and served publicly behind a secret token. Contains only opaque `Busy` `VEVENT`s (UTC start/end + a hashed per-instance UID); never event titles, locations, guests, descriptions, or the source UID. Sanitization happens on the Host, so no personal event content (and no external CalDAV credential) ever leaves the VPS — the feed is the privacy boundary. A **Busy Feed** is a tool-agnostic artifact like the **Email Archive**: auberge produces and serves it but does not ship its consumers (see ADR-0010).
 _Avoid_: Free/busy feed (deliberately not a `VFREEBUSY` component — discrete `VEVENT`s carry per-instance UIDs for diffing), calendar sync, availability export.
 
+**Actual**:
+A Tailnet-only App — the Actual Budget **Sync Server**, deployed bare-metal from npm (`@actual-app/sync-server`, exact version pinned in role defaults, Node 22 from NodeSource; ADR-0016). Not the budget's store of record: every Actual client keeps a full local copy and replays change messages through the server. Its on-disk state (`/var/lib/actual`: `server-files/account.sqlite` for server accounts, password, and bank-sync credentials; `user-files/` for budget blobs) is what the Backup Recipe rsyncs — losing it costs the server password and **Enable Banking** credentials, never the budgets themselves.
+_Avoid_: Actual Budget server (say Sync Server), budget database, budget backend.
+
+**Sync Server**:
+The relay-and-blob-store role Actual's server component plays: clients push and pull ordered change messages (optionally end-to-end encrypted, in which case the server cannot read budget contents) and upload whole-budget blobs for bootstrap of new devices. Syncing is convergence, not authority — any client can rebuild the server's copy by re-uploading.
+_Avoid_: API server, backend, master copy.
+
+**Enable Banking**:
+The PSD2 open-banking aggregator Actual's bank sync uses on this deployment, chosen because GoCardless closed Bank Account Data to new signups in July 2025 (ADR-0016). Covers the operator's bank, C24 (AIS + PIS since October 2024). Configured once in Actual's UI — application ID plus credential file from Enable Banking's control panel; the credentials persist in **Actual**'s `account.sqlite`, inside the Backup Recipe and outside the Key Registry. Deliberately outside Actual's end-to-end encryption too: the server performs the bank pulls, so the credentials and in-flight transactions are server-readable by design — E2E protects the budget ledger at rest, not the bank-sync plumbing.
+_Avoid_: bank API (unqualified), Nordigen/GoCardless successor (a distinct product, not a rebrand).
+
 **Progress**:
 The trait that runners (`AnsibleRunner`, `Recipe Executor`, `Backup Session`) emit events through. `TerminalProgress` is the production impl; tests use a `MockProgress`. Keeps runners free of terminal-output coupling.
 _Avoid_: Logger, reporter
@@ -131,6 +143,7 @@ _Avoid_: Logger, reporter
 - All runners report through **Progress**; none touch terminal output directly.
 - An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
 - The **Busy Feed** is derived from **Baikal**'s calendar data — plus, optionally, a read-only external CalDAV calendar fetched Host-side — and served on Baikal's **Public App** site (Google's servers must reach it); auberge produces and serves it but ships no consumer.
+- **Actual** relays sync between clients that each hold the full budget; its Backup Recipe path (`/var/lib/actual`) also carries the **Enable Banking** credentials, so restoring it restores bank sync.
 
 ## Example dialogue
 
