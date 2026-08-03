@@ -156,6 +156,27 @@
           retries: 24
           delay: 5
 
+    - name: Neutralise networkd wait-online under the NetworkManager renderer
+      # With the NetworkManager renderer, netplan emits NM profiles instead of
+      # networkd .network files, so networkd manages no links and wait-online never
+      # sees a routable interface. It times out after 120s, leaving the host
+      # permanently degraded and delaying every Wants=network-online.target unit
+      # (caddy, gokapi, headscale, colporteur) by two minutes on each boot.
+      # Masking stops future runs; masking alone does not clear an existing
+      # failure, so reset-failed is needed to bring the host out of degraded.
+      when: cockpit_configure_nm_renderer and cockpit_netplan_bin.stat.exists
+      block:
+        - name: Mask systemd-networkd-wait-online
+          ansible.builtin.systemd_service:
+            name: systemd-networkd-wait-online.service
+            masked: true
+          register: cockpit_wait_online
+
+        - name: Clear systemd-networkd-wait-online failed state
+          ansible.builtin.command: systemctl reset-failed systemd-networkd-wait-online.service
+          when: cockpit_wait_online.status.ActiveState == 'failed'
+          changed_when: true
+
     - name: Validate Cloudflare API token for Caddy DNS-01 challenge
       ansible.builtin.assert:
         that:
