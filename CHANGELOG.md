@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.12](https://github.com/sripwoud/auberge/compare/v0.14.11...v0.14.12) - 2026-08-03
+
+### Added
+
+- *(actual)* deploy the Actual Budget sync server ([#403](https://github.com/sripwoud/auberge/pull/403))
+
+### Other
+
+- *(examples)* add an expunge sweep to bichon-expunge ([#404](https://github.com/sripwoud/auberge/pull/404))
+
 ## [0.14.11](https://github.com/sripwoud/auberge/compare/v0.14.10...v0.14.11) - 2026-08-03
 
 ### Fixed
