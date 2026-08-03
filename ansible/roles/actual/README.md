@@ -33,6 +33,8 @@ Deploys the [Actual Budget](https://actualbudget.org) sync server (`@actual-app/
 
 Everything lives in `/var/lib/actual`: `server-files/account.sqlite` (server accounts, file registry) and `user-files/` (budget blobs). The Backup Recipe in `actual.meta.yml` stops the unit and rsyncs the whole directory. Losing it does not lose budgets — clients hold full copies and can re-upload — but it does lose the server password and bank-sync credentials.
 
+With end-to-end encryption enabled (Settings → Encryption, client-side key), budget blobs and sync messages are ciphertext on disk and in restic snapshots. The Enable Banking credentials in `account.sqlite` are not covered: the server performs the bank pulls, so they are server-readable by design.
+
 ## Upload limits
 
 Actual enforces its own limits (20 MB files, 50 MB encrypted sync blobs). The Caddy vhost caps request bodies at 100M — above anything Actual accepts, so the cap is never the binding constraint; Caddy is otherwise unlimited by default.

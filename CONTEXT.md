@@ -117,7 +117,7 @@ The relay-and-blob-store role Actual's server component plays: clients push and 
 _Avoid_: API server, backend, master copy.
 
 **Enable Banking**:
-The PSD2 open-banking aggregator Actual's bank sync uses on this deployment, chosen because GoCardless closed Bank Account Data to new signups in July 2025 (ADR-0016). Covers the operator's bank, C24 (AIS + PIS since October 2024). Configured once in Actual's UI — application ID plus credential file from Enable Banking's control panel; the credentials persist in **Actual**'s `account.sqlite`, inside the Backup Recipe and outside the Key Registry.
+The PSD2 open-banking aggregator Actual's bank sync uses on this deployment, chosen because GoCardless closed Bank Account Data to new signups in July 2025 (ADR-0016). Covers the operator's bank, C24 (AIS + PIS since October 2024). Configured once in Actual's UI — application ID plus credential file from Enable Banking's control panel; the credentials persist in **Actual**'s `account.sqlite`, inside the Backup Recipe and outside the Key Registry. Deliberately outside Actual's end-to-end encryption too: the server performs the bank pulls, so the credentials and in-flight transactions are server-readable by design — E2E protects the budget ledger at rest, not the bank-sync plumbing.
 _Avoid_: bank API (unqualified), Nordigen/GoCardless successor (a distinct product, not a rebrand).
 
 **Progress**:
