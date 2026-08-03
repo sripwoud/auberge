@@ -76,6 +76,7 @@ mod tests {
     fn test_discover_backuppable_apps_returns_expected_set() {
         let apps = discover_backuppable_apps(&project_playbooks_dir()).unwrap();
         let expected: Vec<String> = [
+            "actual",
             "baikal",
             "bichon",
             "calibre",

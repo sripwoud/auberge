@@ -1,4 +1,12 @@
 keys:
+  actual_subdomain:
+    secret: false
+    doc: "Subdomain for the Actual Budget sync server"
+
+  actual_tailscale_ip:
+    secret: false
+    doc: "Tailscale IP address of the Actual Budget host"
+
   admin_user_email:
     secret: false
     doc: "Email address for the admin user account"
