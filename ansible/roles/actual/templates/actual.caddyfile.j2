@@ -1,0 +1,11 @@
+{{ actual_domain }} {
+	bind {{ actual_tailscale_ip }}
+	tls {
+		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
+	}
+	reverse_proxy 127.0.0.1:{{ actual_port }}
+
+	request_body {
+		max_size 100M
+	}
+}

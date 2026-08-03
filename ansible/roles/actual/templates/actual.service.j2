@@ -1,0 +1,30 @@
+[Unit]
+Description=Actual Budget sync server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ actual_sys_user }}
+Group={{ actual_sys_group }}
+WorkingDirectory={{ actual_data_dir }}
+Environment=ACTUAL_HOSTNAME=127.0.0.1
+Environment=ACTUAL_PORT={{ actual_port }}
+Environment=ACTUAL_DATA_DIR={{ actual_data_dir }}
+Environment=ACTUAL_TRUSTED_PROXIES=127.0.0.1/32
+ExecStart={{ actual_install_dir }}/node_modules/.bin/actual-server
+Restart=on-failure
+RestartSec=10s
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ReadWritePaths={{ actual_data_dir }}
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

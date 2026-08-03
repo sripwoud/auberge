@@ -1,0 +1,113 @@
+---
+- name: Install and configure Actual sync server
+  block:
+    - name: Get Tailscale status
+      ansible.builtin.command: tailscale status --json
+      register: actual_tailscale_status_raw
+      changed_when: false
+      failed_when: false
+
+    - name: Parse Tailscale status
+      ansible.builtin.set_fact:
+        actual_tailscale_status: "{{ actual_tailscale_status_raw.stdout | from_json }}"
+      when: actual_tailscale_status_raw.rc == 0
+      changed_when: false
+
+    - name: Set Tailscale IPv4 fact
+      ansible.builtin.set_fact:
+        actual_tailscale_ip: "{{ actual_tailscale_status.Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
+      when:
+        - actual_tailscale_status_raw.rc == 0
+        - actual_tailscale_status is defined
+        - actual_tailscale_status.BackendState | default('') == "Running"
+        - actual_tailscale_status.Self is defined
+        - actual_tailscale_status.Self.TailscaleIPs is defined
+        - actual_tailscale_status.Self.TailscaleIPs | select('match', '^[0-9]+\\.') | list | length > 0
+      changed_when: false
+
+    - name: Fail if Tailscale not available
+      ansible.builtin.fail:
+        msg: "Tailscale is not running or no Tailscale IP available. Actual requires Tailscale."
+      when: actual_tailscale_ip is not defined
+
+    - name: Create Actual system group
+      ansible.builtin.group:
+        name: "{{ actual_sys_group }}"
+        system: true
+        state: present
+
+    - name: Create Actual system user
+      ansible.builtin.user:
+        name: "{{ actual_sys_user }}"
+        group: "{{ actual_sys_group }}"
+        shell: /usr/sbin/nologin
+        home: "{{ actual_data_dir }}"
+        create_home: false
+        system: true
+        state: present
+
+    - name: Create Actual data directory
+      ansible.builtin.file:
+        path: "{{ actual_data_dir }}"
+        state: directory
+        owner: "{{ actual_sys_user }}"
+        group: "{{ actual_sys_group }}"
+        mode: "0750"
+
+    - name: Create Actual installation directory
+      ansible.builtin.file:
+        path: "{{ actual_install_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Download NodeSource signing key
+      ansible.builtin.get_url:
+        url: "{{ actual_nodesource_key_url }}"
+        dest: /etc/apt/keyrings/nodesource.asc
+        mode: "0644"
+
+    - name: Add NodeSource apt repository for Node.js {{ actual_node_major }}
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/nodesource.asc] https://deb.nodesource.com/node_{{ actual_node_major }}.x nodistro main"
+        filename: nodesource
+        state: present
+
+    - name: Install Node.js from NodeSource (Debian's nodejs is older than sync-server's engines requirement)
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+
+    - name: Install Actual sync server {{ actual_version }}
+      community.general.npm:
+        name: "@actual-app/sync-server"
+        version: "{{ actual_version }}"
+        path: "{{ actual_install_dir }}"
+        state: present
+      notify: Restart actual
+
+    - name: Deploy Actual systemd service file
+      ansible.builtin.template:
+        src: templates/actual.service.j2
+        dest: /etc/systemd/system/actual.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart actual
+
+    - name: Enable and start Actual service
+      ansible.builtin.systemd_service:
+        name: actual
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Deploy Actual Caddyfile
+      ansible.builtin.template:
+        src: templates/actual.caddyfile.j2
+        dest: "/etc/caddy/sites/{{ actual_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
