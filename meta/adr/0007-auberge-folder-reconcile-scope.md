@@ -78,6 +78,41 @@ itself produced: its own snapshots, in its own repository, under its own
 current**"; verify makes the second clause executable instead of leaving it as prose an operator
 re-derives with `restic snapshots --json | jq` each time.
 
+## Amendment (2026-08-03): the reference script gains an Expunge Sweep
+
+`examples/bichon-expunge.sh --sweep` walks every eligible (account, **Synced Folder**) pair on one
+Host with a single window, instead of one operator-chosen pair. The boundary above does not move:
+the sweep lives in the reference script, auberge still ships no expunge tooling, and no IMAP
+credential enters `config.toml`. Language stays bash for the same reason the script exists at all —
+its value is accumulated operator-side hardening (himalaya's `/dev/tty` wizard, `%q`-through-ssh
+quoting, pipefail-through-jq), and a rewrite re-litigates that for no functional gain.
+
+What changes is the confirmation granularity, and that is the decision this amendment records. The
+single-target script's typed folder name is an intent checksum against a mangled `--folder` flag.
+In a sweep no folder is typed — the target set is computed from the Synced Folder set the operator
+already curates via **Account Reconcile** — so the risk that checksum defends against does not
+exist there, while ~25 per-pair confirmations would create a new one: confirmation fatigue trains
+blind typing, which defeats every checkpoint at once. The sweep therefore takes two typed
+checkpoints, after every gate has run and one summary table (account × folder × in-window count)
+has been printed:
+
+1. **scope** — the operator types the Bichon Host name: binds the sweep to a machine and catches
+   the wrong-host class of mistake;
+2. **magnitude** — the operator types the grand message total: a number that must be copied from
+   the summary, proving it was read.
+
+The hard rules stay: stdin must be a TTY, there is no `--yes`/`--force`, a bare y/N is never a
+checkpoint, and `--no-input --sweep` refuses the expunge unconditionally — which makes it a
+cron-able fleet-wide coverage verification (all gates, read-only, exit 1 on any finding).
+
+Failure policy: the host-scoped gates (off-host backup, archive freshness) abort the whole sweep —
+no pair is safe without them. Per-pair failures skip that pair and continue, classified as benign
+(empty window) or finding (coverage gap, pre-existing `\Deleted` mail, unkeyed sidecar, listing
+failure, flag-added-but-expunge-failed); every skip is named in the final report with its
+remediation line. Exit codes: 0 clean sweep, 1 at least one finding, 2 operational error. A
+mid-act failure self-guards: the mail it leaves flagged is exactly what the pre-existing-`\Deleted`
+check refuses on the next run, so a partial sweep cannot compound silently.
+
 What changed since (γ) was rejected is the argument, not the convenience. (γ) was refused because
 "auberge has unique knowledge" collapsed — every path was filesystem-readable. That still holds for
 the archive. It does not hold for the restic repository: the repository URL and password live in
