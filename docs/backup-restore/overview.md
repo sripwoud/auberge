@@ -25,6 +25,7 @@ graph TD
 
 ## Supported Applications
 
+- **Actual Budget**: Server account database and budget blobs (clients keep full local copies)
 - **Baikal**: Calendar and contact data, configuration files
 - **Bichon**: Email archives, search indices, configuration
 - **FreshRSS**: SQLite database, configuration, user data

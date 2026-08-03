@@ -24,6 +24,7 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 
 | Application                                     | Description                             |
 | ----------------------------------------------- | --------------------------------------- |
+| [Actual Budget](applications/apps/actual.md)    | Budgeting with EU bank sync             |
 | [Baikal](applications/apps/baikal.md)           | CalDAV/CardDAV server                   |
 | [Bichon](applications/apps/bichon.md)           | Email archiving and search              |
 | [Grimmory](applications/apps/grimmory.md)       | Multi-user digital library              |

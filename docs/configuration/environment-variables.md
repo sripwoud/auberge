@@ -14,6 +14,7 @@ All values live in `~/.config/auberge/config.toml`. Manage with `auberge config 
 | `tailscale_login_server`   | Optional | Self-hosted Headscale URL (e.g. `https://hs.example.com`); omit to use Tailscale SaaS      |
 | `restic_repository`        | Optional | Restic destination (e.g. `rclone:filen:auberge-backup`); required for `backup push`        |
 | `restic_password`          | Optional | Restic encryption passphrase — NOT your cloud storage password; required for `backup push` |
+| `actual_subdomain`         | Optional | Subdomain for Actual Budget (default: `actual`; always tailnet-only)                       |
 | `baikal_subdomain`         | Optional | Subdomain for Baïkal                                                                       |
 | `bichon_subdomain`         | Optional | Subdomain for Bichon                                                                       |
 | `bichon_tailscale_ip`      | Optional | Tailscale IP; makes subdomain tailnet-only (see below)                                     |
