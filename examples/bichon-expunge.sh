@@ -125,6 +125,13 @@ UNKEYED_SIDECAR=''
 # wrappers turn it into the die they have always produced.
 FETCH_ERROR=''
 
+# The account-wide sidecar rows gate 3 counts from —
+# "path<TAB>folder<TAB>message_id", already window-filtered on the Host — and
+# which account they belong to. One Host walk serves every folder of the
+# account; see ensure_account_sidecar_rows for why that matters.
+SIDECAR_ROWS=''
+SIDECAR_ROWS_FOR=''
+
 # Gate 3's verdict for the resolved (account, folder), plus the one count only
 # the flagged verdict needs — see probe_folder_coverage for the vocabulary.
 PAIR_STATUS=''
@@ -751,6 +758,71 @@ count_distinct_message_ids() {
   ARCHIVE_COUNT="${#distinct[@]}"
 }
 
+# Fetches the account's window-filtered sidecar rows
+# ("path<TAB>folder<TAB>message_id") once and caches them, so every folder of
+# the account shares one Host walk. The walk used to run per (account, folder)
+# pair with one jq and one awk spawned per sidecar file — an
+# O(folders × sidecars) process storm the sweep multiplied until it dominated
+# the runtime (measured 55× slower than one batched pass on the real archive).
+# The remote side batches jq over every sidecar via xargs and filters the
+# YYYY/MM window in a single awk pass.
+#
+# Archive paths encode the message Date as YYYY/MM; folder identity and
+# message identity both live in the sidecar, which is why the rows carry the
+# folder for sidecar_rows_for_folder to scope by. An unreadable or
+# unparseable sidecar fails the whole fetch loudly (jq names it on stderr,
+# pipefail carries it out), exactly as the per-file check did — a broken
+# count must never pass as a coverage verdict. Returns non-zero with
+# FETCH_ERROR set.
+ensure_account_sidecar_rows() {
+  if [[ "${SIDECAR_ROWS_FOR}" == "${account}" ]]; then
+    return 0
+  fi
+
+  local cutoff_ym archive_dir
+  cutoff_ym=$(date_offset "${window_days}" '+%Y/%m')
+  archive_dir="${archive_path}/$(archive_dir_for "${account}")"
+
+  FETCH_ERROR=''
+  # Remote args go through printf %q so ${archive_dir} cannot break out of
+  # argument quoting and execute on the Host. The heredoc body is
+  # single-quoted ('REMOTE') to disable local expansion — only positional
+  # parameters are used.
+  # shellcheck disable=SC2029  # intentional: %q-quote args locally, then expand into ssh cmd
+  if ! SIDECAR_ROWS=$(
+    ssh "${SSH_OPTS[@]}" "${host}" \
+      "bash -s -- $(printf '%q ' "${archive_dir}" "${cutoff_ym}")" <<'REMOTE'
+set -euo pipefail
+archive_dir=$1; cutoff_ym=$2
+find "$archive_dir" -regextype posix-extended \
+  -regex '.*/[0-9]{4}/[0-9]{2}/[^/]+\.meta\.json' -print0 \
+  | xargs -0 -r jq -r '[input_filename, .folder, (.message_id // "")] | @tsv' \
+  | awk -F'\t' -v cutoff="$cutoff_ym" '{
+      n = split($1, p, "/")
+      ym = p[n - 2] "/" p[n - 1]
+      if (!(ym > cutoff)) print
+    }'
+REMOTE
+  ); then
+    SIDECAR_ROWS=''
+    SIDECAR_ROWS_FOR=''
+    FETCH_ERROR="could not read the archived sidecars of ${account} on ${host}"
+    return 1
+  fi
+
+  SIDECAR_ROWS_FOR="${account}"
+}
+
+# Filters the account-wide sidecar rows on stdin down to one folder's
+# "path<TAB>message_id" rows — the shape count_distinct_message_ids consumes.
+# The IMAP query is folder-scoped, so the archive count must be too: counting
+# account-wide sidecars would over-count and pass the gate while the target
+# folder is only partially archived. Exact match; the filter rides ENVIRON
+# because awk -v mangles backslashes.
+sidecar_rows_for_folder() {
+  FOLDER_FILTER="$1" awk -F'\t' '$2 == ENVIRON["FOLDER_FILTER"] { print $1 "\t" $3 }'
+}
+
 # Print UTC date offset by -$1 days, formatted with $2.
 # GNU coreutils (Linux) and BSD (macOS) take incompatible flags; dispatch on
 # whichever the operator's `date` binary accepts.
@@ -855,9 +927,7 @@ probe_folder_coverage() {
   IMAP_COUNT=0
   ARCHIVE_COUNT=0
 
-  local cutoff_ym
   CUTOFF_DATE=$(date_offset "${window_days}" '+%Y-%m-%d')
-  cutoff_ym=$(date_offset "${window_days}" '+%Y/%m')
 
   # --output json: the default table format adds headers and box drawing, so
   # `wc -l` is off by a few. jq counts envelopes precisely. The filter query is
@@ -901,44 +971,16 @@ probe_folder_coverage() {
     return 0
   fi
 
-  # Archive paths encode the message Date as YYYY/MM; folder identity and message
-  # identity both live in the <envelope-id>.meta.json sidecar. The IMAP query is
-  # folder-scoped, so the archive count must be too — counting account-wide
-  # sidecars would over-count and pass this gate while the target folder is only
-  # partially archived.
-  local archive_dir sidecar_rows
-  archive_dir="${archive_path}/$(archive_dir_for "${account}")"
-
-  # Remote args go through printf %q so ${folder} / ${archive_dir} cannot break
-  # out of argument quoting and execute on the Host. The heredoc body is
-  # single-quoted ('REMOTE') to disable local expansion — only positional
-  # parameters are used. It emits one row per in-window sidecar of the folder and
-  # leaves deduplication to the caller, so the sidecar that breaks the count can
-  # be named in the error.
-  # shellcheck disable=SC2029  # intentional: %q-quote args locally, then expand into ssh cmd
-  if ! sidecar_rows=$(
-    ssh "${SSH_OPTS[@]}" "${host}" \
-      "bash -s -- $(printf '%q ' "${archive_dir}" "${folder}" "${cutoff_ym}")" <<'REMOTE'
-set -euo pipefail
-archive_dir=$1; folder=$2; cutoff_ym=$3
-find "$archive_dir" -regextype posix-extended \
-  -regex '.*/[0-9]{4}/[0-9]{2}/[^/]+\.meta\.json' \
-  | while IFS= read -r meta; do
-    ym=$(printf '%s' "$meta" | awk -F/ '{ print $(NF-2)"/"$(NF-1) }')
-    [ "$ym" \> "$cutoff_ym" ] && continue
-    # An unreadable sidecar is not "a message in another folder" — it is a
-    # broken count. Fail loudly rather than let jq's error be swallowed and
-    # report a coverage gap that is really a permission problem.
-    [ -r "$meta" ] || { printf 'cannot read %s\n' "$meta" >&2; exit 1; }
-    row=$(jq -r --arg f "$folder" --arg p "$meta" \
-      'select(.folder == $f) | $p + "\t" + (.message_id // "")' "$meta")
-    if [ -n "$row" ]; then printf '%s\n' "$row"; fi
-  done
-REMOTE
-  ); then
+  # One account-wide Host walk serves every folder of the account; the rows
+  # come back window-filtered and folder-tagged, and the folder scoping the
+  # IMAP query already applied happens locally.
+  if ! ensure_account_sidecar_rows; then
     PAIR_STATUS='err-sidecars'
     return 0
   fi
+
+  local sidecar_rows
+  sidecar_rows=$(printf '%s' "${SIDECAR_ROWS}" | sidecar_rows_for_folder "${folder}")
 
   if ! count_distinct_message_ids <<<"${sidecar_rows}"; then
     PAIR_STATUS='unkeyed'
@@ -1319,6 +1361,14 @@ sweep_probe_account() {
   if [[ -z "${SYNCED_FOLDERS}" ]]; then
     note "no Synced Folder for ${account} — nothing eligible"
     sweep_record skip "${account}" '-' 0 'no Synced Folders'
+    return 0
+  fi
+
+  # Fetch the account's sidecar rows here rather than inside the first pair:
+  # a Host that cannot be read is one account-level finding, not the same
+  # failed ssh retried once per folder.
+  if ! ensure_account_sidecar_rows; then
+    sweep_record finding "${account}" '-' 0 "${FETCH_ERROR}"
     return 0
   fi
 
