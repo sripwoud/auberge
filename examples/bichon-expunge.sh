@@ -18,10 +18,22 @@
 # Before any gate runs, --folder must be a Synced Folder: the Email Archive
 # can vouch for nothing else.
 #
+# With --sweep the same gates cover every eligible (account, Synced Folder)
+# pair on the Host in one run — an Expunge Sweep (CONTEXT.md, ADR-0007
+# amendment 2026-08-03). Host-scoped gates (1, 2) run once; coverage (3) runs
+# per pair, and a failing pair is skipped as a named finding instead of
+# aborting the rest; gates 4-5 become one summary table and two typed
+# checkpoints — the Bichon Host name (scope), then the grand message total
+# (magnitude). The folder-name checksum has nothing to defend in a sweep: no
+# folder is typed, the target set comes from the Synced Folder set the
+# operator curates via Account Reconcile.
+#
 # Safety contract (ADR-0007) — load-bearing, do not "improve" away:
 #   - stdin must be a TTY; a non-TTY run refuses the expunge unconditionally
 #   - there is no --yes / --force, so no unattended expunge path exists
-#   - the typed folder name is an intent checksum against a mangled --folder
+#   - the typed folder name is an intent checksum against a mangled --folder;
+#     a sweep types the Host name and the grand total instead, and a bare y/N
+#     is never accepted anywhere
 #
 # Designed for MXroute; works with any IMAP provider himalaya supports.
 #
@@ -41,9 +53,12 @@
 #     bichon:bichon and gate 3 counts files inside it without sudo
 #
 # Exit codes:
-#   0 — expunged, or (non-interactive) all gates passed and expunge skipped
-#   1 — a gate failed, or the typed confirmation did not match
-#   2 — usage error, missing prerequisite, or unreachable Host
+#   0 — expunged, or (non-interactive) all gates passed and expunge skipped;
+#       for a sweep: completed with no finding
+#   1 — a gate failed, a typed confirmation or checkpoint did not match, or a
+#       sweep completed with at least one finding
+#   2 — usage error, missing prerequisite, unreachable Host, or a sweep whose
+#       target set is empty
 #
 # shellcheck shell=bash
 
@@ -66,6 +81,7 @@ folder=''
 window_days="${DEFAULT_WINDOW_DAYS}"
 archive_path="${DEFAULT_ARCHIVE_PATH}"
 no_input=false
+sweep=false
 
 # Captured by check_tools, reused by the --account menu so himalaya is only
 # asked once.
@@ -104,6 +120,34 @@ IMAP_COUNT=0
 ARCHIVE_COUNT=0
 UNKEYED_SIDECAR=''
 
+# Set by the fetch_* functions when they cannot answer, so a die-free caller
+# (the sweep) can name the reason without re-deriving it. The single-target
+# wrappers turn it into the die they have always produced.
+FETCH_ERROR=''
+
+# Gate 3's verdict for the resolved (account, folder), plus the one count only
+# the flagged verdict needs — see probe_folder_coverage for the vocabulary.
+PAIR_STATUS=''
+ALREADY_DELETED=0
+
+# Set by collect_envelope_ids: the validated ids the expunge will flag, or the
+# reason the listing cannot be acted on.
+ENVELOPE_IDS=()
+IDS_ERROR=''
+
+# Sweep state: one row per classified (account, folder) pair —
+# "status<TAB>account<TAB>folder<TAB>count<TAB>detail", status one of
+# ready | skip | finding | expunged. The rows drive the summary table, the
+# checkpoints, the expunge phase, the final report, and the exit code. Ready
+# pairs also park the envelope ids gate 3 counted, keyed "account<TAB>folder",
+# so the expunge acts on exactly the listing that passed coverage.
+SWEEP_ROWS=()
+declare -A SWEEP_IDS=()
+
+# How many pairs gate 3 actually probed; a sweep that probed none has an
+# empty target set, which aborts rather than reporting a vacuous success.
+SWEEP_PAIRS_PROBED=0
+
 usage() {
   cat <<EOF
 Expunge archived mail from an Upstream Mailbox, behind five safety gates.
@@ -121,6 +165,11 @@ Options:
   -f, --folder NAME          folder to expunge (on a TTY, chosen from the
                              account's Synced Folders; without one, defaults
                              to ${DEFAULT_FOLDER})
+      --sweep                expunge every eligible (account, Synced Folder)
+                             pair on the Host in one run: host gates once,
+                             coverage per pair, one summary, two typed
+                             checkpoints (Host name, then grand total);
+                             excludes --account and --folder
   -w, --window-days DAYS     expunge mail older than DAYS (default: ${DEFAULT_WINDOW_DAYS})
       --archive-path PATH    Email Archive root on the Host
                              (default: ${DEFAULT_ARCHIVE_PATH})
@@ -129,7 +178,8 @@ Options:
   -h, --help                 show this help
 
 The expunge requires an interactive TTY. There is deliberately no flag that
-skips the typed confirmation.
+skips the typed confirmation. A sweep exits 0 only when no pair was skipped
+as a finding; 1 means the sweep report needs reading.
 EOF
 }
 
@@ -185,6 +235,10 @@ parse_args() {
         [[ $# -ge 2 ]] || die 2 "$1 needs a value"
         archive_path="$2"
         shift 2
+        ;;
+      --sweep)
+        sweep=true
+        shift
         ;;
       --no-input)
         no_input=true
@@ -340,6 +394,14 @@ validate_account() {
 # The options that depend on neither the Host nor the account, so they can
 # reject a typo before anything reaches the network.
 validate_options() {
+  # A sweep's targets come from the Synced Folder set, not from flags; a
+  # --account/--folder next to --sweep is contradictory intent, and guessing
+  # which was meant is how the wrong mailbox gets expunged.
+  if [[ "${sweep}" == true ]] && { [[ -n "${account}" ]] || [[ -n "${folder}" ]]; }; then
+    die 2 '--sweep walks every eligible (account, folder) pair; --account/--folder contradict it' \
+      'drop --sweep to target one pair, or drop --account/--folder to sweep them all'
+  fi
+
   # Empty means --folder was not passed; resolve_folder supplies the default
   # or the menu answer later, so only a flag-passed value reaches this check.
   # A newline in it would desynchronise the typed-confirmation comparison from
@@ -490,24 +552,50 @@ check_account_archive() {
       'archive by email, and it must also name a himalaya account'
 }
 
-# Populates FOLDER_NAMES for the --folder menu and check_folder_exists — see
-# the global's comment for why one himalaya call serves both.
-list_account_folders() {
-  local folders_json
+# Populates FOLDER_NAMES for the --folder menu, check_folder_exists, and the
+# sweep — one himalaya IMAP connection serves them all. Returns non-zero with
+# FETCH_ERROR set instead of dying: the single target treats any failure as
+# fatal (list_account_folders), the sweep as a finding scoped to one account.
+# rc 1 means himalaya itself said why on stderr; anything else is self-contained.
+fetch_account_folders() {
+  FOLDER_NAMES=''
+  FETCH_ERROR=''
+
   # --quiet rather than 2>/dev/null: himalaya prompts on /dev/tty when it
   # needs a secret it cannot read non-interactively, and a discarded stderr
   # turns that prompt into an unexplained stall.
-  folders_json=$(himalaya --quiet --output json folder list --account "${account}") \
-    || die 2 "himalaya could not list the folders of ${account}" \
-      'himalaya printed the reason above'
+  local folders_json
+  if ! folders_json=$(himalaya --quiet --output json folder list --account "${account}"); then
+    FETCH_ERROR="himalaya could not list the folders of ${account}"
+    return 1
+  fi
 
   # pipefail is set, so a jq failure on unparseable JSON propagates through
   # sort instead of being swallowed.
-  FOLDER_NAMES=$(printf '%s' "${folders_json}" | jq -r '.[].name' | sort) \
-    || die 2 'himalaya folder list returned JSON this script cannot read'
+  if ! FOLDER_NAMES=$(printf '%s' "${folders_json}" | jq -r '.[].name' | sort); then
+    FETCH_ERROR='himalaya folder list returned JSON this script cannot read'
+    return 2
+  fi
 
-  [[ -n "${FOLDER_NAMES}" ]] \
-    || die 2 "himalaya reports no folders for ${account}"
+  if [[ -z "${FOLDER_NAMES}" ]]; then
+    FETCH_ERROR="himalaya reports no folders for ${account}"
+    return 2
+  fi
+}
+
+list_account_folders() {
+  local rc=0
+  fetch_account_folders || rc=$?
+  case "${rc}" in
+    0) ;;
+    1)
+      die 2 "${FETCH_ERROR}" \
+        'himalaya printed the reason above'
+      ;;
+    *)
+      die 2 "${FETCH_ERROR}"
+      ;;
+  esac
 }
 
 # The Email Archive can vouch only for folders Bichon continuously ingests, so
@@ -515,28 +603,40 @@ list_account_folders() {
 # auberge rather than recomputed here, so the exclusion rules (SPECIAL-USE
 # attributes, fallback names, extra_excluded_folders) keep a single owner; a
 # dry run PATCHes nothing.
-list_synced_folders() {
+#
+# Returns non-zero with FETCH_ERROR set instead of dying — same split as
+# fetch_account_folders, and rc 1 again means auberge said why on stderr. An
+# empty SYNCED_FOLDERS is rc 0: no eligible folder is a verdict, not a failure,
+# and the two callers read it differently (fatal for a --folder run, a benign
+# skip for the sweep).
+fetch_synced_folders() {
+  SYNCED_FOLDERS=''
+  DRIFT_ADDED=''
+  DRIFT_REMOVED=''
+  FETCH_ERROR=''
+
   local reconcile_json
-  reconcile_json=$(auberge bichon reconcile-folders --host "${host}" --account "${account}" --output json) \
-    || die 2 "auberge could not read the Synced Folder set for ${account}" \
-      'auberge printed the reason above' \
-      'it needs bichon_api_token in its config and the Bichon API reachable'
+  if ! reconcile_json=$(auberge bichon reconcile-folders --host "${host}" --account "${account}" --output json); then
+    FETCH_ERROR="auberge could not read the Synced Folder set for ${account}"
+    return 1
+  fi
 
   local account_count
-  account_count=$(printf '%s' "${reconcile_json}" | jq '.accounts | length') \
-    || die 2 'auberge reconcile-folders returned JSON this script cannot read'
-  ((account_count > 0)) \
-    || die 2 "bichon knows no account ${account}"
+  if ! account_count=$(printf '%s' "${reconcile_json}" | jq '.accounts | length'); then
+    FETCH_ERROR='auberge reconcile-folders returned JSON this script cannot read'
+    return 2
+  fi
+  if ((account_count == 0)); then
+    FETCH_ERROR="bichon knows no account ${account}"
+    return 2
+  fi
 
-  SYNCED_FOLDERS=$(printf '%s' "${reconcile_json}" | jq -r '.accounts[0].unchanged[]?') \
-    || die 2 'auberge reconcile-folders returned JSON this script cannot read'
-  DRIFT_ADDED=$(printf '%s' "${reconcile_json}" | jq -r '.accounts[0].added[]?') \
-    || die 2 'auberge reconcile-folders returned JSON this script cannot read'
-  DRIFT_REMOVED=$(printf '%s' "${reconcile_json}" | jq -r '.accounts[0].removed[]?') \
-    || die 2 'auberge reconcile-folders returned JSON this script cannot read'
-
-  [[ -n "${SYNCED_FOLDERS}" ]] \
-    || die 2 "no Synced Folder for ${account} — nothing is eligible for expunge"
+  if ! SYNCED_FOLDERS=$(printf '%s' "${reconcile_json}" | jq -r '.accounts[0].unchanged[]?') \
+    || ! DRIFT_ADDED=$(printf '%s' "${reconcile_json}" | jq -r '.accounts[0].added[]?') \
+    || ! DRIFT_REMOVED=$(printf '%s' "${reconcile_json}" | jq -r '.accounts[0].removed[]?'); then
+    FETCH_ERROR='auberge reconcile-folders returned JSON this script cannot read'
+    return 2
+  fi
 
   # Drift only blocks once it names the target folder — check_folder_synced
   # re-checks that once --folder is known — so this is a warning, not a gate.
@@ -546,6 +646,25 @@ list_synced_folders() {
     [[ -z "${DRIFT_REMOVED}" ]] || note "  pending removal: $(printf '%s' "${DRIFT_REMOVED}" | paste -sd' ' -)"
     note "  fix: auberge bichon reconcile-folders --host ${host} --apply"
   fi
+}
+
+list_synced_folders() {
+  local rc=0
+  fetch_synced_folders || rc=$?
+  case "${rc}" in
+    0) ;;
+    1)
+      die 2 "${FETCH_ERROR}" \
+        'auberge printed the reason above' \
+        'it needs bichon_api_token in its config and the Bichon API reachable'
+      ;;
+    *)
+      die 2 "${FETCH_ERROR}"
+      ;;
+  esac
+
+  [[ -n "${SYNCED_FOLDERS}" ]] \
+    || die 2 "no Synced Folder for ${account} — nothing is eligible for expunge"
 }
 
 # IMAP treats every mailbox name but INBOX as case-sensitive, and the server's
@@ -645,7 +764,11 @@ date_offset() {
 
 # Gate 1 — the archive is in the off-host restic repository.
 gate_backup_verified() {
-  step 'Gate 1/5 — off-host backup…'
+  if [[ "${sweep}" == true ]]; then
+    step 'Sweep gate 1/2 — off-host backup…'
+  else
+    step 'Gate 1/5 — off-host backup…'
+  fi
 
   local verify_output
   if ! verify_output=$(auberge backup verify --host "${host}" --app bichon 2>&1); then
@@ -661,7 +784,11 @@ gate_backup_verified() {
 
 # Gate 2 — the hourly archive run succeeded, recently.
 gate_archive_fresh() {
-  step 'Gate 2/5 — archive freshness…'
+  if [[ "${sweep}" == true ]]; then
+    step 'Sweep gate 2/2 — archive freshness…'
+  else
+    step 'Gate 2/5 — archive freshness…'
+  fi
 
   # Age is computed on the Host: its `date` is GNU, and systemd's timestamp
   # format is only reliably parseable there.
@@ -706,17 +833,31 @@ REMOTE
   note "last run succeeded $((age_seconds / 60))m ago"
 }
 
-# Gate 3 — every in-window IMAP message has an archived counterpart.
-# Sets IMAP_COUNT, ENVELOPE_JSON and ARCHIVE_COUNT; the expunge reuses the same
-# envelope set, so the messages counted here are exactly the messages deleted
-# later.
-gate_folder_coverage() {
-  step "Gate 3/5 — coverage for ${folder} older than ${window_days} days…"
+# Gate 3's checks for the resolved (account, folder): every probe, no verdict
+# rendering. Sets PAIR_STATUS and the evidence the verdicts and the expunge
+# need (ENVELOPE_JSON, IMAP_COUNT, ARCHIVE_COUNT, CUTOFF_DATE):
+#
+#   ok            every in-window message has an archived counterpart
+#   empty         the window holds no IMAP messages
+#   flagged       ALREADY_DELETED message(s) already carry \Deleted
+#   unkeyed       UNKEYED_SIDECAR predates Message-ID keying
+#   gap           ARCHIVE_COUNT < IMAP_COUNT
+#   err-list      himalaya could not list the window
+#   err-flagged   himalaya could not list \Deleted-flagged mail
+#   err-sidecars  ssh or the Host could not read the archived sidecars
+#
+# Always returns 0 — the status is the result. The single target dies on
+# anything but ok (render_pair_verdict_or_die); the sweep records a row.
+probe_folder_coverage() {
+  PAIR_STATUS=''
+  ALREADY_DELETED=0
+  ENVELOPE_JSON=''
+  IMAP_COUNT=0
+  ARCHIVE_COUNT=0
 
-  local cutoff_date cutoff_ym
-  cutoff_date=$(date_offset "${window_days}" '+%Y-%m-%d')
+  local cutoff_ym
+  CUTOFF_DATE=$(date_offset "${window_days}" '+%Y-%m-%d')
   cutoff_ym=$(date_offset "${window_days}" '+%Y/%m')
-  CUTOFF_DATE="${cutoff_date}"
 
   # --output json: the default table format adds headers and box drawing, so
   # `wc -l` is off by a few. jq counts envelopes precisely. The filter query is
@@ -724,40 +865,41 @@ gate_folder_coverage() {
   # --quiet rather than 2>/dev/null: himalaya prompts on /dev/tty when it needs
   # a secret it cannot read non-interactively, and a discarded stderr turns that
   # prompt into an unexplained stall.
-  ENVELOPE_JSON=$(himalaya --quiet --output json envelope list \
+  if ! ENVELOPE_JSON=$(himalaya --quiet --output json envelope list \
     --account "${account}" \
     --folder "${folder}" \
     --page-size "${PAGE_SIZE}" \
-    before "${cutoff_date}") \
-    || die 1 "himalaya could not list ${folder} for ${account}" \
-      "check the account exists: himalaya account list" \
-      "check the folder exists: himalaya folder list --account ${account}"
+    before "${CUTOFF_DATE}"); then
+    PAIR_STATUS='err-list'
+    return 0
+  fi
 
   IMAP_COUNT=$(printf '%s' "${ENVELOPE_JSON}" | jq 'length')
   note "IMAP messages in window: ${IMAP_COUNT}"
 
-  ((IMAP_COUNT > 0)) \
-    || die 1 "no IMAP messages in ${folder} older than ${window_days} days" \
-      'nothing to expunge — check --folder and --account'
+  if ((IMAP_COUNT == 0)); then
+    PAIR_STATUS='empty'
+    return 0
+  fi
 
   # `folder expunge` removes every \Deleted-flagged message in the folder, not
   # only the ones this script flags. A pre-existing flag would therefore be
   # collateral damage, so refuse rather than widen the blast radius.
-  local deleted_json already_deleted
-  deleted_json=$(himalaya --quiet --output json envelope list \
+  local deleted_json
+  if ! deleted_json=$(himalaya --quiet --output json envelope list \
     --account "${account}" \
     --folder "${folder}" \
     --page-size "${PAGE_SIZE}" \
-    flag deleted) \
-    || die 1 "himalaya could not list deleted-flagged mail in ${folder}" \
-      'this script must know what the expunge would take along, so it will' \
-      'not continue without that answer'
-  already_deleted=$(printf '%s' "${deleted_json}" | jq 'length')
+    flag deleted); then
+    PAIR_STATUS='err-flagged'
+    return 0
+  fi
+  ALREADY_DELETED=$(printf '%s' "${deleted_json}" | jq 'length')
 
-  ((already_deleted == 0)) \
-    || die 1 "${already_deleted} message(s) in ${folder} already carry the deleted flag" \
-      "inspect them: himalaya envelope list --account ${account} --folder ${folder} flag deleted" \
-      'clear or expunge them separately — this script only expunges what it flags'
+  if ((ALREADY_DELETED > 0)); then
+    PAIR_STATUS='flagged'
+    return 0
+  fi
 
   # Archive paths encode the message Date as YYYY/MM; folder identity and message
   # identity both live in the <envelope-id>.meta.json sidecar. The IMAP query is
@@ -774,7 +916,7 @@ gate_folder_coverage() {
   # leaves deduplication to the caller, so the sidecar that breaks the count can
   # be named in the error.
   # shellcheck disable=SC2029  # intentional: %q-quote args locally, then expand into ssh cmd
-  sidecar_rows=$(
+  if ! sidecar_rows=$(
     ssh "${SSH_OPTS[@]}" "${host}" \
       "bash -s -- $(printf '%q ' "${archive_dir}" "${folder}" "${cutoff_ym}")" <<'REMOTE'
 set -euo pipefail
@@ -793,28 +935,85 @@ find "$archive_dir" -regextype posix-extended \
     if [ -n "$row" ]; then printf '%s\n' "$row"; fi
   done
 REMOTE
-  ) || die 1 "could not read the archived sidecars for ${folder} on ${host}" \
-    'ssh or the Host printed the reason above' \
-    "if a sidecar was unreadable: ssh ${host} find ${archive_path} -type f ! -perm -g=r" \
-    "if ssh itself failed: ssh ${host} true"
+  ); then
+    PAIR_STATUS='err-sidecars'
+    return 0
+  fi
 
-  count_distinct_message_ids <<<"${sidecar_rows}" \
-    || die 1 "an archived sidecar carries no message_id: ${UNKEYED_SIDECAR}" \
-      'that sidecar predates Message-ID keying, so this gate cannot tell whether' \
-      'it covers a message it has already counted' \
-      "backfill it: ssh ${host} sudo systemctl start bichon-archive.service" \
-      'one run repairs every sidecar in the account; re-run this script after it'
+  if ! count_distinct_message_ids <<<"${sidecar_rows}"; then
+    PAIR_STATUS='unkeyed'
+    return 0
+  fi
 
   note "archived messages in window: ${ARCHIVE_COUNT}"
 
-  ((ARCHIVE_COUNT >= IMAP_COUNT)) \
-    || die 1 "coverage gap: archive has ${ARCHIVE_COUNT} messages, IMAP has ${IMAP_COUNT} messages" \
-      "read the journal: ssh ${host} journalctl -u bichon-archive.service" \
-      "check ${folder} is a Synced Folder: auberge bichon reconcile-folders --host ${host}" \
-      "check the sidecars are group-readable: ssh ${host} find ${archive_path} -type f ! -perm -g=r" \
-      'do not expunge until the counts reconcile'
+  if ((ARCHIVE_COUNT < IMAP_COUNT)); then
+    PAIR_STATUS='gap'
+    return 0
+  fi
 
   note "coverage ok (${ARCHIVE_COUNT} >= ${IMAP_COUNT})"
+  PAIR_STATUS='ok'
+}
+
+# Renders a non-ok PAIR_STATUS as the die the single target has always
+# produced; the sweep never calls this — it records a row instead.
+render_pair_verdict_or_die() {
+  case "${PAIR_STATUS}" in
+    ok) ;;
+    empty)
+      die 1 "no IMAP messages in ${folder} older than ${window_days} days" \
+        'nothing to expunge — check --folder and --account'
+      ;;
+    flagged)
+      die 1 "${ALREADY_DELETED} message(s) in ${folder} already carry the deleted flag" \
+        "inspect them: himalaya envelope list --account ${account} --folder ${folder} flag deleted" \
+        'clear or expunge them separately — this script only expunges what it flags'
+      ;;
+    unkeyed)
+      die 1 "an archived sidecar carries no message_id: ${UNKEYED_SIDECAR}" \
+        'that sidecar predates Message-ID keying, so this gate cannot tell whether' \
+        'it covers a message it has already counted' \
+        "backfill it: ssh ${host} sudo systemctl start bichon-archive.service" \
+        'one run repairs every sidecar in the account; re-run this script after it'
+      ;;
+    gap)
+      die 1 "coverage gap: archive has ${ARCHIVE_COUNT} messages, IMAP has ${IMAP_COUNT} messages" \
+        "read the journal: ssh ${host} journalctl -u bichon-archive.service" \
+        "check ${folder} is a Synced Folder: auberge bichon reconcile-folders --host ${host}" \
+        "check the sidecars are group-readable: ssh ${host} find ${archive_path} -type f ! -perm -g=r" \
+        'do not expunge until the counts reconcile'
+      ;;
+    err-list)
+      die 1 "himalaya could not list ${folder} for ${account}" \
+        'check the account exists: himalaya account list' \
+        "check the folder exists: himalaya folder list --account ${account}"
+      ;;
+    err-flagged)
+      die 1 "himalaya could not list deleted-flagged mail in ${folder}" \
+        'this script must know what the expunge would take along, so it will' \
+        'not continue without that answer'
+      ;;
+    err-sidecars)
+      die 1 "could not read the archived sidecars for ${folder} on ${host}" \
+        'ssh or the Host printed the reason above' \
+        "if a sidecar was unreadable: ssh ${host} find ${archive_path} -type f ! -perm -g=r" \
+        "if ssh itself failed: ssh ${host} true"
+      ;;
+    *)
+      die 1 "gate 3 produced a status this script does not know: ${PAIR_STATUS}"
+      ;;
+  esac
+}
+
+# Gate 3 — every in-window IMAP message has an archived counterpart.
+# Sets IMAP_COUNT, ENVELOPE_JSON and ARCHIVE_COUNT; the expunge reuses the same
+# envelope set, so the messages counted here are exactly the messages deleted
+# later.
+gate_folder_coverage() {
+  step "Gate 3/5 — coverage for ${folder} older than ${window_days} days…"
+  probe_folder_coverage
+  render_pair_verdict_or_die
 }
 
 # Gate 4 — show the operator exactly what is about to happen.
@@ -855,30 +1054,443 @@ confirm_or_abort() {
     || die 1 'confirmation did not match the folder name — nothing expunged'
 }
 
-expunge() {
-  local ids=()
-  mapfile -t ids < <(printf '%s' "${ENVELOPE_JSON}" | jq -r '.[].id')
+# Fills ENVELOPE_IDS from ENVELOPE_JSON after proving the listing still holds
+# exactly the IMAP_COUNT messages gate 3 counted and that every id is numeric —
+# himalaya reads any non-numeric positional as a flag name, so a stray value
+# would silently become a flag instead of a uid. Returns non-zero with
+# IDS_ERROR set; the single target dies on it, the sweep records a finding.
+collect_envelope_ids() {
+  ENVELOPE_IDS=()
+  IDS_ERROR=''
+  mapfile -t ENVELOPE_IDS < <(printf '%s' "${ENVELOPE_JSON}" | jq -r '.[].id')
 
-  ((${#ids[@]} == IMAP_COUNT)) \
-    || die 1 "envelope ids (${#ids[@]}) do not match the counted messages (${IMAP_COUNT})" \
+  if ((${#ENVELOPE_IDS[@]} != IMAP_COUNT)); then
+    IDS_ERROR="envelope ids (${#ENVELOPE_IDS[@]}) do not match the counted messages (${IMAP_COUNT})"
+    return 1
+  fi
+
+  local id
+  for id in "${ENVELOPE_IDS[@]}"; do
+    if ! [[ "${id}" =~ ^[0-9]+$ ]]; then
+      IDS_ERROR="himalaya returned a non-numeric envelope id: ${id}"
+      return 1
+    fi
+  done
+}
+
+# Flags the given ids \Deleted and expunges the folder: $1 account, $2 folder,
+# the rest ids. Returns 1 when flagging failed (nothing was deleted) and 2
+# when the expunge failed after the flags landed — the folder then holds
+# \Deleted mail, which is exactly what the pre-existing-flag check refuses on
+# the next run, so a partial failure cannot compound silently.
+expunge_ids() {
+  local target_account="$1" target_folder="$2"
+  shift 2
+
+  step "Flagging $# message(s) as deleted…"
+  himalaya flag add \
+    --account "${target_account}" \
+    --folder "${target_folder}" \
+    "$@" deleted >&2 || return 1
+
+  step "Expunging ${target_folder}…"
+  himalaya folder expunge --account "${target_account}" "${target_folder}" >&2 || return 2
+}
+
+expunge() {
+  collect_envelope_ids \
+    || die 1 "${IDS_ERROR}" \
       'refusing to act on a listing that changed underfoot'
 
-  # himalaya reads any non-numeric positional as a flag name, so a stray value
-  # here would silently become a flag instead of a uid.
-  local id
-  for id in "${ids[@]}"; do
-    [[ "${id}" =~ ^[0-9]+$ ]] \
-      || die 1 "himalaya returned a non-numeric envelope id: ${id}"
+  local rc=0
+  expunge_ids "${account}" "${folder}" "${ENVELOPE_IDS[@]}" || rc=$?
+  case "${rc}" in
+    0) ;;
+    1)
+      die 1 "himalaya could not flag the messages in ${folder} — nothing was deleted" \
+        'himalaya printed the reason above'
+      ;;
+    *)
+      die 1 "the flags landed but the expunge of ${folder} failed" \
+        "inspect what is still flagged: himalaya envelope list --account ${account} --folder ${folder} flag deleted" \
+        'a re-run will refuse the folder until those flags are cleared or expunged'
+      ;;
+  esac
+}
+
+# Classifies every account either side of the sweep could see. $1 is the
+# newline-separated himalaya account names, $2 the Email Archive directory
+# names. Emits one "class<TAB>name" row per candidate:
+#
+#   eligible    a himalaya account whose Email Archive directory exists —
+#               the same intersection choose_account offers as a menu
+#   no-archive  a himalaya account the archive cannot vouch for
+#   no-account  an archive directory no himalaya account can reach — a
+#               decommissioned mailbox, not an error
+sweep_classify_accounts() {
+  local himalaya_names="$1" archive_dirs="$2"
+
+  local name
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+    if grep -qxF -- "$(archive_dir_for "${name}")" <<<"${archive_dirs}"; then
+      printf 'eligible\t%s\n' "${name}"
+    else
+      printf 'no-archive\t%s\n' "${name}"
+    fi
+  done <<<"${himalaya_names}"
+
+  local dir matched
+  while IFS= read -r dir; do
+    [[ -n "${dir}" ]] || continue
+    matched=false
+    while IFS= read -r name; do
+      [[ -n "${name}" ]] || continue
+      if [[ "$(archive_dir_for "${name}")" == "${dir}" ]]; then
+        matched=true
+        break
+      fi
+    done <<<"${himalaya_names}"
+    if [[ "${matched}" == false ]]; then
+      printf 'no-account\t%s\n' "${dir}"
+    fi
+  done <<<"${archive_dirs}"
+}
+
+# Classifies every folder the sweep could see for one account. $1 is the
+# Synced Folder set, $2 the Upstream Mailbox folder names (both sorted, as
+# their producers guarantee — comm needs that), $3/$4 the reconcile drift.
+# Emits "class<TAB>folder" rows:
+#
+#   eligible          synced AND on the Upstream Mailbox — the same
+#                     intersection choose_folder offers as a menu
+#   missing-upstream  a Synced Folder the Upstream Mailbox no longer has
+#   drift-added       on the Upstream Mailbox, not yet synced
+#   drift-removed     pending removal from the Synced Folder set
+sweep_classify_folders() {
+  local synced="$1" upstream="$2" drift_added="$3" drift_removed="$4"
+
+  local name
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+    printf 'eligible\t%s\n' "${name}"
+  done < <(comm -12 <(printf '%s\n' "${synced}") <(printf '%s\n' "${upstream}"))
+
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+    printf 'missing-upstream\t%s\n' "${name}"
+  done < <(comm -23 <(printf '%s\n' "${synced}") <(printf '%s\n' "${upstream}"))
+
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+    printf 'drift-added\t%s\n' "${name}"
+  done <<<"${drift_added}"
+
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+    printf 'drift-removed\t%s\n' "${name}"
+  done <<<"${drift_removed}"
+}
+
+# Appends one sweep row: $1 status, $2 account, $3 folder, $4 count, $5 detail.
+sweep_record() {
+  SWEEP_ROWS+=("$(printf '%s\t%s\t%s\t%s\t%s' "$1" "$2" "$3" "$4" "$5")")
+}
+
+# Prints the SWEEP_ROWS holding the given status, one per line.
+sweep_rows_with_status() {
+  local wanted="$1" row
+  for row in "${SWEEP_ROWS[@]}"; do
+    if [[ "${row}" == "${wanted}"$'\t'* ]]; then
+      printf '%s\n' "${row}"
+    fi
   done
+}
 
-  step "Flagging ${#ids[@]} message(s) as deleted…"
-  himalaya flag add \
-    --account "${account}" \
-    --folder "${folder}" \
-    "${ids[@]}" deleted >&2
+# Sums the count field of the sweep rows on stdin.
+sweep_sum_counts() {
+  local _status _account _folder count _detail total=0
+  while IFS=$'\t' read -r _status _account _folder count _detail; do
+    if [[ "${count}" =~ ^[0-9]+$ ]]; then
+      total=$((total + count))
+    fi
+  done
+  printf '%s' "${total}"
+}
 
-  step "Expunging ${folder}…"
-  himalaya folder expunge --account "${account}" "${folder}" >&2
+# Renders the sweep rows on stdin as the report body, one aligned line each.
+# Findings shout so a skimmed report cannot mistake one for a benign skip.
+render_sweep_rows() {
+  local status account_ folder_ count detail label
+  while IFS=$'\t' read -r status account_ folder_ count detail; do
+    [[ -n "${status}" ]] || continue
+    label="${status}"
+    if [[ "${status}" == 'finding' ]]; then
+      label='FINDING'
+    fi
+    printf '  %-9s %-26s %-16s %8s  %s\n' \
+      "${label}" "${account_}" "${folder_}" "${count}" "${detail}"
+  done
+}
+
+# Renders the whole row set under a step title.
+sweep_render_report() {
+  step "$1"
+  {
+    printf '  %-9s %-26s %-16s %8s  %s\n' 'STATUS' 'ACCOUNT' 'FOLDER' 'MESSAGES' 'DETAIL'
+    printf '%s\n' "${SWEEP_ROWS[@]}" | render_sweep_rows
+  } >&2
+}
+
+# Probes gate 3 for the resolved (account, folder) and records the row. A
+# ready pair also parks its envelope ids, so the expunge phase acts on exactly
+# the listing that passed coverage — same no-second-listing invariant as the
+# single target.
+sweep_probe_pair() {
+  note ''
+  note "[${account}] ${folder}: coverage older than ${window_days} days…"
+
+  SWEEP_PAIRS_PROBED=$((SWEEP_PAIRS_PROBED + 1))
+  probe_folder_coverage
+
+  case "${PAIR_STATUS}" in
+    ok) ;;
+    empty)
+      sweep_record skip "${account}" "${folder}" 0 'nothing in window'
+      return 0
+      ;;
+    flagged)
+      sweep_record finding "${account}" "${folder}" 0 \
+        "${ALREADY_DELETED} message(s) already flagged deleted — clear or expunge them separately"
+      return 0
+      ;;
+    unkeyed)
+      sweep_record finding "${account}" "${folder}" 0 \
+        "unkeyed sidecar ${UNKEYED_SIDECAR} — backfill: sudo systemctl start bichon-archive.service"
+      return 0
+      ;;
+    gap)
+      sweep_record finding "${account}" "${folder}" 0 \
+        "coverage gap: archive ${ARCHIVE_COUNT} < IMAP ${IMAP_COUNT} — do not expunge until they reconcile"
+      return 0
+      ;;
+    err-list)
+      sweep_record finding "${account}" "${folder}" 0 'himalaya could not list the folder'
+      return 0
+      ;;
+    err-flagged)
+      sweep_record finding "${account}" "${folder}" 0 'himalaya could not list deleted-flagged mail'
+      return 0
+      ;;
+    err-sidecars)
+      sweep_record finding "${account}" "${folder}" 0 'could not read the archived sidecars on the Host'
+      return 0
+      ;;
+    *)
+      die 1 "gate 3 produced a status this script does not know: ${PAIR_STATUS}"
+      ;;
+  esac
+
+  if ! collect_envelope_ids; then
+    sweep_record finding "${account}" "${folder}" 0 "${IDS_ERROR}"
+    return 0
+  fi
+
+  SWEEP_IDS["${account}"$'\t'"${folder}"]="${ENVELOPE_IDS[*]}"
+  sweep_record ready "${account}" "${folder}" "${IMAP_COUNT}" ''
+}
+
+# Probes every folder of the resolved account. Account-level fetch failures
+# become findings scoped to the account; an empty Synced Folder set is a
+# benign skip, exactly as an empty window is for a pair.
+sweep_probe_account() {
+  step "Probing ${account}…"
+
+  if ! fetch_account_folders; then
+    sweep_record finding "${account}" '-' 0 "${FETCH_ERROR}"
+    return 0
+  fi
+
+  if ! fetch_synced_folders; then
+    sweep_record finding "${account}" '-' 0 "${FETCH_ERROR}"
+    return 0
+  fi
+
+  if [[ -z "${SYNCED_FOLDERS}" ]]; then
+    note "no Synced Folder for ${account} — nothing eligible"
+    sweep_record skip "${account}" '-' 0 'no Synced Folders'
+    return 0
+  fi
+
+  local class name
+  while IFS=$'\t' read -r class name; do
+    [[ -n "${class}" ]] || continue
+    case "${class}" in
+      eligible)
+        folder="${name}"
+        sweep_probe_pair
+        ;;
+      missing-upstream)
+        sweep_record skip "${account}" "${name}" 0 'a Synced Folder the Upstream Mailbox no longer has'
+        ;;
+      drift-added)
+        sweep_record skip "${account}" "${name}" 0 'not yet synced — apply the pending reconcile first'
+        ;;
+      drift-removed)
+        sweep_record skip "${account}" "${name}" 0 'pending removal from the Synced Folder set'
+        ;;
+    esac
+  done < <(sweep_classify_folders "${SYNCED_FOLDERS}" "${FOLDER_NAMES}" "${DRIFT_ADDED}" "${DRIFT_REMOVED}")
+}
+
+# The sweep's gate 4: the whole row set, then the run parameters and the
+# backup evidence gate 1 produced — everything the two checkpoints ask the
+# operator to vouch for.
+sweep_print_summary() {
+  sweep_render_report 'Sweep summary'
+  cat >&2 <<EOF
+
+  Host            ${host}
+  window          older than ${window_days} days (before ${CUTOFF_DATE})
+  archive root    ${archive_path}
+
+off-host backup evidence:
+$(printf '%s\n' "${BACKUP_EVIDENCE}" | sed 's/^/  /')
+EOF
+}
+
+# The sweep's gate 5: two typed checkpoints instead of one typed folder name
+# per pair (ADR-0007, amendment 2026-08-03). Scope binds the sweep to a
+# machine; magnitude is a number the operator must copy from the summary,
+# proving it was read. TTY-only by construction, like confirm_or_abort.
+sweep_confirm_or_abort() {
+  local ready accounts account_count folder_count grand_total
+  ready=$(sweep_rows_with_status ready)
+  accounts=$(printf '%s\n' "${ready}" | cut -f2 | sort -u)
+  account_count=$(printf '%s\n' "${accounts}" | grep -c . || true)
+  folder_count=$(printf '%s\n' "${ready}" | grep -c . || true)
+  grand_total=$(printf '%s\n' "${ready}" | sweep_sum_counts)
+
+  local typed
+
+  step 'Checkpoint 1/2 — scope'
+  printf 'This sweep deletes mail from %s account(s) on %s:\n' "${account_count}" "${host}" >&2
+  printf '%s\n' "${accounts}" | sed 's/^/  /' >&2
+  printf 'Type the Bichon Host name (%s) to proceed, anything else to abort: ' "${host}" >&2
+  IFS= read -r typed || die 1 'stdin closed before the scope checkpoint — nothing expunged'
+  [[ "${typed}" == "${host}" ]] \
+    || die 1 'checkpoint did not match the Host name — nothing expunged'
+
+  step 'Checkpoint 2/2 — magnitude'
+  printf 'This permanently deletes %s message(s) across %s folder(s).\n' "${grand_total}" "${folder_count}" >&2
+  printf 'Type that message count (%s) to proceed, anything else to abort: ' "${grand_total}" >&2
+  IFS= read -r typed || die 1 'stdin closed before the magnitude checkpoint — nothing expunged'
+  [[ "${typed}" == "${grand_total}" ]] \
+    || die 1 'checkpoint did not match the message count — nothing expunged'
+}
+
+# Expunges every ready pair, continuing past failures: one account's IMAP
+# hiccup must not strand the other accounts' already-confirmed expunges. Each
+# outcome rewrites the pair's row, so the final report is the single source of
+# what actually happened.
+sweep_expunge_ready() {
+  local i status account_ folder_ count _detail rc
+  local -a ids
+  for i in "${!SWEEP_ROWS[@]}"; do
+    IFS=$'\t' read -r status account_ folder_ count _detail <<<"${SWEEP_ROWS[i]}"
+    [[ "${status}" == 'ready' ]] || continue
+
+    read -ra ids <<<"${SWEEP_IDS["${account_}"$'\t'"${folder_}"]}"
+    step "[${account_}] ${folder_}: expunging ${count} message(s)…"
+
+    rc=0
+    expunge_ids "${account_}" "${folder_}" "${ids[@]}" || rc=$?
+    case "${rc}" in
+      0)
+        SWEEP_ROWS[i]=$(printf 'expunged\t%s\t%s\t%s\t' "${account_}" "${folder_}" "${count}")
+        ;;
+      1)
+        SWEEP_ROWS[i]=$(printf 'finding\t%s\t%s\t%s\t%s' "${account_}" "${folder_}" 0 \
+          'flagging failed — nothing was deleted in this folder')
+        ;;
+      *)
+        SWEEP_ROWS[i]=$(printf 'finding\t%s\t%s\t%s\t%s' "${account_}" "${folder_}" 0 \
+          'flagged but the expunge failed — the folder holds deleted-flagged mail; a re-run refuses it until cleared')
+        ;;
+    esac
+  done
+}
+
+# The Expunge Sweep: host gates once, every pair probed, one summary, two
+# checkpoints, then the expunges. Exits 1 when any row is a finding — the
+# report needs reading — and 0 on a clean sweep.
+run_sweep() {
+  gate_backup_verified
+  gate_archive_fresh
+
+  local himalaya_names
+  himalaya_names=$(printf '%s' "${HIMALAYA_ACCOUNTS_JSON}" | jq -r '.[].name') \
+    || die 2 'himalaya account list returned JSON this script cannot read'
+
+  local class name
+  while IFS=$'\t' read -r class name; do
+    [[ -n "${class}" ]] || continue
+    case "${class}" in
+      eligible)
+        account="${name}"
+        sweep_probe_account
+        ;;
+      no-archive)
+        sweep_record skip "${name}" '-' 0 "no Email Archive directory on ${host}"
+        ;;
+      no-account)
+        sweep_record skip "${name}" '-' 0 'an archive directory no himalaya account matches'
+        ;;
+    esac
+  done < <(sweep_classify_accounts "${himalaya_names}" "${ARCHIVE_ACCOUNTS}")
+
+  if ((SWEEP_PAIRS_PROBED == 0)); then
+    sweep_render_report 'Sweep classification'
+    die 2 "no eligible (account, Synced Folder) pair on ${host}" \
+      'the rows above name why each candidate was skipped'
+  fi
+
+  sweep_print_summary
+
+  local findings ready_count
+  findings=$(sweep_rows_with_status finding | grep -c . || true)
+  ready_count=$(sweep_rows_with_status ready | grep -c . || true)
+
+  if ! interactive; then
+    note ''
+    note 'Every gate ran and every pair is classified above. The expunge needs'
+    note 'an interactive TTY and two typed checkpoints; there is no unattended'
+    note 'path (ADR-0007). Re-run this script from a terminal to expunge.'
+    printf 'verified: %s pair(s) ready, %s finding(s) on %s\n' \
+      "${ready_count}" "${findings}" "${host}"
+    ((findings == 0)) || exit 1
+    return 0
+  fi
+
+  if ((ready_count == 0)); then
+    note ''
+    note 'no pair is ready to expunge'
+    printf 'swept: 0 message(s) expunged, %s finding(s) on %s\n' "${findings}" "${host}"
+    ((findings == 0)) || exit 1
+    return 0
+  fi
+
+  sweep_confirm_or_abort
+  sweep_expunge_ready
+  sweep_render_report 'Sweep report'
+
+  local expunged_msgs expunged_folders
+  findings=$(sweep_rows_with_status finding | grep -c . || true)
+  expunged_msgs=$(sweep_rows_with_status expunged | sweep_sum_counts)
+  expunged_folders=$(sweep_rows_with_status expunged | grep -c . || true)
+  printf 'swept: %s message(s) expunged across %s folder(s), %s finding(s) on %s\n' \
+    "${expunged_msgs}" "${expunged_folders}" "${findings}" "${host}"
+  ((findings == 0)) || exit 1
 }
 
 main() {
@@ -894,6 +1506,14 @@ main() {
   validate_host
   check_host_reachable
   check_archive_root
+
+  # The sweep departs here: everything above is host-scoped, everything below
+  # resolves the one (account, folder) pair a single-target run works on.
+  if [[ "${sweep}" == true ]]; then
+    run_sweep
+    return 0
+  fi
+
   resolve_account
   validate_account
   check_account_archive

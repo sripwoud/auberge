@@ -180,4 +180,102 @@ assert_succeeds 'a folder pending addition names the drift' \
 assert_succeeds 'eligibility beats drift lists for other folders' \
   synced_ok Sent "${SYNCED}" 'Newsletter' 'Receipts'
 
+printf '\n== sweep_classify_accounts\n'
+
+assert_eq 'accounts split into eligible, no-archive, and no-account' \
+  $'eligible\ta@x.com\nno-archive\tb@x.com\nno-account\tstray@x.com' \
+  "$(sweep_classify_accounts $'a@x.com\nb@x.com' $'a@x.com\nstray@x.com')"
+
+# bichon writes the archive directory with '/' sanitized to '_'; the account
+# name still has the slash, and the match must survive the difference.
+assert_eq 'an account with a slash matches its sanitized directory' \
+  $'eligible\ta/b@x.com' \
+  "$(sweep_classify_accounts 'a/b@x.com' 'a_b@x.com')"
+
+assert_eq 'no himalaya accounts leaves only orphan archive directories' \
+  $'no-account\td@x.com' \
+  "$(sweep_classify_accounts '' 'd@x.com')"
+
+printf '\n== sweep_classify_folders\n'
+
+SWEEP_SYNCED=$'Archive\nINBOX\nSent'
+SWEEP_UPSTREAM=$'Drafts\nINBOX\nSent\nTrash'
+
+assert_eq 'folders split into eligible, missing-upstream, and drift' \
+  $'eligible\tINBOX\neligible\tSent\nmissing-upstream\tArchive\ndrift-added\tNewsletter\ndrift-removed\tReceipts' \
+  "$(sweep_classify_folders "${SWEEP_SYNCED}" "${SWEEP_UPSTREAM}" 'Newsletter' 'Receipts')"
+
+assert_eq 'no drift adds no drift rows' \
+  $'eligible\tINBOX\neligible\tSent\nmissing-upstream\tArchive' \
+  "$(sweep_classify_folders "${SWEEP_SYNCED}" "${SWEEP_UPSTREAM}" '' '')"
+
+printf '\n== sweep rows: filtering, totals, rendering\n'
+
+SWEEP_ROWS=(
+  $'ready\ta@x.com\tINBOX\t12\t'
+  $'skip\ta@x.com\tSent\t0\tnothing in window'
+  $'finding\tb@x.com\tINBOX\t0\tcoverage gap: archive 3 < IMAP 5'
+  $'ready\tb@x.com\tSent\t30\t'
+)
+
+assert_eq 'the grand total sums only the ready rows' '42' \
+  "$(sweep_rows_with_status ready | sweep_sum_counts)"
+
+assert_eq 'status filtering keeps whole rows' \
+  $'ready\ta@x.com\tINBOX\t12\t\nready\tb@x.com\tSent\t30\t' \
+  "$(sweep_rows_with_status ready)"
+
+assert_eq 'a status no row holds filters to nothing' '' \
+  "$(sweep_rows_with_status expunged)"
+
+assert_eq 'an empty row set sums to zero' '0' \
+  "$(printf '' | sweep_sum_counts)"
+
+SWEEP_RENDERED=$(printf '%s\n' "${SWEEP_ROWS[@]}" | render_sweep_rows)
+
+assert_succeeds 'a finding shouts in the report' \
+  contains "${SWEEP_RENDERED}" 'FINDING'
+
+assert_succeeds 'a finding carries its reason' \
+  contains "${SWEEP_RENDERED}" 'coverage gap: archive 3 < IMAP 5'
+
+assert_succeeds 'a ready row carries its count' \
+  contains "${SWEEP_RENDERED}" '12'
+
+printf '\n== collect_envelope_ids\n'
+
+ENVELOPE_JSON='[{"id":"1"},{"id":"2"},{"id":"3"}]'
+IMAP_COUNT=3
+assert_succeeds 'a clean listing collects its ids' collect_envelope_ids
+assert_eq 'the ids survive in order' '1 2 3' "${ENVELOPE_IDS[*]}"
+
+# The listing gate 3 counted is the only thing the expunge may act on; a
+# diverging id count means it changed underfoot.
+IMAP_COUNT=2
+assert_fails 'a count mismatch refuses the listing' collect_envelope_ids
+assert_succeeds 'the mismatch is named' contains "${IDS_ERROR}" 'do not match'
+
+# himalaya reads a non-numeric positional as a flag name, so one stray value
+# would silently rewrite the command.
+# shellcheck disable=SC2034  # intentional: read by collect_envelope_ids in the sourced script
+ENVELOPE_JSON='[{"id":"1"},{"id":"x"}]' IMAP_COUNT=2
+assert_fails 'a non-numeric id refuses the listing' collect_envelope_ids
+assert_succeeds 'the offending id is named' contains "${IDS_ERROR}" 'non-numeric'
+
+printf '\n== --sweep excludes --account/--folder\n'
+
+# validate_options calls die, which exits — same subshell shape as
+# synced_verdict above.
+sweep_flags_ok() {
+  (
+    # shellcheck disable=SC2030,SC2034  # intentional: read by validate_options in the sourced script
+    sweep=true account="$1" folder="$2" window_days=90 archive_path='/x'
+    validate_options
+  ) >/dev/null 2>&1
+}
+
+assert_fails '--sweep refuses a passed --account' sweep_flags_ok 'a@x.com' ''
+assert_fails '--sweep refuses a passed --folder' sweep_flags_ok '' 'INBOX'
+assert_succeeds '--sweep alone passes option validation' sweep_flags_ok '' ''
+
 report 'bichon-expunge'
