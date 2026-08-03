@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.11](https://github.com/sripwoud/auberge/compare/v0.14.10...v0.14.11) - 2026-08-03
+
+### Fixed
+
+- *(cockpit)* mask networkd wait-online under NetworkManager renderer ([#401](https://github.com/sripwoud/auberge/pull/401))
+
+### Other
+
+- *(context)* only a Synced Folder is an eligible expunge target
+- *(examples)* expunge only Synced Folders, asked from reconcile
+- *(examples)* pick the expunge folder from a menu, check it early
+
 ## [0.14.10](https://github.com/sripwoud/auberge/compare/v0.14.9...v0.14.10) - 2026-07-31
 
 ### Added
