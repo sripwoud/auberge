@@ -74,10 +74,29 @@
         filename: nodesource
         state: present
 
+    - name: Pin NodeSource nodejs above the apt role's stable-release pin (nodistro gets 500, stable gets 900)
+      ansible.builtin.copy:
+        content: |
+          Package: nodejs
+          Pin: origin deb.nodesource.com
+          Pin-Priority: 990
+        dest: /etc/apt/preferences.d/nodesource.pref
+        owner: root
+        group: root
+        mode: "0644"
+
     - name: Install Node.js from NodeSource (Debian's nodejs is older than sync-server's engines requirement)
       ansible.builtin.apt:
         name: nodejs
         state: present
+
+    - name: Verify Node.js satisfies sync-server's engines requirement
+      ansible.builtin.command: node --version
+      register: actual_node_version_check
+      changed_when: false
+      failed_when: >-
+        actual_node_version_check.stdout | regex_replace('^v', '')
+        is version(actual_node_major ~ '.0.0', '<')
 
     - name: Install Actual sync server {{ actual_version }}
       community.general.npm:
