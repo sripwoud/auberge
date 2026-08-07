@@ -105,6 +105,16 @@ The hard rules stay: stdin must be a TTY, there is no `--yes`/`--force`, a bare 
 checkpoint, and `--no-input --sweep` refuses the expunge unconditionally — which makes it a
 cron-able fleet-wide coverage verification (all gates, read-only, exit 1 on any finding).
 
+A repeated `--account` narrows the sweep's account set. It does not touch the folder set, which is
+why it composes with `--sweep` where `--folder` cannot, and the checkpoints stay exactly as above.
+Typing the account set instead of the Host name was considered and rejected: those accounts were
+named on the command line and are printed above the prompt, so a checksum over them re-types the
+operator's own input, while the wrong-host mistake — the one they cannot see in their own flags —
+would lose its guard. Narrowing also strictly shrinks the blast radius, so nothing is traded away
+for it. A named account himalaya does not know aborts before any gate runs: the report holds one row
+per classified candidate, so a name matching none would simply be absent from it, and a run that
+swept nothing would otherwise report success.
+
 Failure policy: the host-scoped gates (off-host backup, archive freshness) abort the whole sweep —
 no pair is safe without them. Per-pair failures skip that pair and continue, classified as benign
 (empty window) or finding (coverage gap, pre-existing `\Deleted` mail, unkeyed sidecar, listing

@@ -28,6 +28,12 @@
 # folder is typed, the target set comes from the Synced Folder set the
 # operator curates via Account Reconcile.
 #
+# A repeated --account narrows a sweep to those accounts, every Synced Folder
+# of each. The folder set still comes from Account Reconcile, so the two
+# checkpoints keep defending what they always defended and only the scope is
+# smaller. A named account himalaya does not know aborts before any gate runs,
+# so it cannot reach the report as a missing row the operator has to notice.
+#
 # Safety contract (ADR-0007) — load-bearing, do not "improve" away:
 #   - stdin must be a TTY; a non-TTY run refuses the expunge unconditionally
 #   - there is no --yes / --force, so no unattended expunge path exists
@@ -76,8 +82,16 @@ readonly PAGE_SIZE=9999
 readonly SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10)
 
 host=''
-account=''
 folder=''
+
+# Every --account, in flag order. It accumulates rather than overwrites so a
+# sweep can be narrowed to some accounts; a single target is the one-element
+# case, and two of them without --sweep is contradictory intent.
+requested_accounts=()
+
+# The one account every gate reads. Resolved from requested_accounts or the
+# menu for a single target; reassigned per account as the sweep walks.
+account=''
 window_days="${DEFAULT_WINDOW_DAYS}"
 archive_path="${DEFAULT_ARCHIVE_PATH}"
 no_input=false
@@ -168,20 +182,23 @@ Options:
   -a, --account ADDRESS      himalaya account to expunge from; must be the
                              mailbox email address, since it also names the
                              Email Archive directory (on a TTY, chosen from
-                             \`himalaya account list\`)
+                             \`himalaya account list\`). Repeat it with --sweep
+                             to sweep only those accounts
   -f, --folder NAME          folder to expunge (on a TTY, chosen from the
                              account's Synced Folders; without one, defaults
                              to ${DEFAULT_FOLDER})
-      --sweep                expunge every eligible (account, Synced Folder)
-                             pair on the Host in one run: host gates once,
+      --sweep                expunge every Synced Folder of every eligible
+                             account on the Host in one run — or of the
+                             accounts --account names: host gates once,
                              coverage per pair, one summary, two typed
                              checkpoints (Host name, then grand total);
-                             excludes --account and --folder
+                             excludes --folder
   -w, --window-days DAYS     expunge mail older than DAYS (default: ${DEFAULT_WINDOW_DAYS})
       --archive-path PATH    Email Archive root on the Host
                              (default: ${DEFAULT_ARCHIVE_PATH})
-      --no-input             never prompt; requires --host and --account, and
-                             refuses the expunge (gates still run)
+      --no-input             never prompt; requires --host, and --account
+                             unless --sweep; refuses the expunge (gates still
+                             run)
   -h, --help                 show this help
 
 The expunge requires an interactive TTY. There is deliberately no flag that
@@ -225,7 +242,7 @@ parse_args() {
         ;;
       -a | --account)
         [[ $# -ge 2 ]] || die 2 "$1 needs a value"
-        account="$2"
+        requested_accounts+=("$2")
         shift 2
         ;;
       -f | --folder)
@@ -308,6 +325,14 @@ choose_host() {
   choose_from 'Bichon Host' "${names[@]}"
 }
 
+# The account names in the listing check_tools captured. Callers read jq's exit
+# status themselves — same reason as choose_host: a `while read` or a mapfile
+# fed by this reports only its own success, so unparseable JSON would reach the
+# operator as "no accounts" instead of as a parse failure.
+himalaya_account_names() {
+  printf '%s' "${HIMALAYA_ACCOUNTS_JSON}" | jq -r '.[].name'
+}
+
 # bichon names each Email Archive directory after the mailbox email address,
 # with '/' replaced. Keep in step with sanitize_email in
 # ansible/roles/bichon/templates/bichon-archive.sh.j2.
@@ -322,9 +347,7 @@ archive_dir_for() {
 # unselectable instead of surfacing it as a phantom coverage gap in gate 3.
 choose_account() {
   local account_names name candidates=()
-  # Same reason as choose_host: a `while read` fed by a process substitution
-  # cannot see jq's exit status either.
-  account_names=$(printf '%s' "${HIMALAYA_ACCOUNTS_JSON}" | jq -r '.[].name') \
+  account_names=$(himalaya_account_names) \
     || die 2 'himalaya account list returned JSON this script cannot read'
 
   while IFS= read -r name; do
@@ -367,8 +390,13 @@ resolve_host() {
   host=$(choose_host)
 }
 
+# validate_options has already refused a second --account for a single target,
+# so the first entry is the only entry.
 resolve_account() {
-  [[ -n "${account}" ]] && return 0
+  if ((${#requested_accounts[@]} > 0)); then
+    account="${requested_accounts[0]}"
+    return 0
+  fi
   interactive || die 2 'missing --account' \
     'a non-interactive run must pass every value as a flag'
   account=$(choose_account)
@@ -401,12 +429,31 @@ validate_account() {
 # The options that depend on neither the Host nor the account, so they can
 # reject a typo before anything reaches the network.
 validate_options() {
-  # A sweep's targets come from the Synced Folder set, not from flags; a
-  # --account/--folder next to --sweep is contradictory intent, and guessing
-  # which was meant is how the wrong mailbox gets expunged.
-  if [[ "${sweep}" == true ]] && { [[ -n "${account}" ]] || [[ -n "${folder}" ]]; }; then
-    die 2 '--sweep walks every eligible (account, folder) pair; --account/--folder contradict it' \
-      'drop --sweep to target one pair, or drop --account/--folder to sweep them all'
+  # A sweep's folder set comes from Account Reconcile, never from a flag: a
+  # --folder next to --sweep is contradictory intent, and guessing which was
+  # meant is how the wrong mailbox gets expunged. --account is different — it
+  # narrows the account set the sweep walks without touching how folders are
+  # chosen, so the two compose.
+  if [[ "${sweep}" == true ]] && [[ -n "${folder}" ]]; then
+    die 2 '--sweep takes every Synced Folder of each account; --folder contradicts it' \
+      'drop --sweep to target one pair, or drop --folder to sweep every folder' \
+      'to sweep some accounts only, repeat --account instead'
+  fi
+
+  # One target takes one account. Several of them mean a sweep was intended,
+  # and silently expunging the first (or the last) is the wrong-mailbox
+  # mistake every gate here exists to prevent.
+  if [[ "${sweep}" == false ]] && ((${#requested_accounts[@]} > 1)); then
+    die 2 "one target takes one --account, got ${#requested_accounts[@]}" \
+      'sweep those accounts instead: --sweep --account A --account B'
+  fi
+
+  if ((${#requested_accounts[@]} > 0)); then
+    local name
+    for name in "${requested_accounts[@]}"; do
+      [[ "${name}" == *[![:space:]]* ]] \
+        || die 2 'account must not be empty'
+    done
   fi
 
   # Empty means --folder was not passed; resolve_folder supplies the default
@@ -487,6 +534,32 @@ check_tools() {
       'himalaya printed the reason above'
 
   note 'auberge, himalaya, jq, ssh ok'
+}
+
+# Every --account has to name a himalaya account, and this is the cheapest place
+# to prove it: the listing is already in hand and no ssh has happened yet.
+#
+# The check matters most to a sweep. Its report has a row per candidate the
+# classification saw, and a name matching no candidate produces no row — so
+# without this, a typo would leave the operator reading a report that simply
+# does not mention the account they asked to expunge, and a run that swept
+# nothing would still exit as if it had done the job.
+check_requested_accounts() {
+  ((${#requested_accounts[@]} > 0)) || return 0
+
+  local account_names name unknown=()
+  account_names=$(himalaya_account_names) \
+    || die 2 'himalaya account list returned JSON this script cannot read'
+
+  for name in "${requested_accounts[@]}"; do
+    grep -qxF -- "${name}" <<<"${account_names}" || unknown+=("${name}")
+  done
+
+  ((${#unknown[@]} == 0)) \
+    || die 2 "himalaya knows no account named: ${unknown[*]}" \
+      "himalaya accounts: $(printf '%s' "${account_names}" | paste -sd' ' -)" \
+      '--account must be the mailbox email address, since bichon keys the' \
+      'Email Archive by email and one value feeds both'
 }
 
 check_host_reachable() {
@@ -1162,25 +1235,36 @@ expunge() {
 
 # Classifies every account either side of the sweep could see. $1 is the
 # newline-separated himalaya account names, $2 the Email Archive directory
-# names. Emits one "class<TAB>name" row per candidate:
+# names, $3 the accounts --account named — empty for a Host-wide sweep. Emits
+# one "class<TAB>name" row per in-scope candidate:
 #
 #   eligible    a himalaya account whose Email Archive directory exists —
 #               the same intersection choose_account offers as a menu
 #   no-archive  a himalaya account the archive cannot vouch for
 #   no-account  an archive directory no himalaya account can reach — a
 #               decommissioned mailbox, not an error
+#
+# A scoped sweep emits no no-account row at all: scope is a set of himalaya
+# account names, and that class is defined by having none to match. The
+# membership test runs against the account name, not its archive directory, so
+# --account keeps meaning the same thing it means everywhere else.
 sweep_classify_accounts() {
-  local himalaya_names="$1" archive_dirs="$2"
+  local himalaya_names="$1" archive_dirs="$2" requested="${3:-}"
 
   local name
   while IFS= read -r name; do
     [[ -n "${name}" ]] || continue
+    if [[ -n "${requested}" ]] && ! grep -qxF -- "${name}" <<<"${requested}"; then
+      continue
+    fi
     if grep -qxF -- "$(archive_dir_for "${name}")" <<<"${archive_dirs}"; then
       printf 'eligible\t%s\n' "${name}"
     else
       printf 'no-archive\t%s\n' "${name}"
     fi
   done <<<"${himalaya_names}"
+
+  [[ -z "${requested}" ]] || return 0
 
   local dir matched
   while IFS= read -r dir; do
@@ -1393,6 +1477,17 @@ sweep_probe_account() {
   done < <(sweep_classify_folders "${SYNCED_FOLDERS}" "${FOLDER_NAMES}" "${DRIFT_ADDED}" "${DRIFT_REMOVED}")
 }
 
+# What gate 4 calls the sweep's target set, so the operator sees whether the
+# run was narrowed before vouching for it.
+sweep_scope_label() {
+  if ((${#requested_accounts[@]} == 0)); then
+    printf 'every eligible account on %s' "${host}"
+  else
+    printf '%s account(s) named by --account: %s' \
+      "${#requested_accounts[@]}" "${requested_accounts[*]}"
+  fi
+}
+
 # The sweep's gate 4: the whole row set, then the run parameters and the
 # backup evidence gate 1 produced — everything the two checkpoints ask the
 # operator to vouch for.
@@ -1401,6 +1496,7 @@ sweep_print_summary() {
   cat >&2 <<EOF
 
   Host            ${host}
+  scope           $(sweep_scope_label)
   window          older than ${window_days} days (before ${CUTOFF_DATE})
   archive root    ${archive_path}
 
@@ -1479,8 +1575,14 @@ run_sweep() {
   gate_archive_fresh
 
   local himalaya_names
-  himalaya_names=$(printf '%s' "${HIMALAYA_ACCOUNTS_JSON}" | jq -r '.[].name') \
+  himalaya_names=$(himalaya_account_names) \
     || die 2 'himalaya account list returned JSON this script cannot read'
+
+  # check_requested_accounts has already proved each name is a himalaya
+  # account, so every entry here classifies into a row of its own.
+  local requested=''
+  ((${#requested_accounts[@]} == 0)) \
+    || requested=$(printf '%s\n' "${requested_accounts[@]}")
 
   local class name
   while IFS=$'\t' read -r class name; do
@@ -1497,11 +1599,11 @@ run_sweep() {
         sweep_record skip "${name}" '-' 0 'an archive directory no himalaya account matches'
         ;;
     esac
-  done < <(sweep_classify_accounts "${himalaya_names}" "${ARCHIVE_ACCOUNTS}")
+  done < <(sweep_classify_accounts "${himalaya_names}" "${ARCHIVE_ACCOUNTS}" "${requested}")
 
   if ((SWEEP_PAIRS_PROBED == 0)); then
     sweep_render_report 'Sweep classification'
-    die 2 "no eligible (account, Synced Folder) pair on ${host}" \
+    die 2 "no eligible (account, Synced Folder) pair in scope on ${host}" \
       'the rows above name why each candidate was skipped'
   fi
 
@@ -1552,6 +1654,7 @@ main() {
   # Host has answered with its Email Archive contents.
   validate_options
   check_tools
+  check_requested_accounts
   resolve_host
   validate_host
   check_host_reachable
