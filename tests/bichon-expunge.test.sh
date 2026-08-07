@@ -196,6 +196,45 @@ assert_eq 'no himalaya accounts leaves only orphan archive directories' \
   $'no-account\td@x.com' \
   "$(sweep_classify_accounts '' 'd@x.com')"
 
+printf '\n== sweep_classify_accounts scoped by --account\n'
+
+SWEEP_HIMALAYA=$'a@x.com\nb@x.com\nc@x.com'
+SWEEP_ARCHIVE=$'a@x.com\nc@x.com\nstray@x.com'
+
+assert_eq 'a scoped sweep classifies only the named accounts' \
+  $'eligible\ta@x.com' \
+  "$(sweep_classify_accounts "${SWEEP_HIMALAYA}" "${SWEEP_ARCHIVE}" 'a@x.com')"
+
+assert_eq 'several named accounts all classify' \
+  $'eligible\ta@x.com\neligible\tc@x.com' \
+  "$(sweep_classify_accounts "${SWEEP_HIMALAYA}" "${SWEEP_ARCHIVE}" $'a@x.com\nc@x.com')"
+
+# Naming an account the archive cannot vouch for must still produce its row:
+# the sweep report is the only place the operator learns the account they asked
+# for was skipped, and a dropped candidate leaves nothing to read.
+assert_eq 'a named account with no archive is still classified' \
+  $'no-archive\tb@x.com' \
+  "$(sweep_classify_accounts "${SWEEP_HIMALAYA}" "${SWEEP_ARCHIVE}" 'b@x.com')"
+
+# no-account means "no himalaya account matches this directory", so a scope
+# expressed in himalaya account names can never contain one.
+assert_eq 'a scoped sweep emits no orphan archive rows' \
+  $'eligible\ta@x.com' \
+  "$(sweep_classify_accounts 'a@x.com' "${SWEEP_ARCHIVE}" 'a@x.com')"
+
+assert_eq 'an empty scope is the whole Host, not an empty sweep' \
+  $'eligible\ta@x.com\nno-archive\tb@x.com\neligible\tc@x.com\nno-account\tstray@x.com' \
+  "$(sweep_classify_accounts "${SWEEP_HIMALAYA}" "${SWEEP_ARCHIVE}" '')"
+
+# --account is the mailbox email everywhere else in the script; the scope test
+# must not quietly accept the sanitized directory name instead.
+assert_eq 'scope matches the account name, not its sanitized directory' \
+  $'eligible\ta/b@x.com' \
+  "$(sweep_classify_accounts 'a/b@x.com' 'a_b@x.com' 'a/b@x.com')"
+
+assert_eq 'the sanitized directory name is not a usable scope' '' \
+  "$(sweep_classify_accounts 'a/b@x.com' 'a_b@x.com' 'a_b@x.com')"
+
 printf '\n== sweep_classify_folders\n'
 
 SWEEP_SYNCED=$'Archive\nINBOX\nSent'
@@ -292,20 +331,55 @@ ENVELOPE_JSON='[{"id":"1"},{"id":"x"}]' IMAP_COUNT=2
 assert_fails 'a non-numeric id refuses the listing' collect_envelope_ids
 assert_succeeds 'the offending id is named' contains "${IDS_ERROR}" 'non-numeric'
 
-printf '\n== --sweep excludes --account/--folder\n'
+printf '\n== validate_options: --account count and --sweep/--folder exclusion\n'
 
 # validate_options calls die, which exits — same subshell shape as
-# synced_verdict above.
-sweep_flags_ok() {
+# synced_verdict above. $1 is --sweep, $2 --folder, the rest each --account.
+options_ok() {
+  local sweep_flag="$1" folder_flag="$2"
+  shift 2
   (
     # shellcheck disable=SC2030,SC2034  # intentional: read by validate_options in the sourced script
-    sweep=true account="$1" folder="$2" window_days=90 archive_path='/x'
+    sweep="${sweep_flag}" folder="${folder_flag}" window_days=90 archive_path='/x'
+    # shellcheck disable=SC2034  # intentional: read by validate_options in the sourced script
+    requested_accounts=("$@")
     validate_options
   ) >/dev/null 2>&1
 }
 
-assert_fails '--sweep refuses a passed --account' sweep_flags_ok 'a@x.com' ''
-assert_fails '--sweep refuses a passed --folder' sweep_flags_ok '' 'INBOX'
-assert_succeeds '--sweep alone passes option validation' sweep_flags_ok '' ''
+assert_fails '--sweep refuses a passed --folder' options_ok true 'INBOX'
+assert_succeeds '--sweep alone passes option validation' options_ok true ''
+
+# The point of the change: a sweep narrowed to accounts is not contradictory
+# intent, because --account touches the account set and never the folder set.
+assert_succeeds '--sweep narrows to one account' options_ok true '' 'a@x.com'
+assert_succeeds '--sweep narrows to several accounts' options_ok true '' 'a@x.com' 'b@x.com'
+assert_fails '--sweep still refuses --folder beside --account' options_ok true 'INBOX' 'a@x.com'
+
+assert_succeeds 'one target takes one --account' options_ok false '' 'a@x.com'
+assert_fails 'one target refuses two --account' options_ok false '' 'a@x.com' 'b@x.com'
+assert_succeeds 'no --account passes; the menu or the sweep supplies it' options_ok false ''
+
+assert_fails 'an empty --account is refused' options_ok false '' ''
+assert_fails 'a whitespace --account is refused in a sweep too' options_ok true '' '   '
+
+printf '\n== resolve_account\n'
+
+# Same subshell shape: the no-account branch dies non-interactively (no_input
+# is still true from the resolve_folder section above).
+resolve_account_in() {
+  (
+    # shellcheck disable=SC2030,SC2034  # intentional: read by resolve_account in the sourced script
+    requested_accounts=("$@")
+    account=''
+    resolve_account
+    printf '%s' "${account}"
+  ) 2>/dev/null
+}
+
+assert_eq 'a passed account resolves to itself' 'a@x.com' \
+  "$(resolve_account_in 'a@x.com')"
+
+assert_fails 'no --account and no TTY refuses to guess' resolve_account_in
 
 report 'bichon-expunge'
