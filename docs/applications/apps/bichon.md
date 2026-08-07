@@ -148,11 +148,20 @@ Deletion is `himalaya flag add … deleted` followed by `himalaya folder expunge
 
 !> The expunge needs an interactive TTY. There is no `--yes`/`--force`; `--no-input` and non-TTY stdin run every gate and then refuse to expunge. Per [ADR-0007](https://github.com/sripwoud/auberge/blob/master/meta/adr/0007-auberge-folder-reconcile-scope.md) no unattended expunge path exists, and the script is not shipped in the `auberge` binary.
 
-**Expunge Sweep**: `--sweep` walks every eligible (account, Synced Folder) pair on the Host with one window, instead of one operator-chosen pair (ADR-0007, amendment 2026-08-03). Excludes `--account`/`--folder`.
+**Expunge Sweep**: `--sweep` walks every eligible (account, Synced Folder) pair on the Host with one window, instead of one operator-chosen pair (ADR-0007, amendment 2026-08-03). Excludes `--folder`.
 
 ```bash
 bash examples/bichon-expunge.sh --sweep --host <hostname> --window-days 90
 ```
+
+Repeat `--account` to narrow the sweep to those accounts, every Synced Folder of each — the folder set still comes from Account Reconcile, so only the account set changes:
+
+```bash
+bash examples/bichon-expunge.sh --sweep --host <hostname> \
+  --account you@example.com --account other@example.com
+```
+
+A scoped sweep reports only the accounts it was given: an account name himalaya does not know aborts before any gate runs, rather than vanishing from a report the operator would have to notice was short a row. Without `--sweep`, a second `--account` is refused — one target takes one account.
 
 Gates 1–2 run once for the Host; gate 3 runs per pair, and a failing pair is skipped as a named **finding** instead of aborting the rest (coverage gap, pre-existing `\Deleted` mail, unkeyed sidecar, a listing the tools could not produce). An empty window, reconcile drift, or an account missing on either the himalaya or the archive side is a benign skip. Gates 4–5 become one summary table — every pair, its status, its count — and two typed checkpoints:
 
