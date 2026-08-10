@@ -26,11 +26,6 @@ const TOOL_VERSIONS: &[&str] = &[
     "tgtg_uv_version",
 ];
 
-/// Roles that still resolve their own App Version at deploy time via
-/// `set_fact` from the GitHub releases/latest API. Pinned by #411; an
-/// entry removed here must gain a `version:` block in its meta.
-const PENDING_LATEST_AT_DEPLOY: &[&str] = &["blocky", "navidrome"];
-
 fn is_version_variable(line: &str) -> Option<&str> {
     let (key, _) = line.split_once(':')?;
     (key.ends_with("_version")
@@ -197,9 +192,6 @@ fn test_every_versioned_role_declares_an_app_version_in_its_meta() {
         };
         let version_var = format!("{role}_version");
         if !role_references(&role_dir, &version_var) {
-            continue;
-        }
-        if PENDING_LATEST_AT_DEPLOY.contains(&role) {
             continue;
         }
         if !declared.contains(&role.to_string()) {
