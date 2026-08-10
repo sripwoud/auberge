@@ -1,7 +1,7 @@
 required_keys: []
 subdomain: freshrss
 version:
-  value: "edge"
+  value: "1.29.1"
   datasource: github-releases
   depName: "FreshRSS/FreshRSS"
 backup:
