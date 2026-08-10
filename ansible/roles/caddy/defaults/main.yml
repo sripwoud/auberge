@@ -1,5 +1,7 @@
 ---
+# renovate: datasource=go depName=github.com/mholt/caddy-l4
 caddy_l4_version: "v0.1.0"
+# renovate: datasource=go depName=github.com/caddy-dns/cloudflare
 caddy_cloudflare_plugin_version: "v0.2.4"
 
 caddy_binary: /usr/local/bin/caddy
