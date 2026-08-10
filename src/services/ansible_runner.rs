@@ -41,6 +41,14 @@ pub struct InventoryHost {
     pub user: String,
 }
 
+fn extra_var_args(extra_vars: Option<&[(&str, &str)]>) -> Vec<String> {
+    extra_vars
+        .into_iter()
+        .flatten()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect()
+}
+
 fn write_extra_vars_file(flat_vars: &HashMap<String, String>) -> Result<tempfile::NamedTempFile> {
     let yaml = serde_yaml::to_string(flat_vars).wrap_err("Failed to serialize config to YAML")?;
     let mut tmpfile = tempfile::NamedTempFile::new().wrap_err("Failed to create temp file")?;
@@ -151,10 +159,8 @@ pub fn run_playbook(
         cmd.arg("--skip-tags").arg(skip_tags.join(","));
     }
 
-    if let Some(vars) = extra_vars {
-        for (key, value) in vars {
-            cmd.arg("-e").arg(format!("{}={}", key, value));
-        }
+    for var in extra_var_args(extra_vars) {
+        cmd.arg("-e").arg(var);
     }
 
     let needs_tty = ask_vault_pass || ask_pass || is_fresh_bootstrap;
@@ -329,6 +335,20 @@ mod tests {
         let formatted = format_ansible_task("role : sub : detail");
         assert!(formatted.contains("role:"));
         assert!(formatted.contains("sub : detail"));
+    }
+
+    #[test]
+    fn extra_var_args_formats_each_pair_as_key_equals_value() {
+        let vars = [("actual_version", "26.8.0"), ("ansible_user", "debian")];
+        assert_eq!(
+            extra_var_args(Some(&vars)),
+            vec!["actual_version=26.8.0", "ansible_user=debian"]
+        );
+    }
+
+    #[test]
+    fn extra_var_args_none_yields_no_args() {
+        assert!(extra_var_args(None).is_empty());
     }
 
     #[test]

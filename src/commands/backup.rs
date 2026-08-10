@@ -902,6 +902,12 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                     );
                 }
                 Ok(preflight) => {
+                    let app_versions =
+                        crate::playbook_meta::app_version_vars(&assets.playbooks_dir())?;
+                    let extra_vars: Vec<(&str, &str)> = app_versions
+                        .iter()
+                        .map(|(name, value)| (name.as_str(), value.as_str()))
+                        .collect();
                     let mut progress = crate::services::progress::TerminalProgress::new("");
                     match crate::services::ansible_runner::run_playbook(
                         &preflight,
@@ -910,7 +916,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                         false,
                         Some(&tags),
                         None,
-                        None,
+                        Some(&extra_vars),
                         false,
                         false,
                         &mut progress,
