@@ -1,5 +1,9 @@
 required_keys: [baikal_busy_feed_token]
 subdomain: baikal
+version:
+  value: "0.11.1"
+  datasource: github-releases
+  depName: "sabre-io/Baikal"
 backup:
   paths: [/opt/baikal/Specific]
   owner: [baikal, baikal]
