@@ -53,14 +53,9 @@ The act of making an App's hostname resolvable, performed during deploy. For Pub
 _Avoid_: DNS setup, record creation, A-record provisioning
 
 **Version Resolution**:
-How a Playbook decides _which_ upstream version to install. Three regimes exist, and only one is legible to a dependency-update bot:
+How a Playbook decides _which_ upstream version to install. One regime: **Pinned** — an exact version literal in the repo, optionally with a co-pinned checksum: an **App Version** in the App's **Playbook Meta** `version:` block, a **Tool Version** in the role's `defaults/main.yml` (ADR-0017). The same role revision installs the same bytes; upgrading is a repo edit, reviewed and released like any other change (ADR-0016). The retired regimes — **Floating** (a moving git ref) and **Latest-at-Deploy** (querying `releases/latest` at run time) — are recorded in ADR-0017.
 
-- **Pinned** — an exact version literal in the repo, optionally with a co-pinned checksum: an **App Version** in the App's **Playbook Meta** `version:` block, a **Tool Version** in the role's `defaults/main.yml` (ADR-0017). The same role revision installs the same bytes; upgrading is a repo edit, reviewed and released like any other change. The default for new roles (ADR-0016).
-- **Floating** — a moving git ref (freshrss tracks the `edge` branch). Reproducible only by accident.
-- **Latest-at-Deploy** — the role queries `api.github.com/.../releases/latest` at run time (navidrome, baikal, blocky). The repo holds no record of what is installed; two deploys a day apart can differ. Baikal compounds this with a `when: not baikal_installed.stat.exists` guard, so it is latest at _first_ install and frozen thereafter — at a version recorded nowhere.
-
-A Pinned version is legible only if it is a **variable**: a literal inside a task URL is Pinned in effect but invisible to anything keyed on `_version` — how lego's pin hid inside blocky's tasks until it was lifted into role defaults.
-Floating and Latest-at-Deploy are being retired — every App converges on Pinned (ADR-0017).
+A Pinned version is legible only if it is a **variable**: a literal inside a task URL is Pinned in effect but invisible to anything keyed on `_version` — how lego's pin hid inside blocky's tasks until it was lifted into role defaults, and how baikal's `configured_version` hid inside its config template until it was lifted into the Playbook Meta.
 _Avoid_: "pinning" unqualified (collides with APT pinning — source priority, a different mechanism), version strategy, update policy.
 
 **App Version** / **Tool Version**:
@@ -69,7 +64,7 @@ The two things a `_version` variable can name, distinguished because only one of
 - An **App Version** identifies the deployed App — exactly one per App, and what an operator, a CVE advisory, and a restore procedure all refer to. Declared in the **Playbook Meta** alongside `required_keys` and the **Backup Recipe**, and injected at deploy through `run_playbook`'s `extra_vars` seam (ADR-0017). `auberge versions` reports every declared App Version — and, behind `--check-upstream`, its drift against the latest upstream release, carried by the **Backup Verdict** exit-code convention (0 current, 1 behind, 2 operational error). It reports what the repo declares, not what any Host runs.
 - A **Tool Version** is a build or runtime input a role happens to need — `uv`, `lego`, Caddy's `l4` and `cloudflare` plugins. Not an identity; nobody asks which `lego` a homelab runs. Stays in `defaults/main.yml` with a `# renovate:` annotation.
 
-The split is what makes Version Resolution declarable: Caddy has _no_ App Version (Caddy itself comes from apt), which is why it needs no meta file despite carrying two pins; blocky is Latest-at-Deploy for its App Version and Pinned for lego.
+The split is what makes Version Resolution declarable: Caddy has _no_ App Version (Caddy itself comes from apt), which is why it needs no meta file despite carrying two pins; blocky declares its App Version in its meta and pins lego as a Tool Version in role defaults.
 _Avoid_: calling both "the version"; "dependency version" (does not distinguish); "app version" lowercase for a Tool Version.
 
 **Backup Recipe**:
@@ -164,7 +159,7 @@ _Avoid_: Logger, reporter
 - An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
 - The **Busy Feed** is derived from **Baikal**'s calendar data — plus, optionally, a read-only external CalDAV calendar fetched Host-side — and served on Baikal's **Public App** site (Google's servers must reach it); auberge produces and serves it but ships no consumer.
 - **Actual** relays sync between clients that each hold the full budget; its Backup Recipe path (`/var/lib/actual`) also carries the **Enable Banking** credentials, so restoring it restores bank sync.
-- An **App Version** is declared in the **Playbook Meta** and injected at deploy; only navidrome, baikal, and blocky still resolve theirs at run time, and freshrss still floats on `edge` (#411 retires both regimes).
+- An **App Version** is declared in the **Playbook Meta** and injected at deploy; every App declares one, and no role resolves a version at run time.
 
 ## Example dialogue
 

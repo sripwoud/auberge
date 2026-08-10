@@ -7,39 +7,29 @@
         state: present
         update_cache: true
 
-    - name: Fetch latest Navidrome release information from GitHub API
-      become: false
-      delegate_to: localhost
-      register: navidrome_release_info
-      ansible.builtin.uri:
-        url: "{{ navidrome_github_api_latest_release_url }}"
-        method: GET
-        return_content: true
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: apt
 
-    - name: Set Navidrome version and download URL
-      when: navidrome_release_info.json is defined
-      delegate_to: localhost
+    - name: Set installed Navidrome version fact
       ansible.builtin.set_fact:
-        navidrome_version: "{{ navidrome_release_info.json.tag_name | replace('v', '') }}"
-        navidrome_deb_url: >-
-          {{ (navidrome_release_info.json.assets |
-              selectattr('name', 'search', 'navidrome_.*_linux_amd64.deb$') |
-              map(attribute='browser_download_url') | first | default(''))
-              if navidrome_release_info.json.assets | length > 0 else '' }}
+        navidrome_installed_version: >-
+          {{ ansible_facts.packages.navidrome[0].version
+             if 'navidrome' in ansible_facts.packages else '' }}
 
     - name: Download Navidrome .deb package
+      when: navidrome_installed_version != navidrome_version
       ansible.builtin.get_url:
         url: "{{ navidrome_deb_url }}"
         dest: "/tmp/navidrome_{{ navidrome_version }}_linux_amd64.deb"
         mode: "0644"
-      when: navidrome_deb_url != ''
 
     - name: Install Navidrome from .deb package
+      when: navidrome_installed_version != navidrome_version
       ansible.builtin.apt:
         deb: "/tmp/navidrome_{{ navidrome_version }}_linux_amd64.deb"
         state: present
       notify: Restart navidrome
-      register: navidrome_install
 
     - name: Add ansible user to navidrome group for music uploads
       ansible.builtin.user:

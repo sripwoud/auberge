@@ -1,4 +1,5 @@
 baikal_install_dir: /opt/baikal
+baikal_download_url: "https://github.com/sabre-io/Baikal/releases/download/{{ baikal_version }}/baikal-{{ baikal_version }}.zip"
 baikal_data_dir: "{{ baikal_install_dir }}/Specific"
 baikal_domain: "{{ baikal_subdomain }}.{{ domain }}"
 baikal_sys_user: baikal

@@ -131,8 +131,8 @@ async fn drift_reports(
 }
 
 /// Pure drift comparison over (declared, latest). `Unknown` when either side
-/// is not version-shaped (freshrss declares `edge` until #411) — mirroring
-/// Renovate, which skips values its versioning cannot parse.
+/// is not version-shaped — mirroring Renovate, which skips values its
+/// versioning cannot parse.
 fn drift(declared: &str, latest: &str) -> DriftStatus {
     if !is_version_like(declared) || !is_version_like(latest) {
         return DriftStatus::Unknown;
@@ -391,7 +391,7 @@ mod tests {
             ("1.2", "1.2.0", DriftStatus::Current),
             ("v2026.4.13", "v2026.4.20", DriftStatus::Behind), // hermes keeps its v prefix
             ("2.2.4", "v2.3.0", DriftStatus::Behind),          // raw v-tag as latest
-            ("edge", "1.26.2", DriftStatus::Unknown),          // freshrss until #411
+            ("edge", "1.26.2", DriftStatus::Unknown),          // not version-shaped
             ("1.0.0", "nightly", DriftStatus::Unknown),
         ];
         for (declared, latest, expected) in cases {
