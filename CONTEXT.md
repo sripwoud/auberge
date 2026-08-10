@@ -52,6 +52,26 @@ _Avoid_: Infrastructure component, shared service, platform service
 The act of making an App's hostname resolvable, performed during deploy. For Public Apps it is a Cloudflare A record; for Tailnet-only Apps it is a Blocky `customDNS` entry. Either is part of `auberge deploy`'s success criterion — a deploy that completes without a working DNS answer is treated as a failure.
 _Avoid_: DNS setup, record creation, A-record provisioning
 
+**Version Resolution**:
+How a Playbook decides _which_ upstream version to install. Three regimes exist, and only one is legible to a dependency-update bot:
+
+- **Pinned** — an exact version literal in the role's `defaults/main.yml` (`<role>_version`), optionally with a co-pinned checksum. The same role revision installs the same bytes; upgrading is a repo edit, reviewed and released like any other change. The default for new roles (ADR-0016).
+- **Floating** — a moving git ref (freshrss tracks the `edge` branch). Reproducible only by accident.
+- **Latest-at-Deploy** — the role queries `api.github.com/.../releases/latest` at run time (navidrome, baikal, blocky). The repo holds no record of what is installed; two deploys a day apart can differ. Baikal compounds this with a `when: not baikal_installed.stat.exists` guard, so it is latest at _first_ install and frozen thereafter — at a version recorded nowhere.
+
+A Pinned version is legible only if it is a **variable**: blocky's lego is pinned as a literal inside a task URL, so it is Pinned in effect but invisible to anything keyed on `<role>_version`.
+Floating and Latest-at-Deploy are being retired — every App converges on Pinned (ADR-0017).
+_Avoid_: "pinning" unqualified (collides with APT pinning — source priority, a different mechanism), version strategy, update policy.
+
+**App Version** / **Tool Version**:
+The two things a `_version` variable can name, distinguished because only one of them is an App's identity.
+
+- An **App Version** identifies the deployed App — exactly one per App, and what an operator, a CVE advisory, and a restore procedure all refer to. Declared in the **Playbook Meta** alongside `required_keys` and the **Backup Recipe**, and injected at deploy through `run_playbook`'s `extra_vars` seam (ADR-0017).
+- A **Tool Version** is a build or runtime input a role happens to need — `uv`, `lego`, Caddy's `l4` and `cloudflare` plugins. Not an identity; nobody asks which `lego` a homelab runs. Stays in `defaults/main.yml` with a `# renovate:` annotation.
+
+The split is what makes Version Resolution declarable: Caddy has _no_ App Version (Caddy itself comes from apt), which is why it needs no meta file despite carrying two pins; blocky is Latest-at-Deploy for its App Version and Pinned for lego.
+_Avoid_: calling both "the version"; "dependency version" (does not distinguish); "app version" lowercase for a Tool Version.
+
 **Backup Recipe**:
 The declarative `backup:` section of a Playbook Meta describing how to back up the App: services to stop, paths to rsync, optional database dump, optional `post_restore_command`. Pure data — no imperative branching. Most Recipes capture an App's on-disk state directly; for Bichon the Recipe rsyncs an **Email Archive** instead, see ADR-0006.
 _Avoid_: Backup config, backup plan, strategy
@@ -144,6 +164,7 @@ _Avoid_: Logger, reporter
 - An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
 - The **Busy Feed** is derived from **Baikal**'s calendar data — plus, optionally, a read-only external CalDAV calendar fetched Host-side — and served on Baikal's **Public App** site (Google's servers must reach it); auberge produces and serves it but ships no consumer.
 - **Actual** relays sync between clients that each hold the full budget; its Backup Recipe path (`/var/lib/actual`) also carries the **Enable Banking** credentials, so restoring it restores bank sync.
+- An App's **Version Resolution** is implicit in its Playbook's tasks — unlike `tailnet_only` or the **Backup Recipe**, it is not declared in the **Playbook Meta** and nothing in auberge reads it. That is why the regimes drifted apart unnoticed.
 
 ## Example dialogue
 
@@ -160,6 +181,7 @@ _Avoid_: Logger, reporter
 - "Append-only" was used of the **Email Archive** to mean "nothing is ever deleted," and was silently read as "everything is faithfully preserved." Resolved: it also means _nothing is ever updated_, which is correct for immutable bodies and wrong for mutable metadata. Say **append-only** of bodies and folder; say **snapshot** of tags (see **Tag Snapshot**, ADR-0012).
 - "Write-once" was then read as a rule about the sidecar _file_, which would have forbidden repairing a field the file had never carried. Resolved: it is a rule about **observations** — a fact the archive learned from Bichon at first sight, `folder` being the only one. A **derived index key** recomputed from the immutable `.eml` is not an observation and may be written in place (ADR-0013), and neither is a payload that was never a message — replacing it completes a write that did not happen (ADR-0015).
 - "Message id" was used for both the `<envelope-id>` in an `.eml` filename and the RFC 5322 `Message-ID`. Resolved: only the latter is an identity. Call the former the **envelope id** and treat it as a filename.
+- "Pinned" is used in two unrelated senses. Resolved: **Version Resolution / Pinned** fixes _which upstream release_ a role installs; **APT pinning** (`Pin-Priority` in `preferences.d`) fixes _which apt source wins_ for a package. `roles/actual` does both, ~70 lines apart. Say "Pinned version" or "APT pinning" — never bare "pinned".
 
 ## Stdout discipline
 
