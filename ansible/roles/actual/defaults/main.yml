@@ -5,6 +5,7 @@ actual_subdomain: actual
 actual_domain: "{{ actual_subdomain }}.{{ domain }}"
 actual_install_dir: /opt/actual
 actual_data_dir: /var/lib/actual
+# renovate: datasource=npm depName=@actual-app/sync-server
 actual_version: "26.8.0"
 actual_node_major: 22
 actual_nodesource_key_url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key

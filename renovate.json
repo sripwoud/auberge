@@ -1,0 +1,37 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["custom.regex"],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "build",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Version variables in role defaults, each driven by its own `# renovate:` annotation",
+      "managerFilePatterns": ["/^ansible/roles/[^/]+/defaults/main\\.yml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?(?: extractVersion=(?<extractVersion>\\S+))?\\n[a-z0-9_]+_version: \"?(?<currentValue>[^\"\\n]+)\"?\\n"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["custom.regex"],
+      "semanticCommitScope": "{{replace 'ansible/roles/(.+)/defaults/main\\.yml' '$1' packageFile}}",
+      "commitMessageAction": "bump",
+      "commitMessageTopic": "",
+      "commitMessageExtra": "to {{newValue}}"
+    },
+    {
+      "description": "hermes_uv_version and tgtg_uv_version are the same dep and must move together",
+      "matchDepNames": ["astral-sh/uv"],
+      "groupName": "uv",
+      "semanticCommitScope": "uv"
+    },
+    {
+      "description": "grimmory is auberge's own build output (build-grimmory.yml), not a dependency",
+      "matchDepNames": ["sripwoud/auberge"],
+      "enabled": false
+    }
+  ]
+}

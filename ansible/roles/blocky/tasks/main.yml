@@ -24,11 +24,11 @@
 
 - name: Download Lego binary
   ansible.builtin.get_url:
-    url: "https://github.com/go-acme/lego/releases/download/v4.23.1/lego_v4.23.1_linux_amd64.tar.gz"
+    url: "{{ blocky_lego_url }}"
     dest: "/tmp/lego.tar.gz"
     mode: "0644"
   args:
-    checksum: "sha256:1fd60b1fd59c239bed22719a5de402cb745d1f933540cb1ec196e2c03e6e8882"
+    checksum: "sha256:{{ blocky_lego_sha256 }}"
 
 - name: Unarchive Lego binary
   ansible.builtin.unarchive:
