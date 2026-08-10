@@ -44,41 +44,53 @@
         group: "{{ baikal_sys_user }}"
         mode: "0755"
 
-    - name: Check if Baikal is already installed
+    - name: Check if Baikal version file exists
       ansible.builtin.stat:
-        path: "{{ baikal_install_dir }}/html/index.php"
-      register: baikal_installed
+        path: "{{ baikal_install_dir }}/Core/Distrib.php"
+      register: baikal_distrib_file
+
+    - name: Read installed Baikal version
+      when: baikal_distrib_file.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ baikal_install_dir }}/Core/Distrib.php"
+      register: baikal_distrib_raw
+
+    - name: Set installed Baikal version fact
+      ansible.builtin.set_fact:
+        baikal_installed_version: >-
+          {{ baikal_distrib_raw.content | b64decode
+             | regex_search('(?<=BAIKAL_VERSION", ")[^"]+')
+             | default('', true)
+             if baikal_distrib_file.stat.exists else '' }}
 
     - name: Download Baikal release
-      when: not baikal_installed.stat.exists
+      when: baikal_installed_version != baikal_version
       ansible.builtin.get_url:
         url: "{{ baikal_download_url }}"
-        dest: /tmp/baikal.zip
+        dest: /tmp/baikal-{{ baikal_version }}.zip
         mode: "0644"
 
-    - name: Extract and move Baikal files
-      when: not baikal_installed.stat.exists
+    - name: Install Baikal release (replaces Core, html, vendor; keeps Specific and config)
+      when: baikal_installed_version != baikal_version
       ansible.builtin.shell: |
-        set -o pipefail
-        cd /tmp
-        unzip -q baikal.zip
-        BAIKAL_DIR=$(find . -maxdepth 1 -type d -name "baikal-*" -o -type d -name "Baikal-*" | head -1)
-        if [ -n "$BAIKAL_DIR" ]; then
-          mv "$BAIKAL_DIR"/* {{ baikal_install_dir }}/
-          rm -rf "$BAIKAL_DIR"
-        else
-          # If no subdirectory, files might be at root of zip
-          mv baikal/* {{ baikal_install_dir }}/ 2>/dev/null || true
-        fi
+        set -euo pipefail
+        rm -rf /tmp/baikal-extract
+        mkdir /tmp/baikal-extract
+        unzip -q /tmp/baikal-{{ baikal_version }}.zip -d /tmp/baikal-extract
+        SRC=$(dirname "$(find /tmp/baikal-extract -maxdepth 2 -type d -name Core | head -1)")
+        rm -rf {{ baikal_install_dir }}/Core {{ baikal_install_dir }}/html {{ baikal_install_dir }}/vendor
+        mv "$SRC/Core" "$SRC/html" "$SRC/vendor" {{ baikal_install_dir }}/
         chown -R {{ baikal_sys_user }}:{{ baikal_sys_user }} {{ baikal_install_dir }}
+        rm -rf /tmp/baikal-extract
       args:
         executable: /bin/bash
-        creates: "{{ baikal_install_dir }}/html/index.php"
+      changed_when: true
+      notify: Restart php-fpm
 
     - name: Remove Baikal zip file
-      when: not baikal_installed.stat.exists
+      when: baikal_installed_version != baikal_version
       ansible.builtin.file:
-        path: /tmp/baikal.zip
+        path: /tmp/baikal-{{ baikal_version }}.zip
         state: absent
 
     - name: Set proper permissions on Baikal directories
