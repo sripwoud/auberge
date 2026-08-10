@@ -7,6 +7,10 @@ blocky_github_api_latest_release_url: "https://api.github.com/repos/{{ blocky_gi
 blocky_target_arch: "Linux_x86_64"
 blocky_binary_file_extension: "tar.gz"
 
+blocky_lego_version: "4.23.1"
+blocky_lego_url: "https://github.com/go-acme/lego/releases/download/v{{ blocky_lego_version }}/lego_v{{ blocky_lego_version }}_linux_amd64.tar.gz"
+blocky_lego_sha256: "1fd60b1fd59c239bed22719a5de402cb745d1f933540cb1ec196e2c03e6e8882"
+
 blocky_dot_port: 853
 
 blocky_cert_dir: "{{ blocky_config_path }}/certificates"
