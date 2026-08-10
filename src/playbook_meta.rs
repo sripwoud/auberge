@@ -87,10 +87,9 @@ impl PlaybookMeta {
     }
 }
 
-/// Collect every declared App Version as a `<app>_version` extra-var pair,
-/// sorted by name. Repo-owned data injected at deploy through `run_playbook`'s
-/// `extra_vars` seam — deliberately not part of user `Config` (ADR-0017).
-pub fn app_version_vars(playbooks_dir: &Path) -> Result<Vec<(String, String)>> {
+/// Collect every App that declares a Version, with its full upstream
+/// coordinates, sorted by App name (ADR-0017).
+pub fn declared_app_versions(playbooks_dir: &Path) -> Result<Vec<(String, AppVersion)>> {
     let entries = std::fs::read_dir(playbooks_dir).wrap_err_with(|| {
         format!(
             "Failed to read playbooks directory {}",
@@ -98,7 +97,7 @@ pub fn app_version_vars(playbooks_dir: &Path) -> Result<Vec<(String, String)>> {
         )
     })?;
 
-    let mut vars = Vec::new();
+    let mut versions = Vec::new();
     for entry in entries {
         let path = entry
             .wrap_err("Failed to read playbooks directory entry")?
@@ -111,11 +110,21 @@ pub fn app_version_vars(playbooks_dir: &Path) -> Result<Vec<(String, String)>> {
             continue;
         };
         if let Some(version) = PlaybookMeta::load(&path)?.version {
-            vars.push((format!("{app}_version"), version.value));
+            versions.push((app.to_string(), version));
         }
     }
-    vars.sort();
-    Ok(vars)
+    versions.sort_by(|(a, _), (b, _)| a.cmp(b));
+    Ok(versions)
+}
+
+/// Collect every declared App Version as a `<app>_version` extra-var pair,
+/// sorted by name. Repo-owned data injected at deploy through `run_playbook`'s
+/// `extra_vars` seam — deliberately not part of user `Config` (ADR-0017).
+pub fn app_version_vars(playbooks_dir: &Path) -> Result<Vec<(String, String)>> {
+    Ok(declared_app_versions(playbooks_dir)?
+        .into_iter()
+        .map(|(app, version)| (format!("{app}_version"), version.value))
+        .collect())
 }
 
 #[cfg(test)]
@@ -495,6 +504,24 @@ version:
             assert!(names.contains(&expected), "missing extra var: {expected}");
         }
         assert!(vars.iter().all(|(_, value)| !value.is_empty()));
+    }
+
+    #[test]
+    fn test_declared_app_versions_returns_sorted_apps_with_coordinates() {
+        let versions = declared_app_versions(&playbooks_dir()).unwrap();
+
+        let apps: Vec<&str> = versions.iter().map(|(app, _)| app.as_str()).collect();
+        let mut sorted = apps.clone();
+        sorted.sort();
+        assert_eq!(apps, sorted);
+
+        let (_, actual) = versions
+            .iter()
+            .find(|(app, _)| app == "actual")
+            .expect("actual declares a version");
+        assert_eq!(actual.datasource, "npm");
+        assert_eq!(actual.dep_name, "@actual-app/sync-server");
+        assert!(!actual.value.is_empty());
     }
 
     #[test]

@@ -39,6 +39,7 @@ use commands::host::{
 use commands::select::{SelectCommands, run_select_host, run_select_playbook};
 use commands::ssh::{SshCommands, run_ssh_add_key, run_ssh_keygen};
 use commands::sync::{SyncCommands, run_sync_hermes, run_sync_music};
+use commands::versions::{VersionsCmd, run_versions};
 use eyre::Result;
 
 #[derive(Parser)]
@@ -99,6 +100,8 @@ enum Commands {
     Config(ConfigCommands),
     #[command(subcommand, about = "Manage Bichon email archive behavior")]
     Bichon(BichonCommands),
+    #[command(alias = "v", about = "Report declared App Versions and upstream drift")]
+    Versions(VersionsCmd),
 }
 
 #[tokio::main]
@@ -347,5 +350,6 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
+        Commands::Versions(cmd) => std::process::exit(run_versions(cmd).await),
     }
 }
