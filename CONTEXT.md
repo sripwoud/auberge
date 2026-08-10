@@ -66,7 +66,7 @@ _Avoid_: "pinning" unqualified (collides with APT pinning — source priority, a
 **App Version** / **Tool Version**:
 The two things a `_version` variable can name, distinguished because only one of them is an App's identity.
 
-- An **App Version** identifies the deployed App — exactly one per App, and what an operator, a CVE advisory, and a restore procedure all refer to. Declared in the **Playbook Meta** alongside `required_keys` and the **Backup Recipe**, and injected at deploy through `run_playbook`'s `extra_vars` seam (ADR-0017).
+- An **App Version** identifies the deployed App — exactly one per App, and what an operator, a CVE advisory, and a restore procedure all refer to. Declared in the **Playbook Meta** alongside `required_keys` and the **Backup Recipe**, and injected at deploy through `run_playbook`'s `extra_vars` seam (ADR-0017). `auberge versions` reports every declared App Version — and, behind `--check-upstream`, its drift against the latest upstream release, carried by the **Backup Verdict** exit-code convention (0 current, 1 behind, 2 operational error). It reports what the repo declares, not what any Host runs.
 - A **Tool Version** is a build or runtime input a role happens to need — `uv`, `lego`, Caddy's `l4` and `cloudflare` plugins. Not an identity; nobody asks which `lego` a homelab runs. Stays in `defaults/main.yml` with a `# renovate:` annotation.
 
 The split is what makes Version Resolution declarable: Caddy has _no_ App Version (Caddy itself comes from apt), which is why it needs no meta file despite carrying two pins; blocky is Latest-at-Deploy for its App Version and Pinned for lego.

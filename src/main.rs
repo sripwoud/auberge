@@ -100,7 +100,7 @@ enum Commands {
     Config(ConfigCommands),
     #[command(subcommand, about = "Manage Bichon email archive behavior")]
     Bichon(BichonCommands),
-    #[command(alias = "v", about = "Report declared App Versions")]
+    #[command(alias = "v", about = "Report declared App Versions and upstream drift")]
     Versions(VersionsCmd),
 }
 
@@ -350,6 +350,6 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
-        Commands::Versions(cmd) => run_versions(cmd),
+        Commands::Versions(cmd) => std::process::exit(run_versions(cmd).await),
     }
 }
