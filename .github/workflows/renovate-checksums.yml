@@ -1,0 +1,39 @@
+name: renovate-checksums
+# Renovate bumps version variables but cannot recompute the co-pinned sha256
+# literals next to them. This job downloads the bumped asset, computes the
+# digest (some upstreams, e.g. gokapi, publish no checksum file at all), and
+# pushes the fix onto the same branch. A bump whose digest cannot be computed
+# stays red and does not merge. See ADR-0017.
+permissions:
+  contents: write
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  recompute:
+    if: startsWith(github.head_ref, 'renovate/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          # A PAT rather than GITHUB_TOKEN: pushes made with GITHUB_TOKEN
+          # trigger no workflows, so the digest commit would sit on the PR
+          # with no CI runs on it.
+          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+      - name: Recompute co-pinned checksums
+        run: ./.github/scripts/recompute-checksums.sh "origin/${{ github.base_ref }}"
+
+      - name: Push updated digests
+        run: |
+          if git diff --quiet; then
+            echo "digests unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "build(deps): recompute co-pinned sha256 digests"
+          git push origin "HEAD:${{ github.head_ref }}"
