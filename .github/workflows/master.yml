@@ -20,6 +20,7 @@ jobs:
           files: |
             .github/workflows/master.yml
             src/**/*.rs
+            tests/**/*.rs
             Cargo.toml
             Cargo.lock
             ansible/**
