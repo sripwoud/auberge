@@ -279,11 +279,11 @@
         modification_time: preserve
         access_time: preserve
 
-    - name: Enable and restart PHP-FPM service
+    - name: Enable and start PHP-FPM service
       ansible.builtin.systemd_service:
         name: php{{ baikal_php_version }}-fpm
         enabled: true
-        state: restarted
+        state: started
         daemon_reload: true
 
     - name: Deploy birthday sync script
