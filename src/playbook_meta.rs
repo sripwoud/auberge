@@ -266,6 +266,20 @@ mod tests {
     }
 
     #[test]
+    fn test_tgtg_meta_backup_recipe() {
+        let meta = load_meta("tgtg");
+        assert!(
+            meta.required_keys
+                .contains(&"tgtg_telegram_bot_token".to_string())
+        );
+        let backup = meta.backup.expect("tgtg.meta.yml should declare backup");
+        assert_eq!(backup.systemd_services, vec!["tgtg"]);
+        assert_eq!(backup.paths, vec!["/var/lib/tgtg"]);
+        assert_eq!(backup.owner, Some(("tgtg".to_string(), "tgtg".to_string())));
+        assert!(backup.db.is_none());
+    }
+
+    #[test]
     fn test_headscale_meta_backup_recipe() {
         let backup = load_meta("headscale").backup.unwrap();
         assert_eq!(backup.systemd_services, vec!["headscale"]);

@@ -1,0 +1,6 @@
+required_keys:
+  - tgtg_telegram_bot_token
+backup:
+  systemd_services: [tgtg]
+  paths: [/var/lib/tgtg]
+  owner: [tgtg, tgtg]
