@@ -191,7 +191,7 @@ This rule follows [clig.dev](https://clig.dev/#output): programs should print on
 
 In practice:
 
-- `println!` and `print!` are allowed **only** in modules that emit the command's primary data output (e.g. `config_cmd`, `dns`, `headscale`, `host`, `select`, `backup`, and `output::print_table`).
+- `println!` and `print!` are allowed **only** in modules that emit the command's primary data output (e.g. `config_cmd`, `dns`, `headscale`, `host`, `select`, `backup`, `versions`, and `output::print_table`).
 - All other informational messages — "Cancelled.", spinner updates, success banners, hints, interactive prompts — must use `eprintln!`/`eprint!`, `output::info`, `output::success`, or `output::warn`, all of which write to stderr.
 - Interactive prompts that read from stdin should `eprint!` the prompt and `io::stderr().flush()`, so the prompt is visible on the TTY even when the caller pipes stdout.
 
