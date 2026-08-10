@@ -9,5 +9,4 @@ navidrome_enable_transcoding: true
 navidrome_enable_downloads: true
 navidrome_enable_sharing: true
 
-navidrome_github_repo: navidrome/navidrome
-navidrome_github_api_latest_release_url: "https://api.github.com/repos/{{ navidrome_github_repo }}/releases/latest"
+navidrome_deb_url: "https://github.com/navidrome/navidrome/releases/download/v{{ navidrome_version }}/navidrome_{{ navidrome_version }}_linux_amd64.deb"

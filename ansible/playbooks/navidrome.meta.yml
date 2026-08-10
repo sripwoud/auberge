@@ -1,5 +1,10 @@
 required_keys: []
 subdomain: navidrome
+version:
+  value: "0.63.2"
+  datasource: github-releases
+  depName: "navidrome/navidrome"
+  extractVersion: "^v(?<version>.+)$"
 backup:
   systemd_services: [navidrome]
   paths: [/var/lib/navidrome, /etc/navidrome]
