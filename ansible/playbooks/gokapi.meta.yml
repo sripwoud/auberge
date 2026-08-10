@@ -2,6 +2,11 @@ required_keys:
   - gokapi_admin_user
   - gokapi_admin_password
 subdomain: share
+version:
+  value: "2.2.4"
+  datasource: github-releases
+  depName: "Forceu/Gokapi"
+  extractVersion: "^v(?<version>.+)$"
 backup:
   systemd_services: [gokapi]
   paths: [/var/lib/gokapi]

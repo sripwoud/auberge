@@ -1,7 +1,5 @@
 ---
 tgtg_repo: "https://github.com/TorbenStriegel/TooGoodToGo-TelegramBot.git"
-# renovate: datasource=github-releases depName=TorbenStriegel/TooGoodToGo-TelegramBot
-tgtg_version: "v2.0.2"
 # renovate: datasource=github-releases depName=astral-sh/uv
 tgtg_uv_version: "0.7.0"
 

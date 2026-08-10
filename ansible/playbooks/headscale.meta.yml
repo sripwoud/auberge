@@ -1,5 +1,10 @@
 required_keys: []
 subdomain: hs
+version:
+  value: "0.25.1"
+  datasource: github-releases
+  depName: "juanfont/headscale"
+  extractVersion: "^v(?<version>.+)$"
 backup:
   systemd_services: [headscale]
   paths: [/var/lib/headscale]

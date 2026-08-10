@@ -1,6 +1,4 @@
 ---
-# renovate: datasource=github-releases depName=rustmailer/bichon
-bichon_version: "0.3.7"
 bichon_port: 15630
 bichon_sys_user: bichon
 bichon_sys_group: bichon

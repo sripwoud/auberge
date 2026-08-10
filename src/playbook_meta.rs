@@ -476,6 +476,28 @@ version:
     }
 
     #[test]
+    fn test_app_version_vars_injects_every_committed_app_version() {
+        let vars = app_version_vars(&playbooks_dir()).unwrap();
+        let names: Vec<&str> = vars.iter().map(|(name, _)| name.as_str()).collect();
+        for expected in [
+            "actual_version",
+            "bichon_version",
+            "colporteur_version",
+            "freshrss_version",
+            "gokapi_version",
+            "grimmory_version",
+            "headscale_version",
+            "hermes_version",
+            "paperless_version",
+            "tgtg_version",
+            "yourls_version",
+        ] {
+            assert!(names.contains(&expected), "missing extra var: {expected}");
+        }
+        assert!(vars.iter().all(|(_, value)| !value.is_empty()));
+    }
+
+    #[test]
     fn test_meta_without_backup_section_parses() {
         let yaml = "required_keys: [foo, bar]\n";
         let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();

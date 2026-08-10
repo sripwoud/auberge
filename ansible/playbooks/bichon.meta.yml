@@ -1,6 +1,10 @@
 required_keys: []
 tailnet_only: true
 subdomain: bichon
+version:
+  value: "0.3.7"
+  datasource: github-releases
+  depName: "rustmailer/bichon"
 backup:
   systemd_services: [bichon]
   paths: [/var/lib/bichon-archive]

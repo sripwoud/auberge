@@ -1,5 +1,9 @@
 required_keys: []
 subdomain: freshrss
+version:
+  value: "edge"
+  datasource: github-releases
+  depName: "FreshRSS/FreshRSS"
 backup:
   systemd_services: [freshrss]
   paths: [/var/lib/freshrss, /opt/freshrss/data]

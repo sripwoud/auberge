@@ -1,2 +1,7 @@
 required_keys: []
 subdomain: colporteur
+version:
+  value: "0.5.0"
+  datasource: github-releases
+  depName: "sripwoud/colporteur"
+  extractVersion: "^v(?<version>.+)$"

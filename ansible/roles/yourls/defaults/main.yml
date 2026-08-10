@@ -2,8 +2,6 @@ yourls_install_path: /var/www/yourls
 yourls_sys_user: www-data
 yourls_sys_group: www-data
 yourls_domain: "{{ yourls_subdomain }}.{{ domain }}"
-# renovate: datasource=github-releases depName=YOURLS/YOURLS
-yourls_version: "1.10.2"
 
 yourls_db_name: yourls
 yourls_db_user: yourls
