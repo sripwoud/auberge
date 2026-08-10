@@ -8,11 +8,28 @@ pub struct PlaybookMeta {
     #[serde(default)]
     pub required_keys: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<AppVersion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup: Option<BackupRecipe>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub tailnet_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subdomain: Option<String>,
+}
+
+/// The App Version: the identity of the deployed App, plus the upstream
+/// coordinates Renovate needs to discover new releases (ADR-0017).
+/// Field names match Renovate's regex manager vocabulary.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppVersion {
+    pub value: String,
+    pub datasource: String,
+    pub dep_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub versioning: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extract_version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -68,6 +85,37 @@ impl PlaybookMeta {
         serde_yaml::from_str(&contents)
             .wrap_err_with(|| format!("Failed to parse Playbook Meta from {}", path.display()))
     }
+}
+
+/// Collect every declared App Version as a `<app>_version` extra-var pair,
+/// sorted by name. Repo-owned data injected at deploy through `run_playbook`'s
+/// `extra_vars` seam — deliberately not part of user `Config` (ADR-0017).
+pub fn app_version_vars(playbooks_dir: &Path) -> Result<Vec<(String, String)>> {
+    let entries = std::fs::read_dir(playbooks_dir).wrap_err_with(|| {
+        format!(
+            "Failed to read playbooks directory {}",
+            playbooks_dir.display()
+        )
+    })?;
+
+    let mut vars = Vec::new();
+    for entry in entries {
+        let path = entry
+            .wrap_err("Failed to read playbooks directory entry")?
+            .path();
+        let Some(app) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_suffix(".meta.yml"))
+        else {
+            continue;
+        };
+        if let Some(version) = PlaybookMeta::load(&path)?.version {
+            vars.push((format!("{app}_version"), version.value));
+        }
+    }
+    vars.sort();
+    Ok(vars)
 }
 
 #[cfg(test)]
@@ -218,6 +266,20 @@ mod tests {
     }
 
     #[test]
+    fn test_tgtg_meta_backup_recipe() {
+        let meta = load_meta("tgtg");
+        assert!(
+            meta.required_keys
+                .contains(&"tgtg_telegram_bot_token".to_string())
+        );
+        let backup = meta.backup.expect("tgtg.meta.yml should declare backup");
+        assert_eq!(backup.systemd_services, vec!["tgtg"]);
+        assert_eq!(backup.paths, vec!["/var/lib/tgtg"]);
+        assert_eq!(backup.owner, Some(("tgtg".to_string(), "tgtg".to_string())));
+        assert!(backup.db.is_none());
+    }
+
+    #[test]
     fn test_headscale_meta_backup_recipe() {
         let backup = load_meta("headscale").backup.unwrap();
         assert_eq!(backup.systemd_services, vec!["headscale"]);
@@ -322,6 +384,117 @@ mod tests {
     fn test_playbook_meta_load_nonexistent_file_returns_error() {
         let result = PlaybookMeta::load(Path::new("/nonexistent/playbook.meta.yml"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_meta_version_block_parses() {
+        let yaml = r#"
+version:
+  value: "26.8.0"
+  datasource: npm
+  depName: "@actual-app/sync-server"
+"#;
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        let version = meta.version.unwrap();
+        assert_eq!(version.value, "26.8.0");
+        assert_eq!(version.datasource, "npm");
+        assert_eq!(version.dep_name, "@actual-app/sync-server");
+        assert!(version.versioning.is_none());
+        assert!(version.extract_version.is_none());
+    }
+
+    #[test]
+    fn test_meta_version_block_with_all_coordinates_parses() {
+        let yaml = r#"
+version:
+  value: "2.3.0"
+  datasource: github-releases
+  depName: "sripwoud/auberge"
+  versioning: loose
+  extractVersion: "^grimmory/v(?<version>.+)$"
+"#;
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        let version = meta.version.unwrap();
+        assert_eq!(version.versioning.as_deref(), Some("loose"));
+        assert_eq!(
+            version.extract_version.as_deref(),
+            Some("^grimmory/v(?<version>.+)$")
+        );
+    }
+
+    #[test]
+    fn test_meta_version_block_round_trips() {
+        let meta = PlaybookMeta {
+            required_keys: vec![],
+            version: Some(AppVersion {
+                value: "0.25.1".to_string(),
+                datasource: "github-releases".to_string(),
+                dep_name: "juanfont/headscale".to_string(),
+                versioning: None,
+                extract_version: Some("^v(?<version>.+)$".to_string()),
+            }),
+            backup: None,
+            tailnet_only: false,
+            subdomain: None,
+        };
+        let yaml = serde_yaml::to_string(&meta).unwrap();
+        let reparsed: PlaybookMeta = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(reparsed, meta);
+    }
+
+    #[test]
+    fn test_meta_without_version_parses_to_none() {
+        let yaml = "required_keys: []\n";
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        assert!(meta.version.is_none());
+    }
+
+    #[test]
+    fn test_app_version_vars_harvests_only_declared_versions() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("beta.meta.yml"),
+            "required_keys: []\nversion:\n  value: \"1.2.3\"\n  datasource: npm\n  depName: \"beta\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("alpha.meta.yml"),
+            "required_keys: []\nversion:\n  value: \"v9\"\n  datasource: github-releases\n  depName: \"a/a\"\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("gamma.meta.yml"), "required_keys: []\n").unwrap();
+        std::fs::write(dir.path().join("apps.yml"), "---\n- hosts: vps\n").unwrap();
+
+        let vars = app_version_vars(dir.path()).unwrap();
+        assert_eq!(
+            vars,
+            vec![
+                ("alpha_version".to_string(), "v9".to_string()),
+                ("beta_version".to_string(), "1.2.3".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_app_version_vars_injects_every_committed_app_version() {
+        let vars = app_version_vars(&playbooks_dir()).unwrap();
+        let names: Vec<&str> = vars.iter().map(|(name, _)| name.as_str()).collect();
+        for expected in [
+            "actual_version",
+            "bichon_version",
+            "colporteur_version",
+            "freshrss_version",
+            "gokapi_version",
+            "grimmory_version",
+            "headscale_version",
+            "hermes_version",
+            "paperless_version",
+            "tgtg_version",
+            "yourls_version",
+        ] {
+            assert!(names.contains(&expected), "missing extra var: {expected}");
+        }
+        assert!(vars.iter().all(|(_, value)| !value.is_empty()));
     }
 
     #[test]

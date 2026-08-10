@@ -3,7 +3,5 @@ freshrss_sys_user: freshrss
 freshrss_sys_group: freshrss
 freshrss_port: 8084
 freshrss_domain: "{{ freshrss_subdomain }}.{{ domain }}"
-# renovate: datasource=github-releases depName=FreshRSS/FreshRSS
-freshrss_version: edge
 freshrss_data_dir: /var/lib/freshrss
 freshrss_db_type: sqlite

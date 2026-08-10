@@ -1,6 +1,4 @@
 ---
-# renovate: datasource=github-releases depName=juanfont/headscale extractVersion=^v(?<version>.+)$
-headscale_version: "0.25.1"
 headscale_port: 8080
 headscale_metrics_port: 9091
 headscale_stun_port: 3478

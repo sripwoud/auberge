@@ -1,2 +1,7 @@
 required_keys: []
 subdomain: grimmory
+version:
+  value: "2.3.0"
+  datasource: github-releases
+  depName: "sripwoud/auberge"
+  extractVersion: "^grimmory/v(?<version>.+)$"

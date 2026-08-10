@@ -1,5 +1,9 @@
 required_keys: []
 subdomain: yourls
+version:
+  value: "1.10.2"
+  datasource: github-releases
+  depName: "YOURLS/YOURLS"
 backup:
   paths: [/var/www/yourls]
   owner: [www-data, www-data]

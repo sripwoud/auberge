@@ -7,10 +7,18 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Version variables in role defaults, each driven by its own `# renovate:` annotation",
+      "description": "Tool Versions in role defaults, each driven by its own `# renovate:` annotation",
       "managerFilePatterns": ["/^ansible/roles/[^/]+/defaults/main\\.yml$/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?(?: extractVersion=(?<extractVersion>\\S+))?\\n[a-z0-9_]+_version: \"?(?<currentValue>[^\"\\n]+)\"?\\n"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "App Versions declared as typed `version:` blocks in Playbook Meta (ADR-0017)",
+      "managerFilePatterns": ["/^ansible/playbooks/[^/]+\\.meta\\.yml$/"],
+      "matchStrings": [
+        "version:\\n  value: \"?(?<currentValue>[^\"\\n]+)\"?\\n  datasource: (?<datasource>\\S+)\\n  depName: \"?(?<depName>[^\"\\n]+)\"?\\n(?:  versioning: (?<versioning>\\S+)\\n)?(?:  extractVersion: \"?(?<extractVersion>[^\"\\n]+)\"?\\n)?"
       ]
     }
   ],
@@ -21,6 +29,10 @@
       "commitMessageAction": "bump",
       "commitMessageTopic": "",
       "commitMessageExtra": "to {{newValue}}"
+    },
+    {
+      "matchFileNames": ["ansible/playbooks/*.meta.yml"],
+      "semanticCommitScope": "{{replace 'ansible/playbooks/(.+)\\.meta\\.yml' '$1' packageFile}}"
     },
     {
       "description": "hermes_uv_version and tgtg_uv_version are the same dep and must move together",

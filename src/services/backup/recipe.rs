@@ -85,6 +85,7 @@ mod tests {
             "headscale",
             "navidrome",
             "paperless",
+            "tgtg",
             "yourls",
         ]
         .into_iter()

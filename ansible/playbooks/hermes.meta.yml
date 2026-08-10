@@ -5,3 +5,8 @@ required_keys: [
   hermes_llm_api_key,
   hermes_telegram_bot_token,
 ]
+version:
+  value: "v2026.4.13"
+  datasource: github-releases
+  depName: "NousResearch/hermes-agent"
+  versioning: loose

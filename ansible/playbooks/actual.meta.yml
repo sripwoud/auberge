@@ -1,6 +1,10 @@
 required_keys: []
 tailnet_only: true
 subdomain: actual
+version:
+  value: "26.8.0"
+  datasource: npm
+  depName: "@actual-app/sync-server"
 backup:
   systemd_services: [actual]
   paths: [/var/lib/actual]

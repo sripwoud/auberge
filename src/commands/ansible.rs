@@ -1,5 +1,6 @@
 use crate::config::{Config, Preflight};
 use crate::output;
+use crate::playbook_meta::app_version_vars;
 use crate::prompt::select_item;
 use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::dependency_resolver::{
@@ -199,6 +200,16 @@ fn run_auto_resolved(
         tags.join(", ")
     ));
 
+    let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+    let app_versions = app_version_vars(&assets.playbooks_dir())?;
+    let mut extra_vars: Vec<(&str, &str)> = app_versions
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    if let Some(user) = user {
+        extra_vars.push(("ansible_user", user));
+    }
+
     for run in &runs {
         let playbook_file = run.path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let playbook_stem = run
@@ -236,8 +247,6 @@ fn run_auto_resolved(
             user: host.vars.bootstrap_user.clone(),
         };
 
-        let extra_vars = user.map(|u| vec![("ansible_user", u)]);
-
         let mut progress = crate::services::progress::TerminalProgress::new("");
         let result = run_playbook(
             &preflight,
@@ -246,7 +255,7 @@ fn run_auto_resolved(
             check,
             run_tags,
             skip_tags,
-            extra_vars.as_deref(),
+            Some(&extra_vars),
             false,
             ask_pass,
             &mut progress,
@@ -360,7 +369,15 @@ fn run_single_playbook(
         user: host.vars.bootstrap_user.clone(),
     };
 
-    let extra_vars = user.map(|u| vec![("ansible_user", u)]);
+    let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+    let app_versions = app_version_vars(&assets.playbooks_dir())?;
+    let mut extra_vars: Vec<(&str, &str)> = app_versions
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    if let Some(user) = user {
+        extra_vars.push(("ansible_user", user));
+    }
 
     let mut progress = crate::services::progress::TerminalProgress::new("");
     let result = run_playbook(
@@ -370,7 +387,7 @@ fn run_single_playbook(
         check,
         tags,
         skip_tags,
-        extra_vars.as_deref(),
+        Some(&extra_vars),
         false,
         ask_pass,
         &mut progress,

@@ -405,6 +405,7 @@ mod tests {
         "hermes",
         "infrastructure",
         "remove-radicale",
+        "tgtg",
         "vibecoder",
     ];
 

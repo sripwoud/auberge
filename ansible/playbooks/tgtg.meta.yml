@@ -1,0 +1,10 @@
+required_keys:
+  - tgtg_telegram_bot_token
+version:
+  value: "v2.0.2"
+  datasource: github-releases
+  depName: "TorbenStriegel/TooGoodToGo-TelegramBot"
+backup:
+  systemd_services: [tgtg]
+  paths: [/var/lib/tgtg]
+  owner: [tgtg, tgtg]

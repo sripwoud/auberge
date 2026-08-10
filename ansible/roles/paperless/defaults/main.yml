@@ -1,5 +1,3 @@
-# renovate: datasource=github-releases depName=paperless-ngx/paperless-ngx extractVersion=^v(?<version>.+)$
-paperless_version: "2.20.10"
 paperless_install_path: /opt/paperless
 paperless_sys_user: paperless
 paperless_sys_group: paperless
