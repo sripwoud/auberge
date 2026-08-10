@@ -55,11 +55,11 @@ _Avoid_: DNS setup, record creation, A-record provisioning
 **Version Resolution**:
 How a Playbook decides _which_ upstream version to install. Three regimes exist, and only one is legible to a dependency-update bot:
 
-- **Pinned** — an exact version literal in the role's `defaults/main.yml` (`<role>_version`), optionally with a co-pinned checksum. The same role revision installs the same bytes; upgrading is a repo edit, reviewed and released like any other change. The default for new roles (ADR-0016).
+- **Pinned** — an exact version literal in the repo, optionally with a co-pinned checksum: an **App Version** in the App's **Playbook Meta** `version:` block, a **Tool Version** in the role's `defaults/main.yml` (ADR-0017). The same role revision installs the same bytes; upgrading is a repo edit, reviewed and released like any other change. The default for new roles (ADR-0016).
 - **Floating** — a moving git ref (freshrss tracks the `edge` branch). Reproducible only by accident.
 - **Latest-at-Deploy** — the role queries `api.github.com/.../releases/latest` at run time (navidrome, baikal, blocky). The repo holds no record of what is installed; two deploys a day apart can differ. Baikal compounds this with a `when: not baikal_installed.stat.exists` guard, so it is latest at _first_ install and frozen thereafter — at a version recorded nowhere.
 
-A Pinned version is legible only if it is a **variable**: blocky's lego is pinned as a literal inside a task URL, so it is Pinned in effect but invisible to anything keyed on `<role>_version`.
+A Pinned version is legible only if it is a **variable**: a literal inside a task URL is Pinned in effect but invisible to anything keyed on `_version` — how lego's pin hid inside blocky's tasks until it was lifted into role defaults.
 Floating and Latest-at-Deploy are being retired — every App converges on Pinned (ADR-0017).
 _Avoid_: "pinning" unqualified (collides with APT pinning — source priority, a different mechanism), version strategy, update policy.
 
@@ -164,7 +164,7 @@ _Avoid_: Logger, reporter
 - An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
 - The **Busy Feed** is derived from **Baikal**'s calendar data — plus, optionally, a read-only external CalDAV calendar fetched Host-side — and served on Baikal's **Public App** site (Google's servers must reach it); auberge produces and serves it but ships no consumer.
 - **Actual** relays sync between clients that each hold the full budget; its Backup Recipe path (`/var/lib/actual`) also carries the **Enable Banking** credentials, so restoring it restores bank sync.
-- An App's **Version Resolution** is implicit in its Playbook's tasks — unlike `tailnet_only` or the **Backup Recipe**, it is not declared in the **Playbook Meta** and nothing in auberge reads it. That is why the regimes drifted apart unnoticed.
+- An **App Version** is declared in the **Playbook Meta** and injected at deploy; only navidrome, baikal, and blocky still resolve theirs at run time, and freshrss still floats on `edge` (#411 retires both regimes).
 
 ## Example dialogue
 
