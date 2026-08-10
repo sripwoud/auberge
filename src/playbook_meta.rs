@@ -490,13 +490,16 @@ version:
         let names: Vec<&str> = vars.iter().map(|(name, _)| name.as_str()).collect();
         for expected in [
             "actual_version",
+            "baikal_version",
             "bichon_version",
+            "blocky_version",
             "colporteur_version",
             "freshrss_version",
             "gokapi_version",
             "grimmory_version",
             "headscale_version",
             "hermes_version",
+            "navidrome_version",
             "paperless_version",
             "tgtg_version",
             "yourls_version",
