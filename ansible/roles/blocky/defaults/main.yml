@@ -9,9 +9,9 @@ blocky_archive_url: "https://github.com/0xERR0R/blocky/releases/download/v{{ blo
 blocky_checksums_url: "https://github.com/0xERR0R/blocky/releases/download/v{{ blocky_version }}/blocky_checksums.txt"
 
 # renovate: datasource=github-releases depName=go-acme/lego extractVersion=^v(?<version>.+)$
-blocky_lego_version: "4.23.1"
+blocky_lego_version: "4.35.2"
 blocky_lego_url: "https://github.com/go-acme/lego/releases/download/v{{ blocky_lego_version }}/lego_v{{ blocky_lego_version }}_linux_amd64.tar.gz"
-blocky_lego_sha256: "1fd60b1fd59c239bed22719a5de402cb745d1f933540cb1ec196e2c03e6e8882"
+blocky_lego_sha256: "ee5be4bf457de8e3efa86a51651c75c87f0ee0e4e9f3ae14f6034d68365770f3"
 
 blocky_dot_port: 853
 
