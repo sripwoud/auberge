@@ -19,6 +19,12 @@ TOTAL_FAILURES=0
 # sudo, and unreadable sidecars make its coverage gate count zero.
 ARCHIVE_FILE_MODE=0640
 
+# Every message identity the account under work already holds, keyed the way
+# ADR-0013 keys them. Rebuilt per account and added to as the run publishes, so
+# the skip guard can ask whether a message is archived rather than whether a
+# filename exists.
+declare -A ARCHIVED_MESSAGE_IDS=()
+
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2
 }
@@ -178,10 +184,14 @@ rekey_sidecar() {
   mv "$tmp" "$meta_path"
 }
 
+# Takes the identity rather than deriving it, because the caller has to read it
+# first anyway: the skip guard decides whether to publish a body by asking
+# whether the archive already holds that identity, which cannot be answered
+# without reading it. One reader per body, and still only one implementation of
+# the read (ADR-0013:132).
 write_meta_sidecar() {
-  local out_path="$1" eml_path="$2" envelope_json="$3"
-  local tmp message_id
-  message_id=$(canonical_message_id "$eml_path") || return 1
+  local out_path="$1" message_id="$2" envelope_json="$3"
+  local tmp
   tmp=$(mktemp "${out_path}.XXXXXX")
   chmod "$ARCHIVE_FILE_MODE" "$tmp"
   if ! printf '%s' "$envelope_json" \
@@ -295,6 +305,44 @@ repair_broken_bodies() {
   [ "$failures" -eq 0 ]
 }
 
+# Reads the identities the account's archive already holds, for the skip guard to
+# test membership against. `<envelope-id>.eml` cannot answer that question:
+# Bichon mints a fresh envelope id per import (ADR-0013), so when the v2 upgrade
+# regenerated every id as a UUID the archived numeric filenames matched nothing
+# the search returned. The guard answered "not archived" for all 9,394 bodies it
+# held and one tick wrote 825 duplicates (#455). The 24h overlap window is what
+# made that hourly rather than once: every tick re-lists a day of envelopes, not
+# only the ones that arrived since the cursor.
+#
+# One jq over the account's sidecars, batched through xargs the way
+# examples/bichon-expunge.sh batches its own walk (#406). Measured on the live
+# corpus: 0.11s for all 9,396 sidecars across 7 accounts warm, beside the
+# grep -rL the backfill already runs over the same files — no index earns its
+# keep against that.
+#
+# A sidecar carrying no `message_id` contributes nothing rather than an empty
+# key: backfill_message_ids runs first and has already failed the run over that
+# exact file. An unreadable or unparseable one fails here, because a set that is
+# quietly short of an entry is a duplicate written on the next tick.
+load_archived_message_ids() {
+  local safe_email="$1"
+  local account_dir="${BICHON_ARCHIVE_DIR}/${safe_email}"
+
+  ARCHIVED_MESSAGE_IDS=()
+  [ -d "$account_dir" ] || return 0
+
+  local ids message_id
+  if ! ids=$(find "$account_dir" -type f -name '*.meta.json' -print0 \
+    | xargs -0 -r jq -r '.message_id // empty'); then
+    return 1
+  fi
+
+  while IFS= read -r message_id; do
+    [ -z "$message_id" ] && continue
+    ARCHIVED_MESSAGE_IDS["$message_id"]=1
+  done <<<"$ids"
+}
+
 write_tag_snapshot() {
   local account_id="$1" safe_email="$2"
   local snapshot_path="${BICHON_ARCHIVE_DIR}/${safe_email}/tags.json"
@@ -385,13 +433,26 @@ process_account() {
     TOTAL_FAILURES=$((TOTAL_FAILURES + 1))
   fi
 
+  # After both repair passes, so it reads the sidecars they have finished
+  # rewriting. Without the set the loop below cannot tell a message it holds from
+  # one it does not, and downloading on that basis is what wrote the duplicates —
+  # so this failing takes the account's pass with it rather than proceeding
+  # blind. The cursor is not written, so nothing is skipped past.
+  if ! load_archived_message_ids "$safe_email"; then
+    log "identity set failed account=${safe_email} reason=unreadable_sidecars"
+    TOTAL_FAILURES=$((TOTAL_FAILURES + 1))
+    return 0
+  fi
+
   local page=1
   local total_pages=1
   local max_date=$cursor_ms
   local account_failures=0
   local processed=0
   local skipped=0
+  local deduped=0
   local body envelope id date_ms yyyy_mm out_dir eml_path meta_path
+  local stage_path body_path message_id
 
   while [ "$page" -le "$total_pages" ]; do
     if ! body=$(search_messages "$account_id" "$since_ms" "$page"); then
@@ -414,11 +475,15 @@ process_account() {
       eml_path="${out_dir}/${id}.eml"
       meta_path="${out_dir}/${id}.meta.json"
 
-      # Existence is not the question the skip asks. A 0-byte .eml satisfies
-      # `-f` and is not a message, so a file guard promises coverage the archive
-      # does not have and never asks again. Both guards read the same predicate,
-      # so a body that is not a message is downloaded again on the next run the
-      # envelope appears in.
+      # This envelope's own body, archived and keyed. Existence alone is not the
+      # question: a 0-byte .eml satisfies `-f` and is not a message, so a file
+      # guard promises coverage the archive does not have and never asks again.
+      # Both guards read the same predicate, so a body that is not a message is
+      # downloaded again on the next run the envelope appears in.
+      #
+      # This is the only skip a filename can decide, and it decides it for every
+      # message archived under the envelope id regime currently in force. It says
+      # nothing about a message archived under a previous one.
       if has_header_block "$eml_path" && [ -f "$meta_path" ]; then
         skipped=$((skipped + 1))
         continue
@@ -426,25 +491,65 @@ process_account() {
 
       mkdir -p "$out_dir"
 
+      # Identity is read from the body, so a message the filename cannot vouch
+      # for has to be fetched before it can be recognised. It is fetched to a
+      # staging name — deliberately not matching `*.eml`, so repair_broken_bodies
+      # cannot sweep a body that may never be published — and moved into place
+      # only once the archive is known not to hold that message already.
+      stage_path=''
+      body_path="$eml_path"
       if ! has_header_block "$eml_path"; then
-        if ! download_message "$account_id" "$id" "$eml_path"; then
+        stage_path="${eml_path}.incoming"
+        body_path="$stage_path"
+        if ! download_message "$account_id" "$id" "$stage_path"; then
           log "download failed account=${safe_email} id=${id}"
           account_failures=$((account_failures + 1))
           continue
         fi
       fi
-      if ! write_meta_sidecar "$meta_path" "$eml_path" "$envelope"; then
+
+      if ! message_id=$(canonical_message_id "$body_path"); then
+        log "identity failed account=${safe_email} id=${id}"
+        if [ -n "$stage_path" ]; then
+          rm -f "$stage_path"
+        fi
+        account_failures=$((account_failures + 1))
+        continue
+      fi
+
+      # The skip a filename could not perform, and the one the corpus needs: the
+      # same message re-imported under a fresh envelope id is one message, not
+      # two .eml files. Only a staged body is a candidate — a body already
+      # published is in the corpus whichever identity it carries, and the sole
+      # repair left for it is to key it. Discarding a redundant download is
+      # right; leaving an existing body unkeyed is not, because the coverage gate
+      # cannot count what has no sidecar.
+      if [ -n "$stage_path" ] && [ -n "${ARCHIVED_MESSAGE_IDS["$message_id"]+archived}" ]; then
+        rm -f "$stage_path"
+        deduped=$((deduped + 1))
+        continue
+      fi
+
+      if [ -n "$stage_path" ]; then
+        mv "$stage_path" "$eml_path"
+      fi
+
+      if ! write_meta_sidecar "$meta_path" "$message_id" "$envelope"; then
         log "sidecar failed account=${safe_email} id=${id}"
         account_failures=$((account_failures + 1))
         continue
       fi
+      ARCHIVED_MESSAGE_IDS["$message_id"]=1
       processed=$((processed + 1))
     done < <(printf '%s' "$body" | jq -c '.items[]?')
 
     page=$((page + 1))
   done
 
-  log "account=${safe_email} processed=${processed} skipped=${skipped} failures=${account_failures}"
+  # `skipped` and `deduped` are both "already archived", split because they prove
+  # different things. A filename skip proves the id regime has not moved under
+  # the corpus; an identity skip proves it has, and that the guard survived it.
+  log "account=${safe_email} processed=${processed} skipped=${skipped} deduped=${deduped} failures=${account_failures}"
 
   if [ "$account_failures" -eq 0 ]; then
     write_cursor "$cursor_file" "$max_date"
