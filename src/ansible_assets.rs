@@ -88,10 +88,10 @@ impl AnsibleAssets {
         }
 
         if !result.status.success() {
-            eyre::bail!(
+            return Err(result.error(format!(
                 "ansible-galaxy collection install failed with exit code {}",
                 result.status.code().unwrap_or(-1)
-            );
+            )));
         }
 
         Ok(())

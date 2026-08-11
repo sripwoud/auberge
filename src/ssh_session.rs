@@ -162,7 +162,7 @@ impl<'a> SshSession<'a> {
             output::clear_subprocess_lines(result.lines_written);
         }
         if !result.status.success() {
-            eyre::bail!("systemctl {} {} failed", action, service);
+            return Err(result.error(format!("systemctl {} {} failed", action, service)));
         }
         Ok(())
     }
