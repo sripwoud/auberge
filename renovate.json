@@ -25,6 +25,8 @@
   "packageRules": [
     {
       "matchManagers": ["custom.regex"],
+      "description": "`build` so release-plz cuts a release (ADR-0017). Must live in a packageRule: config:recommended pulls in :semanticPrefixFixDepsChoreOthers, whose own packageRules override any top-level semanticCommitType.",
+      "semanticCommitType": "build",
       "semanticCommitScope": "{{replace 'ansible/roles/(.+)/defaults/main\\.yml' '$1' packageFile}}",
       "commitMessageAction": "bump",
       "commitMessageTopic": "",
