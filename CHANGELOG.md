@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.15](https://github.com/sripwoud/auberge/compare/v0.14.14...v0.14.15) - 2026-08-11
+
+### Fixed
+
+- *(cli)* tell operators how to deploy a Substrate App ([#443](https://github.com/sripwoud/auberge/pull/443))
+- *(cli)* force untagged infra run when app and substrate tags mix ([#441](https://github.com/sripwoud/auberge/pull/441))
+
 ## [0.14.14](https://github.com/sripwoud/auberge/compare/v0.14.13...v0.14.14) - 2026-08-11
 
 ### Fixed
