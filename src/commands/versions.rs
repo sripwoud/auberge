@@ -10,6 +10,7 @@ use tabled::Tabled;
 
 const NPM_REGISTRY: &str = "https://registry.npmjs.org";
 const GITHUB_API: &str = "https://api.github.com";
+const GO_PROXY: &str = "https://proxy.golang.org";
 // Abbreviated packument: dist-tags without per-version metadata (~1% the size).
 const NPM_ABBREVIATED: &str = "application/vnd.npm.install-v1+json";
 
@@ -182,6 +183,7 @@ struct UpstreamClient {
     http: reqwest::Client,
     npm_base: String,
     github_base: String,
+    go_base: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -195,10 +197,14 @@ struct Release {
 
 impl UpstreamClient {
     fn new() -> Result<Self> {
-        Self::with_bases(NPM_REGISTRY.to_string(), GITHUB_API.to_string())
+        Self::with_bases(
+            NPM_REGISTRY.to_string(),
+            GITHUB_API.to_string(),
+            GO_PROXY.to_string(),
+        )
     }
 
-    fn with_bases(npm_base: String, github_base: String) -> Result<Self> {
+    fn with_bases(npm_base: String, github_base: String, go_base: String) -> Result<Self> {
         let http = reqwest::Client::builder()
             .user_agent(concat!("auberge/", env!("CARGO_PKG_VERSION")))
             .build()
@@ -207,6 +213,7 @@ impl UpstreamClient {
             http,
             npm_base,
             github_base,
+            go_base,
         })
     }
 
@@ -214,8 +221,32 @@ impl UpstreamClient {
         match version.datasource.as_str() {
             "npm" => self.npm_latest(&version.dep_name).await,
             "github-releases" => self.github_latest(version).await,
+            "go" => self.go_latest(&version.dep_name).await,
             other => eyre::bail!("Unsupported datasource `{other}`"),
         }
+    }
+
+    /// Renovate's `go` datasource resolves through the module proxy:
+    /// `@v/list` yields every known tagged version, one per line. Stability
+    /// and ordering reuse the shared rules, so a `go` pin drifts exactly like
+    /// a release tag.
+    async fn go_latest(&self, dep_name: &str) -> Result<String> {
+        let url = format!("{}/{}/@v/list", self.go_base, escape_go_module(dep_name));
+        let listing = self
+            .http
+            .get(&url)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        listing
+            .lines()
+            .map(str::trim)
+            .filter(|version| is_version_like(version) && is_stable(version))
+            .max_by(|a, b| compare_versions(a, b))
+            .map(str::to_string)
+            .ok_or_else(|| eyre::eyre!("the module proxy lists no stable version of {dep_name}"))
     }
 
     async fn npm_latest(&self, dep_name: &str) -> Result<String> {
@@ -281,6 +312,21 @@ fn latest_release_version(releases: &[Release], extract: Option<&Regex>) -> Opti
 /// bichon publishes exactly such tags.
 fn is_stable(version: &str) -> bool {
     !version.contains('-')
+}
+
+/// Module paths are case-encoded on the proxy: each uppercase letter becomes
+/// `!` plus its lowercase form (golang.org/x/mod's escaped-path rule).
+fn escape_go_module(module: &str) -> String {
+    let mut escaped = String::with_capacity(module.len());
+    for c in module.chars() {
+        if c.is_ascii_uppercase() {
+            escaped.push('!');
+            escaped.push(c.to_ascii_lowercase());
+        } else {
+            escaped.push(c);
+        }
+    }
+    escaped
 }
 
 fn tag_version(tag: &str, extract: Option<&Regex>) -> Option<String> {
@@ -503,7 +549,7 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let client = UpstreamClient::with_bases(server.uri(), server.uri())?;
+        let client = UpstreamClient::with_bases(server.uri(), server.uri(), server.uri())?;
 
         let latest = client
             .latest(&pin("npm", "@actual-app/sync-server", None))
@@ -525,7 +571,7 @@ mod tests {
             ])))
             .mount(&server)
             .await;
-        let client = UpstreamClient::with_bases(server.uri(), server.uri())?;
+        let client = UpstreamClient::with_bases(server.uri(), server.uri(), server.uri())?;
 
         let latest = client
             .latest(&pin(
@@ -540,13 +586,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn go_latest_picks_the_max_stable_version_from_the_module_proxy() -> Result<()> {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/github.com/mholt/caddy-l4/@v/list"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("v0.1.0\nv0.1.2\nv0.2.0-beta.1\n"),
+            )
+            .mount(&server)
+            .await;
+        let client = UpstreamClient::with_bases(server.uri(), server.uri(), server.uri())?;
+
+        let latest = client
+            .latest(&pin("go", "github.com/mholt/caddy-l4", None))
+            .await?;
+
+        assert_eq!(latest, "v0.1.2");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn go_latest_fails_when_the_proxy_lists_no_stable_version() -> Result<()> {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("v0.2.0-beta.1\n"))
+            .mount(&server)
+            .await;
+        let client = UpstreamClient::with_bases(server.uri(), server.uri(), server.uri())?;
+
+        let result = client.latest(&pin("go", "example.com/mod", None)).await;
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("no stable version")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn escape_go_module_encodes_uppercase_as_bang_lowercase() {
+        assert_eq!(
+            escape_go_module("github.com/Azure/azure-sdk-for-go"),
+            "github.com/!azure/azure-sdk-for-go"
+        );
+        assert_eq!(
+            escape_go_module("github.com/mholt/caddy-l4"),
+            "github.com/mholt/caddy-l4"
+        );
+    }
+
+    #[tokio::test]
     async fn latest_fails_fast_on_upstream_http_errors() -> Result<()> {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(500))
             .mount(&server)
             .await;
-        let client = UpstreamClient::with_bases(server.uri(), server.uri())?;
+        let client = UpstreamClient::with_bases(server.uri(), server.uri(), server.uri())?;
 
         let result = client
             .latest(&pin("github-releases", "juanfont/headscale", None))
@@ -558,8 +656,11 @@ mod tests {
 
     #[tokio::test]
     async fn latest_rejects_an_unsupported_datasource() -> Result<()> {
-        let client =
-            UpstreamClient::with_bases("http://unused".to_string(), "http://unused".to_string())?;
+        let client = UpstreamClient::with_bases(
+            "http://unused".to_string(),
+            "http://unused".to_string(),
+            "http://unused".to_string(),
+        )?;
 
         let result = client.latest(&pin("docker", "some/image", None)).await;
 
