@@ -2,7 +2,7 @@ required_keys: []
 tailnet_only: true
 subdomain: paperless
 version:
-  value: "2.20.15"
+  value: "3.0.5"
   datasource: github-releases
   depName: "paperless-ngx/paperless-ngx"
   extractVersion: "^v(?<version>.+)$"
@@ -19,4 +19,4 @@ backup:
   db:
     name: paperless
     dump_path: /tmp/paperless_db.dump
-  post_restore_command: "cd /opt/paperless/src && PAPERLESS_CONFIGURATION_PATH=/opt/paperless/paperless.conf sudo -u paperless /opt/paperless/src/venv/bin/python3 manage.py migrate --no-input"
+  post_restore_command: "cd /opt/paperless/src && PAPERLESS_CONFIGURATION_PATH=/opt/paperless/paperless.conf sudo -u paperless /opt/paperless/venv/bin/python3 manage.py migrate --no-input"

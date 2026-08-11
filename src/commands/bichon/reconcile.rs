@@ -310,6 +310,9 @@ tailscale_ip = "100.100.100.10"
         Ok(())
     }
 
+    // v2 (bichon >= 2.0) response shapes: accounts expose download_folders,
+    // list-mailboxes wraps the array in a cache envelope. The write payload
+    // must still say sync_folders.
     #[tokio::test]
     async fn apply_patches_sync_folders_once_when_changed() -> Result<()> {
         let _guard = crate::output::TEST_LOCK.lock().unwrap();
@@ -320,7 +323,7 @@ tailscale_ip = "100.100.100.10"
             .and(path("/api/v1/accounts"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "items": [
-                    {"id":1, "email":"me@sripwoud.xyz", "sync_folders":["INBOX","INBOX/old-archive"]}
+                    {"id":1, "email":"me@sripwoud.xyz", "download_folders":["INBOX","INBOX/old-archive"]}
                 ],
                 "total_items": 1
             })))
@@ -330,11 +333,16 @@ tailscale_ip = "100.100.100.10"
         Mock::given(method("GET"))
             .and(path("/api/v1/list-mailboxes/1"))
             .and(query_param("remote", "true"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-                {"name":"INBOX","attributes":[]},
-                {"name":"INBOX/legal-2026","attributes":[]},
-                {"name":"INBOX/old-archive","attributes":[{"attr":"Trash"}]}
-            ])))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "mailboxes": [
+                    {"name":"INBOX","attributes":[]},
+                    {"name":"INBOX/legal-2026","attributes":[]},
+                    {"name":"INBOX/old-archive","attributes":[{"attr":"Trash"}]}
+                ],
+                "status": "ready",
+                "examined": null,
+                "total": null
+            })))
             .mount(&server)
             .await;
 

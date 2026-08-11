@@ -26,6 +26,8 @@ extra_excluded_folders = ["Newsletters", "Receipts/2019"]
 
 Default is dry-run (read-only).
 
+?> On Bichon >= 2.0 the remote folder list is served from a cache. On a cold cache Bichon lists the mailboxes in the background and the command polls until the list is ready (up to 120s) before computing the diff, so the first run after a Bichon restart can take noticeably longer.
+
 ## Options
 
 | Option              | Description                             | Default |

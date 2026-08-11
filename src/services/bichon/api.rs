@@ -5,12 +5,30 @@ use std::time::Duration;
 
 const MAX_RETRIES: usize = 3;
 
+// The v2 warm-up fetch issues one IMAP STATUS round-trip per mailbox, so a
+// large account can take tens of seconds before the cache turns ready.
+const MAILBOX_LIST_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const MAILBOX_LIST_POLL_ATTEMPTS: usize = 120;
+
+/// Bichon 2.x renamed the read-side field to `download_folders` (nullable);
+/// 0.3.7 serves `sync_folders`, which also remains the update-payload name.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Account {
     pub id: u64,
     pub email: String,
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "download_folders",
+        deserialize_with = "deserialize_null_as_empty"
+    )]
     pub sync_folders: Vec<String>,
+}
+
+fn deserialize_null_as_empty<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<Vec<String>>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +43,21 @@ pub struct Mailbox {
     pub name: String,
     #[serde(default)]
     pub attributes: Vec<MailboxAttribute>,
+}
+
+/// Bichon 2.x wraps list-mailboxes in a cache envelope; `remote=true` on a
+/// cold cache starts a background IMAP fetch and answers `fetching` until it
+/// completes. 0.3.7 returned the bare array.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum MailboxListResponse {
+    Envelope {
+        mailboxes: Vec<Mailbox>,
+        status: String,
+        #[serde(default)]
+        error: Option<String>,
+    },
+    Bare(Vec<Mailbox>),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -186,12 +219,34 @@ impl BichonApiClient {
     }
 
     pub async fn list_mailboxes(&self, account_id: u64) -> Result<Vec<Mailbox>> {
-        self.request_json(
-            Method::GET,
-            &format!("/api/v1/list-mailboxes/{account_id}?remote=true"),
-            Option::<&()>::None,
+        let path = format!("/api/v1/list-mailboxes/{account_id}?remote=true");
+        for attempt in 0..MAILBOX_LIST_POLL_ATTEMPTS {
+            if attempt > 0 {
+                tokio::time::sleep(MAILBOX_LIST_POLL_INTERVAL).await;
+            }
+            let response: MailboxListResponse = self
+                .request_json(Method::GET, &path, Option::<&()>::None)
+                .await?;
+            match response {
+                MailboxListResponse::Bare(mailboxes) => return Ok(mailboxes),
+                MailboxListResponse::Envelope {
+                    mailboxes,
+                    status,
+                    error,
+                } => match status.as_str() {
+                    "ready" => return Ok(mailboxes),
+                    "fetching" => continue,
+                    _ => eyre::bail!(
+                        "Bichon list-mailboxes failed for account {account_id}: {}",
+                        error.unwrap_or(status)
+                    ),
+                },
+            }
+        }
+        eyre::bail!(
+            "Bichon mailbox list for account {account_id} still fetching after {}s; retry once the cache is warm",
+            MAILBOX_LIST_POLL_INTERVAL.as_secs() * MAILBOX_LIST_POLL_ATTEMPTS as u64
         )
-        .await
     }
 
     pub async fn update_account_sync_folders(
@@ -309,10 +364,10 @@ impl BichonApiClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{BichonApiClient, BichonApiHttpError, StoreEnvelope, is_retryable};
+    use super::{Account, BichonApiClient, BichonApiHttpError, StoreEnvelope, is_retryable};
     use reqwest::StatusCode;
     use serde_json::json;
-    use wiremock::matchers::{body_partial_json, method, path};
+    use wiremock::matchers::{body_partial_json, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn envelope(message_id: &str, mailbox_name: &str, date: i64, uid: u32) -> serde_json::Value {
@@ -434,6 +489,139 @@ mod tests {
         let client = BichonApiClient::new(server.uri(), "token").unwrap();
         let envelopes = client.search_messages(7, 999).await.unwrap();
         assert_eq!(envelopes.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn list_mailboxes_reads_legacy_bare_array() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/list-mailboxes/7"))
+            .and(query_param("remote", "true"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                {"name":"INBOX","attributes":[]},
+                {"name":"Sent","attributes":[{"attr":"Sent"}]}
+            ])))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = BichonApiClient::new(server.uri(), "token").unwrap();
+        let mailboxes = client.list_mailboxes(7).await.unwrap();
+        assert_eq!(mailboxes.len(), 2);
+        assert_eq!(mailboxes[0].name, "INBOX");
+    }
+
+    #[tokio::test]
+    async fn list_mailboxes_unwraps_v2_ready_envelope() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/list-mailboxes/7"))
+            .and(query_param("remote", "true"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "mailboxes": [{"name":"INBOX","attributes":[]}],
+                "status": "ready",
+                "examined": null,
+                "total": null
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = BichonApiClient::new(server.uri(), "token").unwrap();
+        let mailboxes = client.list_mailboxes(7).await.unwrap();
+        assert_eq!(mailboxes.len(), 1);
+        assert_eq!(mailboxes[0].name, "INBOX");
+    }
+
+    #[tokio::test]
+    async fn list_mailboxes_polls_v2_cache_warm_up_until_ready() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/list-mailboxes/7"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "mailboxes": [],
+                "status": "fetching",
+                "examined": 0,
+                "total": 0
+            })))
+            .up_to_n_times(1)
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/list-mailboxes/7"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "mailboxes": [{"name":"INBOX","attributes":[]}],
+                "status": "ready",
+                "examined": 1,
+                "total": 1
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = BichonApiClient::new(server.uri(), "token").unwrap();
+        let mailboxes = client.list_mailboxes(7).await.unwrap();
+        assert_eq!(mailboxes.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn list_mailboxes_fails_on_v2_error_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/list-mailboxes/7"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "mailboxes": [],
+                "status": "error",
+                "error": "imap connect refused",
+                "examined": null,
+                "total": null
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = BichonApiClient::new(server.uri(), "token").unwrap();
+        let err = client.list_mailboxes(7).await.unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("imap connect refused"),
+            "expected Bichon error text, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn account_reads_v2_download_folders() {
+        let account: Account = serde_json::from_value(json!({
+            "id": 1, "email": "me@x.io", "download_folders": ["INBOX", "Sent"]
+        }))
+        .unwrap();
+        assert_eq!(account.sync_folders, vec!["INBOX", "Sent"]);
+    }
+
+    #[test]
+    fn account_reads_legacy_sync_folders() {
+        let account: Account = serde_json::from_value(json!({
+            "id": 1, "email": "me@x.io", "sync_folders": ["INBOX"]
+        }))
+        .unwrap();
+        assert_eq!(account.sync_folders, vec!["INBOX"]);
+    }
+
+    #[test]
+    fn account_reads_null_download_folders_as_empty() {
+        let account: Account = serde_json::from_value(json!({
+            "id": 1, "email": "me@x.io", "download_folders": null
+        }))
+        .unwrap();
+        assert!(account.sync_folders.is_empty());
+    }
+
+    #[test]
+    fn account_reads_missing_folders_as_empty() {
+        let account: Account =
+            serde_json::from_value(json!({"id": 1, "email": "me@x.io"})).unwrap();
+        assert!(account.sync_folders.is_empty());
     }
 
     #[test]
