@@ -196,6 +196,11 @@
             - src
             - static
 
+        - name: Remove virtual environment from previous release
+          ansible.builtin.file:
+            path: "{{ paperless_install_path }}/venv"
+            state: absent
+
         - name: Extract release tarball
           ansible.builtin.unarchive:
             src: /tmp/paperless-ngx.tar.xz
