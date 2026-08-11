@@ -64,3 +64,35 @@ jobs:
 ```
 
 ?> Verify config is applied with `auberge config list` if a step silently misbehaves.
+
+## Version drift monitoring
+
+`auberge versions --check-upstream` queries npm/GitHub for each app's latest stable release and compares it against the declared App Version. Exit code signals drift, so cron or CI can branch on it:
+
+| Exit code | Meaning                    |
+| --------- | -------------------------- |
+| `0`       | Every app is current       |
+| `1`       | At least one app is behind |
+| `2`       | Operational error          |
+
+`-o json` gives machine-readable output. Set `GITHUB_TOKEN` to avoid anonymous GitHub API rate limits.
+
+```yaml
+name: Check app versions
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install auberge
+      - run: auberge versions --check-upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+See [`auberge versions`](cli-reference/versions.md) for full command reference.

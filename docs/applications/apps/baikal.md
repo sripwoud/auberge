@@ -33,6 +33,8 @@ sudo systemctl start baikal-birthday-sync.service
 
 Backed up by default (`/opt/baikal/Specific`). See [Backup & Restore](backup-restore/overview.md).
 
+The role is upgrade-capable: deploy reads the installed version from `Core/Distrib.php` and compares it against the declared App Version. When they differ, it downloads that release and replaces the `Core`, `html`, and `vendor` directories, leaving `Specific/` (your data) untouched, then restarts `php-fpm`. Re-run `auberge deploy baikal` after upgrading auberge to apply a new declared version.
+
 ## Busy Feed
 
 A privacy-sanitized iCalendar feed of your busy intervals, served at `https://{baikal_subdomain}.{domain}/busy.ics`. A host-side script (`baikal-busy-sync.py`) runs on a systemd timer (~15 min), expands recurrence into a rolling `[now − 1d, now + 60d]` window, and writes a `busy.ics` containing only opaque `Busy` blocks — UTC start/end plus a hashed per-instance UID. It never emits titles, locations, guests, descriptions, or the source UID.
