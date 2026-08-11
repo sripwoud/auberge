@@ -188,6 +188,14 @@
             dest: /tmp/paperless-ngx.tar.xz
             mode: "0644"
 
+        - name: Remove stale source and static trees from previous release
+          ansible.builtin.file:
+            path: "{{ paperless_install_path }}/{{ item }}"
+            state: absent
+          loop:
+            - src
+            - static
+
         - name: Extract release tarball
           ansible.builtin.unarchive:
             src: /tmp/paperless-ngx.tar.xz
