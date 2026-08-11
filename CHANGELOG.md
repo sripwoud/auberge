@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.18](https://github.com/sripwoud/auberge/compare/v0.14.17...v0.14.18) - 2026-08-11
+
+### Fixed
+
+- *(bichon)* dedup archive downloads on canonical Message-ID ([#464](https://github.com/sripwoud/auberge/pull/464))
+
+### Other
+
+- *(headscale)* bump to 0.28.0 ([#437](https://github.com/sripwoud/auberge/pull/437))
+
 ## [0.14.17](https://github.com/sripwoud/auberge/compare/v0.14.16...v0.14.17) - 2026-08-11
 
 ### Added
