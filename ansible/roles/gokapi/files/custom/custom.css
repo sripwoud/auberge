@@ -1,26 +1,1204 @@
-/* Gokapi custom stylesheet
+/* Gokapi custom stylesheet — direction: "MELEE ISLAND NIGHT"
  *
- * Loaded automatically by Gokapi when present at
- *   /var/lib/gokapi/custom/custom.css   (on the host)
- * Served as
- *   /custom/custom.v<N>.css             (with N from version.txt)
+ * Palette: 16 hard colours, no more. Three of them are the operator's own site
+ * identity, taken verbatim from sripwoud.github.io (src/globals.css,
+ * src/components/Terminal) so partage.sripwoud.xyz reads as the same person:
  *
- * Add or remove rules below, then bump version.txt to bust browser caches.
- * Inspect the upstream templates at internal/webserver/web/templates/ to
- * find class/element targets.
+ *   #120548  terminal background
+ *   #908DFF  body text / command output
+ *   #D000E8  prompt symbol / accent
+ *
+ * The remaining 13 are chosen to extend those three into a full UI palette
+ * (silhouette black, sky violet, greys, and the yellow/cyan/brown/red/green
+ * needed for titles, links, buttons and state). This is NOT the EGA palette
+ * and does not claim to be — several entries are off the EGA gamut. What is
+ * borrowed from Monkey Island 1's EGA release is the *technique*, not the
+ * colours: ordered 2px dithering instead of gradients, zero-length colour
+ * stops, hard bevels instead of blur, no opacity on coloured surfaces. Tone
+ * ramps are built by dithering two palette entries, because the palette has
+ * no intermediate values to ramp through.
+ *
+ * The scene it composes: a harbour at night seen from the water. A dithered
+ * violet sky stepping down through deep violet to a black sea, cyan pinprick
+ * stars, a #FFFF57 window-light title, black rock-silhouette panels, torch-lit
+ * buttons, and a #908DFF glow on the horizon line.
+ *
+ * Contrast (measured, not assumed — #5417B8 is a light field):
+ *   #FFFF57 on #5417B8  8.99:1   #57FFFF on #5417B8  7.83:1
+ *   #FFFFFF on #5417B8  9.58:1   #908DFF on #5417B8  3.39:1  chrome only
+ *   #ABABAB on #5417B8  4.17:1   #D000E8 on #5417B8  2.21:1  never on sky
+ * So #908DFF is a keyline/divider colour and #D000E8 a selected-state colour;
+ * both live on black panels (7.44:1 and 4.85:1), never on the open field.
+ *
+ * Deployment
+ *   host path : /var/lib/gokapi/custom/custom.css
+ *   served as : /custom/custom.v<N>.css      (N comes from custom/version.txt)
+ *   cache bust: bump `gokapi_custom_assets_revision` in
+ *               ansible/roles/gokapi/defaults/main.yml (renders version.txt),
+ *               then re-run the gokapi role — Gokapi restarts and the new
+ *               filename invalidates every browser cache.
+ *
+ * Loaded last, after bootstrap.min.css / gokapi.min.css / dropzone /
+ * datatables / flatpickr, so plain specificity wins. `!important` appears
+ * only where a Bootstrap utility or a Gokapi rule already used it.
  */
 
-/* Example: tighten the header on desktop */
-/*
-h1 {
+/* ── :root tokens — the 16, and the scene roles they play ──────────────── */
+
+:root {
+  --c-black: #000000;
+  --c-violet-deep: #120548;
+  --c-violet: #5417b8;
+  --c-periwinkle: #908dff;
+  --c-magenta: #d000e8;
+  --c-grey-dark: #575757;
+  --c-grey-light: #ababab;
+  --c-white: #ffffff;
+  --c-yellow: #ffff57;
+  --c-cyan-bright: #57ffff;
+  --c-cyan: #00abab;
+  --c-brown: #ab5700;
+  --c-red: #ab0000;
+  --c-red-bright: #ff5757;
+  --c-green: #00ab00;
+  --c-green-bright: #57ff57;
+
+  /* scene roles */
+  --sky: var(--c-violet);
+  --deep: var(--c-violet-deep);
+  --silhouette: var(--c-black);
+  --starlight: var(--c-cyan-bright);
+  --windowlight: var(--c-yellow);
+  --torch: var(--c-brown);
+  --rock-lit: var(--c-grey-dark);
+  --rock-shade: var(--c-violet-deep);
+  --keyline: var(--c-periwinkle);
+  --selected: var(--c-magenta);
+
+  --font-bitmap: ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", monospace;
+
+  /* no rounded corners: every curve would need interpolated pixels */
+  --bs-border-radius: 0;
+  --bs-border-radius-sm: 0;
+  --bs-border-radius-lg: 0;
+  --bs-border-radius-xl: 0;
+  --bs-border-radius-xxl: 0;
+  --bs-border-radius-2xl: 0;
+  --bs-border-radius-pill: 0;
+
+  /* remapping these lets Bootstrap's own !important utilities land on-palette
+     (.bg-info, .text-dark, .bg-dark, .text-danger …) without re-declaring
+     them one by one */
+  --bs-body-bg: var(--c-black);
+  --bs-body-color: var(--c-white);
+  --bs-body-font-family: var(--font-bitmap);
+  --bs-border-color: var(--c-grey-dark);
+  --bs-dark: var(--c-black);
+  --bs-dark-rgb: 0, 0, 0;
+  --bs-light: var(--c-grey-light);
+  --bs-light-rgb: 171, 171, 171;
+  --bs-secondary: var(--c-grey-dark);
+  --bs-secondary-rgb: 87, 87, 87;
+  --bs-primary: var(--c-brown);
+  --bs-primary-rgb: 171, 87, 0;
+  --bs-info: var(--c-cyan);
+  --bs-info-rgb: 0, 171, 171;
+  --bs-success: var(--c-green-bright);
+  --bs-success-rgb: 87, 255, 87;
+  --bs-warning: var(--c-yellow);
+  --bs-warning-rgb: 255, 255, 87;
+  /* bright red, not #AB0000: .text-danger must stay readable on black */
+  --bs-danger: var(--c-red-bright);
+  --bs-danger-rgb: 255, 87, 87;
+  --bs-link-color: var(--c-cyan-bright);
+  --bs-link-color-rgb: 87, 255, 255;
+  --bs-link-hover-color: var(--c-yellow);
+  --bs-link-hover-color-rgb: 255, 255, 87;
+}
+
+/* ── dither primitives — 2px ordered checkerboards, zero-length stops ──── */
+
+/* Cell map of a 2px conic tile: 0–25% = top-right px, 25–50% = bottom-right,
+   50–75% = bottom-left, 75–100% = top-left. Adjacent stops share a position,
+   so every transition is zero-length: hard pixel edges, no interpolated
+   in-between colour anywhere. Positions must be percentages — conic stops are
+   <angle-percentage> and a unitless 0 is not a valid angle, which would
+   invalidate the whole background-image list and silently drop the dither.
+   The two tiles occupy different cells so they can be stacked without
+   overlapping: shadow takes the top-right pixel, spark the top-left. */
+:root {
+  --dither-shadow: conic-gradient(
+    var(--c-violet-deep) 0% 25%,
+    transparent 25% 100%
+  );
+  --dither-spark: conic-gradient(
+    transparent 0% 75%,
+    var(--c-violet) 75% 100%
+  );
+  --dither-cell: 2px 2px;
+}
+
+/* ── body / backdrop — the night sky, banded down to the sea ───────────── */
+
+/* Flat base on the root element so the canvas is never bare: overscroll
+   areas and any surface the fixed layers miss still read as sky. */
+html {
+  background-color: var(--sky);
+}
+
+/* Gokapi ships a photographic background.jpg on <body>, and Bootstrap's
+   .bg-dark paints over it with !important. Both must go or none of the sky is
+   ever seen. The shorthand kills the image; the colour needs .bg-dark's own
+   specificity to beat it — see body.bg-dark below. */
+body {
+  background: transparent !important;
+  font-family: var(--font-bitmap);
+  font-size: 1rem;
+  line-height: 1.55;
+  letter-spacing: 0.01em;
+}
+
+/* `background: transparent !important` on `body` (0,0,1) LOSES to
+   `.bg-dark`'s `background-color: … !important` (0,1,0) — two !importants,
+   so specificity decides and the class wins. This rule is what actually
+   clears it. Do not merge the two. */
+body.bg-dark {
+  background-color: transparent !important;
+}
+
+/* Two fixed, non-interactive layers behind the content. Both are
+   position:fixed, so they are out of flow and never become flex items of the
+   centred layout. The backdrop sits at -2 and the stars at -1 so the stars
+   are not buried by the backdrop's opaque base. */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  pointer-events: none;
+  /* Gokapi paints a blurred inset vignette here at z-index 10 — off-palette
+     by construction, and it mutes every colour in the theme. */
+  box-shadow: none;
+}
+
+/* The whole three-band field on one surface, so tone never depends on two
+   surfaces phase-aligning. `background-attachment: fixed` puts every layer's
+   origin at the viewport's top-left, which keeps the 2px tiles on integer
+   pixels and makes the band percentages and the glow position share one
+   coordinate space.
+   Layers, top to bottom, and what each region ends up as:
+     1 shadow dither  25% #120548, top-right pixel — applies everywhere
+     2 horizon glow   2px #908DFF at 74%, dithered by layer 1
+     3 sea band       opaque #000000 from 74% down, hides layers 4-5 there
+     4 spark dither   25% #5417B8, top-left pixel — invisible over the violet
+                      base, so it only shows on the deep band
+     5 deep band      opaque #120548 from 52% down
+   →  0–52%   75% #5417B8 + 25% #120548   sky
+   →  52–74%  75% #120548 + 25% #5417B8   deep sky, the calm field the
+                                          content panels sit on
+   →  74%     dithered #908DFF hairline   horizon glow
+   →  74–100% 75% #000000 + 25% #120548   sea */
+body::after {
+  z-index: -2;
+  background-color: var(--sky);
+  background-attachment: fixed;
+  background-image:
+    var(--dither-shadow),
+    linear-gradient(var(--keyline) 0% 100%),
+    linear-gradient(to bottom, transparent 0 74%, var(--silhouette) 74% 100%),
+    var(--dither-spark),
+    linear-gradient(to bottom, transparent 0 52%, var(--deep) 52% 100%);
+  background-size:
+    var(--dither-cell),
+    100% 2px,
+    100% 100%,
+    var(--dither-cell),
+    100% 100%;
+  background-position: 0 0, 0 74%, 0 0, 0 0, 0 0;
+  background-repeat: repeat, no-repeat, no-repeat, repeat, no-repeat;
+}
+
+/* Hand-placed pinpricks, no tile: 21 cyan, 8 white, 3 brighter white, all in
+   the upper sky where the field is lightest and they read as stars. */
+body::before {
+  z-index: -1;
+  background-repeat: no-repeat;
+  background-image:
+    radial-gradient(circle 1px at 6% 13%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 3% 34%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 11% 8%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 19% 26%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 14% 44%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 24% 5%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 31% 18%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 27% 39%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 36% 11%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 43% 30%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 39% 47%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 47% 7%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 52% 22%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 58% 41%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 63% 4%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 68% 28%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 72% 12%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 76% 37%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 84% 6%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 89% 32%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 94% 17%, var(--starlight) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 8% 21%, var(--c-white) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 22% 35%, var(--c-white) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 34% 2%, var(--c-white) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 45% 19%, var(--c-white) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 61% 17%, var(--c-white) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 74% 25%, var(--c-white) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 86% 12%, var(--c-white) 0 100%, transparent 100%),
+    radial-gradient(circle 1px at 97% 29%, var(--c-white) 0 100%, transparent 100%),
+    radial-gradient(circle 1.5px at 16% 16%, var(--c-white) 0 100%, transparent 100%),
+    radial-gradient(circle 1.5px at 59% 9%, var(--c-white) 0 100%, transparent 100%),
+    radial-gradient(circle 1.5px at 81% 22%, var(--c-white) 0 100%, transparent 100%);
+}
+
+/* ── header + nav — the lit horizon and the harbour signposts ──────────── */
+
+.masthead {
+  margin-bottom: 1.5rem;
+}
+
+header h1 {
+  margin-bottom: 0.6rem;
+  color: var(--windowlight);
+  font-family: var(--font-bitmap);
+  font-size: clamp(1.6rem, 6vw, 2.6rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  /* hard offset, zero blur: sprite text sitting on the sky */
+  text-shadow: 2px 2px 0 var(--c-black);
+  /* aliased glyph edges, only here — the title is >= 25px, so nothing small
+     ever loses a stem to it, and no webfont is needed for the pixel feel */
+  -webkit-font-smoothing: none;
+}
+
+header h1 a,
+header h1 a:hover,
+header h1 a:focus {
+  color: var(--windowlight);
+  filter: none;
+}
+
+/* The admin inline <style> floats the nav right, which collides with the
+   title at narrow widths; centring it matches the public pages. */
+.nav-masthead {
+  float: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 0.25rem;
+}
+
+/* White, not grey: these links sit on the open sky, where #ABABAB is only
+   4.17:1 — it passed on the old darker field and does not pass on this one. */
+.nav-masthead .nav-link {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--c-white);
+  background-color: transparent;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  text-shadow: 1px 1px 0 var(--c-black);
+  transition: none;
+}
+
+.nav-masthead .nav-link:hover,
+.nav-masthead .nav-link:focus {
+  color: var(--starlight);
+  border-bottom-color: var(--starlight);
+  filter: none;
+}
+
+/* the selected tab stays window-yellow: #D000E8 is 2.21:1 on the sky field,
+   which fails even the 3:1 non-text threshold, so the accent cannot be used
+   for any state that sits on the open backdrop */
+.nav-masthead .nav-link.active,
+.nav-masthead .nav-link.active:hover {
+  color: var(--windowlight);
+  border-bottom-color: var(--windowlight);
+}
+
+.nav-masthead .nav-link + .nav-link {
+  margin-left: 0.5rem;
+}
+
+/* ── main / panels — the black silhouette mass, rock-edge lit ──────────── */
+
+/* 2px #575757 top+left (the face the stars fall on), 2px #120548 bottom+right
+   (the face turned away). Never a soft box-shadow. */
+.card,
+.file-card,
+.stat-card,
+.upload-option-card,
+.info-box,
+.modal-content,
+.dropdown-menu,
+.toastnotification,
+.highlighted-password,
+.callout {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  border-style: solid;
+  border-width: 2px;
+  border-color: var(--rock-lit) var(--rock-shade) var(--rock-shade) var(--rock-lit);
+  border-radius: 0;
+  background-color: var(--silhouette);
+  box-shadow: none;
+}
+
+.card-body,
+.file-card,
+.modal-content,
+.stat-card {
+  background-color: var(--silhouette);
+  color: var(--c-white);
+}
+
+.card-title {
+  color: var(--windowlight);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-shadow: 1px 1px 0 var(--c-black);
+}
+
+/* filenames are data: never transformed, never letter-spaced, always wrappable */
+.filename-text,
+.modal-title,
+#filename {
+  color: var(--c-white);
+  text-transform: none;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+/* download page: the torch on the summit */
+.icon-container {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1.25rem auto;
+  border: 2px solid var(--torch);
+  border-radius: 0;
+  background-color: var(--silhouette);
+  color: var(--windowlight);
+}
+
+.download-wrapper {
+  min-height: 60vh;
+}
+
+.list-group {
+  border-radius: 0;
+}
+
+/* periwinkle keyline: 7.44:1 on black, and it ties the panel interiors to the
+   operator's site without ever touching the open field */
+.list-group-item,
+.dark-list-item {
+  border-radius: 0;
+  border-color: var(--keyline) !important;
+  background-color: var(--silhouette) !important;
+  color: var(--c-white) !important;
+}
+
+.info-box {
+  text-align: left;
+}
+
+.badge {
+  border-radius: 0;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* .opacity-75 on a coloured badge interpolates towards the backdrop */
+.badge.bg-secondary {
+  opacity: 1 !important;
+  color: var(--c-white);
+}
+
+/* alerts: #AB0000 field, #FF5757 edge, white text at 7.69:1. !important
+   fights .bg-danger/.border-0 on the download error box. */
+.alert {
+  border-radius: 0;
+  border-width: 2px;
+  border-style: solid;
+}
+
+.alert-danger,
+.alert.bg-danger {
+  background-color: var(--c-red) !important;
+  border-color: var(--c-red-bright) !important;
+  color: var(--c-white) !important;
+}
+
+/* the download-password template hard-codes style="color:red" (#FF0000) */
+[style*="color:red"] {
+  color: var(--c-red-bright) !important;
+}
+
+.text-muted,
+.text-white-50 {
+  color: var(--c-grey-light) !important;
+}
+
+.modal-dialog.gokapi-dialog {
+  background-color: transparent;
+}
+
+.gokapi-dialog {
+  background-color: var(--silhouette);
+  color: var(--c-white);
+}
+
+.modal-header,
+.modal-footer {
+  border-color: var(--keyline);
+}
+
+.modal-backdrop {
+  --bs-backdrop-bg: var(--c-black);
+  --bs-backdrop-opacity: 1;
+}
+
+.dropdown-item {
+  color: var(--c-white);
+  border-radius: 0;
+}
+
+/* selected/active states use the site accent, but only inside panels, and
+   with black text: #FFFFFF on #D000E8 is 4.33:1, #000000 is 4.85:1 */
+.dropdown-item:hover,
+.dropdown-item:focus {
+  background-color: var(--selected);
+  color: var(--c-black);
+  filter: none;
+}
+
+.dropdown-item.disabled,
+.dropdown-item:disabled {
+  color: var(--rock-lit);
+}
+
+.toastnotification {
+  border-radius: 0;
+  color: var(--windowlight);
+}
+
+.toastdeprecation {
+  background-color: var(--c-red);
+  border-color: var(--c-red-bright);
+  color: var(--c-white);
+}
+
+.toast-undo,
+.toast-undo:hover {
+  color: var(--starlight);
+}
+
+/* QR overlay: solid black curtain, no translucent grey */
+#qroverlay {
+  background-color: var(--c-black);
+}
+
+#qrcode {
+  border: 2px solid var(--c-white);
+  border-radius: 0;
+}
+
+#qrcode canvas,
+#qrcode img {
+  image-rendering: pixelated;
+}
+
+a {
+  color: var(--starlight);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* Gokapi hovers links with filter: brightness(80%), which multiplies
+   #FFFF57 into #CCCC46 — a colour outside the sixteen. Swap, don't dim. */
+a:hover,
+a:focus {
+  color: var(--windowlight);
+  filter: none;
+}
+
+/* ── buttons — torch-lit, hard bevel, physically depressible ───────────── */
+
+.btn {
+  --bs-btn-focus-box-shadow: none;
+  border-radius: 0;
+  border-width: 2px;
+  border-style: solid;
+  font-family: var(--font-bitmap);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-shadow: none;
+  box-shadow: none;
+  transition: none;
+}
+
+.btn-primary,
+.btn-upload-custom {
+  background-color: var(--torch) !important;
+  background-image: none !important;
+  color: var(--windowlight) !important;
+  border-color: var(--windowlight) var(--c-black) var(--c-black) var(--windowlight) !important;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0.5rem 1.5rem;
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-upload-custom:hover:not(:disabled) {
+  background-color: var(--torch) !important;
+  color: var(--c-white) !important;
+  transform: none;
+}
+
+/* bevel inverts and the face drops 1px: the key is pressed */
+.btn-primary:active,
+.btn-primary:active:focus,
+.btn-upload-custom:active {
+  border-color: var(--c-black) var(--windowlight) var(--windowlight) var(--c-black) !important;
+  transform: translate(1px, 1px);
+}
+
+.btn-primary:disabled,
+.btn-primary.disabled,
+.btn-upload-custom:disabled {
+  background-color: var(--silhouette) !important;
+  color: var(--rock-lit) !important;
+  border-color: var(--rock-lit) !important;
+  opacity: 1;
+}
+
+.btn-outline-light,
+.btn-secondary {
+  background-color: var(--silhouette);
+  color: var(--starlight);
+  border-color: var(--rock-lit) var(--rock-shade) var(--rock-shade) var(--rock-lit);
+}
+
+.btn-outline-light:hover,
+.btn-outline-light:focus,
+.btn-secondary:hover,
+.btn-secondary:focus {
+  background-color: var(--selected);
+  color: var(--c-black);
+  border-color: var(--rock-lit) var(--rock-shade) var(--rock-shade) var(--rock-lit);
+}
+
+.btn-outline-light:active,
+.btn-secondary:active {
+  border-color: var(--rock-shade) var(--rock-lit) var(--rock-lit) var(--rock-shade);
+  transform: translate(1px, 1px);
+}
+
+.btn-outline-danger {
+  background-color: var(--silhouette);
+  color: var(--c-red-bright);
+  border-color: var(--rock-lit) var(--rock-shade) var(--rock-shade) var(--rock-lit);
+}
+
+.btn-outline-danger:hover,
+.btn-outline-danger:focus {
+  background-color: var(--c-red);
+  color: var(--c-white);
+  border-color: var(--c-red-bright);
+}
+
+.btn-outline-danger:active {
+  border-color: var(--rock-shade) var(--rock-lit) var(--rock-lit) var(--rock-shade);
+  transform: translate(1px, 1px);
+}
+
+.btn-outline-light:disabled,
+.btn-outline-light.disabled,
+.btn-outline-danger:disabled,
+.btn-outline-danger.disabled {
+  background-color: var(--silhouette);
+  color: var(--rock-lit);
+  border-color: var(--rock-lit);
+  opacity: 1;
+}
+
+/* icon-only row buttons: keep a comfortable 32px hit target */
+.btn-sm {
+  min-height: 32px;
   letter-spacing: 0.04em;
 }
-*/
 
-/* Example: dark-mode override */
-/*
-body {
-  background: #0f1115;
-  color: #e8e8e8;
+.btn-group > .btn,
+.btn-group > .btn:first-child,
+.btn-group > .btn:last-child {
+  border-radius: 0;
 }
-*/
+
+/* ── forms — sunken fields, the panel bevel inverted ───────────────────── */
+
+/* dark #120548 top+left, periwinkle keyline bottom+right: the field reads as
+   cut into the rock, and the lit edge is the one colour on black that is
+   unmistakably the operator's */
+.form-control,
+.form-select,
+.input-group-text,
+.input-group-text-dark,
+.log-dark-input,
+.upload-option-card .form-control,
+.upload-option-suffix {
+  border-radius: 0;
+  border-width: 2px;
+  border-style: solid;
+  border-color: var(--rock-shade) var(--keyline) var(--keyline) var(--rock-shade) !important;
+  background-color: var(--silhouette) !important;
+  color: var(--c-white) !important;
+  font-family: var(--font-bitmap);
+  box-shadow: none;
+}
+
+.form-control:focus,
+.form-select:focus,
+.log-dark-input:focus,
+.upload-option-card .form-control:focus {
+  border-color: var(--windowlight) !important;
+  background-color: var(--silhouette) !important;
+  color: var(--c-white) !important;
+  box-shadow: none !important;
+}
+
+.form-control::placeholder {
+  color: var(--c-grey-light);
+  opacity: 1;
+}
+
+.form-control:disabled,
+.form-select:disabled,
+.upload-option-card .form-control:disabled {
+  background-color: var(--silhouette) !important;
+  color: var(--rock-lit) !important;
+  border-color: var(--rock-lit) !important;
+  opacity: 1;
+}
+
+.upload-option-suffix,
+.input-group-text,
+.input-group-text-dark {
+  color: var(--keyline) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.875rem;
+}
+
+.upload-option-label,
+.upload-options-section-label {
+  color: var(--windowlight);
+  letter-spacing: 0.1em;
+}
+
+.upload-option-icon {
+  color: var(--starlight);
+  opacity: 1;
+}
+
+.upload-option-card:has(.upload-option-toggle:checked) {
+  border-color: var(--selected);
+  box-shadow: none;
+}
+
+/* checkboxes and switches: square, black, accent-lit when on. The knob and
+   the checkmark are inline data: URIs — nothing is fetched. */
+.form-check-input {
+  border-radius: 0;
+  border: 2px solid var(--rock-lit);
+  background-color: var(--silhouette);
+  box-shadow: none;
+}
+
+.form-check-input:checked {
+  background-color: var(--selected);
+  border-color: var(--selected);
+}
+
+.form-check-input:checked[type="checkbox"] {
+  --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23000000' stroke-linecap='square' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+}
+
+.form-switch .form-check-input {
+  border-radius: 0;
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3crect x='-3' y='-3' width='6' height='6' fill='%23908dff'/%3e%3c/svg%3e");
+}
+
+.form-switch .form-check-input:checked {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3crect x='-3' y='-3' width='6' height='6' fill='%23000000'/%3e%3c/svg%3e");
+}
+
+.highlighted-password {
+  padding: 2px 6px;
+  color: var(--windowlight);
+  font-family: var(--font-bitmap);
+}
+
+/* flatpickr (expiry picker in the edit modal) */
+.flatpickr-calendar {
+  border-radius: 0;
+  border: 2px solid;
+  border-color: var(--rock-lit) var(--rock-shade) var(--rock-shade) var(--rock-lit);
+  background: var(--silhouette);
+  box-shadow: none;
+  font-family: var(--font-bitmap);
+}
+
+.flatpickr-calendar.arrowTop::before,
+.flatpickr-calendar.arrowTop::after,
+.flatpickr-calendar.arrowBottom::before,
+.flatpickr-calendar.arrowBottom::after {
+  display: none;
+}
+
+.flatpickr-months,
+.flatpickr-months .flatpickr-month,
+.flatpickr-weekdays,
+.flatpickr-current-month .flatpickr-monthDropdown-months {
+  background: var(--silhouette);
+  color: var(--windowlight);
+  fill: var(--windowlight);
+}
+
+span.flatpickr-weekday {
+  background: var(--silhouette);
+  color: var(--keyline);
+}
+
+.flatpickr-days,
+.dayContainer {
+  background: var(--silhouette);
+}
+
+.flatpickr-day {
+  border-radius: 0;
+  border-color: transparent;
+  color: var(--c-white);
+}
+
+.flatpickr-day:hover,
+.flatpickr-day:focus {
+  background: var(--deep);
+  border-color: var(--keyline);
+  color: var(--c-white);
+}
+
+.flatpickr-day.today {
+  border-color: var(--starlight);
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange {
+  background: var(--selected);
+  border-color: var(--selected);
+  color: var(--c-black);
+}
+
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay {
+  color: var(--rock-lit);
+}
+
+.flatpickr-time input,
+.flatpickr-time .flatpickr-time-separator,
+.flatpickr-time .flatpickr-am-pm {
+  background: var(--silhouette);
+  color: var(--c-white);
+}
+
+.flatpickr-months .flatpickr-prev-month:hover svg,
+.flatpickr-months .flatpickr-next-month:hover svg {
+  fill: var(--starlight);
+}
+
+/* ── tables (DataTables 1.13 + Bootstrap 5) ────────────────────────────── */
+
+/* row hover is sky violet, not the accent: #FFFFFF on #5417B8 is 9.58:1,
+   so the row stays readable while it is highlighted */
+.table,
+.table-dark,
+#maintable {
+  --bs-table-bg: var(--silhouette);
+  --bs-table-color: var(--c-white);
+  --bs-table-border-color: var(--rock-lit);
+  --bs-table-striped-bg: var(--silhouette);
+  --bs-table-striped-color: var(--c-white);
+  --bs-table-hover-bg: var(--sky);
+  --bs-table-hover-color: var(--c-white);
+  border-color: var(--rock-lit);
+  font-size: 0.9rem;
+}
+
+.table > thead > tr > th,
+table.dataTable > thead > tr > th {
+  border-bottom: 2px solid var(--keyline);
+  background-color: var(--silhouette);
+  color: var(--windowlight);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.table > tbody > tr > td {
+  border-color: var(--rock-lit);
+  overflow-wrap: anywhere;
+}
+
+/* Gokapi tints rows with rgba(255,255,255,.04/.08); the cell background is
+   what actually paints, so recolour the cells. */
+.filelist-item,
+.filelist-item:hover {
+  background-color: var(--silhouette);
+}
+
+.filelist-item:hover > td,
+.filerequest-item:hover > td {
+  background-color: var(--sky);
+}
+
+.filerequest-item > td,
+.collapse-toggle i,
+.collapse-toggle:hover,
+.remove-entry-btn:hover {
+  transition: none;
+  opacity: 1;
+}
+
+/* sort arrows: dark grey when idle, window-light when the column is active */
+table.dataTable > thead > tr > th.sorting::before,
+table.dataTable > thead > tr > th.sorting::after,
+table.dataTable > thead > tr > td.sorting::before,
+table.dataTable > thead > tr > td.sorting::after {
+  color: var(--rock-lit);
+  opacity: 1;
+}
+
+table.dataTable > thead > tr > th.sorting_asc::before,
+table.dataTable > thead > tr > th.sorting_desc::after,
+table.dataTable > thead > tr > td.sorting_asc::before,
+table.dataTable > thead > tr > td.sorting_desc::after {
+  color: var(--windowlight);
+  opacity: 1;
+}
+
+div.dataTables_wrapper div.dataTables_info,
+div.dataTables_wrapper div.dataTables_length,
+div.dataTables_wrapper div.dataTables_filter,
+div.dataTables_wrapper div.dataTables_filter label {
+  color: var(--keyline);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.875rem;
+}
+
+/* responsive expander: a square DOS-style [+] */
+table.dataTable.dtr-inline.collapsed > tbody > tr > td.dtr-control::before,
+table.dataTable.dtr-inline.collapsed > tbody > tr > th.dtr-control::before {
+  border: 2px solid var(--keyline);
+  border-radius: 0;
+  background-color: var(--silhouette);
+  color: var(--windowlight);
+  box-shadow: none;
+}
+
+table.dataTable > tbody > tr.child ul.dtr-details > li {
+  border-bottom-color: var(--keyline);
+}
+
+table.dataTable > tbody > tr.child span.dtr-title {
+  color: var(--keyline);
+  text-transform: uppercase;
+}
+
+/* users page permission toggles: resting green is #00AB00 (6.83:1 on black),
+   emphasis green is #57FF57 */
+.perm-granted {
+  color: var(--c-green);
+}
+
+.perm-notgranted {
+  color: var(--c-grey-light);
+}
+
+.perm-unavailable {
+  color: var(--rock-lit);
+}
+
+.perm-processing {
+  color: var(--windowlight);
+}
+
+.perm-granted:not(.perm-nochange):hover {
+  color: var(--c-red-bright);
+}
+
+.perm-notgranted:not(.perm-nochange):hover {
+  color: var(--c-green-bright);
+}
+
+/* logs page */
+.progress-stat {
+  background-color: var(--deep);
+  border-radius: 0;
+}
+
+.progress-bar {
+  background-color: var(--keyline);
+}
+
+#logviewer::-webkit-scrollbar-track {
+  background: var(--c-black);
+}
+
+#logviewer::-webkit-scrollbar-thumb {
+  background: var(--rock-lit);
+  border-radius: 0;
+}
+
+/* ── dropzone — the drop target as a marked-out landing site ───────────── */
+
+.upload-box,
+.dropzone {
+  border: 2px dashed var(--rock-lit);
+  border-radius: 0;
+  background: var(--silhouette);
+  transition: none;
+}
+
+.upload-box:hover {
+  background-color: var(--deep);
+  border-color: var(--keyline);
+}
+
+.upload-box.highlight,
+.upload-box.dz-drag-hover,
+.dropzone.dz-drag-hover {
+  background-color: var(--deep);
+  border-color: var(--selected);
+  border-style: dashed;
+}
+
+#uploadBoxTitle {
+  color: var(--windowlight);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* .opacity-75 would fade this off-palette */
+#uploadBoxSubtitle {
+  color: var(--c-grey-light);
+  opacity: 1 !important;
+}
+
+.pu-file-item {
+  border-bottom-color: var(--keyline);
+}
+
+.pu-file-item .upload-status,
+.pu-file-item .file-size {
+  color: var(--c-grey-light);
+  opacity: 1;
+}
+
+.pu-file-item progress {
+  border-radius: 0;
+  background-color: var(--deep);
+}
+
+.pu-file-item progress::-webkit-progress-bar {
+  border-radius: 0;
+  background-color: var(--deep);
+}
+
+.pu-file-item progress::-webkit-progress-value {
+  border-radius: 0;
+  background-color: var(--keyline);
+  transition: none;
+}
+
+.pu-file-item progress::-moz-progress-bar {
+  border-radius: 0;
+  background-color: var(--keyline);
+}
+
+/* ── footer ────────────────────────────────────────────────────────────── */
+
+/* always sits in the bottom band, where #ABABAB is 8.01:1 against the
+   lightest constituent of the sea dither */
+footer {
+  padding-top: 1rem;
+  font-size: 0.875rem;
+  letter-spacing: 0.06em;
+}
+
+footer p {
+  margin-bottom: 0.25rem;
+}
+
+footer a {
+  color: var(--c-grey-light);
+  text-decoration: none;
+}
+
+footer a:hover,
+footer a:focus {
+  color: var(--starlight);
+  text-decoration: underline;
+}
+
+/* ── focus / accessibility ─────────────────────────────────────────────── */
+
+/* window-light ring, always visible, never replaced by a Bootstrap glow.
+   Yellow and not the accent on purpose: #FFFF57 clears 8.99:1 on the sky and
+   19.69:1 on panels, so one ring colour works on every surface. */
+:focus-visible,
+.btn:focus-visible,
+.nav-link:focus-visible,
+a:focus-visible,
+.form-check-input:focus-visible,
+.dropdown-item:focus-visible {
+  outline: 2px solid var(--windowlight);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.form-control:focus-visible,
+.form-select:focus-visible {
+  outline: 2px solid var(--windowlight);
+  outline-offset: 0;
+}
+
+.form-check-input:focus {
+  border-color: var(--windowlight);
+  box-shadow: none;
+}
+
+/* the download button spends its first seconds disabled while wasm loads —
+   it must still read as "not yet", not as "broken" */
+.btn:disabled,
+.btn.disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+::selection {
+  background-color: var(--selected);
+  color: var(--c-black);
+}
+
+/* ── reduced motion ───────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .btn:active,
+  .btn-primary:active,
+  .btn-outline-light:active,
+  .btn-outline-danger:active {
+    transform: none;
+  }
+}
+
+/* ── mobile — the download page lives on phones; verified at 360px ─────── */
+
+@media (max-width: 575.98px) {
+  header h1 {
+    letter-spacing: 0.1em;
+    overflow-wrap: anywhere;
+  }
+
+  /* the admin user badge is position:fixed at top right in the template and
+     lands on top of the title at this width — drop the masthead clear of it */
+  .masthead .inner {
+    padding-top: 1.5rem;
+  }
+
+  .nav-masthead .nav-link {
+    padding: 0.25rem 0.35rem;
+    font-size: 0.875rem;
+    letter-spacing: 0.06em;
+  }
+
+  .nav-masthead .nav-link + .nav-link {
+    margin-left: 0.25rem;
+  }
+
+  /* .p-5 on .card-body leaves ~230px of usable width at 360px */
+  .card > .card-body {
+    padding: 1.25rem !important;
+  }
+
+  .download-wrapper {
+    min-height: auto;
+    padding: 0.75rem !important;
+  }
+
+  .file-card,
+  .card {
+    max-width: 100%;
+  }
+
+  .btn {
+    letter-spacing: 0.04em;
+  }
+
+  .btn-lg {
+    width: 100%;
+  }
+
+  .upload-box,
+  .dropzone {
+    padding: 1.25rem !important;
+  }
+
+  /* 14px is the floor for real content, even in a 7-column table */
+  .table,
+  #maintable {
+    font-size: 0.875rem;
+  }
+
+  /* phones are tall and narrow: the panel reaches further down, so the bands
+     and the horizon glow move with it */
+  body::after {
+    background-image:
+      var(--dither-shadow),
+      linear-gradient(var(--keyline) 0% 100%),
+      linear-gradient(to bottom, transparent 0 82%, var(--silhouette) 82% 100%),
+      var(--dither-spark),
+      linear-gradient(to bottom, transparent 0 58%, var(--deep) 58% 100%);
+    background-position: 0 0, 0 82%, 0 0, 0 0, 0 0;
+  }
+}

@@ -164,12 +164,14 @@
         replace: '"MaxMemory": {{ gokapi_max_memory_mb }}'
       notify: Restart gokapi
 
-    # Replaces the Gokapi runtime fallback ("Gokapi" when PublicName is empty)
-    # while leaving any operator value set via the admin UI untouched.
-    - name: Migrate default PublicName to {{ gokapi_public_name }}
+    # Matches the Gokapi runtime fallback ("Gokapi" when PublicName is empty)
+    # plus every value auberge itself has shipped, so a rename here reaches
+    # hosts already deployed. Any other value is an operator edit made via the
+    # admin UI and is left untouched.
+    - name: Migrate known PublicName values to {{ gokapi_public_name }}
       ansible.builtin.replace:
         path: "{{ gokapi_config_dir }}/config.json"
-        regexp: '"PublicName":\s*"Gokapi"'
+        regexp: '"PublicName":\s*"(Gokapi|partage)"'
         replace: '"PublicName": "{{ gokapi_public_name }}"'
       notify: Restart gokapi
 
@@ -181,10 +183,22 @@
         group: "{{ gokapi_sys_group }}"
         mode: "0750"
 
-    - name: Deploy Gokapi custom static content (CSS, version)
+    # custom.css is picked up by filename; favicon.png must be exactly 512x512
+    # or Gokapi exits 1 at startup rather than falling back (see
+    # internal/webserver/favicon/Favicon.go). A unit test guards the dimensions.
+    - name: Deploy Gokapi custom static content (stylesheet, favicon source)
       ansible.builtin.copy:
         src: custom/
         dest: "{{ gokapi_custom_dir }}/"
+        owner: "{{ gokapi_sys_user }}"
+        group: "{{ gokapi_sys_group }}"
+        mode: "0640"
+      notify: Restart gokapi
+
+    - name: Deploy Gokapi custom asset version (drives the custom.css cache-busting filename)
+      ansible.builtin.template:
+        src: templates/version.txt.j2
+        dest: "{{ gokapi_custom_dir }}/version.txt"
         owner: "{{ gokapi_sys_user }}"
         group: "{{ gokapi_sys_group }}"
         mode: "0640"
