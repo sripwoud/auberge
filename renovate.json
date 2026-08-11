@@ -43,6 +43,11 @@
       "semanticCommitScope": "uv"
     },
     {
+      "description": "headscale refuses to start when a deploy skips a minor: upstream enforces a strict upgrade path (juanfont/headscale#3083) because it deletes old DB migrations each minor (0.28.0 dropped pre-0.25, 0.29.0 dropped pre-0.28). One PR per minor stream yields the required ladder instead of a single multi-minor jump. Merge them one rung at a time — the option separates the PRs but does not serialize them, and `separateMultipleMinor` is experimental in Renovate.",
+      "matchDepNames": ["juanfont/headscale"],
+      "separateMultipleMinor": true
+    },
+    {
       "description": "grimmory is auberge's own build output (build-grimmory.yml), not a dependency",
       "matchDepNames": ["sripwoud/auberge"],
       "enabled": false
