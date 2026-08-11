@@ -1,6 +1,6 @@
 use crate::ansible_assets::AnsibleAssets;
 use crate::output::{self, OutputFormat};
-use crate::playbook_meta::{AppVersion, declared_app_versions};
+use crate::playbook_meta::{VersionPin, declared_app_versions};
 use clap::Args;
 use eyre::{Result, WrapErr};
 use regex::Regex;
@@ -111,7 +111,7 @@ async fn versions_and_report(cmd: VersionsCmd) -> Result<Vec<AppReport>> {
 }
 
 async fn drift_reports(
-    declared: &[(String, AppVersion)],
+    declared: &[(String, VersionPin)],
     client: &UpstreamClient,
 ) -> Result<Vec<AppReport>> {
     let mut reports = Vec::with_capacity(declared.len());
@@ -210,7 +210,7 @@ impl UpstreamClient {
         })
     }
 
-    async fn latest(&self, version: &AppVersion) -> Result<String> {
+    async fn latest(&self, version: &VersionPin) -> Result<String> {
         match version.datasource.as_str() {
             "npm" => self.npm_latest(&version.dep_name).await,
             "github-releases" => self.github_latest(version).await,
@@ -235,7 +235,7 @@ impl UpstreamClient {
             .ok_or_else(|| eyre::eyre!("npm packument for {dep_name} has no dist-tags.latest"))
     }
 
-    async fn github_latest(&self, version: &AppVersion) -> Result<String> {
+    async fn github_latest(&self, version: &VersionPin) -> Result<String> {
         let url = format!(
             "{}/repos/{}/releases?per_page=100",
             self.github_base, version.dep_name
@@ -362,8 +362,8 @@ mod tests {
         }
     }
 
-    fn app_version(datasource: &str, dep_name: &str, extract_version: Option<&str>) -> AppVersion {
-        AppVersion {
+    fn pin(datasource: &str, dep_name: &str, extract_version: Option<&str>) -> VersionPin {
+        VersionPin {
             value: "1.0.0".to_string(),
             datasource: datasource.to_string(),
             dep_name: dep_name.to_string(),
@@ -506,7 +506,7 @@ mod tests {
         let client = UpstreamClient::with_bases(server.uri(), server.uri())?;
 
         let latest = client
-            .latest(&app_version("npm", "@actual-app/sync-server", None))
+            .latest(&pin("npm", "@actual-app/sync-server", None))
             .await?;
 
         assert_eq!(latest, "26.8.1");
@@ -528,7 +528,7 @@ mod tests {
         let client = UpstreamClient::with_bases(server.uri(), server.uri())?;
 
         let latest = client
-            .latest(&app_version(
+            .latest(&pin(
                 "github-releases",
                 "sripwoud/auberge",
                 Some("^grimmory/v(?<version>.+)$"),
@@ -549,7 +549,7 @@ mod tests {
         let client = UpstreamClient::with_bases(server.uri(), server.uri())?;
 
         let result = client
-            .latest(&app_version("github-releases", "juanfont/headscale", None))
+            .latest(&pin("github-releases", "juanfont/headscale", None))
             .await;
 
         assert!(result.is_err());
@@ -561,9 +561,7 @@ mod tests {
         let client =
             UpstreamClient::with_bases("http://unused".to_string(), "http://unused".to_string())?;
 
-        let result = client
-            .latest(&app_version("docker", "some/image", None))
-            .await;
+        let result = client.latest(&pin("docker", "some/image", None)).await;
 
         assert!(result.unwrap_err().to_string().contains("docker"));
         Ok(())
