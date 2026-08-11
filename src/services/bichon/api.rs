@@ -49,6 +49,36 @@ struct AccountUpdateRequest<'a> {
     sync_folders: &'a [String],
 }
 
+// Bichon caps page_size at 500; anything larger is an InvalidParameter error.
+const SEARCH_PAGE_SIZE: u64 = 500;
+
+/// The slice of Bichon's search envelope the coverage comparison reads.
+/// `message_id` is Bichon's own field — a header value with angle brackets
+/// stripped, or a bracket-kept synthetic id for a message that had none — not
+/// the canonical identity the archive sidecars record (ADR-0013).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct StoreEnvelope {
+    pub message_id: String,
+    pub mailbox_name: Option<String>,
+    pub date: i64,
+    pub uid: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct SearchFilter {
+    account_ids: [u64; 1],
+    before: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct SearchRequest {
+    filter: SearchFilter,
+    page: u64,
+    page_size: u64,
+    sort_by: &'static str,
+    desc: bool,
+}
+
 #[derive(Debug)]
 pub struct BichonApiHttpError {
     pub status: StatusCode,
@@ -113,6 +143,46 @@ impl BichonApiClient {
             );
         }
         Ok(envelope.items)
+    }
+
+    /// Every store envelope of one account whose message Date is <= `before_ms`,
+    /// across all folders. Bichon's `before` bound is inclusive; callers pass
+    /// `cutoff_midnight_ms - 1` to mean "strictly older than the cutoff date".
+    pub async fn search_messages(
+        &self,
+        account_id: u64,
+        before_ms: i64,
+    ) -> Result<Vec<StoreEnvelope>> {
+        let mut envelopes = Vec::new();
+        let mut page = 1u64;
+        loop {
+            let request = SearchRequest {
+                filter: SearchFilter {
+                    account_ids: [account_id],
+                    before: before_ms,
+                },
+                page,
+                page_size: SEARCH_PAGE_SIZE,
+                sort_by: "DATE",
+                desc: false,
+            };
+            let response: PaginatedResponse<StoreEnvelope> = self
+                .request_json(Method::POST, "/api/v1/search-messages", Some(&request))
+                .await?;
+            let total_pages = response.total_pages.unwrap_or(0);
+            // An empty page also terminates: total_pages is recomputed per
+            // request, and trusting it alone against a shrinking result set
+            // would loop on pages that no longer exist.
+            if response.items.is_empty() {
+                break;
+            }
+            envelopes.extend(response.items);
+            if page >= total_pages {
+                break;
+            }
+            page += 1;
+        }
+        Ok(envelopes)
     }
 
     pub async fn list_mailboxes(&self, account_id: u64) -> Result<Vec<Mailbox>> {
@@ -239,8 +309,132 @@ impl BichonApiClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{BichonApiHttpError, is_retryable};
+    use super::{BichonApiClient, BichonApiHttpError, StoreEnvelope, is_retryable};
     use reqwest::StatusCode;
+    use serde_json::json;
+    use wiremock::matchers::{body_partial_json, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn envelope(message_id: &str, mailbox_name: &str, date: i64, uid: u32) -> serde_json::Value {
+        json!({
+            "id": format!("env-{uid}"),
+            "message_id": message_id,
+            "account_id": 1,
+            "mailbox_name": mailbox_name,
+            "uid": uid,
+            "date": date,
+            "internal_date": date,
+            "subject": "s",
+            "from": "f@x.io",
+        })
+    }
+
+    #[tokio::test]
+    async fn search_messages_walks_every_page() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/v1/search-messages"))
+            .and(body_partial_json(json!({
+                "filter": {"account_ids": [7], "before": 999},
+                "page": 1,
+                "sort_by": "DATE",
+                "desc": false
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [envelope("a@x.io", "INBOX", 10, 1)],
+                "total_pages": 2,
+                "total_items": 2
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/v1/search-messages"))
+            .and(body_partial_json(json!({"page": 2})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [envelope("<0f.1.2@bichon>", "Sent", 20, 2)],
+                "total_pages": 2,
+                "total_items": 2
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = BichonApiClient::new(server.uri(), "token").unwrap();
+        let envelopes = client.search_messages(7, 999).await.unwrap();
+
+        assert_eq!(
+            envelopes,
+            vec![
+                StoreEnvelope {
+                    message_id: "a@x.io".to_string(),
+                    mailbox_name: Some("INBOX".to_string()),
+                    date: 10,
+                    uid: 1,
+                },
+                StoreEnvelope {
+                    message_id: "<0f.1.2@bichon>".to_string(),
+                    mailbox_name: Some("Sent".to_string()),
+                    date: 20,
+                    uid: 2,
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn search_messages_stops_on_an_empty_window() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/v1/search-messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [],
+                "total_pages": 0,
+                "total_items": 0
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = BichonApiClient::new(server.uri(), "token").unwrap();
+        let envelopes = client.search_messages(7, 999).await.unwrap();
+        assert!(envelopes.is_empty());
+    }
+
+    // A page that reports fewer total_pages than already fetched, or repeats
+    // empty items, must not loop: the empty-items guard is the terminator.
+    #[tokio::test]
+    async fn search_messages_terminates_when_items_dry_up_before_total_pages() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/v1/search-messages"))
+            .and(body_partial_json(json!({"page": 1})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [envelope("a@x.io", "INBOX", 10, 1)],
+                "total_pages": 3,
+                "total_items": 3
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/search-messages"))
+            .and(body_partial_json(json!({"page": 2})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "items": [],
+                "total_pages": 3,
+                "total_items": 3
+            })))
+            .mount(&server)
+            .await;
+
+        let client = BichonApiClient::new(server.uri(), "token").unwrap();
+        let envelopes = client.search_messages(7, 999).await.unwrap();
+        assert_eq!(envelopes.len(), 1);
+    }
 
     #[test]
     fn http_error_5xx_is_retryable() {
