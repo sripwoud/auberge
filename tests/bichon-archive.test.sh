@@ -2,18 +2,22 @@
 #
 # tests/bichon-archive.test.sh
 #
-# Unit tests for what the Email Archive accepts as a message and how it keys it:
-# the check that a downloaded payload is a body at all, the extractor that keys a
-# sidecar on that body's Message-ID, and the passes that repair entries written
-# before either existed (ADR-0013, ADR-0015).
+# Unit tests for what the Email Archive accepts as a message, how it keys it, and
+# which copy of a message it declines to write: the check that a downloaded
+# payload is a body at all, the extractor that keys a sidecar on that body's
+# Message-ID, the passes that repair entries written before either existed
+# (ADR-0013, ADR-0015), and the skip guard that decides whether the archive
+# already holds an offered message (#455).
 #
 # No Bichon, no live archive — every case is a body written into a temp
-# directory, and the one function that would reach the API is stubbed. Both
-# checks are worth pinning because both were first written in the obvious form
-# and the obvious form was wrong: a Message-ID reader that did not unfold RFC
-# 5322 continuation lines reported 106 duplicate bodies where the corpus held
-# none, and a payload check anchored on the first line would reject the three
-# live bodies that open with an mbox From_ line.
+# directory, and the three functions that would reach the API are stubbed. Each
+# check is worth pinning because each was first written in the obvious form and
+# the obvious form was wrong: a Message-ID reader that did not unfold RFC 5322
+# continuation lines reported 106 duplicate bodies where the corpus held none, a
+# payload check anchored on the first line would reject the three live bodies
+# that open with an mbox From_ line, and a skip guard that asked whether
+# `<envelope-id>.eml` existed wrote 825 duplicates in one tick the moment Bichon
+# re-minted its envelope ids.
 #
 # Run: ./tests/bichon-archive.test.sh
 
@@ -274,7 +278,8 @@ printf '\n== write_meta_sidecar\n'
 mkdir -p "${BICHON_ARCHIVE_DIR}/a@b.com/2026/07"
 NEW_DIR="${BICHON_ARCHIVE_DIR}/a@b.com/2026/07"
 printf 'Message-ID: <written@example.com>\n\nbody\n' >"${NEW_DIR}/1.eml"
-write_meta_sidecar "${NEW_DIR}/1.meta.json" "${NEW_DIR}/1.eml" \
+write_meta_sidecar "${NEW_DIR}/1.meta.json" \
+  "$(canonical_message_id "${NEW_DIR}/1.eml")" \
   '{"id":1,"mailbox_name":"INBOX","tags":[],"subject":"s"}'
 
 assert_eq 'sidecar records folder and message_id only' \
@@ -446,10 +451,209 @@ rm "${REPAIR_DIR}/24.eml" "${REPAIR_DIR}/24.meta.json"
 
 printf '\n== write_meta_sidecar refuses to publish a sidecar it could not build\n'
 
-printf 'Message-ID: <unpublished@example.com>\n\nbody\n' >"${NEW_DIR}/2.eml"
 assert_fails 'a malformed envelope fails rather than publishing' \
-  write_meta_sidecar "${NEW_DIR}/2.meta.json" "${NEW_DIR}/2.eml" 'not json'
+  write_meta_sidecar "${NEW_DIR}/2.meta.json" 'unpublished@example.com' 'not json'
 assert_eq 'no sidecar is left behind by the failed write' '' \
   "$(find "${NEW_DIR}" -name '2.meta.json*' -printf '%f\n')"
+
+printf '\n== load_archived_message_ids\n'
+
+SET_ACCOUNT='set@example.com'
+SET_DIR="${BICHON_ARCHIVE_DIR}/${SET_ACCOUNT}"
+mkdir -p "${SET_DIR}/2026/07" "${SET_DIR}/2026/08"
+printf '{"folder":"INBOX","message_id":"july@example.com"}\n' >"${SET_DIR}/2026/07/30.meta.json"
+printf '{"folder":"Sent","message_id":"august@example.com"}\n' >"${SET_DIR}/2026/08/31.meta.json"
+# RFC 5322 §3.6.4 permits a domain-literal on the right of a msg-id, so a key can
+# carry the `]` that ends an array subscript. Unquoted, the subscript would not
+# parse and the id would be absent from the set it was just added to.
+printf '{"folder":"INBOX","message_id":"lit@[10.0.0.1]"}\n' >"${SET_DIR}/2026/08/32.meta.json"
+
+assert_succeeds 'a keyed account loads' load_archived_message_ids "${SET_ACCOUNT}"
+assert_eq 'every sidecar of every month partition contributes one key' '3' \
+  "${#ARCHIVED_MESSAGE_IDS[@]}"
+assert_eq 'a key from one partition is present' 'archived' \
+  "${ARCHIVED_MESSAGE_IDS['july@example.com']+archived}"
+assert_eq 'a key from another partition is present' 'archived' \
+  "${ARCHIVED_MESSAGE_IDS['august@example.com']+archived}"
+assert_eq 'a domain-literal id survives as a key' 'archived' \
+  "${ARCHIVED_MESSAGE_IDS['lit@[10.0.0.1]']+archived}"
+assert_eq 'an id not in the corpus is absent' '' \
+  "${ARCHIVED_MESSAGE_IDS['absent@example.com']+archived}"
+
+# The set is rebuilt per account, so the previous account's keys must not leak
+# into the next one's membership test — they would suppress downloads of mail
+# that account does not hold.
+assert_succeeds 'an account with no archive directory is a no-op' \
+  load_archived_message_ids 'absent@e.com'
+assert_eq "the no-op leaves an empty set, not the last account's" '0' \
+  "${#ARCHIVED_MESSAGE_IDS[@]}"
+
+# backfill_message_ids runs before this and fails the run over an unkeyed
+# sidecar, so contributing nothing is right; contributing an empty key would make
+# every unkeyed message look archived.
+printf '{"folder":"INBOX","tags":[]}\n' >"${SET_DIR}/2026/08/33.meta.json"
+assert_succeeds 'an unkeyed sidecar does not fail the load' \
+  load_archived_message_ids "${SET_ACCOUNT}"
+assert_eq 'an unkeyed sidecar contributes no key at all' '3' \
+  "${#ARCHIVED_MESSAGE_IDS[@]}"
+rm "${SET_DIR}/2026/08/33.meta.json"
+
+# A set quietly short of one entry is a duplicate written on the next tick, so an
+# unreadable sidecar fails rather than under-reporting. The literal "message_id"
+# keeps grep -L from listing it as unkeyed, which is what leaves it for jq.
+printf '{"folder":"INBOX","message_id":\n' >"${SET_DIR}/2026/08/34.meta.json"
+assert_fails 'an unparseable sidecar fails the load' \
+  load_archived_message_ids "${SET_ACCOUNT}"
+rm "${SET_DIR}/2026/08/34.meta.json"
+
+printf '\n== process_account skips a message the archive already holds\n'
+
+# The two remaining seams to Bichon. search_messages answers with one page of
+# STUB_ENVELOPES; write_tag_snapshot is an independent API walk with nothing to
+# say about the skip guard. Downloads still run through the curl_auth stub above,
+# so STUB_PAYLOAD is the body Bichon serves.
+STUB_ENVELOPES='[]'
+search_messages() {
+  jq -nc --argjson items "${STUB_ENVELOPES}" '{total_pages: 1, items: $items}'
+}
+write_tag_snapshot() { return 0; }
+
+mkdir -p "${BICHON_ARCHIVE_STATE_DIR}"
+
+# 2026-08-10T00:00:00Z — the partition the archive derives from the envelope date.
+AUG_MS=1786320000000
+
+# Report the counters process_account logs, which is where "already archived" is
+# observable: `skipped` is a filename match, `deduped` an identity match.
+counters_of() {
+  local account="$1" out
+  out=$(process_account 7 "${account}" 2>&1)
+  printf '%s' "${out}" | grep -o 'processed=.*failures=[0-9]*' | tail -1
+}
+
+DEDUP_ACCOUNT='dedup@example.com'
+DEDUP_DIR="${BICHON_ARCHIVE_DIR}/${DEDUP_ACCOUNT}/2026/08"
+mkdir -p "${DEDUP_DIR}"
+
+# The corpus as the v2 upgrade left it: a body archived under the numeric
+# envelope id Bichon minted before the migration, keyed on its Message-ID.
+printf 'Message-ID: <already@example.com>\n\nthe body already archived\n' \
+  >"${DEDUP_DIR}/8437886698289967.eml"
+printf '{"folder":"INBOX","message_id":"already@example.com"}\n' \
+  >"${DEDUP_DIR}/8437886698289967.meta.json"
+
+# The same message, offered under the UUID the migration re-minted for it. This
+# is #455 exactly: no filename can connect the two, and the run that could not
+# wrote 825 duplicate files in one tick.
+STUB_ENVELOPES="[{\"id\":\"0a74339f-604c-4bc6-be67-a9286e6449e0\",\"date\":${AUG_MS},\"mailbox_name\":\"INBOX\"}]"
+STUB_PAYLOAD='Message-ID: <already@example.com>
+
+the body already archived
+'
+assert_eq 'a message re-offered under a fresh envelope id is deduped, not written' \
+  'processed=0 skipped=0 deduped=1 failures=0' \
+  "$(counters_of "${DEDUP_ACCOUNT}")"
+assert_eq 'the corpus still holds one body for that message' '1' \
+  "$(find "${DEDUP_DIR}" -name '*.eml' | wc -l)"
+assert_eq 'no sidecar is written for the copy that was not published' '1' \
+  "$(find "${DEDUP_DIR}" -name '*.meta.json' | wc -l)"
+assert_eq 'the discarded download leaves no staging file behind' '' \
+  "$(find "${BICHON_ARCHIVE_DIR}/${DEDUP_ACCOUNT}" -name '*.incoming*' -printf '%f\n')"
+assert_eq 'the body already archived is not rewritten' \
+  'the body already archived' \
+  "$(tail -1 "${DEDUP_DIR}/8437886698289967.eml")"
+
+# Genuinely new mail in the same window must still land — the guard has to
+# distinguish "already archived" from "not seen", which is the distinction a
+# filename lost.
+STUB_ENVELOPES="[{\"id\":\"11111111-2222-3333-4444-555555555555\",\"date\":${AUG_MS},\"mailbox_name\":\"INBOX\"}]"
+STUB_PAYLOAD='Message-ID: <fresh@example.com>
+
+new mail
+'
+assert_eq 'a message the archive does not hold is downloaded and published' \
+  'processed=1 skipped=0 deduped=0 failures=0' \
+  "$(counters_of "${DEDUP_ACCOUNT}")"
+assert_eq 'it is published under the envelope id in force now' \
+  'Message-ID: <fresh@example.com>' \
+  "$(head -1 "${DEDUP_DIR}/11111111-2222-3333-4444-555555555555.eml")"
+assert_eq 'its sidecar is keyed on the body it just published' \
+  '{"folder":"INBOX","message_id":"fresh@example.com"}' \
+  "$(jq -cS . "${DEDUP_DIR}/11111111-2222-3333-4444-555555555555.meta.json")"
+
+# The next tick re-lists the same 24h window. The message published above now
+# answers to its own filename, so it costs no download at all — which is what
+# bounds the identity test to the mail whose id regime has actually moved.
+assert_eq 'the message published last run is skipped by filename, not refetched' \
+  'processed=0 skipped=1 deduped=0 failures=0' \
+  "$(counters_of "${DEDUP_ACCOUNT}")"
+
+# One page holding both, to pin that the counters are per envelope and that
+# neither decision consumes the other.
+STUB_ENVELOPES="[{\"id\":\"0a74339f-604c-4bc6-be67-a9286e6449e0\",\"date\":${AUG_MS},\"mailbox_name\":\"INBOX\"},{\"id\":\"11111111-2222-3333-4444-555555555555\",\"date\":${AUG_MS},\"mailbox_name\":\"INBOX\"}]"
+STUB_PAYLOAD='Message-ID: <already@example.com>
+
+the body already archived
+'
+assert_eq 'a mixed page counts one filename skip and one identity skip' \
+  'processed=0 skipped=1 deduped=1 failures=0' \
+  "$(counters_of "${DEDUP_ACCOUNT}")"
+assert_eq 'the mixed page adds no file' '2' \
+  "$(find "${DEDUP_DIR}" -name '*.eml' | wc -l)"
+
+# The 51 byte-identical 187-byte notifications in the live corpus carry no
+# Message-ID and no Date, so they share one `sha256:` key and accumulated one
+# copy per full pass. Under the hash they are one message by the archive's own
+# definition of identity (ADR-0013), so the second copy is a duplicate.
+HASHED_ACCOUNT='hashed@example.com'
+HASHED_DIR="${BICHON_ARCHIVE_DIR}/${HASHED_ACCOUNT}/2026/08"
+mkdir -p "${HASHED_DIR}"
+printf 'From: a@b\nSubject: Email Quota Usage: 80%%\n\nused 80%%\n' >"${HASHED_DIR}/700.eml"
+printf '{"folder":"INBOX","message_id":"%s"}\n' "$(sha256_of "${HASHED_DIR}/700.eml")" \
+  >"${HASHED_DIR}/700.meta.json"
+
+STUB_ENVELOPES="[{\"id\":\"99999999-8888-7777-6666-555555555555\",\"date\":${AUG_MS},\"mailbox_name\":\"INBOX\"}]"
+STUB_PAYLOAD='From: a@b
+Subject: Email Quota Usage: 80%
+
+used 80%
+'
+assert_eq 'a header-less body already archived is deduped by its hash' \
+  'processed=0 skipped=0 deduped=1 failures=0' \
+  "$(counters_of "${HASHED_ACCOUNT}")"
+assert_eq 'no second copy of it is written' '1' \
+  "$(find "${HASHED_DIR}" -name '*.eml' | wc -l)"
+
+# A body already published whose sidecar write failed on an earlier run. Not a
+# dedup candidate even when its identity is already held: it is in the corpus
+# either way, and an unkeyed body is one the coverage gate cannot count.
+printf 'Message-ID: <already@example.com>\n\nthe body already archived\n' \
+  >"${DEDUP_DIR}/22222222-3333-4444-5555-666666666666.eml"
+STUB_ENVELOPES="[{\"id\":\"22222222-3333-4444-5555-666666666666\",\"date\":${AUG_MS},\"mailbox_name\":\"Archive\"}]"
+assert_eq 'an unkeyed body already in the corpus is keyed, not deduped' \
+  'processed=1 skipped=0 deduped=0 failures=0' \
+  "$(counters_of "${DEDUP_ACCOUNT}")"
+assert_eq 'it is keyed from the body on disk, with the folder it was seen in' \
+  '{"folder":"Archive","message_id":"already@example.com"}' \
+  "$(jq -cS . "${DEDUP_DIR}/22222222-3333-4444-5555-666666666666.meta.json")"
+rm "${DEDUP_DIR}/22222222-3333-4444-5555-666666666666.eml" \
+  "${DEDUP_DIR}/22222222-3333-4444-5555-666666666666.meta.json"
+
+# Downloading on the basis of a set that could not be built is what wrote the
+# duplicates, so an unreadable corpus takes the account's pass with it instead of
+# proceeding blind.
+printf '{"folder":"INBOX","message_id":\n' >"${DEDUP_DIR}/broken.meta.json"
+STUB_ENVELOPES="[{\"id\":\"33333333-4444-5555-6666-777777777777\",\"date\":${AUG_MS},\"mailbox_name\":\"INBOX\"}]"
+STUB_PAYLOAD='Message-ID: <never@example.com>
+
+must not be downloaded
+'
+BLIND_LOG=$(process_account 7 "${DEDUP_ACCOUNT}" 2>&1)
+assert_eq 'an unreadable corpus stops the account before any download' \
+  'identity set failed' \
+  "$(printf '%s' "${BLIND_LOG}" | grep -o 'identity set failed' | head -1)"
+assert_eq 'nothing was downloaded on the strength of a set that failed to build' '' \
+  "$(find "${DEDUP_DIR}" -name '33333333-*' -printf '%f\n')"
+rm "${DEDUP_DIR}/broken.meta.json"
 
 report 'bichon-archive'
