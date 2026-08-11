@@ -10,8 +10,9 @@
 #
 #   1. off-host backup    `auberge backup verify --app bichon` exits 0
 #   2. archive freshness  last bichon-archive.service run succeeded, recently
-#   3. folder coverage    distinct archived Message-IDs >= IMAP count, scoped
-#                         to --folder
+#   3. folder coverage    every in-window store message is archived, proven
+#                         by Message-ID (auberge bichon verify-coverage), and
+#                         distinct archived Message-IDs >= IMAP count
 #   4. summary            exact commands, message count, snapshot evidence
 #   5. typed confirmation operator types the folder name on a TTY
 #
@@ -44,10 +45,11 @@
 # Designed for MXroute; works with any IMAP provider himalaya supports.
 #
 # Prerequisites:
-#   - auberge with the `backup verify` and `bichon reconcile-folders`
-#     subcommands (>= the release carrying both), and `bichon_api_token` set
-#     in its config: the script asks auberge for the Synced Folder set, which
-#     is the expunge eligibility rule
+#   - auberge with the `backup verify`, `bichon reconcile-folders`, and
+#     `bichon verify-coverage` subcommands (>= the release carrying all
+#     three), and `bichon_api_token` set in its config: the script asks
+#     auberge for the Synced Folder set, which is the expunge eligibility
+#     rule
 #   - himalaya  (https://github.com/pimalaya/himalaya — Rust, project ethos),
 #     configured, with an account named after the mailbox email address:
 #     bichon keys the Email Archive by email (see sanitize_email in
@@ -133,6 +135,17 @@ IMAP_COUNT=0
 # coverage rather than as a broken sidecar.
 ARCHIVE_COUNT=0
 UNKEYED_SIDECAR=''
+
+# Set by parse_identity_verdict, same reason as ARCHIVE_COUNT above: the
+# verdict is several fields plus a pass/fail, and reporting them on stdout
+# would force the caller into a command substitution whose subshell keeps
+# only one string.
+IDENTITY_STATUS=''
+IDENTITY_MISSING=0
+IDENTITY_STORE=0
+IDENTITY_SYNTHETIC=0
+IDENTITY_SHA256=0
+IDENTITY_SAMPLE=''
 
 # Set by the fetch_* functions when they cannot answer, so a die-free caller
 # (the sweep) can name the reason without re-deriving it. The single-target
@@ -511,6 +524,13 @@ check_tools() {
       'upgrade auberge: mise up auberge' \
       'the eligibility check needs it to name the Synced Folder set'
 
+  # Same clap signal, for the identity half of gate 3.
+  auberge bichon verify-coverage --help >/dev/null 2>&1 \
+    || die 2 'this auberge has no "bichon verify-coverage" subcommand' \
+      'upgrade auberge: mise up auberge' \
+      'gate 3 proves coverage by message identity against the Bichon store;' \
+      'counts alone pass on surplus after a folder'"'"'s first expunge (#400)'
+
   # With no config himalaya opens its first-run wizard, and that wizard reads
   # /dev/tty rather than stdin — redirecting stdin cannot stop it. So prove the
   # config exists instead of discovering it by blocking on a prompt.
@@ -831,6 +851,54 @@ count_distinct_message_ids() {
   ARCHIVE_COUNT="${#distinct[@]}"
 }
 
+# Reads an `auberge bichon verify-coverage --output json` verdict on stdin and
+# fills the IDENTITY_* globals — same globals-not-stdout shape as
+# count_distinct_message_ids, and the same reason: several fields and a
+# pass/fail have to survive out of one call.
+#
+# auberge's JSON is the only interface this script has to the identity half
+# of gate 3, so a verdict this function cannot read must fail the gate
+# loudly, not be read as covered. jq failing on non-JSON input, a missing or
+# unrecognised status, and a count field that is not a bare non-negative
+# integer are all the same failure: a half-parsed verdict must not pass a
+# gate.
+parse_identity_verdict() {
+  IDENTITY_STATUS=''
+  IDENTITY_MISSING=0
+  IDENTITY_STORE=0
+  IDENTITY_SYNTHETIC=0
+  IDENTITY_SHA256=0
+  IDENTITY_SAMPLE=''
+
+  local tsv
+  if ! tsv=$(jq -r '[
+      .status,
+      (.missing | length),
+      .store_messages,
+      .unverifiable.store_synthetic,
+      .unverifiable.archive_sha256,
+      ([.missing[0:3][].message_id] | join(" "))
+    ] | @tsv'); then
+    return 1
+  fi
+
+  local status missing store synthetic sha256 sample
+  IFS=$'\t' read -r status missing store synthetic sha256 sample <<<"${tsv}"
+
+  [[ "${status}" == 'covered' ]] || [[ "${status}" == 'gap' ]] || return 1
+  [[ "${missing}" =~ ^[0-9]+$ ]] || return 1
+  [[ "${store}" =~ ^[0-9]+$ ]] || return 1
+  [[ "${synthetic}" =~ ^[0-9]+$ ]] || return 1
+  [[ "${sha256}" =~ ^[0-9]+$ ]] || return 1
+
+  IDENTITY_STATUS="${status}"
+  IDENTITY_MISSING="${missing}"
+  IDENTITY_STORE="${store}"
+  IDENTITY_SYNTHETIC="${synthetic}"
+  IDENTITY_SHA256="${sha256}"
+  IDENTITY_SAMPLE="${sample}"
+}
+
 # Fetches the account's window-filtered sidecar rows
 # ("path<TAB>folder<TAB>message_id") once and caches them, so every folder of
 # the account shares one Host walk. The walk used to run per (account, folder)
@@ -987,9 +1055,12 @@ REMOTE
 #   flagged       ALREADY_DELETED message(s) already carry \Deleted
 #   unkeyed       UNKEYED_SIDECAR predates Message-ID keying
 #   gap           ARCHIVE_COUNT < IMAP_COUNT
+#   identity-gap  the store holds in-window message(s) the archive cannot
+#                 vouch for by identity
 #   err-list      himalaya could not list the window
 #   err-flagged   himalaya could not list \Deleted-flagged mail
 #   err-sidecars  ssh or the Host could not read the archived sidecars
+#   err-identity  auberge could not produce an identity verdict
 #
 # Always returns 0 — the status is the result. The single target dies on
 # anything but ok (render_pair_verdict_or_die); the sweep records a row.
@@ -1067,6 +1138,34 @@ probe_folder_coverage() {
     return 0
   fi
 
+  # The count above only bounds the live mailbox: it cannot see below the
+  # Archive Cursor's date watermark, where a moved or backdated message can
+  # arrive unarchived and hide behind the surplus an append-only archive
+  # accumulates after a folder's first expunge (#400). Identity proves the
+  # archive holds what the UID-synced Bichon store holds, which the
+  # watermark cannot fool.
+  local verdict_json rc=0
+  verdict_json=$(auberge bichon verify-coverage \
+    --host "${host}" \
+    --account "${account}" \
+    --folder "${folder}" \
+    --before "${CUTOFF_DATE}" \
+    --archive-path "${archive_path}" \
+    --output json) || rc=$?
+  if ((rc > 1)); then
+    PAIR_STATUS='err-identity'
+    return 0
+  fi
+  if ! parse_identity_verdict <<<"${verdict_json}"; then
+    PAIR_STATUS='err-identity'
+    return 0
+  fi
+  if [[ "${IDENTITY_STATUS}" != 'covered' ]]; then
+    PAIR_STATUS='identity-gap'
+    return 0
+  fi
+  note "identity ok (${IDENTITY_STORE} store message(s) archived)"
+
   note "coverage ok (${ARCHIVE_COUNT} >= ${IMAP_COUNT})"
   PAIR_STATUS='ok'
 }
@@ -1099,6 +1198,26 @@ render_pair_verdict_or_die() {
         "check the sidecars are group-readable: ssh ${host} find ${archive_path} -type f ! -perm -g=r" \
         'do not expunge until the counts reconcile'
       ;;
+    identity-gap)
+      if ((IDENTITY_MISSING > 0)); then
+        die 1 "identity gap: ${IDENTITY_MISSING} of ${IDENTITY_STORE} store message(s) in ${folder} have no archived counterpart" \
+          "e.g. ${IDENTITY_SAMPLE}" \
+          'these sit below the Archive Cursor, where the hourly run never looks' \
+          'again — the count surplus after a prior expunge masked them' \
+          "backfill them: auberge bichon rescan --host ${host} --account ${account}" \
+          're-run this script once the rescan has ingested them'
+      else
+        die 1 "${IDENTITY_SYNTHETIC} header-less store message(s) in ${folder} out-count ${IDENTITY_SHA256} sha256-keyed sidecar(s)" \
+          'identity cannot match header-less messages to a sidecar one-to-one' \
+          "backfill them: auberge bichon rescan --host ${host} --account ${account}" \
+          're-run this script once the rescan has ingested them'
+      fi
+      ;;
+    err-identity)
+      die 1 "auberge could not verify ${folder} coverage by identity" \
+        'auberge printed the reason above' \
+        'it needs bichon_api_token in its config, the Bichon API reachable, and ssh to the Host'
+      ;;
     err-list)
       die 1 "himalaya could not list ${folder} for ${account}" \
         'check the account exists: himalaya account list' \
@@ -1121,7 +1240,9 @@ render_pair_verdict_or_die() {
   esac
 }
 
-# Gate 3 — every in-window IMAP message has an archived counterpart.
+# Gate 3 — every in-window IMAP message has an archived counterpart, proven
+# two ways: by count against the live mailbox, and by Message-ID against the
+# UID-synced Bichon store.
 # Sets IMAP_COUNT, ENVELOPE_JSON and ARCHIVE_COUNT; the expunge reuses the same
 # envelope set, so the messages counted here are exactly the messages deleted
 # later.
@@ -1398,6 +1519,20 @@ sweep_probe_pair() {
     gap)
       sweep_record finding "${account}" "${folder}" 0 \
         "coverage gap: archive ${ARCHIVE_COUNT} < IMAP ${IMAP_COUNT} — do not expunge until they reconcile"
+      return 0
+      ;;
+    identity-gap)
+      if ((IDENTITY_MISSING > 0)); then
+        sweep_record finding "${account}" "${folder}" 0 \
+          "identity gap: ${IDENTITY_MISSING} store message(s) unarchived — rescan the account, then re-run"
+      else
+        sweep_record finding "${account}" "${folder}" 0 \
+          'identity gap: header-less messages out-count sha256 sidecars — rescan the account'
+      fi
+      return 0
+      ;;
+    err-identity)
+      sweep_record finding "${account}" "${folder}" 0 'auberge could not produce an identity verdict'
       return 0
       ;;
     err-list)
