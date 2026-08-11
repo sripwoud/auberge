@@ -113,16 +113,20 @@ pub fn find_standalone_playbook(name: &str) -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-pub fn get_app_names() -> Result<Vec<String>> {
+fn playbook_role_names(filename: &str) -> Result<Vec<String>> {
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
-    let apps_path = playbooks_dir.join("apps.yml");
-    if !apps_path.exists() {
+    let path = playbooks_dir.join(filename);
+    if !path.exists() {
         return Ok(Vec::new());
     }
-    let canonical = std::fs::canonicalize(&apps_path)
-        .wrap_err_with(|| format!("Failed to canonicalize: {}", apps_path.display()))?;
+    let canonical = std::fs::canonicalize(&path)
+        .wrap_err_with(|| format!("Failed to canonicalize: {}", path.display()))?;
     let roles = parse_playbook_roles(&canonical)?;
     Ok(roles.into_iter().map(|(name, _)| name).collect())
+}
+
+pub fn get_app_names() -> Result<Vec<String>> {
+    playbook_role_names("apps.yml")
 }
 
 pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun>, Vec<String>)> {
