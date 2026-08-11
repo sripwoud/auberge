@@ -130,7 +130,6 @@ pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun
 
     let mut playbook_tags: HashMap<PathBuf, Vec<String>> = HashMap::new();
     let mut has_apps = false;
-    let mut has_infra = false;
     let mut unknown_tags: Vec<String> = Vec::new();
 
     for tag in tags {
@@ -144,9 +143,6 @@ pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun
                 if filename == "apps.yml" {
                     has_apps = true;
                 }
-                if filename == "infrastructure.yml" {
-                    has_infra = true;
-                }
 
                 playbook_tags
                     .entry(playbook_path.clone())
@@ -158,12 +154,12 @@ pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun
         }
     }
 
-    if has_apps && !has_infra {
+    if has_apps {
         let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
         let infra = playbooks_dir.join("infrastructure.yml");
         if infra.exists() {
             let canonical = std::fs::canonicalize(&infra)?;
-            playbook_tags.entry(canonical).or_default();
+            playbook_tags.entry(canonical).or_default().clear();
         }
     }
 
@@ -306,6 +302,39 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_mixed_app_and_substrate_tags_forces_untagged_infra() {
+        let (runs, unknown) =
+            resolve_tags_to_playbook_runs(&["paperless".to_string(), "blocky".to_string()])
+                .unwrap();
+
+        assert!(unknown.is_empty());
+        assert_eq!(runs.len(), 2);
+        assert_eq!(
+            runs[0].path.file_name().unwrap().to_str().unwrap(),
+            "infrastructure.yml"
+        );
+        assert!(runs[0].tags.is_empty());
+        assert_eq!(
+            runs[1].path.file_name().unwrap().to_str().unwrap(),
+            "apps.yml"
+        );
+        assert_eq!(runs[1].tags, vec!["paperless"]);
+    }
+
+    #[test]
+    fn test_resolve_substrate_only_tag_stays_targeted() {
+        let (runs, unknown) = resolve_tags_to_playbook_runs(&["blocky".to_string()]).unwrap();
+
+        assert!(unknown.is_empty());
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].path.file_name().unwrap().to_str().unwrap(),
+            "infrastructure.yml"
+        );
+        assert_eq!(runs[0].tags, vec!["blocky"]);
+    }
+
+    #[test]
     fn test_resolve_overlapping_tag_hits_both_playbooks() {
         let (runs, unknown) = resolve_tags_to_playbook_runs(&["network".to_string()]).unwrap();
 
@@ -315,7 +344,7 @@ mod tests {
             runs[0].path.file_name().unwrap().to_str().unwrap(),
             "infrastructure.yml"
         );
-        assert!(runs[0].tags.contains(&"network".to_string()));
+        assert!(runs[0].tags.is_empty());
         assert_eq!(
             runs[1].path.file_name().unwrap().to_str().unwrap(),
             "apps.yml"
