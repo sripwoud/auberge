@@ -131,7 +131,7 @@ pub fn run_sync_music(
         output::success("Music sync completed");
         Ok(())
     } else {
-        eyre::bail!("rsync failed")
+        Err(result.error("rsync failed"))
     }
 }
 
@@ -228,7 +228,7 @@ pub fn run_sync_hermes(
 
     let result = output::run_piped("rsync", &mut cmd).wrap_err("Failed to execute rsync")?;
     if !result.status.success() {
-        eyre::bail!("rsync failed");
+        return Err(result.error("rsync failed"));
     }
     output::clear_subprocess_lines(result.lines_written);
     output::success("Hermes config synced");

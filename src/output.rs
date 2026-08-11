@@ -141,6 +141,27 @@ pub fn info(msg: &str) {
 pub struct SubprocessResult {
     pub status: ExitStatus,
     pub lines_written: usize,
+    pub last_stderr: String,
+}
+
+impl SubprocessResult {
+    pub fn error(&self, context: impl std::fmt::Display) -> eyre::Report {
+        let tail = self.last_stderr.trim();
+        if tail.is_empty() {
+            eyre::eyre!("{context}")
+        } else {
+            eyre::eyre!("{context}: {tail}")
+        }
+    }
+}
+
+const STDERR_TAIL_LINES: usize = 20;
+
+fn push_stderr_tail(tail: &mut Vec<String>, line: String) {
+    tail.push(line);
+    if tail.len() > STDERR_TAIL_LINES {
+        tail.remove(0);
+    }
 }
 
 const CURSOR_UP: &str = "\x1b[A";
@@ -185,40 +206,41 @@ pub fn subprocess_output(label: &str, text: &str) -> usize {
 }
 
 pub fn run_piped(label: &str, cmd: &mut Command) -> Result<SubprocessResult> {
-    if !is_verbose() {
-        cmd.stdout(Stdio::null()).stderr(Stdio::null());
-        let status = cmd.status().wrap_err("failed to run subprocess")?;
-        return Ok(SubprocessResult {
-            status,
-            lines_written: 0,
-        });
-    }
+    let verbose = is_verbose();
 
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    // stderr is piped even when not verbose: it is the only account of why a
+    // subprocess failed, and nulling it leaves every caller bailing causelessly.
+    // It is drained on this thread, so an unread pipe can never stall the child.
+    cmd.stderr(Stdio::piped());
+    cmd.stdout(if verbose {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    });
+
     let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
-
-    let stdout = child.stdout.take().unwrap();
+    let stdout = child.stdout.take();
     let stderr = child.stderr.take().unwrap();
 
-    let line_count = Arc::new(AtomicUsize::new(0));
-    let label_owned = label.to_owned();
-    let count_clone = Arc::clone(&line_count);
+    let line_count = AtomicUsize::new(0);
+    let mut stderr_tail: Vec<String> = Vec::new();
 
     std::thread::scope(|s| {
-        s.spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines().map_while(Result::ok) {
-                if emit_subprocess_line(&label_owned, &line) {
-                    count_clone.fetch_add(1, Ordering::Relaxed);
+        if let Some(stdout) = stdout {
+            s.spawn(|| {
+                for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                    if emit_subprocess_line(label, &line) {
+                        line_count.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
-            }
-        });
+            });
+        }
 
-        let reader = BufReader::new(stderr);
-        for line in reader.lines().map_while(Result::ok) {
-            if emit_subprocess_line(label, &line) {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if verbose && emit_subprocess_line(label, &line) {
                 line_count.fetch_add(1, Ordering::Relaxed);
             }
+            push_stderr_tail(&mut stderr_tail, line);
         }
     });
 
@@ -226,6 +248,7 @@ pub fn run_piped(label: &str, cmd: &mut Command) -> Result<SubprocessResult> {
     Ok(SubprocessResult {
         status,
         lines_written: line_count.load(Ordering::Relaxed),
+        last_stderr: stderr_tail.join("\n"),
     })
 }
 
@@ -282,8 +305,6 @@ pub fn stream_command_stdout(
     let stderr = child.stderr.take().unwrap();
     let verbose = is_verbose();
 
-    const MAX_LINES: usize = 20;
-
     let stderr_tail: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let stderr_tail_clone = Arc::clone(&stderr_tail);
     let label_owned = label.to_owned();
@@ -295,11 +316,7 @@ pub fn stream_command_stdout(
                 if verbose {
                     emit_subprocess_line(&label_owned, &line);
                 }
-                let mut tail = stderr_tail_clone.lock().unwrap();
-                tail.push(line);
-                if tail.len() > MAX_LINES {
-                    tail.remove(0);
-                }
+                push_stderr_tail(&mut stderr_tail_clone.lock().unwrap(), line);
             }
         });
 
@@ -461,6 +478,78 @@ mod tests {
         assert!(result.status.success());
         assert!(result.lines_written > 0);
         set_verbose(false);
+    }
+
+    #[test]
+    fn run_piped_captures_stderr_when_not_verbose() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(false);
+        let result = run_piped(
+            "sh",
+            Command::new("sh")
+                .arg("-c")
+                .arg("echo 'Operation not permitted' >&2; exit 1"),
+        )
+        .unwrap();
+        assert!(!result.status.success());
+        assert_eq!(result.lines_written, 0);
+        assert!(result.last_stderr.contains("Operation not permitted"));
+    }
+
+    #[test]
+    fn run_piped_captures_stderr_when_verbose() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(true);
+        let result = run_piped(
+            "sh",
+            Command::new("sh")
+                .arg("-c")
+                .arg("echo progress; echo 'Operation not permitted' >&2; exit 1"),
+        );
+        set_verbose(false);
+        let result = result.unwrap();
+        assert!(!result.status.success());
+        assert_eq!(result.lines_written, 2);
+        assert!(result.last_stderr.contains("Operation not permitted"));
+    }
+
+    #[test]
+    fn run_piped_bounds_stderr_tail() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(false);
+        let result = run_piped(
+            "sh",
+            Command::new("sh").arg("-c").arg("seq 1 100 >&2; exit 1"),
+        )
+        .unwrap();
+        let lines: Vec<&str> = result.last_stderr.lines().collect();
+        assert_eq!(lines.len(), STDERR_TAIL_LINES);
+        assert_eq!(lines.first(), Some(&"81"));
+        assert_eq!(lines.last(), Some(&"100"));
+    }
+
+    #[test]
+    fn subprocess_error_names_the_stderr_tail() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(false);
+        let result = run_piped(
+            "sh",
+            Command::new("sh").arg("-c").arg("echo boom >&2; exit 1"),
+        )
+        .unwrap();
+        assert_eq!(
+            result.error("rsync failed").to_string(),
+            "rsync failed: boom"
+        );
+    }
+
+    #[test]
+    fn subprocess_error_falls_back_to_bare_context() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_verbose(false);
+        let result = run_piped("false", &mut Command::new("false")).unwrap();
+        assert!(!result.status.success());
+        assert_eq!(result.error("rsync failed").to_string(), "rsync failed");
     }
 
     #[test]

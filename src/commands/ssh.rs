@@ -100,7 +100,7 @@ pub fn run_ssh_keygen(host_arg: Option<String>, user: String, force: bool) -> Re
         output::info(&format!("Public key: {}.pub", key_path.display()));
         Ok(())
     } else {
-        eyre::bail!("ssh-keygen failed")
+        Err(result.error("ssh-keygen failed"))
     }
 }
 
@@ -236,7 +236,7 @@ pub fn run_ssh_add_key(
     }
 
     if !result.status.success() {
-        eyre::bail!("Failed to add key to remote host");
+        return Err(result.error("Failed to add key to remote host"));
     }
 
     output::success(&format!(
