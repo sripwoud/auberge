@@ -8,6 +8,8 @@ use eyre::{Result, WrapErr};
 use std::path::PathBuf;
 use std::process::Command;
 
+const MUSIC_RSYNC_FLAGS: [&str; 2] = ["-rltzvP", "--omit-dir-times"];
+
 #[derive(Subcommand)]
 pub enum SyncCommands {
     #[command(visible_alias = "m")]
@@ -104,7 +106,7 @@ pub fn run_sync_music(
     ));
 
     let mut cmd = Command::new("rsync");
-    cmd.arg("-avzP")
+    cmd.args(MUSIC_RSYNC_FLAGS)
         .arg("--delete")
         .arg("--exclude=.DS_Store")
         .arg("--exclude=*.tmp")
@@ -247,4 +249,42 @@ pub fn run_sync_hermes(
     output::success("hermes-gateway restarted");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MUSIC_RSYNC_FLAGS;
+
+    fn short_flag_letters() -> String {
+        MUSIC_RSYNC_FLAGS
+            .iter()
+            .filter(|f| !f.starts_with("--"))
+            .flat_map(|f| f.trim_start_matches('-').chars())
+            .collect()
+    }
+
+    #[test]
+    fn music_rsync_omits_dir_times() {
+        assert!(MUSIC_RSYNC_FLAGS.contains(&"--omit-dir-times"));
+    }
+
+    #[test]
+    fn music_rsync_does_not_use_archive_mode() {
+        assert!(!short_flag_letters().contains('a'));
+    }
+
+    #[test]
+    fn music_rsync_does_not_preserve_permissions() {
+        assert!(!short_flag_letters().contains('p'));
+    }
+
+    #[test]
+    fn music_rsync_preserves_file_times() {
+        assert!(short_flag_letters().contains('t'));
+    }
+
+    #[test]
+    fn music_rsync_recurses() {
+        assert!(short_flag_letters().contains('r'));
+    }
 }
