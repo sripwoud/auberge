@@ -86,40 +86,110 @@ fn select_with_dialoguer(items: &[String], prompt: &str) -> Option<String> {
     Some(items[selection].clone())
 }
 
-fn select(items: &[String], prompt: &str) -> Option<String> {
-    if items.is_empty() {
-        return None;
-    }
-
-    if !has_skim_support() {
-        if items.len() == 1 {
-            return Some(items[0].clone());
-        }
-        return None;
-    }
-
-    select_with_skim(items, prompt).or_else(|| select_with_dialoguer(items, prompt))
+/// Describes what is being chosen so `select_item` can render each of the
+/// three ways a pick can fail to happen as its own actionable error.
+///
+/// Returning one `Option` for all three let call sites collapse "nothing to
+/// choose from", "cannot draw a picker" and "user dismissed the picker" into
+/// one misleading message.
+///
+/// `noun` is pluralised as `{noun}s`; every candidate kind in this tree
+/// pluralises regularly.
+pub struct Choice {
+    prompt: String,
+    noun: String,
+    argument: Option<String>,
+    populate: Option<String>,
 }
 
-pub fn select_item<T, F>(items: &[T], display_fn: F, prompt: &str) -> Result<Option<T>>
+impl Choice {
+    pub fn new(noun: &str) -> Self {
+        Self {
+            prompt: format!("Select {}", noun),
+            noun: noun.to_string(),
+            argument: None,
+            populate: None,
+        }
+    }
+
+    pub fn with_prompt(mut self, prompt: &str) -> Self {
+        self.prompt = prompt.to_string();
+        self
+    }
+
+    /// How the caller supplies the value when no picker can be drawn, e.g.
+    /// `-H <host>`.
+    pub fn resolved_by(mut self, argument: &str) -> Self {
+        self.argument = Some(argument.to_string());
+        self
+    }
+
+    /// Command that creates candidates when there are none, e.g.
+    /// `auberge host add`.
+    pub fn populated_by(mut self, command: &str) -> Self {
+        self.populate = Some(command.to_string());
+        self
+    }
+
+    fn no_candidates(&self) -> eyre::Report {
+        match &self.populate {
+            Some(command) => {
+                eyre::eyre!("No {}s configured — run `{}`", self.noun, command)
+            }
+            None => eyre::eyre!("No {}s configured", self.noun),
+        }
+    }
+
+    fn not_interactive(&self, candidates: usize) -> eyre::Report {
+        match &self.argument {
+            Some(argument) => eyre::eyre!(
+                "{} {}s to choose from and stdin is not a terminal — pass {}",
+                candidates,
+                self.noun,
+                argument
+            ),
+            None => eyre::eyre!(
+                "{} {}s to choose from and stdin is not a terminal",
+                candidates,
+                self.noun
+            ),
+        }
+    }
+
+    fn aborted(&self) -> eyre::Report {
+        eyre::eyre!("No {} selected", self.noun)
+    }
+}
+
+/// Picks one of `items`, or fails with the reason no pick happened.
+///
+/// A lone candidate is auto-selected without a TTY: the choice is not a choice.
+pub fn select_item<T, F>(items: &[T], display_fn: F, choice: Choice) -> Result<T>
 where
     T: Clone,
     F: Fn(&T) -> String,
 {
     if items.is_empty() {
-        return Ok(None);
+        return Err(choice.no_candidates());
+    }
+
+    if !has_skim_support() {
+        if let [only] = items {
+            return Ok(only.clone());
+        }
+        return Err(choice.not_interactive(items.len()));
     }
 
     let display_items: Vec<String> = items.iter().map(&display_fn).collect();
-    let selected_display = select(&display_items, prompt);
+    let selected = select_with_skim(&display_items, &choice.prompt)
+        .or_else(|| select_with_dialoguer(&display_items, &choice.prompt))
+        .ok_or_else(|| choice.aborted())?;
 
-    match selected_display {
-        Some(display) => {
-            let idx = display_items.iter().position(|d| d == &display);
-            Ok(idx.map(|i| items[i].clone()))
-        }
-        None => Ok(None),
-    }
+    display_items
+        .iter()
+        .position(|d| d == &selected)
+        .map(|i| items[i].clone())
+        .ok_or_else(|| choice.aborted())
 }
 
 fn select_multi_with_skim(items: &[String], prompt: &str) -> Option<Vec<String>> {
@@ -250,6 +320,89 @@ pub fn confirm_typed(prompt_msg: &str, expected: &str, yes_flag: bool) -> Result
 mod tests {
     use super::*;
     use crate::output::{TEST_LOCK, set_no_color};
+
+    fn hosts() -> Vec<String> {
+        vec!["auberge".to_string(), "hermes".to_string()]
+    }
+
+    #[test]
+    fn select_item_reports_nothing_configured_for_an_empty_list() {
+        // The bug behind #468: an empty candidate list used to yield the same
+        // "No host selected" as a dismissed picker, so `sync music`'s bogus
+        // group filter looked like the user had declined to choose.
+        let empty: Vec<String> = vec![];
+        let err = select_item(
+            &empty,
+            |s: &String| s.clone(),
+            Choice::new("host").populated_by("auberge host add"),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "No hosts configured — run `auberge host add`"
+        );
+    }
+
+    #[test]
+    fn select_item_omits_the_populate_hint_when_none_is_given() {
+        let empty: Vec<String> = vec![];
+        let err = select_item(&empty, |s: &String| s.clone(), Choice::new("playbook")).unwrap_err();
+
+        assert_eq!(err.to_string(), "No playbooks configured");
+    }
+
+    #[test]
+    fn select_item_names_the_argument_when_it_cannot_prompt() {
+        // `cargo test` runs without a TTY, so this is the scripted path: two
+        // candidates, no picker possible, and the error must name the flag
+        // that resolves it.
+        let err = select_item(
+            &hosts(),
+            |s: &String| s.clone(),
+            Choice::new("host").resolved_by("-H <host>"),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "2 hosts to choose from and stdin is not a terminal — pass -H <host>"
+        );
+    }
+
+    #[test]
+    fn select_item_still_reports_the_count_without_an_argument_hint() {
+        let err = select_item(&hosts(), |s: &String| s.clone(), Choice::new("host")).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "2 hosts to choose from and stdin is not a terminal"
+        );
+    }
+
+    #[test]
+    fn select_item_auto_selects_a_lone_candidate_without_a_tty() {
+        // Deliberate, and matches `backup verify`'s sole_configured_host: one
+        // candidate is not a choice, so scripts need no flag.
+        let only = vec!["auberge".to_string()];
+        let selected = select_item(
+            &only,
+            |s: &String| s.clone(),
+            Choice::new("host").resolved_by("-H <host>"),
+        )
+        .unwrap();
+
+        assert_eq!(selected, "auberge");
+    }
+
+    #[test]
+    fn choice_defaults_its_prompt_from_the_noun() {
+        assert_eq!(Choice::new("subdomain").prompt, "Select subdomain");
+        assert_eq!(
+            Choice::new("subdomain").with_prompt("Pick one").prompt,
+            "Pick one"
+        );
+    }
 
     #[test]
     fn confirm_short_circuits_to_true_when_yes_flag_set() {

@@ -1,6 +1,7 @@
+use crate::hosts::HOST_FLAG;
 use crate::output;
-use crate::prompt::select_item;
-use crate::services::inventory::{Host, get_hosts};
+use crate::prompt::{Choice, select_item};
+use crate::services::inventory::select_or_arg as inventory_select_or_arg;
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use std::process::Command;
@@ -45,23 +46,7 @@ pub enum SshCommands {
 }
 
 pub fn run_ssh_keygen(host_arg: Option<String>, user: String, force: bool) -> Result<()> {
-    let host = match host_arg {
-        Some(name) => crate::services::inventory::get_host(&name, None)?,
-        None => {
-            let hosts = get_hosts(None, None)?;
-            select_item(
-                &hosts,
-                |h: &Host| {
-                    format!(
-                        "{} ({}:{})",
-                        h.name, h.vars.ansible_host, h.vars.ansible_port
-                    )
-                },
-                "Select host",
-            )?
-            .ok_or_else(|| eyre::eyre!("No host selected"))?
-        }
-    };
+    let host = inventory_select_or_arg(host_arg, HOST_FLAG)?;
 
     let ssh_dir = dirs::home_dir()
         .ok_or_else(|| eyre::eyre!("Could not determine home directory"))?
@@ -111,23 +96,7 @@ pub fn run_ssh_add_key(
     user: String,
     yes: bool,
 ) -> Result<()> {
-    let host = match host_arg {
-        Some(name) => crate::services::inventory::get_host(&name, None)?,
-        None => {
-            let hosts = get_hosts(None, None)?;
-            select_item(
-                &hosts,
-                |h: &Host| {
-                    format!(
-                        "{} ({}:{})",
-                        h.name, h.vars.ansible_host, h.vars.ansible_port
-                    )
-                },
-                "Select host",
-            )?
-            .ok_or_else(|| eyre::eyre!("No host selected"))?
-        }
-    };
+    let host = inventory_select_or_arg(host_arg, HOST_FLAG)?;
 
     let home_dir =
         dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
@@ -156,9 +125,10 @@ pub fn run_ssh_add_key(
                 select_item(
                     &available_keys,
                     |path| path.display().to_string(),
-                    "Select SSH key to connect with",
+                    Choice::new("SSH key")
+                        .with_prompt("Select SSH key to connect with")
+                        .resolved_by("-c <key>"),
                 )?
-                .ok_or_else(|| eyre::eyre!("No key selected"))?
             }
         }
     };
@@ -178,9 +148,10 @@ pub fn run_ssh_add_key(
             select_item(
                 &available_pubkeys,
                 |path| path.display().to_string(),
-                "Select public key to authorize on remote",
+                Choice::new("public key")
+                    .with_prompt("Select public key to authorize on remote")
+                    .resolved_by("-a <key>"),
             )?
-            .ok_or_else(|| eyre::eyre!("No key selected"))?
         }
     };
 

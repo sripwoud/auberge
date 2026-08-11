@@ -1,7 +1,7 @@
 use crate::hosts::{Host, HostManager};
 use crate::output;
 use crate::output::OutputFormat;
-use crate::prompt::{confirm, select_item};
+use crate::prompt::{Choice, confirm, select_item};
 use crate::ssh_session::SshSession;
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
@@ -156,6 +156,8 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
             }];
         options.extend(ssh_hosts.clone());
 
+        // Dismissing the picker means "enter manually", same as the sentinel
+        // entry: `host add` has a manual path, so an abort is not an error.
         select_item(
             &options,
             |h: &crate::ssh_config::SshConfigHost| match &h.hostname {
@@ -165,9 +167,10 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
                     format!("{} ({}:{})", h.name, addr, port)
                 }
             },
-            "Import from SSH config or enter manually?",
-        )?
-        .and_then(|h| if h.hostname.is_some() { Some(h) } else { None })
+            Choice::new("import source").with_prompt("Import from SSH config or enter manually?"),
+        )
+        .ok()
+        .filter(|h| h.hostname.is_some())
     } else {
         None
     };
@@ -290,7 +293,7 @@ pub fn run_host_list(tags: Option<String>, output: OutputFormat) -> Result<()> {
 }
 
 pub fn run_host_remove(name: Option<String>, yes: bool) -> Result<()> {
-    let host = crate::hosts::select_or_arg(name)?;
+    let host = crate::hosts::select_or_arg(name, crate::hosts::HOST_POSITIONAL)?;
     if !confirm(&format!("Remove host '{}'?", host.name), yes) {
         eprintln!("Cancelled.");
         return Ok(());
@@ -303,13 +306,13 @@ pub fn run_host_remove(name: Option<String>, yes: bool) -> Result<()> {
 }
 
 pub fn run_host_show(name: Option<String>) -> Result<()> {
-    let host = crate::hosts::select_or_arg(name)?;
+    let host = crate::hosts::select_or_arg(name, crate::hosts::HOST_POSITIONAL)?;
     println!("{}", serde_yaml::to_string(&host)?);
     Ok(())
 }
 
 pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
-    let host = crate::hosts::select_or_arg(name_arg)?;
+    let host = crate::hosts::select_or_arg(name_arg, crate::hosts::HOST_POSITIONAL)?;
     let ssh_key = resolve_ssh_key(&host)?;
     let session = SshSession::new(&host, &ssh_key);
 
@@ -382,7 +385,7 @@ fn is_cgnat_ipv4(addr: &Ipv4Addr) -> bool {
 }
 
 pub fn run_host_edit(name: Option<String>) -> Result<()> {
-    let host = crate::hosts::select_or_arg(name)?;
+    let host = crate::hosts::select_or_arg(name, crate::hosts::HOST_POSITIONAL)?;
 
     let address = Input::<String>::with_theme(&ColorfulTheme::default())
         .with_prompt("Host address")
