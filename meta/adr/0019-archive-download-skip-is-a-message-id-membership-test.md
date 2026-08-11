@@ -69,7 +69,7 @@ ADR-0013:129 flagged that per-run walk as growing linearly and wanting revisitin
 
 **Negative:**
 
-- A re-listed message whose filename does not match costs a download that is thrown away. Bounded by the overlap window: ~700 messages / ~70MB per tick for the account worst affected, decaying to zero within 24h as the cursor advances past the old-regime mail. Over localhost to Bichon's own API.
+- A re-listed message whose filename does not match costs a download that is thrown away. Measured on the first run after this shipped: **773 discarded downloads** across 7 accounts (612 on the worst), ~75MB over localhost to Bichon's own API, against 1 message genuinely archived. Bounded by the overlap window — it decays to zero within 24h as the cursor advances past the old-regime mail, and the second run already showed it working: the message published by the first was matched by filename, not refetched.
 - A full pass with the cursor reset to 0 now downloads the entire corpus (914M) to recognise it. Cheap in the sense that matters — it writes nothing it already holds — and expensive in a sense that was previously free.
 - Two byte-identical bodies with no `Message-ID` are one message to this guard, because `sha256` is what ADR-0013 assigns them as identity. A repeat notification identical to one already archived is not archived again. This is ADR-0013's decision applied to the producer, not a new one; the coverage gate already counted them as one.
 - A crash between staging a body and publishing it leaves an `.incoming` file. Invisible to every sweep (it matches neither `*.eml` nor `*.meta.json`), overwritten by the next attempt on the same envelope, and backed up until then.
