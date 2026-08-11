@@ -1,4 +1,5 @@
 pub mod api;
+pub mod coverage;
 pub mod folder_filter;
 pub mod rescan;
 
