@@ -5,7 +5,7 @@ use crate::playbook_meta::app_version_vars;
 use crate::prompt::{confirm, select_multi};
 use crate::services::ansible_runner::{InventoryHost, run_playbook};
 use crate::services::dependency_resolver::{
-    PlaybookRun, get_app_names, resolve_tags_to_playbook_runs,
+    PlaybookRun, get_app_names, get_infrastructure_role_names, resolve_tags_to_playbook_runs,
 };
 use crate::services::dns_verify::{
     AppVerifyConfig, HickoryLookup, app_verify_config, format_dns_error, verify_a_record,
@@ -60,14 +60,29 @@ fn select_apps(available: &[String]) -> Result<Vec<String>> {
     Ok(selected)
 }
 
-fn validate_apps(requested: &[String], available: &[String]) -> Result<()> {
-    let unknown: Vec<&String> = requested
+fn validate_apps(requested: &[String], available: &[String], infra_roles: &[String]) -> Result<()> {
+    let (infra, unknown): (Vec<&String>, Vec<&String>) = requested
         .iter()
         .filter(|app| !available.contains(app))
+        .partition(|app| infra_roles.contains(app));
+
+    if infra.is_empty() && unknown.is_empty() {
+        return Ok(());
+    }
+
+    let mut messages: Vec<String> = infra
+        .iter()
+        .map(|role| {
+            format!(
+                "`{role}` is declared in ansible/playbooks/infrastructure.yml, not apps.yml.\n\
+                 It deploys on every `auberge deploy <app>` run.\n\
+                 To deploy it alone: auberge ansible run -t {role}"
+            )
+        })
         .collect();
 
     if !unknown.is_empty() {
-        eyre::bail!(
+        messages.push(format!(
             "Unknown app(s): {}. Available: {}",
             unknown
                 .iter()
@@ -75,9 +90,10 @@ fn validate_apps(requested: &[String], available: &[String]) -> Result<()> {
                 .collect::<Vec<_>>()
                 .join(", "),
             available.join(", ")
-        );
+        ));
     }
-    Ok(())
+
+    eyre::bail!("{}", messages.join("\n"));
 }
 
 fn show_execution_plan(runs: &[PlaybookRun], host: &Host, check: bool) -> Result<()> {
@@ -221,7 +237,11 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
     } else if cmd.apps.is_empty() {
         select_apps(&available_apps)?
     } else {
-        validate_apps(&cmd.apps, &available_apps)?;
+        validate_apps(
+            &cmd.apps,
+            &available_apps,
+            &get_infrastructure_role_names()?,
+        )?;
         cmd.apps.clone()
     };
 
@@ -337,24 +357,39 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
 mod tests {
     use super::*;
 
+    fn infra_roles() -> Vec<String> {
+        vec![
+            "caddy".to_string(),
+            "blocky".to_string(),
+            "headscale".to_string(),
+        ]
+    }
+
     #[test]
     fn test_validate_apps_all_valid() {
         let available = vec!["paperless".to_string(), "freshrss".to_string()];
-        assert!(validate_apps(&["paperless".to_string()], &available).is_ok());
+        assert!(validate_apps(&["paperless".to_string()], &available, &infra_roles()).is_ok());
     }
 
     #[test]
     fn test_validate_apps_unknown() {
         let available = vec!["paperless".to_string(), "freshrss".to_string()];
-        let result = validate_apps(&["nonexistent".to_string()], &available);
+        let result = validate_apps(&["nonexistent".to_string()], &available, &infra_roles());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("nonexistent"));
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Unknown app(s): nonexistent. Available: paperless, freshrss"
+        );
     }
 
     #[test]
     fn test_validate_apps_mixed_valid_and_unknown() {
         let available = vec!["paperless".to_string(), "freshrss".to_string()];
-        let result = validate_apps(&["paperless".to_string(), "badapp".to_string()], &available);
+        let result = validate_apps(
+            &["paperless".to_string(), "badapp".to_string()],
+            &available,
+            &infra_roles(),
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("badapp"));
     }
@@ -362,7 +397,41 @@ mod tests {
     #[test]
     fn test_validate_apps_empty_requested() {
         let available = vec!["paperless".to_string()];
-        assert!(validate_apps(&[], &available).is_ok());
+        assert!(validate_apps(&[], &available, &infra_roles()).is_ok());
+    }
+
+    #[test]
+    fn test_validate_apps_infra_role_points_to_ansible_run() {
+        let available = vec!["paperless".to_string()];
+        for role in ["blocky", "caddy", "headscale"] {
+            let result = validate_apps(&[role.to_string()], &available, &infra_roles());
+            let message = result.unwrap_err().to_string();
+            assert!(message.contains("ansible/playbooks/infrastructure.yml"));
+            assert!(message.contains(&format!("auberge ansible run -t {role}")));
+            assert!(!message.contains("Unknown app(s)"));
+        }
+    }
+
+    #[test]
+    fn test_validate_apps_infra_and_unknown_reported_distinctly() {
+        let available = vec!["paperless".to_string(), "freshrss".to_string()];
+        let result = validate_apps(
+            &["blocky".to_string(), "nonexistent".to_string()],
+            &available,
+            &infra_roles(),
+        );
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("auberge ansible run -t blocky"));
+        assert!(message.contains("Unknown app(s): nonexistent. Available: paperless, freshrss"));
+    }
+
+    #[test]
+    fn test_validate_apps_infra_roles_from_playbook() {
+        let available = get_app_names().unwrap();
+        let infra = get_infrastructure_role_names().unwrap();
+        let result = validate_apps(&["blocky".to_string()], &available, &infra);
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("auberge ansible run -t blocky"));
     }
 
     #[test]

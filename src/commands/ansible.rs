@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Subcommand)]
 pub enum AnsibleCommands {
-    #[command(alias = "r")]
+    #[command(visible_alias = "r")]
     Run {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
@@ -47,7 +47,7 @@ pub enum AnsibleCommands {
         )]
         force: bool,
     },
-    #[command(alias = "b")]
+    #[command(visible_alias = "b")]
     Bootstrap {
         #[arg(help = "Host name (omit to be prompted)")]
         host: Option<String>,

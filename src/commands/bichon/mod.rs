@@ -14,7 +14,7 @@ pub use verify::run_verify_coverage;
 #[derive(Subcommand)]
 pub enum BichonCommands {
     #[command(
-        alias = "rf",
+        visible_alias = "rf",
         about = "Reconcile account sync_folders from live IMAP folders"
     )]
     ReconcileFolders {
@@ -34,7 +34,7 @@ pub enum BichonCommands {
         output: OutputFormat,
     },
     #[command(
-        alias = "vc",
+        visible_alias = "vc",
         about = "Verify one folder's Email Archive coverage by message identity"
     )]
     VerifyCoverage {
@@ -69,7 +69,7 @@ pub enum BichonCommands {
         output: OutputFormat,
     },
     #[command(
-        alias = "rs",
+        visible_alias = "rs",
         about = "Re-archive mail whose Date predates the archive cursor"
     )]
     Rescan {

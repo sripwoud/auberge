@@ -32,6 +32,7 @@ auberge [GLOBAL OPTIONS] <COMMAND>
 | [bichon](cli-reference/bichon/reconcile-folders.md) | —     | Bichon folder reconciliation                    |
 | [config](cli-reference/config/overview.md)          | `c`   | Manage `config.toml`                            |
 | [select](cli-reference/select/host.md)              | `se`  | Interactive host / playbook pickers             |
+| [completions](cli-reference/completions.md)         | —     | Generate shell completion script                |
 
 ## Files
 

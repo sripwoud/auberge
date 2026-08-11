@@ -113,16 +113,24 @@ pub fn find_standalone_playbook(name: &str) -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-pub fn get_app_names() -> Result<Vec<String>> {
+fn playbook_role_names(filename: &str) -> Result<Vec<String>> {
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
-    let apps_path = playbooks_dir.join("apps.yml");
-    if !apps_path.exists() {
+    let path = playbooks_dir.join(filename);
+    if !path.exists() {
         return Ok(Vec::new());
     }
-    let canonical = std::fs::canonicalize(&apps_path)
-        .wrap_err_with(|| format!("Failed to canonicalize: {}", apps_path.display()))?;
+    let canonical = std::fs::canonicalize(&path)
+        .wrap_err_with(|| format!("Failed to canonicalize: {}", path.display()))?;
     let roles = parse_playbook_roles(&canonical)?;
     Ok(roles.into_iter().map(|(name, _)| name).collect())
+}
+
+pub fn get_app_names() -> Result<Vec<String>> {
+    playbook_role_names("apps.yml")
+}
+
+pub fn get_infrastructure_role_names() -> Result<Vec<String>> {
+    playbook_role_names("infrastructure.yml")
 }
 
 pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun>, Vec<String>)> {
@@ -130,7 +138,6 @@ pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun
 
     let mut playbook_tags: HashMap<PathBuf, Vec<String>> = HashMap::new();
     let mut has_apps = false;
-    let mut has_infra = false;
     let mut unknown_tags: Vec<String> = Vec::new();
 
     for tag in tags {
@@ -144,9 +151,6 @@ pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun
                 if filename == "apps.yml" {
                     has_apps = true;
                 }
-                if filename == "infrastructure.yml" {
-                    has_infra = true;
-                }
 
                 playbook_tags
                     .entry(playbook_path.clone())
@@ -158,12 +162,12 @@ pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun
         }
     }
 
-    if has_apps && !has_infra {
+    if has_apps {
         let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
         let infra = playbooks_dir.join("infrastructure.yml");
         if infra.exists() {
             let canonical = std::fs::canonicalize(&infra)?;
-            playbook_tags.entry(canonical).or_default();
+            playbook_tags.entry(canonical).or_default().clear();
         }
     }
 
@@ -209,6 +213,16 @@ mod tests {
         let role_names: Vec<&str> = roles.iter().map(|(name, _)| name.as_str()).collect();
         assert!(role_names.contains(&"caddy"));
         assert!(role_names.contains(&"tailscale"));
+    }
+
+    #[test]
+    fn test_get_infrastructure_role_names() {
+        let roles = get_infrastructure_role_names().unwrap();
+        assert!(roles.contains(&"caddy".to_string()));
+        assert!(roles.contains(&"blocky".to_string()));
+        assert!(roles.contains(&"headscale".to_string()));
+        assert!(roles.contains(&"tailscale".to_string()));
+        assert!(!roles.contains(&"paperless".to_string()));
     }
 
     #[test]
@@ -306,6 +320,39 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_mixed_app_and_substrate_tags_forces_untagged_infra() {
+        let (runs, unknown) =
+            resolve_tags_to_playbook_runs(&["paperless".to_string(), "blocky".to_string()])
+                .unwrap();
+
+        assert!(unknown.is_empty());
+        assert_eq!(runs.len(), 2);
+        assert_eq!(
+            runs[0].path.file_name().unwrap().to_str().unwrap(),
+            "infrastructure.yml"
+        );
+        assert!(runs[0].tags.is_empty());
+        assert_eq!(
+            runs[1].path.file_name().unwrap().to_str().unwrap(),
+            "apps.yml"
+        );
+        assert_eq!(runs[1].tags, vec!["paperless"]);
+    }
+
+    #[test]
+    fn test_resolve_substrate_only_tag_stays_targeted() {
+        let (runs, unknown) = resolve_tags_to_playbook_runs(&["blocky".to_string()]).unwrap();
+
+        assert!(unknown.is_empty());
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            runs[0].path.file_name().unwrap().to_str().unwrap(),
+            "infrastructure.yml"
+        );
+        assert_eq!(runs[0].tags, vec!["blocky"]);
+    }
+
+    #[test]
     fn test_resolve_overlapping_tag_hits_both_playbooks() {
         let (runs, unknown) = resolve_tags_to_playbook_runs(&["network".to_string()]).unwrap();
 
@@ -315,7 +362,7 @@ mod tests {
             runs[0].path.file_name().unwrap().to_str().unwrap(),
             "infrastructure.yml"
         );
-        assert!(runs[0].tags.contains(&"network".to_string()));
+        assert!(runs[0].tags.is_empty());
         assert_eq!(
             runs[1].path.file_name().unwrap().to_str().unwrap(),
             "apps.yml"

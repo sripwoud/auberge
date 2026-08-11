@@ -10,7 +10,7 @@ use std::process::Command;
 
 #[derive(Subcommand)]
 pub enum SyncCommands {
-    #[command(alias = "m")]
+    #[command(visible_alias = "m")]
     Music {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
@@ -19,7 +19,7 @@ pub enum SyncCommands {
         #[arg(short = 'n', long, help = "Dry run (don't actually sync)")]
         dry_run: bool,
     },
-    #[command(alias = "h", about = "Sync hermes config and restart service")]
+    #[command(visible_alias = "h", about = "Sync hermes config and restart service")]
     Hermes {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,

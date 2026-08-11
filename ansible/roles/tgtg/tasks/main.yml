@@ -28,29 +28,36 @@
       - git
     state: present
 
-- name: Check if uv is installed
+- name: Read installed uv version
   ansible.builtin.command: /usr/local/bin/uv --version
   register: tgtg_uv_check
   changed_when: false
   failed_when: false
+
+- name: Set installed uv version fact
+  ansible.builtin.set_fact:
+    tgtg_uv_installed_version: >-
+      {{ tgtg_uv_check.stdout | default('')
+         | regex_search('(?<=uv )\S+')
+         | default('', true) }}
 
 - name: Create secure temp directory for uv installer
   ansible.builtin.tempfile:
     state: directory
     suffix: _uv_install
   register: tgtg_uv_tmpdir
-  when: tgtg_uv_check.rc != 0
+  when: tgtg_uv_installed_version != tgtg_uv_version
 
 - name: Download uv install script
   ansible.builtin.get_url:
     url: "https://astral.sh/uv/{{ tgtg_uv_version }}/install.sh"
     dest: "{{ tgtg_uv_tmpdir.path }}/install.sh"
     mode: "0755"
-  when: tgtg_uv_check.rc != 0
+  when: tgtg_uv_installed_version != tgtg_uv_version
 
 - name: Install uv package manager
   ansible.builtin.command: "{{ tgtg_uv_tmpdir.path }}/install.sh"
-  when: tgtg_uv_check.rc != 0
+  when: tgtg_uv_installed_version != tgtg_uv_version
   changed_when: true
   environment:
     UV_INSTALL_DIR: /usr/local/bin

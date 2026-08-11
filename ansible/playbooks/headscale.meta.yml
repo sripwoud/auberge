@@ -1,7 +1,7 @@
 required_keys: []
 subdomain: hs
 version:
-  value: "0.25.1"
+  value: "0.26.1"
   datasource: github-releases
   depName: "juanfont/headscale"
   extractVersion: "^v(?<version>.+)$"

@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.16](https://github.com/sripwoud/auberge/compare/v0.14.15...v0.14.16) - 2026-08-11
+
+### Added
+
+- *(cli)* add shell completions subcommand ([#449](https://github.com/sripwoud/auberge/pull/449))
+- *(blocky)* port lego invocations to v5 CLI and bump to 5.3.1 ([#447](https://github.com/sripwoud/auberge/pull/447))
+
+### Fixed
+
+- *(uv)* reinstall on version change so pinned bumps reach existing hosts ([#444](https://github.com/sripwoud/auberge/pull/444))
+
+### Other
+
+- *(adr)* record static shell completion decision
+- *(blocky)* bump to 4.35.2 ([#434](https://github.com/sripwoud/auberge/pull/434))
+
+## [0.14.15](https://github.com/sripwoud/auberge/compare/v0.14.14...v0.14.15) - 2026-08-11
+
+### Fixed
+
+- *(cli)* tell operators how to deploy a Substrate App ([#443](https://github.com/sripwoud/auberge/pull/443))
+- *(cli)* force untagged infra run when app and substrate tags mix ([#441](https://github.com/sripwoud/auberge/pull/441))
+
+## [0.14.14](https://github.com/sripwoud/auberge/compare/v0.14.13...v0.14.14) - 2026-08-11
+
+### Fixed
+
+- *(renovate)* split headscale bumps into one PR per minor
+- *(headscale)* step to 0.26.1 instead of skipping to 0.29.3
+- *(renovate)* emit build-prefixed bumps so release-plz releases them
+
+### Other
+
+- *(uv)* bump to 0.12.3 ([#429](https://github.com/sripwoud/auberge/pull/429))
+- *(hermes)* bump to v2026.8.3 ([#428](https://github.com/sripwoud/auberge/pull/428))
+- *(blocky)* bump to 0.34.0 ([#433](https://github.com/sripwoud/auberge/pull/433))
+- *(headscale)* bump to 0.29.3 ([#427](https://github.com/sripwoud/auberge/pull/427))
+- *(yourls)* bump to 1.10.4 ([#426](https://github.com/sripwoud/auberge/pull/426))
+- *(paperless)* bump to 2.20.15 ([#425](https://github.com/sripwoud/auberge/pull/425))
+- *(colporteur)* bump to 0.5.1 ([#424](https://github.com/sripwoud/auberge/pull/424))
+- *(caddy)* bump to v0.1.2 ([#421](https://github.com/sripwoud/auberge/pull/421))
+- *(actual)* bump to 26.8.1 ([#420](https://github.com/sripwoud/auberge/pull/420))
+
 ## [0.14.13](https://github.com/sripwoud/auberge/compare/v0.14.12...v0.14.13) - 2026-08-11
 
 ### Added
