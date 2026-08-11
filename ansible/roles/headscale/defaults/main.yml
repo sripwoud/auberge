@@ -20,4 +20,4 @@ headscale_derp_region_name: "self-hosted"
 headscale_log_level: info
 headscale_split_dns_target_ip: ""
 headscale_release_url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/headscale_{{ headscale_version }}_linux_amd64"
-headscale_release_checksum: "sha256:af2a232ff407c100f05980b4d8fceaafc7fdb2e8de5eba8e184a8bb029cb6c00"
+headscale_release_checksum: "sha256:95f242a31003d60646d233b14a1acacac20d8f319886d0441df085cc3a920f2d"
