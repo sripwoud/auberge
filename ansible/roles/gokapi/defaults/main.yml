@@ -8,11 +8,18 @@ gokapi_domain: "{{ gokapi_subdomain }}.{{ domain }}"
 gokapi_redirect_url: "/admin"
 gokapi_max_file_size_mb: 102400
 gokapi_max_memory_mb: 50
-gokapi_public_name: "Partage"
+# Gokapi's own name. Override in config.toml to brand your instance; this is a
+# default for every operator, so it must not carry anyone's branding.
+gokapi_public_name: "Gokapi"
 gokapi_custom_dir: "{{ gokapi_data_dir }}/custom"
+# Optional operator-supplied branding, read from the deploying machine. Put
+# custom.css and/or a 512x512 favicon.png here and they are deployed; leave the
+# directory absent and Gokapi serves its stock appearance. Nothing is shipped
+# with the role, so no operator inherits another's theme.
+gokapi_custom_assets_src: "~/.config/auberge/gokapi/custom"
 # Rendered into custom/version.txt, which Gokapi reads at startup and embeds in
 # the stylesheet filename it serves (/custom/custom.v<N>.css). Gokapi sets a
-# 2-day Cache-Control on custom assets, so bump this on any edit under custom/.
+# 2-day Cache-Control on custom assets, so bump this after editing one.
 gokapi_custom_assets_revision: 2
 gokapi_archive_url: "https://github.com/Forceu/Gokapi/releases/download/v{{ gokapi_version }}/gokapi-{{ gokapi_version }}_linux-amd64.zip"
 gokapi_archive_sha256: "51dbf724c94f8afa0b40fb1ef63a1fe418e7996e7b9536e1f0a5da695b8e18ef"

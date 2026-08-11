@@ -165,13 +165,15 @@
       notify: Restart gokapi
 
     # Matches the Gokapi runtime fallback ("Gokapi" when PublicName is empty)
-    # plus every value auberge itself has shipped, so a rename here reaches
-    # hosts already deployed. Any other value is an operator edit made via the
-    # admin UI and is left untouched.
+    # plus every value this role has ever defaulted to, so changing
+    # gokapi_public_name reaches hosts that are already deployed. "partage" and
+    # "Partage" are in that list only because they briefly were the default;
+    # this also resets hosts that picked them up. Any other value is an operator
+    # edit made via the admin UI and is left untouched.
     - name: Migrate known PublicName values to {{ gokapi_public_name }}
       ansible.builtin.replace:
         path: "{{ gokapi_config_dir }}/config.json"
-        regexp: '"PublicName":\s*"(Gokapi|partage)"'
+        regexp: '"PublicName":\s*"(Gokapi|partage|Partage)"'
         replace: '"PublicName": "{{ gokapi_public_name }}"'
       notify: Restart gokapi
 
@@ -183,16 +185,65 @@
         group: "{{ gokapi_sys_group }}"
         mode: "0750"
 
-    # custom.css is picked up by filename; favicon.png must be exactly 512x512
-    # or Gokapi exits 1 at startup rather than falling back (see
-    # internal/webserver/favicon/Favicon.go). A unit test guards the dimensions.
-    - name: Deploy Gokapi custom static content (stylesheet, favicon source)
+    # Branding is operator-supplied and optional: the role ships no assets, so a
+    # default deploy leaves Gokapi looking stock. Anything in
+    # gokapi_custom_assets_src on the deploying machine is copied verbatim;
+    # Gokapi picks up custom.css and favicon.png from there by filename.
+    - name: Look for operator-supplied Gokapi branding on the deploying machine
+      ansible.builtin.stat:
+        path: "{{ gokapi_custom_assets_src | expanduser }}"
+      delegate_to: localhost
+      become: false
+      register: gokapi_custom_assets_dir
+
+    - name: Check whether operator-supplied branding includes a favicon
+      ansible.builtin.stat:
+        path: "{{ gokapi_custom_assets_src | expanduser }}/favicon.png"
+      delegate_to: localhost
+      become: false
+      register: gokapi_favicon_src
+      when: gokapi_custom_assets_dir.stat.exists
+
+    # Gokapi decodes this file at startup and calls os.Exit(1) unless it is
+    # exactly 512x512, rather than falling back to its built-in icon, so a
+    # wrong-sized asset stops the service from booting. Read the dimensions
+    # from the PNG IHDR chunk and refuse the deploy instead.
+    - name: Read operator favicon dimensions
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "-c"
+          - |
+            import struct, sys
+            header = open(sys.argv[1], "rb").read(24)
+            if header[:8] != b"\x89PNG\r\n\x1a\n":
+                sys.exit("not a PNG")
+            print("%dx%d" % struct.unpack(">II", header[16:24]))
+          - "{{ gokapi_custom_assets_src | expanduser }}/favicon.png"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: gokapi_favicon_dimensions
+      when: gokapi_favicon_src.stat.exists | default(false)
+
+    - name: Require the operator favicon to be exactly 512x512
+      ansible.builtin.assert:
+        that: gokapi_favicon_dimensions.stdout == "512x512"
+        fail_msg: >-
+          {{ gokapi_custom_assets_src }}/favicon.png is
+          {{ gokapi_favicon_dimensions.stdout }}, but Gokapi requires exactly
+          512x512 and exits instead of falling back. Resize it, or remove it to
+          use Gokapi's built-in icons.
+      when: gokapi_favicon_src.stat.exists | default(false)
+
+    - name: Deploy operator-supplied Gokapi branding
       ansible.builtin.copy:
-        src: custom/
+        src: "{{ gokapi_custom_assets_src | expanduser }}/"
         dest: "{{ gokapi_custom_dir }}/"
         owner: "{{ gokapi_sys_user }}"
         group: "{{ gokapi_sys_group }}"
         mode: "0640"
+      when: gokapi_custom_assets_dir.stat.exists
       notify: Restart gokapi
 
     - name: Deploy Gokapi custom asset version (drives the custom.css cache-busting filename)

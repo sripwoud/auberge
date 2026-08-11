@@ -263,30 +263,18 @@ mod tests {
         assert!(base.join("playbooks/apps.yml").is_file());
     }
 
-    // Gokapi rejects any custom favicon that is not exactly 512x512 by calling
-    // os.Exit(1) during startup rather than falling back to its default, so a
-    // wrong-sized asset here takes the service down on deploy instead of
-    // degrading. Dimensions come straight from the PNG IHDR chunk: 8-byte
-    // signature, 4-byte length, 4-byte type, then width and height as
-    // big-endian u32.
+    // Branding assets are operator-supplied and deliberately absent from the
+    // embedded tree, so no role ships another operator's theme or icon. The
+    // 512x512 favicon requirement Gokapi enforces with os.Exit(1) is checked at
+    // deploy time against the operator's own file instead — see the gokapi
+    // role's "Require the operator favicon to be exactly 512x512" task.
     #[test]
-    fn test_gokapi_custom_favicon_is_512_square() {
-        let favicon = EMBEDDED_ANSIBLE
-            .get_file("roles/gokapi/files/custom/favicon.png")
-            .expect("gokapi role must ship custom/favicon.png");
-        let bytes = favicon.contents();
-
-        assert_eq!(
-            &bytes[..8],
-            b"\x89PNG\r\n\x1a\n",
-            "custom/favicon.png must be a PNG — Gokapi decodes it as one"
-        );
-        let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap());
-        let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap());
-        assert_eq!(
-            (width, height),
-            (512, 512),
-            "Gokapi exits 1 at startup unless custom/favicon.png is exactly 512x512"
+    fn test_no_role_ships_branding_assets() {
+        assert!(
+            EMBEDDED_ANSIBLE
+                .get_dir("roles/gokapi/files/custom")
+                .is_none(),
+            "gokapi must not ship branding assets: they would become every operator's default"
         );
     }
 
