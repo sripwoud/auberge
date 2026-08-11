@@ -22,7 +22,21 @@
     state: directory
     recurse: true
 
+- name: Read installed Lego version
+  ansible.builtin.command: /usr/local/bin/lego --version
+  register: blocky_lego_version_output
+  changed_when: false
+  failed_when: false
+
+- name: Set installed Lego version fact
+  ansible.builtin.set_fact:
+    blocky_lego_installed_version: >-
+      {{ blocky_lego_version_output.stdout | default('')
+         | regex_search('(?<=lego version )\S+')
+         | default('', true) }}
+
 - name: Download Lego binary
+  when: blocky_lego_installed_version != blocky_lego_version
   ansible.builtin.get_url:
     url: "{{ blocky_lego_url }}"
     dest: "/tmp/lego.tar.gz"
@@ -31,11 +45,11 @@
     checksum: "sha256:{{ blocky_lego_sha256 }}"
 
 - name: Unarchive Lego binary
+  when: blocky_lego_installed_version != blocky_lego_version
   ansible.builtin.unarchive:
     src: "/tmp/lego.tar.gz"
     dest: "/usr/local/bin"
     remote_src: true
-    creates: "/usr/local/bin/lego"
     owner: blocky
     group: blocky
     mode: "0755"
