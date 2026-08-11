@@ -10,6 +10,7 @@ mod services;
 mod signal;
 mod ssh_config;
 mod ssh_session;
+mod tool_versions;
 
 use clap::{CommandFactory, Parser, Subcommand};
 use commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ansible_run};
@@ -110,7 +111,7 @@ enum Commands {
     Bichon(BichonCommands),
     #[command(
         visible_alias = "v",
-        about = "Report declared App Versions and upstream drift"
+        about = "Report declared App and Tool Versions and upstream drift"
     )]
     Versions(VersionsCmd),
     #[command(about = "Generate shell completion script")]

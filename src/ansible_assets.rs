@@ -56,6 +56,10 @@ impl AnsibleAssets {
         self.ansible_dir.join("playbooks")
     }
 
+    pub fn roles_dir(&self) -> PathBuf {
+        self.ansible_dir.join("roles")
+    }
+
     pub fn ensure_collections(&self) -> Result<()> {
         let collections_dir = self.ansible_dir.join(COLLECTIONS_CACHE).join("collections");
         if collections_dir.join("ansible_collections").exists() {

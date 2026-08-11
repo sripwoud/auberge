@@ -18,21 +18,21 @@ auberge [GLOBAL OPTIONS] <COMMAND>
 
 ## Commands
 
-| Command                                             | Alias | Purpose                                         |
-| --------------------------------------------------- | ----- | ----------------------------------------------- |
-| [deploy](cli-reference/deploy.md)                   | `dp`  | Deploy apps with auto-hardening                 |
-| [versions](cli-reference/versions.md)               | `v`   | Report declared App Versions and upstream drift |
-| [ansible](cli-reference/ansible/run.md)             | `a`   | Run Ansible playbooks                           |
-| [backup](cli-reference/backup/create.md)            | `b`   | Backup / restore / push / prune / verify        |
-| [dns](cli-reference/dns/list.md)                    | `d`   | Cloudflare DNS management                       |
-| [host](cli-reference/host/add.md)                   | `h`   | Manage `hosts.toml`                             |
-| [ssh](cli-reference/ssh/keygen.md)                  | `ss`  | SSH key generation and deployment               |
-| [sync](cli-reference/sync/music.md)                 | `sy`  | rsync media to the VPS                          |
-| [headscale](cli-reference/headscale/add-user.md)    | `hs`  | Headscale users and nodes                       |
-| [bichon](cli-reference/bichon/reconcile-folders.md) | —     | Bichon folder reconciliation                    |
-| [config](cli-reference/config/overview.md)          | `c`   | Manage `config.toml`                            |
-| [select](cli-reference/select/host.md)              | `se`  | Interactive host / playbook pickers             |
-| [completions](cli-reference/completions.md)         | —     | Generate shell completion script                |
+| Command                                             | Alias | Purpose                                                  |
+| --------------------------------------------------- | ----- | -------------------------------------------------------- |
+| [deploy](cli-reference/deploy.md)                   | `dp`  | Deploy apps with auto-hardening                          |
+| [versions](cli-reference/versions.md)               | `v`   | Report declared App and Tool Versions and upstream drift |
+| [ansible](cli-reference/ansible/run.md)             | `a`   | Run Ansible playbooks                                    |
+| [backup](cli-reference/backup/create.md)            | `b`   | Backup / restore / push / prune / verify                 |
+| [dns](cli-reference/dns/list.md)                    | `d`   | Cloudflare DNS management                                |
+| [host](cli-reference/host/add.md)                   | `h`   | Manage `hosts.toml`                                      |
+| [ssh](cli-reference/ssh/keygen.md)                  | `ss`  | SSH key generation and deployment                        |
+| [sync](cli-reference/sync/music.md)                 | `sy`  | rsync media to the VPS                                   |
+| [headscale](cli-reference/headscale/add-user.md)    | `hs`  | Headscale users and nodes                                |
+| [bichon](cli-reference/bichon/reconcile-folders.md) | —     | Bichon folder reconciliation                             |
+| [config](cli-reference/config/overview.md)          | `c`   | Manage `config.toml`                                     |
+| [select](cli-reference/select/host.md)              | `se`  | Interactive host / playbook pickers                      |
+| [completions](cli-reference/completions.md)         | —     | Generate shell completion script                         |
 
 ## Files
 

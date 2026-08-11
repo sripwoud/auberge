@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, 2026-08-10.
+Accepted, 2026-08-10. Amended, 2026-08-11: `auberge versions` reports Tool Versions too — see [Amendment](#amendment-2026-08-11-auberge-versions-reports-tool-versions).
 
 ## Context
 
@@ -29,7 +29,7 @@ Two facts made relocation cheap. `run_playbook` already accepts `extra_vars: Opt
 
 - **App Version is declared in the App's Playbook Meta**, as a typed `version:` block carrying the value plus its upstream coordinates (`datasource`, `depName`, and `extractVersion` where the tag format differs from the value). `PlaybookMeta` gains the field; serde validates it; a CI test asserts every App declares one, mirroring `test_all_committed_playbooks_have_meta_files`.
 - **Auberge injects App Versions at deploy** through the existing `extra_vars` seam. Role tasks continue to reference `{{ <role>_version }}` unchanged.
-- **Tool Versions stay in `defaults/main.yml`**, each carrying a `# renovate: datasource=… depName=…` annotation. A CI test asserts every remaining `_version:` in defaults carries one.
+- **Tool Versions stay in `defaults/main.yml`**, each carrying a `# renovate: datasource=… depName=…` annotation. A CI test asserts every remaining `_version:` in defaults carries one. (Since the 2026-08-11 amendment, `auberge versions` reads these annotations and reports Tool Versions as a distinct section.)
 - **Renovate manages both files.** Bumps are committed as `build(<app>): bump to X`, which matches `release_commits` in `release-plz.toml` and therefore cuts an auberge release — deliberate, so a bump becomes reachable by operators rather than accumulating unreleased on master.
 - **Co-pinned checksums remain literals in the repo.** A CI job on the Renovate PR downloads the asset, computes the sha256, and commits it onto the same branch; a bump whose checksum job fails does not merge.
 - **Grimmory is excluded from Renovate** but still declares an App Version. It is auberge's own build output (`build-grimmory.yml`, tagged `grimmory/vX.Y.Z` in this repo), not a dependency. Renovate scope and schema scope are different questions.
@@ -60,3 +60,15 @@ Two facts made relocation cheap. `run_playbook` already accepts `extra_vars: Opt
 - **Drop the literal checksums; fetch upstream checksums at deploy**, as blocky and colporteur already do. Rejected: gokapi publishes no checksum file at all — its `51dbf724…` was computed by hand — so gokapi would end up with no verification, and every role would lose re-tag detection.
 - **Self-hosted Renovate with `postUpgradeTasks`** to recompute checksums in-process. Rejected: `postUpgradeTasks` is unavailable on the hosted app, so choosing it would smuggle a hosting decision into a checksum decision. A CI job reaches the same result without that coupling.
 - **Migrating to NixOS (#179)**, which would make version pinning intrinsic rather than a convention. Out of scope here and not blocked by this decision: the App Version declarations are prior art a Nix migration would consume, not work it would discard.
+
+## Amendment (2026-08-11): `auberge versions` reports Tool Versions
+
+The original Decision left Tool Versions out of `auberge versions`, resting on this Context's claim that a Tool Version is "not an identity; nobody asks which `lego` a homelab runs." Three data points falsified that claim within 24 hours of acceptance (#451):
+
+1. **Someone asked which lego runs.** Reading the `versions` table after #447, the obvious question was why blocky still reported 0.34.0 when the PR title said 5.3.1; answering it required opening `ansible/roles/blocky/defaults/main.yml`.
+2. **lego v4 → v5 was a breaking CLI change with a deferred failure mode.** v5 removed `renew` and moved every flag onto `run`, so both call sites would have died with an unknown-flag error at the monthly renewal timer, weeks after a green deploy — the same failure shape as this ADR's own headscale worked example, in the other table.
+3. **Three install-once guards shipped undetected on Tool Versions** (`hermes_uv_version` and `tgtg_uv_version` #440 → #444, `blocky_lego_version` #435 → #447). Renovate bumped all three; none reached a host; nothing reported them.
+
+Amended decision: `auberge versions` reports Tool Versions as a distinct section, read from the `# renovate:` annotations in role defaults, and `--check-upstream` resolves their drift through the same coordinates (adding a `go` datasource handler for Caddy's plugins). The `behind` exit code covers both sections.
+
+What does _not_ change: where versions are declared. Tool Versions stay in `defaults/main.yml` and no `tools:` block enters Playbook Meta — Caddy would otherwise need a meta file purely to report two plugin pins, and the annotation data is already CI-guaranteed well-formed (`tests/version_annotations.rs`). The App Version / Tool Version split stands; what fell is the inference that only one side of it deserves reporting.

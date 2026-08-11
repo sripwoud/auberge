@@ -8,7 +8,7 @@ pub struct PlaybookMeta {
     #[serde(default)]
     pub required_keys: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<AppVersion>,
+    pub version: Option<VersionPin>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup: Option<BackupRecipe>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -17,12 +17,14 @@ pub struct PlaybookMeta {
     pub subdomain: Option<String>,
 }
 
-/// The App Version: the identity of the deployed App, plus the upstream
-/// coordinates Renovate needs to discover new releases (ADR-0017).
-/// Field names match Renovate's regex manager vocabulary.
+/// A Pinned version: the exact value plus the upstream coordinates Renovate
+/// needs to discover new releases — the shape an App Version (Playbook Meta
+/// `version:` block) and a Tool Version (`# renovate:` annotation in role
+/// defaults) have in common (ADR-0017). Field names match Renovate's regex
+/// manager vocabulary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AppVersion {
+pub struct VersionPin {
     pub value: String,
     pub datasource: String,
     pub dep_name: String,
@@ -89,7 +91,7 @@ impl PlaybookMeta {
 
 /// Collect every App that declares a Version, with its full upstream
 /// coordinates, sorted by App name (ADR-0017).
-pub fn declared_app_versions(playbooks_dir: &Path) -> Result<Vec<(String, AppVersion)>> {
+pub fn declared_app_versions(playbooks_dir: &Path) -> Result<Vec<(String, VersionPin)>> {
     let entries = std::fs::read_dir(playbooks_dir).wrap_err_with(|| {
         format!(
             "Failed to read playbooks directory {}",
@@ -435,7 +437,7 @@ version:
     fn test_meta_version_block_round_trips() {
         let meta = PlaybookMeta {
             required_keys: vec![],
-            version: Some(AppVersion {
+            version: Some(VersionPin {
                 value: "0.25.1".to_string(),
                 datasource: "github-releases".to_string(),
                 dep_name: "juanfont/headscale".to_string(),

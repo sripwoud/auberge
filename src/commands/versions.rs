@@ -1,6 +1,7 @@
 use crate::ansible_assets::AnsibleAssets;
 use crate::output::{self, OutputFormat};
-use crate::playbook_meta::{AppVersion, declared_app_versions};
+use crate::playbook_meta::{VersionPin, declared_app_versions};
+use crate::tool_versions::{ToolVersion, declared_tool_versions};
 use clap::Args;
 use eyre::{Result, WrapErr};
 use regex::Regex;
@@ -10,6 +11,7 @@ use tabled::Tabled;
 
 const NPM_REGISTRY: &str = "https://registry.npmjs.org";
 const GITHUB_API: &str = "https://api.github.com";
+const GO_PROXY: &str = "https://proxy.golang.org";
 // Abbreviated packument: dist-tags without per-version metadata (~1% the size).
 const NPM_ABBREVIATED: &str = "application/vnd.npm.install-v1+json";
 
@@ -40,6 +42,25 @@ struct AppReport {
     status: Option<DriftStatus>,
 }
 
+#[derive(Debug, Serialize)]
+struct ToolReport {
+    role: String,
+    tool: String,
+    declared: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    latest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<DriftStatus>,
+}
+
+/// App and Tool Versions stay distinct sections end to end — the ADR-0017
+/// split is visible in the output rather than flattened into one list.
+#[derive(Debug, Serialize)]
+struct VersionsReport {
+    apps: Vec<AppReport>,
+    tools: Vec<ToolReport>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 enum DriftStatus {
@@ -58,19 +79,22 @@ impl DriftStatus {
     }
 }
 
-/// Returns the process exit code — the Backup Verdict convention (0 every App
-/// current, 1 at least one behind, 2 operational error) so a cron can branch
-/// on drift. `unknown` drift does not fail the gate.
+/// Returns the process exit code — the Backup Verdict convention (0 every
+/// pin current, 1 at least one behind, 2 operational error) so a cron can
+/// branch on drift. `unknown` drift does not fail the gate.
 pub async fn run_versions(cmd: VersionsCmd) -> i32 {
     versions_exit_code(versions_and_report(cmd).await)
 }
 
-fn versions_exit_code(result: Result<Vec<AppReport>>) -> i32 {
+fn versions_exit_code(result: Result<VersionsReport>) -> i32 {
     match result {
-        Ok(reports) => {
-            let behind = reports
+        Ok(report) => {
+            let behind = report
+                .apps
                 .iter()
-                .any(|report| report.status == Some(DriftStatus::Behind));
+                .map(|app| app.status)
+                .chain(report.tools.iter().map(|tool| tool.status))
+                .any(|status| status == Some(DriftStatus::Behind));
             i32::from(behind)
         }
         Err(e) => {
@@ -80,51 +104,98 @@ fn versions_exit_code(result: Result<Vec<AppReport>>) -> i32 {
     }
 }
 
-/// Report the App Version each Playbook Meta declares (ADR-0017). Reads only
-/// the embedded asset tree — what the repo declares, not what any Host runs.
+/// Report the App Version each Playbook Meta declares and the Tool Versions
+/// annotated in role defaults (ADR-0017, amended for #451). Reads only the
+/// embedded asset tree — what the repo declares, not what any Host runs.
 /// Upstream is queried only behind `--check-upstream`; the default path stays
 /// offline.
-async fn versions_and_report(cmd: VersionsCmd) -> Result<Vec<AppReport>> {
+async fn versions_and_report(cmd: VersionsCmd) -> Result<VersionsReport> {
     let assets = AnsibleAssets::prepare()?;
-    let declared = declared_app_versions(&assets.playbooks_dir())?;
+    let apps = declared_app_versions(&assets.playbooks_dir())?;
+    let tools = declared_tool_versions(&assets.roles_dir())?;
 
-    let reports = if cmd.check_upstream {
-        drift_reports(&declared, &UpstreamClient::new()?).await?
+    let report = if cmd.check_upstream {
+        let client = UpstreamClient::new()?;
+        VersionsReport {
+            apps: app_drift_reports(&apps, &client).await?,
+            tools: tool_drift_reports(&tools, &client).await?,
+        }
     } else {
-        declared
-            .into_iter()
-            .map(|(app, version)| AppReport {
-                app,
-                declared: version.value,
-                latest: None,
-                status: None,
-            })
-            .collect()
+        VersionsReport {
+            apps: apps
+                .into_iter()
+                .map(|(app, pin)| AppReport {
+                    app,
+                    declared: pin.value,
+                    latest: None,
+                    status: None,
+                })
+                .collect(),
+            tools: tools
+                .into_iter()
+                .map(|tool| ToolReport {
+                    role: tool.role,
+                    tool: tool.tool,
+                    declared: tool.pin.value,
+                    latest: None,
+                    status: None,
+                })
+                .collect(),
+        }
     };
 
     match cmd.output {
-        OutputFormat::Human => print_reports_table(&reports, cmd.check_upstream),
-        OutputFormat::Json => println!("{}", render_json(&reports, cmd.check_upstream)?),
+        OutputFormat::Human => print_report_tables(&report, cmd.check_upstream),
+        OutputFormat::Json => println!("{}", render_json(&report, cmd.check_upstream)?),
     }
 
-    Ok(reports)
+    Ok(report)
 }
 
-async fn drift_reports(
-    declared: &[(String, AppVersion)],
+async fn resolve_drift(
+    client: &UpstreamClient,
+    name: &str,
+    pin: &VersionPin,
+) -> Result<(String, DriftStatus)> {
+    let latest = client
+        .latest(pin)
+        .await
+        .wrap_err_with(|| format!("Failed to resolve the latest {name} release"))?;
+    let status = drift(&pin.value, &latest);
+    Ok((latest, status))
+}
+
+async fn app_drift_reports(
+    declared: &[(String, VersionPin)],
     client: &UpstreamClient,
 ) -> Result<Vec<AppReport>> {
     let mut reports = Vec::with_capacity(declared.len());
-    for (app, version) in declared {
-        let latest = client
-            .latest(version)
-            .await
-            .wrap_err_with(|| format!("Failed to resolve the latest {app} release"))?;
+    for (app, pin) in declared {
+        let (latest, status) = resolve_drift(client, app, pin).await?;
         reports.push(AppReport {
             app: app.clone(),
-            declared: version.value.clone(),
-            status: Some(drift(&version.value, &latest)),
+            declared: pin.value.clone(),
             latest: Some(latest),
+            status: Some(status),
+        });
+    }
+    Ok(reports)
+}
+
+async fn tool_drift_reports(
+    declared: &[ToolVersion],
+    client: &UpstreamClient,
+) -> Result<Vec<ToolReport>> {
+    let mut reports = Vec::with_capacity(declared.len());
+    for tool in declared {
+        let name = format!("{}/{}", tool.role, tool.tool);
+        let (latest, status) = resolve_drift(client, &name, &tool.pin).await?;
+        reports.push(ToolReport {
+            role: tool.role.clone(),
+            tool: tool.tool.clone(),
+            declared: tool.pin.value.clone(),
+            latest: Some(latest),
+            status: Some(status),
         });
     }
     Ok(reports)
@@ -182,6 +253,7 @@ struct UpstreamClient {
     http: reqwest::Client,
     npm_base: String,
     github_base: String,
+    go_base: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -195,10 +267,14 @@ struct Release {
 
 impl UpstreamClient {
     fn new() -> Result<Self> {
-        Self::with_bases(NPM_REGISTRY.to_string(), GITHUB_API.to_string())
+        Self::with_bases(
+            NPM_REGISTRY.to_string(),
+            GITHUB_API.to_string(),
+            GO_PROXY.to_string(),
+        )
     }
 
-    fn with_bases(npm_base: String, github_base: String) -> Result<Self> {
+    fn with_bases(npm_base: String, github_base: String, go_base: String) -> Result<Self> {
         let http = reqwest::Client::builder()
             .user_agent(concat!("auberge/", env!("CARGO_PKG_VERSION")))
             .build()
@@ -207,15 +283,40 @@ impl UpstreamClient {
             http,
             npm_base,
             github_base,
+            go_base,
         })
     }
 
-    async fn latest(&self, version: &AppVersion) -> Result<String> {
+    async fn latest(&self, version: &VersionPin) -> Result<String> {
         match version.datasource.as_str() {
             "npm" => self.npm_latest(&version.dep_name).await,
             "github-releases" => self.github_latest(version).await,
+            "go" => self.go_latest(&version.dep_name).await,
             other => eyre::bail!("Unsupported datasource `{other}`"),
         }
+    }
+
+    /// Renovate's `go` datasource resolves through the module proxy:
+    /// `@v/list` yields every known tagged version, one per line. Stability
+    /// and ordering reuse the shared rules, so a `go` pin drifts exactly like
+    /// a release tag.
+    async fn go_latest(&self, dep_name: &str) -> Result<String> {
+        let url = format!("{}/{}/@v/list", self.go_base, escape_go_module(dep_name));
+        let listing = self
+            .http
+            .get(&url)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        listing
+            .lines()
+            .map(str::trim)
+            .filter(|version| is_version_like(version) && is_stable(version))
+            .max_by(|a, b| compare_versions(a, b))
+            .map(str::to_string)
+            .ok_or_else(|| eyre::eyre!("the module proxy lists no stable version of {dep_name}"))
     }
 
     async fn npm_latest(&self, dep_name: &str) -> Result<String> {
@@ -235,7 +336,7 @@ impl UpstreamClient {
             .ok_or_else(|| eyre::eyre!("npm packument for {dep_name} has no dist-tags.latest"))
     }
 
-    async fn github_latest(&self, version: &AppVersion) -> Result<String> {
+    async fn github_latest(&self, version: &VersionPin) -> Result<String> {
         let url = format!(
             "{}/repos/{}/releases?per_page=100",
             self.github_base, version.dep_name
@@ -283,6 +384,21 @@ fn is_stable(version: &str) -> bool {
     !version.contains('-')
 }
 
+/// Module paths are case-encoded on the proxy: each uppercase letter becomes
+/// `!` plus its lowercase form (golang.org/x/mod's escaped-path rule).
+fn escape_go_module(module: &str) -> String {
+    let mut escaped = String::with_capacity(module.len());
+    for c in module.chars() {
+        if c.is_ascii_uppercase() {
+            escaped.push('!');
+            escaped.push(c.to_ascii_lowercase());
+        } else {
+            escaped.push(c);
+        }
+    }
+    escaped
+}
+
 fn tag_version(tag: &str, extract: Option<&Regex>) -> Option<String> {
     match extract {
         None => Some(tag.to_string()),
@@ -294,7 +410,7 @@ fn tag_version(tag: &str, extract: Option<&Regex>) -> Option<String> {
 }
 
 #[derive(Tabled)]
-struct DeclaredRow<'a> {
+struct DeclaredAppRow<'a> {
     #[tabled(rename = "APP")]
     app: &'a str,
     #[tabled(rename = "DECLARED")]
@@ -302,7 +418,7 @@ struct DeclaredRow<'a> {
 }
 
 #[derive(Tabled)]
-struct DriftRow<'a> {
+struct DriftAppRow<'a> {
     #[tabled(rename = "APP")]
     app: &'a str,
     #[tabled(rename = "DECLARED")]
@@ -313,37 +429,89 @@ struct DriftRow<'a> {
     status: &'static str,
 }
 
-fn print_reports_table(reports: &[AppReport], checked_upstream: bool) {
+#[derive(Tabled)]
+struct DeclaredToolRow<'a> {
+    #[tabled(rename = "ROLE")]
+    role: &'a str,
+    #[tabled(rename = "TOOL")]
+    tool: &'a str,
+    #[tabled(rename = "DECLARED")]
+    declared: &'a str,
+}
+
+#[derive(Tabled)]
+struct DriftToolRow<'a> {
+    #[tabled(rename = "ROLE")]
+    role: &'a str,
+    #[tabled(rename = "TOOL")]
+    tool: &'a str,
+    #[tabled(rename = "DECLARED")]
+    declared: &'a str,
+    #[tabled(rename = "LATEST")]
+    latest: &'a str,
+    #[tabled(rename = "STATUS")]
+    status: &'static str,
+}
+
+fn print_report_tables(report: &VersionsReport, checked_upstream: bool) {
+    println!("App Versions");
     if checked_upstream {
-        let rows: Vec<DriftRow> = reports
+        let rows: Vec<DriftAppRow> = report
+            .apps
             .iter()
-            .map(|report| DriftRow {
-                app: &report.app,
-                declared: &report.declared,
-                latest: report
-                    .latest
-                    .as_deref()
-                    .expect("drift reports carry latest"),
-                status: report.status.expect("drift reports carry status").as_str(),
+            .map(|app| DriftAppRow {
+                app: &app.app,
+                declared: &app.declared,
+                latest: app.latest.as_deref().expect("drift reports carry latest"),
+                status: app.status.expect("drift reports carry status").as_str(),
             })
             .collect();
         output::print_table(&rows);
     } else {
-        let rows: Vec<DeclaredRow> = reports
+        let rows: Vec<DeclaredAppRow> = report
+            .apps
             .iter()
-            .map(|report| DeclaredRow {
-                app: &report.app,
-                declared: &report.declared,
+            .map(|app| DeclaredAppRow {
+                app: &app.app,
+                declared: &app.declared,
+            })
+            .collect();
+        output::print_table(&rows);
+    }
+
+    println!("\nTool Versions");
+    if checked_upstream {
+        let rows: Vec<DriftToolRow> = report
+            .tools
+            .iter()
+            .map(|tool| DriftToolRow {
+                role: &tool.role,
+                tool: &tool.tool,
+                declared: &tool.declared,
+                latest: tool.latest.as_deref().expect("drift reports carry latest"),
+                status: tool.status.expect("drift reports carry status").as_str(),
+            })
+            .collect();
+        output::print_table(&rows);
+    } else {
+        let rows: Vec<DeclaredToolRow> = report
+            .tools
+            .iter()
+            .map(|tool| DeclaredToolRow {
+                role: &tool.role,
+                tool: &tool.tool,
+                declared: &tool.declared,
             })
             .collect();
         output::print_table(&rows);
     }
 }
 
-fn render_json(reports: &[AppReport], checked_upstream: bool) -> Result<String> {
+fn render_json(report: &VersionsReport, checked_upstream: bool) -> Result<String> {
     Ok(serde_json::to_string_pretty(&serde_json::json!({
         "checked_upstream": checked_upstream,
-        "apps": reports,
+        "apps": report.apps,
+        "tools": report.tools,
     }))?)
 }
 
@@ -362,8 +530,22 @@ mod tests {
         }
     }
 
-    fn app_version(datasource: &str, dep_name: &str, extract_version: Option<&str>) -> AppVersion {
-        AppVersion {
+    fn tool_report(role: &str, tool: &str, declared: &str, latest: Option<&str>) -> ToolReport {
+        ToolReport {
+            role: role.to_string(),
+            tool: tool.to_string(),
+            declared: declared.to_string(),
+            status: latest.map(|latest| drift(declared, latest)),
+            latest: latest.map(str::to_string),
+        }
+    }
+
+    fn versions_report(apps: Vec<AppReport>, tools: Vec<ToolReport>) -> VersionsReport {
+        VersionsReport { apps, tools }
+    }
+
+    fn pin(datasource: &str, dep_name: &str, extract_version: Option<&str>) -> VersionPin {
+        VersionPin {
             value: "1.0.0".to_string(),
             datasource: datasource.to_string(),
             dep_name: dep_name.to_string(),
@@ -451,10 +633,13 @@ mod tests {
 
     #[test]
     fn render_json_offline_omits_latest_and_status() {
-        let reports = vec![report("actual", "26.8.0", None)];
+        let report = versions_report(
+            vec![report("actual", "26.8.0", None)],
+            vec![tool_report("blocky", "lego", "5.3.1", None)],
+        );
 
         let json: serde_json::Value =
-            serde_json::from_str(&render_json(&reports, false).unwrap()).unwrap();
+            serde_json::from_str(&render_json(&report, false).unwrap()).unwrap();
 
         assert_eq!(json["checked_upstream"], false);
         let app = &json["apps"][0];
@@ -462,22 +647,33 @@ mod tests {
         assert_eq!(app["declared"], "26.8.0");
         assert!(app.get("latest").is_none());
         assert!(app.get("status").is_none());
+        let tool = &json["tools"][0];
+        assert_eq!(tool["role"], "blocky");
+        assert_eq!(tool["tool"], "lego");
+        assert_eq!(tool["declared"], "5.3.1");
+        assert!(tool.get("latest").is_none());
+        assert!(tool.get("status").is_none());
     }
 
     #[test]
     fn render_json_with_drift_reports_latest_and_status() {
-        let reports = vec![
-            report("actual", "26.8.0", Some("26.8.1")),
-            report("headscale", "0.29.3", Some("0.29.3")),
-        ];
+        let report = versions_report(
+            vec![
+                report("actual", "26.8.0", Some("26.8.1")),
+                report("headscale", "0.29.3", Some("0.29.3")),
+            ],
+            vec![tool_report("caddy", "l4", "v0.1.2", Some("v0.2.0"))],
+        );
 
         let json: serde_json::Value =
-            serde_json::from_str(&render_json(&reports, true).unwrap()).unwrap();
+            serde_json::from_str(&render_json(&report, true).unwrap()).unwrap();
 
         assert_eq!(json["checked_upstream"], true);
         assert_eq!(json["apps"][0]["latest"], "26.8.1");
         assert_eq!(json["apps"][0]["status"], "behind");
         assert_eq!(json["apps"][1]["status"], "current");
+        assert_eq!(json["tools"][0]["latest"], "v0.2.0");
+        assert_eq!(json["tools"][0]["status"], "behind");
     }
 
     #[test]
@@ -487,10 +683,25 @@ mod tests {
         let unknown = || report("c", "edge", Some("1.0.0"));
         let offline = || report("d", "1.0.0", None);
 
-        assert_eq!(versions_exit_code(Ok(vec![current(), unknown()])), 0);
-        assert_eq!(versions_exit_code(Ok(vec![current(), behind()])), 1);
-        assert_eq!(versions_exit_code(Ok(vec![offline()])), 0);
+        let ok = |apps, tools| Ok(versions_report(apps, tools));
+
+        assert_eq!(
+            versions_exit_code(ok(vec![current(), unknown()], vec![])),
+            0
+        );
+        assert_eq!(versions_exit_code(ok(vec![current(), behind()], vec![])), 1);
+        assert_eq!(versions_exit_code(ok(vec![offline()], vec![])), 0);
         assert_eq!(versions_exit_code(Err(eyre::eyre!("boom"))), 2);
+    }
+
+    #[test]
+    fn versions_exit_code_fails_the_gate_on_tool_drift_alone() {
+        let report = versions_report(
+            vec![report("a", "1.0.0", Some("1.0.0"))],
+            vec![tool_report("blocky", "lego", "4.24.0", Some("5.3.1"))],
+        );
+
+        assert_eq!(versions_exit_code(Ok(report)), 1);
     }
 
     #[tokio::test]
@@ -503,10 +714,10 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let client = UpstreamClient::with_bases(server.uri(), server.uri())?;
+        let client = UpstreamClient::with_bases(server.uri(), server.uri(), server.uri())?;
 
         let latest = client
-            .latest(&app_version("npm", "@actual-app/sync-server", None))
+            .latest(&pin("npm", "@actual-app/sync-server", None))
             .await?;
 
         assert_eq!(latest, "26.8.1");
@@ -525,10 +736,10 @@ mod tests {
             ])))
             .mount(&server)
             .await;
-        let client = UpstreamClient::with_bases(server.uri(), server.uri())?;
+        let client = UpstreamClient::with_bases(server.uri(), server.uri(), server.uri())?;
 
         let latest = client
-            .latest(&app_version(
+            .latest(&pin(
                 "github-releases",
                 "sripwoud/auberge",
                 Some("^grimmory/v(?<version>.+)$"),
@@ -540,16 +751,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn go_latest_picks_the_max_stable_version_from_the_module_proxy() -> Result<()> {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/github.com/mholt/caddy-l4/@v/list"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("v0.1.0\nv0.1.2\nv0.2.0-beta.1\n"),
+            )
+            .mount(&server)
+            .await;
+        let client = UpstreamClient::with_bases(server.uri(), server.uri(), server.uri())?;
+
+        let latest = client
+            .latest(&pin("go", "github.com/mholt/caddy-l4", None))
+            .await?;
+
+        assert_eq!(latest, "v0.1.2");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn go_latest_fails_when_the_proxy_lists_no_stable_version() -> Result<()> {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("v0.2.0-beta.1\n"))
+            .mount(&server)
+            .await;
+        let client = UpstreamClient::with_bases(server.uri(), server.uri(), server.uri())?;
+
+        let result = client.latest(&pin("go", "example.com/mod", None)).await;
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("no stable version")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn escape_go_module_encodes_uppercase_as_bang_lowercase() {
+        assert_eq!(
+            escape_go_module("github.com/Azure/azure-sdk-for-go"),
+            "github.com/!azure/azure-sdk-for-go"
+        );
+        assert_eq!(
+            escape_go_module("github.com/mholt/caddy-l4"),
+            "github.com/mholt/caddy-l4"
+        );
+    }
+
+    #[tokio::test]
     async fn latest_fails_fast_on_upstream_http_errors() -> Result<()> {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(ResponseTemplate::new(500))
             .mount(&server)
             .await;
-        let client = UpstreamClient::with_bases(server.uri(), server.uri())?;
+        let client = UpstreamClient::with_bases(server.uri(), server.uri(), server.uri())?;
 
         let result = client
-            .latest(&app_version("github-releases", "juanfont/headscale", None))
+            .latest(&pin("github-releases", "juanfont/headscale", None))
             .await;
 
         assert!(result.is_err());
@@ -558,12 +821,13 @@ mod tests {
 
     #[tokio::test]
     async fn latest_rejects_an_unsupported_datasource() -> Result<()> {
-        let client =
-            UpstreamClient::with_bases("http://unused".to_string(), "http://unused".to_string())?;
+        let client = UpstreamClient::with_bases(
+            "http://unused".to_string(),
+            "http://unused".to_string(),
+            "http://unused".to_string(),
+        )?;
 
-        let result = client
-            .latest(&app_version("docker", "some/image", None))
-            .await;
+        let result = client.latest(&pin("docker", "some/image", None)).await;
 
         assert!(result.unwrap_err().to_string().contains("docker"));
         Ok(())
