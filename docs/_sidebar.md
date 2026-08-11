@@ -17,6 +17,7 @@
 - CLI Reference
   - [Overview](cli-reference/auberge.md)
   - [deploy](cli-reference/deploy.md)
+  - [versions](cli-reference/versions.md)
   - Ansible
     - [run](cli-reference/ansible/run.md)
     - [bootstrap](cli-reference/ansible/bootstrap.md)
