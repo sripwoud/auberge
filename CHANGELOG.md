@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.13](https://github.com/sripwoud/auberge/compare/v0.14.12...v0.14.13) - 2026-08-11
+
+### Added
+
+- *(bichon)* verify expunge coverage by message identity ([#419](https://github.com/sripwoud/auberge/pull/419))
+- *(baikal)* make the role upgrade-capable, bump to 0.12.1 ([#418](https://github.com/sripwoud/auberge/pull/418))
+- *(cli)* add auberge versions to report App Version drift ([#415](https://github.com/sripwoud/auberge/pull/415))
+
+### Fixed
+
+- *(ansible)* pin freshrss, navidrome, baikal and blocky App Versions ([#416](https://github.com/sripwoud/auberge/pull/416))
+
+### Other
+
+- cover App Versions, drift monitoring, and baikal upgrades
+- *(cli)* document the auberge versions command
+- *(meta)* declare App Versions in Playbook Meta, inject at deploy ([#414](https://github.com/sripwoud/auberge/pull/414))
+- *(renovate)* automate Pinned version bumps in role defaults ([#412](https://github.com/sripwoud/auberge/pull/412))
+- *(adr)* version apps in playbook meta
+- *(examples)* sweep only the accounts --account names ([#407](https://github.com/sripwoud/auberge/pull/407))
+- *(examples)* scan an account's sidecars once, not once per folder ([#406](https://github.com/sripwoud/auberge/pull/406))
+- *(readme)* list Actual Budget in the app stack
+- *(actual)* document the Actual Budget sync server
+
 ## [0.14.12](https://github.com/sripwoud/auberge/compare/v0.14.11...v0.14.12) - 2026-08-03
 
 ### Added
