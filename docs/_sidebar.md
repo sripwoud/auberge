@@ -55,6 +55,7 @@
   - Bichon
     - [reconcile-folders](cli-reference/bichon/reconcile-folders.md)
     - [rescan](cli-reference/bichon/rescan.md)
+    - [verify-coverage](cli-reference/bichon/verify-coverage.md)
   - Sync
     - [hermes](cli-reference/sync/hermes.md)
     - [music](cli-reference/sync/music.md)
