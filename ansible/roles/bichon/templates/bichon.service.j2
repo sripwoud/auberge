@@ -8,7 +8,7 @@ Type=simple
 User={{ bichon_sys_user }}
 Group={{ bichon_sys_group }}
 EnvironmentFile={{ bichon_install_dir }}/bichon.env
-ExecStart={{ bichon_install_dir }}/bichon --bichon-root-dir {{ bichon_root_dir }}
+ExecStart={{ bichon_install_dir }}/bichon-server --bichon-root-dir {{ bichon_root_dir }}
 
 Restart=on-failure
 RestartSec=5

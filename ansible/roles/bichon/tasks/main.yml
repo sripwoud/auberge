@@ -112,6 +112,16 @@
             path: /tmp/bichon.tar.gz
             state: absent
 
+    # v2 renamed both binaries (bichon -> bichon-server, bichonctl -> bichon-cli)
+    # and unarchive only adds, so the 0.3.7 ones survive an upgrade in place.
+    - name: Remove v0.3.7 binaries superseded by the v2 release layout
+      ansible.builtin.file:
+        path: "{{ bichon_install_dir }}/{{ item }}"
+        state: absent
+      loop:
+        - bichon
+        - bichonctl
+
     - name: Check existing encryption password file
       ansible.builtin.stat:
         path: "{{ bichon_encrypt_password_file }}"
