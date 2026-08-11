@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.16](https://github.com/sripwoud/auberge/compare/v0.14.15...v0.14.16) - 2026-08-11
+
+### Added
+
+- *(cli)* add shell completions subcommand ([#449](https://github.com/sripwoud/auberge/pull/449))
+- *(blocky)* port lego invocations to v5 CLI and bump to 5.3.1 ([#447](https://github.com/sripwoud/auberge/pull/447))
+
+### Fixed
+
+- *(uv)* reinstall on version change so pinned bumps reach existing hosts ([#444](https://github.com/sripwoud/auberge/pull/444))
+
+### Other
+
+- *(adr)* record static shell completion decision
+- *(blocky)* bump to 4.35.2 ([#434](https://github.com/sripwoud/auberge/pull/434))
+
 ## [0.14.15](https://github.com/sripwoud/auberge/compare/v0.14.14...v0.14.15) - 2026-08-11
 
 ### Fixed
