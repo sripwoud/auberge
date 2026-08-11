@@ -49,7 +49,7 @@ impl From<&Host> for HostDisplay {
 
 #[derive(Subcommand)]
 pub enum HostCommands {
-    #[command(alias = "a", about = "Add a new host")]
+    #[command(visible_alias = "a", about = "Add a new host")]
     Add {
         #[arg(help = "Host name")]
         name: Option<String>,
@@ -68,7 +68,7 @@ pub enum HostCommands {
         #[arg(long, help = "Disable interactive prompts")]
         no_input: bool,
     },
-    #[command(alias = "l", about = "List all hosts")]
+    #[command(visible_alias = "l", about = "List all hosts")]
     List {
         #[arg(short, long, help = "Filter by tags (comma-separated)")]
         tags: Option<String>,
@@ -81,25 +81,25 @@ pub enum HostCommands {
         )]
         output: OutputFormat,
     },
-    #[command(alias = "rm", about = "Remove a host")]
+    #[command(visible_alias = "rm", about = "Remove a host")]
     Remove {
         #[arg(help = "Host name (omit to be prompted)")]
         name: Option<String>,
         #[arg(short, long, help = "Skip confirmation")]
         yes: bool,
     },
-    #[command(alias = "s", about = "Show host details")]
+    #[command(visible_alias = "s", about = "Show host details")]
     Show {
         #[arg(help = "Host name (omit to be prompted)")]
         name: Option<String>,
     },
-    #[command(alias = "e", about = "Edit a host")]
+    #[command(visible_alias = "e", about = "Edit a host")]
     Edit {
         #[arg(help = "Host name (omit to be prompted)")]
         name: Option<String>,
     },
     #[command(
-        alias = "dti",
+        visible_alias = "dti",
         about = "Detect and cache the host's Tailscale IPv4 (queries the host via SSH)"
     )]
     DetectTailscaleIp {

@@ -15,7 +15,10 @@ use tabled::Tabled;
 
 #[derive(Subcommand)]
 pub enum HeadscaleCommands {
-    #[command(alias = "au", about = "Create a user and generate a pre-auth key")]
+    #[command(
+        visible_alias = "au",
+        about = "Create a user and generate a pre-auth key"
+    )]
     AddUser {
         #[arg(help = "Username to create")]
         name: Option<String>,
@@ -24,7 +27,7 @@ pub enum HeadscaleCommands {
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
-    #[command(alias = "lu", about = "List registered users")]
+    #[command(visible_alias = "lu", about = "List registered users")]
     ListUsers {
         #[arg(
             short = 'o',
@@ -37,7 +40,7 @@ pub enum HeadscaleCommands {
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
-    #[command(alias = "ln", about = "List connected nodes")]
+    #[command(visible_alias = "ln", about = "List connected nodes")]
     ListNodes {
         #[arg(
             short = 'o',
@@ -50,7 +53,7 @@ pub enum HeadscaleCommands {
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
-    #[command(alias = "ru", about = "Remove a user")]
+    #[command(visible_alias = "ru", about = "Remove a user")]
     RemoveUser {
         #[arg(help = "Username to remove")]
         name: Option<String>,

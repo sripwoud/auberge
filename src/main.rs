@@ -11,7 +11,7 @@ mod signal;
 mod ssh_config;
 mod ssh_session;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ansible_run};
 use commands::backup::{
     BackupCommands, RestoreOptions, VerifyOptions, run_backup_create, run_backup_list,
@@ -70,38 +70,51 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    #[command(alias = "dp", about = "Deploy apps to a host")]
+    #[command(visible_alias = "dp", about = "Deploy apps to a host")]
     Deploy(DeployCmd),
     #[command(
         subcommand,
-        alias = "se",
+        visible_alias = "se",
         about = "Select hosts or playbooks interactively"
     )]
     Select(SelectCommands),
-    #[command(subcommand, alias = "a", about = "Run ansible playbooks")]
+    #[command(subcommand, visible_alias = "a", about = "Run ansible playbooks")]
     Ansible(AnsibleCommands),
-    #[command(subcommand, alias = "b", about = "Backup and restore application data")]
+    #[command(
+        subcommand,
+        visible_alias = "b",
+        about = "Backup and restore application data"
+    )]
     Backup(BackupCommands),
     #[command(
         subcommand,
-        alias = "hs",
+        visible_alias = "hs",
         about = "Manage Headscale VPN users and nodes"
     )]
     Headscale(HeadscaleCommands),
-    #[command(subcommand, alias = "h", about = "Manage VPS hosts")]
+    #[command(subcommand, visible_alias = "h", about = "Manage VPS hosts")]
     Host(HostCommands),
-    #[command(subcommand, alias = "ss", about = "SSH key management")]
+    #[command(subcommand, visible_alias = "ss", about = "SSH key management")]
     Ssh(SshCommands),
-    #[command(subcommand, alias = "sy", about = "Sync files to remote hosts")]
+    #[command(subcommand, visible_alias = "sy", about = "Sync files to remote hosts")]
     Sync(SyncCommands),
-    #[command(subcommand, alias = "d", about = "DNS management via Namecheap")]
+    #[command(
+        subcommand,
+        visible_alias = "d",
+        about = "DNS management via Namecheap"
+    )]
     Dns(DnsCommands),
-    #[command(subcommand, alias = "c", about = "Manage user configuration")]
+    #[command(subcommand, visible_alias = "c", about = "Manage user configuration")]
     Config(ConfigCommands),
     #[command(subcommand, about = "Manage Bichon email archive behavior")]
     Bichon(BichonCommands),
-    #[command(alias = "v", about = "Report declared App Versions and upstream drift")]
+    #[command(
+        visible_alias = "v",
+        about = "Report declared App Versions and upstream drift"
+    )]
     Versions(VersionsCmd),
+    #[command(about = "Generate shell completion script")]
+    Completions { shell: clap_complete::Shell },
 }
 
 #[tokio::main]
@@ -351,5 +364,87 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Commands::Versions(cmd) => std::process::exit(run_versions(cmd).await),
+        Commands::Completions { shell } => {
+            clap_complete::generate(
+                shell,
+                &mut Cli::command(),
+                "auberge",
+                &mut std::io::stdout(),
+            );
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn generate_bash_script() -> String {
+        let mut buf = Vec::new();
+        clap_complete::generate(
+            clap_complete::Shell::Bash,
+            &mut Cli::command(),
+            "auberge",
+            &mut buf,
+        );
+        String::from_utf8(buf).expect("bash completion script is valid UTF-8")
+    }
+
+    #[test]
+    fn bash_completion_covers_subcommands() {
+        let script = generate_bash_script();
+        for subcommand in [
+            "deploy",
+            "select",
+            "ansible",
+            "backup",
+            "headscale",
+            "host",
+            "ssh",
+            "sync",
+            "dns",
+            "config",
+            "bichon",
+            "versions",
+            "completions",
+        ] {
+            assert!(
+                script.contains(&format!("auberge,{subcommand})")),
+                "bash completion misses subcommand {subcommand}"
+            );
+        }
+    }
+
+    #[test]
+    fn bash_completion_covers_aliases() {
+        let script = generate_bash_script();
+        for alias in ["dp", "se", "a", "b", "hs", "h", "ss", "sy", "d", "c", "v"] {
+            assert!(
+                script.contains(&format!("auberge,{alias})")),
+                "bash completion misses alias {alias}"
+            );
+        }
+        for (parent, alias) in [("backup", "c"), ("ansible", "r"), ("dns", "sa")] {
+            assert!(
+                script.contains(&format!("__{parent},{alias})")),
+                "bash completion misses nested alias {parent} {alias}"
+            );
+        }
+    }
+
+    #[test]
+    fn bash_completion_covers_global_flags_and_output_enum() {
+        let script = generate_bash_script();
+        for flag in ["--verbose", "--quiet", "--no-color"] {
+            assert!(
+                script.contains(flag),
+                "bash completion misses global flag {flag}"
+            );
+        }
+        assert!(
+            script.contains("human json"),
+            "bash completion misses --output enum values"
+        );
     }
 }
