@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.20](https://github.com/sripwoud/auberge/compare/v0.14.19...v0.14.20) - 2026-08-11
+
+### Added
+
+- *(gokapi)* brand as Partage with a custom theme and favicon ([#354](https://github.com/sripwoud/auberge/pull/354))
+
+### Fixed
+
+- *(gokapi)* stop shipping personal branding as the role default ([#467](https://github.com/sripwoud/auberge/pull/467))
+
 ## [0.14.19](https://github.com/sripwoud/auberge/compare/v0.14.18...v0.14.19) - 2026-08-11
 
 ### Other
