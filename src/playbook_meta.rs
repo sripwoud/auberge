@@ -144,6 +144,24 @@ mod tests {
         PlaybookMeta::load(&path).unwrap_or_else(|e| panic!("Failed to load {name}.meta.yml: {e}"))
     }
 
+    fn role_default(role: &str, key: &str) -> String {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("ansible")
+            .join("roles")
+            .join(role)
+            .join("defaults")
+            .join("main.yml");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
+        let defaults: HashMap<String, serde_yaml::Value> = serde_yaml::from_str(&raw)
+            .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", path.display()));
+        defaults
+            .get(key)
+            .and_then(|value| value.as_str())
+            .unwrap_or_else(|| panic!("{role} defaults declare {key}"))
+            .to_string()
+    }
+
     #[test]
     fn test_bootstrap_meta_parses_without_error() {
         let meta = load_meta("bootstrap");
@@ -340,7 +358,13 @@ mod tests {
             .post_restore_command
             .expect("paperless declares post_restore_command");
         assert!(cmd.contains("manage.py migrate"));
-        assert!(cmd.contains("PAPERLESS_CONFIGURATION_PATH"));
+
+        let install_path = role_default("paperless", "paperless_install_path");
+        assert!(cmd.contains(&format!("cd {install_path}/src")));
+        assert!(cmd.contains(&format!(
+            "PAPERLESS_CONFIGURATION_PATH={install_path}/paperless.conf"
+        )));
+        assert!(cmd.contains(&format!("{install_path}/venv/bin/python3")));
     }
 
     #[test]
