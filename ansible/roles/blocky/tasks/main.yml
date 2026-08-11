@@ -54,11 +54,30 @@
     group: blocky
     mode: "0755"
 
+- name: Detect Lego v4 account layout
+  ansible.builtin.find:
+    paths: "{{ blocky_config_path }}/accounts"
+    recurse: true
+    file_type: directory
+    patterns: keys
+  register: blocky_lego_v4_layout
+
+- name: Migrate Lego account data to v5 layout
+  when:
+    - not ansible_check_mode
+    - blocky_lego_v4_layout.matched > 0
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && echo y | /usr/local/bin/lego migrate --path {{ blocky_config_path }}"
+    chdir: /tmp
+    executable: /bin/bash
+  register: blocky_lego_migrate_result
+  changed_when: blocky_lego_migrate_result.rc == 0
+
 - name: Obtain Let's Encrypt certificate with Lego (Cloudflare DNS challenge)
   environment:
     CLOUDFLARE_DNS_API_TOKEN: "{{ cloudflare_dns_api_token }}"
   ansible.builtin.command:
-    cmd: "lego --domains '{{ blocky_domain }}' --email {{ blocky_letsencrypt_email }} --dns cloudflare --accept-tos --path {{ blocky_config_path }} run"
+    cmd: "{{ blocky_lego_run_cmd }}"
     creates: "{{ blocky_cert_file }}"
   args:
     chdir: "/tmp"
