@@ -26,7 +26,7 @@
   when: not hermes_linger_file.stat.exists
   changed_when: true
 
-- name: Check if uv is installed
+- name: Read installed uv version
   become: true
   become_user: "{{ hermes_user }}"
   ansible.builtin.command: "{{ hermes_home }}/.local/bin/uv --version"
@@ -36,6 +36,13 @@
   environment:
     HOME: "{{ hermes_home }}"
 
+- name: Set installed uv version fact
+  ansible.builtin.set_fact:
+    hermes_uv_installed_version: >-
+      {{ hermes_uv_check.stdout | default('')
+         | regex_search('(?<=uv )\S+')
+         | default('', true) }}
+
 - name: Create secure temp directory for uv installer
   become: true
   become_user: "{{ hermes_user }}"
@@ -43,7 +50,7 @@
     state: directory
     suffix: _uv_install
   register: hermes_uv_tmpdir
-  when: hermes_uv_check.rc != 0
+  when: hermes_uv_installed_version != hermes_uv_version
 
 - name: Download uv install script
   become: true
@@ -52,13 +59,13 @@
     url: "https://astral.sh/uv/{{ hermes_uv_version }}/install.sh"
     dest: "{{ hermes_uv_tmpdir.path }}/install.sh"
     mode: "0755"
-  when: hermes_uv_check.rc != 0
+  when: hermes_uv_installed_version != hermes_uv_version
 
 - name: Install uv package manager
   become: true
   become_user: "{{ hermes_user }}"
   ansible.builtin.command: "{{ hermes_uv_tmpdir.path }}/install.sh"
-  when: hermes_uv_check.rc != 0
+  when: hermes_uv_installed_version != hermes_uv_version
   changed_when: true
   environment:
     HOME: "{{ hermes_home }}"

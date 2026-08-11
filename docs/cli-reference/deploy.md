@@ -41,6 +41,14 @@ Execution plan:
   → apps (tags: paperless, freshrss)
 ```
 
+## Substrate Apps
+
+Substrate Apps (Caddy, Blocky, Headscale) are declared in `infrastructure.yml`, not `apps.yml`, so they are not valid `deploy` targets — they deploy on every `auberge deploy <app>` run instead. To push one alone:
+
+```bash
+auberge ansible run -t blocky
+```
+
 ## DNS verification
 
 After each app's playbook run (not in `--check`):
@@ -54,4 +62,4 @@ A mismatch aborts the deploy:
 DNS mismatch for paperless.example.com: queried 100.64.1.2, expected 100.64.1.2, got [1.2.3.4]
 ```
 
-?> App names are derived from roles in `apps.yml`. Run `auberge deploy` without args to see the multi-select list.
+?> App names are derived from roles in `apps.yml`. Run `auberge deploy` without args to see the multi-select list. Roles declared in `infrastructure.yml` are rejected with a pointer to [`auberge ansible run`](cli-reference/ansible/run.md) `-t <role>`.
