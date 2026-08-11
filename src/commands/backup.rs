@@ -46,7 +46,7 @@ fn is_backup_timestamp_dir(entry: &fs::DirEntry) -> bool {
 
 #[derive(Subcommand)]
 pub enum BackupCommands {
-    #[command(alias = "c", about = "Create backup of application data")]
+    #[command(visible_alias = "c", about = "Create backup of application data")]
     Create {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
@@ -71,7 +71,7 @@ pub enum BackupCommands {
         dry_run: bool,
     },
     #[command(
-        alias = "s",
+        visible_alias = "s",
         about = "Create backup, push to restic, prune, and clean up local staging"
     )]
     Sync {
@@ -99,7 +99,7 @@ pub enum BackupCommands {
         )]
         dry_run: bool,
     },
-    #[command(alias = "ls", about = "List available backups")]
+    #[command(visible_alias = "ls", about = "List available backups")]
     List {
         #[arg(short = 'H', long, help = "Filter by host")]
         host: Option<String>,
@@ -114,7 +114,7 @@ pub enum BackupCommands {
         )]
         output: OutputFormat,
     },
-    #[command(alias = "r", about = "Restore from backup")]
+    #[command(visible_alias = "r", about = "Restore from backup")]
     Restore {
         #[arg(help = "Backup timestamp (YYYY-MM-DD_HH-MM-SS) or 'latest' (omit to be prompted)")]
         backup_id: Option<String>,
@@ -149,7 +149,7 @@ pub enum BackupCommands {
         )]
         skip_playbook_unsafe: bool,
     },
-    #[command(alias = "eo", about = "Export FreshRSS feeds to OPML file")]
+    #[command(visible_alias = "eo", about = "Export FreshRSS feeds to OPML file")]
     ExportOpml {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
@@ -164,7 +164,10 @@ pub enum BackupCommands {
         #[arg(long, default_value = "admin", help = "FreshRSS username")]
         user: String,
     },
-    #[command(alias = "p", about = "Push backups to offsite restic repository")]
+    #[command(
+        visible_alias = "p",
+        about = "Push backups to offsite restic repository"
+    )]
     Push {
         #[arg(short = 'H', long, help = "Filter backups by host")]
         host: Option<String>,
@@ -177,7 +180,7 @@ pub enum BackupCommands {
         dry_run: bool,
     },
     #[command(
-        alias = "v",
+        visible_alias = "v",
         about = "Check the latest offsite snapshot is fresh and holds an app's backup"
     )]
     Verify {
@@ -204,7 +207,7 @@ pub enum BackupCommands {
         )]
         output: OutputFormat,
     },
-    #[command(alias = "io", about = "Import OPML file to FreshRSS")]
+    #[command(visible_alias = "io", about = "Import OPML file to FreshRSS")]
     ImportOpml {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,

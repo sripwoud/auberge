@@ -9,7 +9,7 @@ use serde::Serialize;
 
 #[derive(Subcommand)]
 pub enum DnsCommands {
-    #[command(alias = "l", about = "List DNS records")]
+    #[command(visible_alias = "l", about = "List DNS records")]
     List {
         #[arg(short, long, help = "Filter by subdomain name")]
         subdomain: Option<String>,
@@ -24,7 +24,7 @@ pub enum DnsCommands {
         #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
         production: bool,
     },
-    #[command(alias = "st", about = "Show DNS status and health")]
+    #[command(visible_alias = "st", about = "Show DNS status and health")]
     Status {
         #[arg(
             short = 'o',
@@ -37,7 +37,7 @@ pub enum DnsCommands {
         #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
         production: bool,
     },
-    #[command(alias = "s", about = "Set an A record for a subdomain")]
+    #[command(visible_alias = "s", about = "Set an A record for a subdomain")]
     Set {
         #[arg(short, long, help = "Subdomain name")]
         subdomain: Option<String>,
@@ -47,7 +47,7 @@ pub enum DnsCommands {
         production: bool,
     },
     #[command(
-        alias = "d",
+        visible_alias = "d",
         about = "Delete an A record for a subdomain",
         long_about = "Delete the Cloudflare A record for a subdomain.\n\n\
                       Idempotent — running against an already-absent record reports success. \
@@ -82,7 +82,7 @@ pub enum DnsCommands {
         #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
     },
-    #[command(alias = "m", about = "Migrate all A records to a new IP")]
+    #[command(visible_alias = "m", about = "Migrate all A records to a new IP")]
     Migrate {
         #[arg(short, long, help = "New IP address")]
         ip: String,
@@ -100,7 +100,7 @@ pub enum DnsCommands {
         production: bool,
     },
     #[command(
-        alias = "sa",
+        visible_alias = "sa",
         about = "Batch create A records for all app subdomains",
         long_about = "Interactively or automatically create DNS A records for all configured \
                       app subdomains pointing to a selected host's IP address.\n\n\

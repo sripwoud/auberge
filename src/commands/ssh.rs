@@ -7,7 +7,7 @@ use std::process::Command;
 
 #[derive(Subcommand)]
 pub enum SshCommands {
-    #[command(alias = "k")]
+    #[command(visible_alias = "k")]
     Keygen {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
@@ -21,7 +21,10 @@ pub enum SshCommands {
         #[arg(short, long, help = "Force overwrite existing key")]
         force: bool,
     },
-    #[command(alias = "ak", about = "Add/authorize SSH public key on remote host")]
+    #[command(
+        visible_alias = "ak",
+        about = "Add/authorize SSH public key on remote host"
+    )]
     AddKey {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,

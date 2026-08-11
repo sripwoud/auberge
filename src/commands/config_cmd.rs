@@ -15,35 +15,35 @@ use std::path::{Path, PathBuf};
 #[derive(Subcommand)]
 pub enum ConfigCommands {
     #[command(
-        alias = "i",
+        visible_alias = "i",
         about = "Print a config.toml scaffold derived from the Key Registry"
     )]
     Init(InitArgs),
-    #[command(alias = "s", about = "Set a config value")]
+    #[command(visible_alias = "s", about = "Set a config value")]
     Set {
         #[arg(help = "Key name (e.g. admin_user_name)")]
         key: Option<String>,
         #[arg(help = "Value to set")]
         value: Option<String>,
     },
-    #[command(alias = "g", about = "Get a config value")]
+    #[command(visible_alias = "g", about = "Get a config value")]
     Get {
         #[arg(help = "Key name")]
         key: Option<String>,
     },
     #[command(
-        alias = "l",
+        visible_alias = "l",
         about = "List all config keys (sensitive values redacted)"
     )]
     List,
-    #[command(alias = "rm", about = "Remove a key from config")]
+    #[command(visible_alias = "rm", about = "Remove a key from config")]
     Remove {
         #[arg(help = "Key name")]
         key: Option<String>,
     },
-    #[command(alias = "e", about = "Open config in $EDITOR")]
+    #[command(visible_alias = "e", about = "Open config in $EDITOR")]
     Edit,
-    #[command(alias = "p", about = "Print config file path")]
+    #[command(visible_alias = "p", about = "Print config file path")]
     Path,
 }
 
