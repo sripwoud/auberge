@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.17](https://github.com/sripwoud/auberge/compare/v0.14.16...v0.14.17) - 2026-08-11
+
+### Added
+
+- *(versions)* report Tool Versions, not just App Versions ([#461](https://github.com/sripwoud/auberge/pull/461))
+
+### Fixed
+
+- *(bichon)* port role to v2 release layout and bump to 2.0.1 ([#462](https://github.com/sripwoud/auberge/pull/462))
+- *(paperless)* point post_restore_command at the real venv path ([#460](https://github.com/sripwoud/auberge/pull/460))
+- *(bichon)* parse v2 account and mailbox reads in reconcile-folders ([#459](https://github.com/sripwoud/auberge/pull/459))
+- *(paperless)* role changes required for the 3.0.5 bump ([#456](https://github.com/sripwoud/auberge/pull/456))
+
+### Other
+
+- *(headscale)* bump to 0.27.1 ([#436](https://github.com/sripwoud/auberge/pull/436))
+- *(paperless)* bump to 3.0.5 ([#432](https://github.com/sripwoud/auberge/pull/432))
+
 ## [0.14.16](https://github.com/sripwoud/auberge/compare/v0.14.15...v0.14.16) - 2026-08-11
 
 ### Added
