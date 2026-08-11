@@ -55,6 +55,15 @@ ssh <hostname> "sudo find /var/lib/bichon-archive -name '*.meta.json' \
   -exec jq -r .message_id {} + | sort -u | wc -l"
 ```
 
+The run skips a message it already holds on that identity too, not on the filename. `<envelope-id>.eml` exists answers only for ids Bichon has not re-minted since; after the v2 upgrade regenerated every one as a UUID it reported all 9,394 archived bodies as absent, and a single tick wrote 825 duplicates ([ADR-0019](https://github.com/sripwoud/auberge/blob/master/meta/adr/0019-archive-download-skip-is-a-message-id-membership-test.md)). Filenames are consequently mixed for good — old numeric ids beside new UUIDs — which costs nothing, because nothing reads a filename as identity. Each account logs the two decisions separately:
+
+```bash
+ssh <hostname> "journalctl -u bichon-archive.service -n 40 | grep processed="
+# account=x@riou.one processed=0 skipped=714 deduped=0 failures=0
+```
+
+`skipped` is a filename match and `deduped` an identity match, so a sustained non-zero `deduped` means Bichon's envelope ids moved and the archive is re-recognising bodies it already holds. That costs one download per re-listed message and clears within one overlap window (24h) as the cursor advances past them.
+
 Sidecars written before [ADR-0013](https://github.com/sripwoud/auberge/blob/master/meta/adr/0013-archive-message-identity-is-the-message-id.md) carry no `message_id`. The next `bichon-archive.service` run repairs every one of them and drops the inert `tags` field [ADR-0012](https://github.com/sripwoud/auberge/blob/master/meta/adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md) left behind; until it has, gate 3 of `bichon-expunge.sh` refuses to run.
 
 A payload that is not a message is refused rather than archived — Bichon answers `200` with zero bytes when an envelope's blob store entry is empty, which `curl --fail` reads as success. One already in the archive is refetched by the envelope id in its filename on the next run ([ADR-0015](https://github.com/sripwoud/auberge/blob/master/meta/adr/0015-archive-publishes-a-body-only-if-it-is-a-message.md)). A body Bichon can no longer serve fails the unit on every run and is named in the journal; clearing it means deleting **both** the body and its sidecar, since a sidecar with no body fails the run too.

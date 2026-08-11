@@ -26,6 +26,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0016 | [Actual deploys bare-metal from npm; bank sync uses Enable Banking](./adr/0016-actual-bare-metal-npm-enable-banking.md)                            |
 | 0017 | [App Versions are declared in Playbook Meta; Tool Versions stay in role defaults](./adr/0017-app-versions-declared-in-playbook-meta.md)            |
 | 0018 | [Shell completion is static, generated at runtime by a `completions` subcommand](./adr/0018-static-shell-completion-via-completions-subcommand.md) |
+| 0019 | [The Archive's download skip is a Message-ID membership test](./adr/0019-archive-download-skip-is-a-message-id-membership-test.md)                 |
 
 ## No Docker
 
