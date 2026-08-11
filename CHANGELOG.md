@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.21](https://github.com/sripwoud/auberge/compare/v0.14.20...v0.14.21) - 2026-08-11
+
+### Fixed
+
+- *(output)* surface subprocess stderr in run_piped failures ([#474](https://github.com/sripwoud/auberge/pull/474))
+- *(cli)* draw sync music's host picker; split the 3 no-pick states ([#473](https://github.com/sripwoud/auberge/pull/473))
+- *(sync)* music always exits 23 setting times on /srv/music ([#471](https://github.com/sripwoud/auberge/pull/471))
+
 ## [0.14.20](https://github.com/sripwoud/auberge/compare/v0.14.19...v0.14.20) - 2026-08-11
 
 ### Added
