@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::key_registry::KeyRegistry;
 use crate::output;
 use crate::playbook_meta::PlaybookMeta;
-use crate::prompt::select_item;
+use crate::prompt::{Choice, select_item};
 use clap::{Args, Subcommand};
 use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::{Result, WrapErr};
@@ -65,13 +65,18 @@ pub struct InitArgs {
     pub force: bool,
 }
 
+fn key_choice(prompt: &str) -> Choice {
+    Choice::new("config key")
+        .with_prompt(prompt)
+        .resolved_by("the key as an argument")
+}
+
 fn select_key(config: &Config, prompt: &str) -> Result<String> {
     let keys = config.keys();
     if keys.is_empty() {
         eyre::bail!("No config keys found");
     }
-    select_item(&keys, |s: &String| s.clone(), prompt)?
-        .ok_or_else(|| eyre::eyre!("No key selected"))
+    select_item(&keys, |s: &String| s.clone(), key_choice(prompt))
 }
 
 fn select_registry_key(registry: &KeyRegistry, prompt: &str) -> Result<String> {
@@ -83,7 +88,7 @@ fn select_registry_key(registry: &KeyRegistry, prompt: &str) -> Result<String> {
         Some(entry) if entry.secret => format!("{k} [secret]"),
         _ => k.clone(),
     };
-    select_item(&keys, display, prompt)?.ok_or_else(|| eyre::eyre!("No key selected"))
+    select_item(&keys, display, key_choice(prompt))
 }
 
 fn sorted_registry_keys(registry: &KeyRegistry) -> Vec<String> {

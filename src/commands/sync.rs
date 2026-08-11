@@ -1,5 +1,4 @@
-use crate::hosts::HostManager;
-use crate::hosts::select_or_arg as hosts_select_or_arg;
+use crate::hosts::{HOST_FLAG, HostManager, select_or_arg as hosts_select_or_arg};
 use crate::output;
 use crate::services::inventory::select_or_arg as inventory_select_or_arg;
 use crate::ssh_session::SshSession;
@@ -52,7 +51,7 @@ pub fn run_sync_music(
 ) -> Result<()> {
     let ansible_user = "ansible";
 
-    let host = inventory_select_or_arg(host_arg)?;
+    let host = inventory_select_or_arg(host_arg, HOST_FLAG)?;
 
     let music_source = source.unwrap_or_else(|| {
         dirs::home_dir()
@@ -127,7 +126,7 @@ pub fn run_sync_hermes(
 ) -> Result<()> {
     let xdg_host = match host_arg {
         Some(name) => HostManager::get_host(&name)?,
-        None => hosts_select_or_arg(None)?,
+        None => hosts_select_or_arg(None, HOST_FLAG)?,
     };
 
     if pull {

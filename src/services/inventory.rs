@@ -249,23 +249,19 @@ pub fn discover_hosts_with_ips(inventory_path: Option<&Path>) -> Result<HashMap<
         .collect())
 }
 
-pub fn select_or_arg(arg: Option<String>) -> Result<Host> {
+pub fn select_or_arg(arg: Option<String>, argument: &str) -> Result<Host> {
     match arg {
         Some(name) => get_host(&name, None),
-        None => {
-            let hosts = get_hosts(None, None)?;
-            crate::prompt::select_item(
-                &hosts,
-                |h: &Host| {
-                    format!(
-                        "{} ({}:{})",
-                        h.name, h.vars.ansible_host, h.vars.ansible_port
-                    )
-                },
-                "Select host",
-            )?
-            .ok_or_else(|| eyre::eyre!("No host selected"))
-        }
+        None => crate::prompt::select_item(
+            &get_hosts(None, None)?,
+            |h: &Host| {
+                format!(
+                    "{} ({}:{})",
+                    h.name, h.vars.ansible_host, h.vars.ansible_port
+                )
+            },
+            crate::hosts::host_choice(argument),
+        ),
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::prompt::select_item;
+use crate::prompt::{Choice, select_item};
 use crate::services::inventory::{Host, get_hosts, get_playbooks};
 use clap::Subcommand;
 use eyre::Result;
@@ -30,16 +30,11 @@ pub fn run_select_host(group: Option<String>) -> Result<()> {
                 h.name, h.vars.ansible_host, h.vars.ansible_port
             )
         },
-        "Select host",
+        Choice::new("host"),
     )?;
 
-    match selected {
-        Some(host) => {
-            println!("{}", host.name);
-            Ok(())
-        }
-        None => eyre::bail!("No host selected"),
-    }
+    println!("{}", selected.name);
+    Ok(())
 }
 
 pub fn run_select_playbook() -> Result<()> {
@@ -52,14 +47,9 @@ pub fn run_select_playbook() -> Result<()> {
             let file = p.file_name().unwrap_or_default().to_string_lossy();
             format!("{} ({})", name, file)
         },
-        "Select playbook",
+        Choice::new("playbook"),
     )?;
 
-    match selected {
-        Some(path) => {
-            println!("{}", path.display());
-            Ok(())
-        }
-        None => eyre::bail!("No playbook selected"),
-    }
+    println!("{}", selected.display());
+    Ok(())
 }

@@ -1,7 +1,8 @@
 use crate::config::{Config, Preflight};
+use crate::hosts::{HOST_FLAG, HOST_POSITIONAL};
 use crate::output;
 use crate::playbook_meta::app_version_vars;
-use crate::prompt::select_item;
+use crate::prompt::{Choice, select_item};
 use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::dependency_resolver::{
     find_standalone_playbook, resolve_tags_to_playbook_runs,
@@ -115,9 +116,8 @@ fn select_or_use_playbook(playbook_arg: Option<PathBuf>) -> Result<PathBuf> {
                     let file = p.file_name().unwrap_or_default().to_string_lossy();
                     format!("{} ({})", name, file)
                 },
-                "Select playbook",
-            )?
-            .ok_or_else(|| eyre::eyre!("No playbook selected"))
+                Choice::new("playbook").resolved_by("-p <playbook>"),
+            )
         }
     }
 }
@@ -133,7 +133,7 @@ pub fn run_ansible_run(
     ask_pass: bool,
     force: bool,
 ) -> Result<()> {
-    let selected_host = select_or_arg(host)?;
+    let selected_host = select_or_arg(host, HOST_FLAG)?;
 
     if let (None, Some(tag_list)) = (&playbook, &tags) {
         return run_auto_resolved(
@@ -517,7 +517,7 @@ pub fn run_ansible_bootstrap(
 ) -> Result<()> {
     let preflight = validate_config_for_playbook("bootstrap.yml", None)?;
 
-    let host = select_or_arg(host_arg)?;
+    let host = select_or_arg(host_arg, HOST_POSITIONAL)?;
     let host_name = host.name.clone();
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     let bootstrap_playbook = assets.playbooks_dir().join("bootstrap.yml");

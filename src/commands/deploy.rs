@@ -1,5 +1,6 @@
 use crate::ansible_assets::AnsibleAssets;
 use crate::config::Config;
+use crate::hosts::HOST_FLAG;
 use crate::output;
 use crate::playbook_meta::app_version_vars;
 use crate::prompt::{confirm, select_multi};
@@ -36,7 +37,7 @@ pub struct DeployCmd {
 }
 
 fn select_host(host_arg: Option<String>) -> Result<Host> {
-    select_or_arg(host_arg)
+    select_or_arg(host_arg, HOST_FLAG)
 }
 
 fn select_apps(available: &[String]) -> Result<Vec<String>> {

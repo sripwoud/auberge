@@ -1,8 +1,8 @@
 use crate::config::Config;
-use crate::hosts::{Host, HostManager, select_or_arg};
+use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg};
 use crate::output;
 use crate::output::OutputFormat;
-use crate::prompt::{confirm, select_item};
+use crate::prompt::{Choice, confirm, select_item};
 use crate::ssh_session::SshSession;
 use clap::Subcommand;
 use dialoguer::{Input, Select, theme::ColorfulTheme};
@@ -178,7 +178,7 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
             let config = Config::load()?;
             match config.get("hostname") {
                 Some(name) if !name.is_empty() => HostManager::get_host(&name)?,
-                _ => select_or_arg(None)?,
+                _ => select_or_arg(None, HOST_FLAG)?,
             }
         }
     };
@@ -423,9 +423,10 @@ pub fn run_headscale_remove_user(
             let selected = select_item(
                 &users,
                 |u| format!("{} (id: {})", u.name, u.id),
-                "Select user to remove",
-            )?
-            .ok_or_else(|| eyre::eyre!("No user selected"))?;
+                Choice::new("user")
+                    .with_prompt("Select user to remove")
+                    .resolved_by("the username as an argument"),
+            )?;
             selected.name.clone()
         }
         None => eyre::bail!("Username is required (pass as argument or run interactively)"),

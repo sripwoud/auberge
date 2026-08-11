@@ -154,18 +154,26 @@ impl HostManager {
     }
 }
 
-pub fn select_or_arg(arg: Option<String>) -> eyre::Result<Host> {
+/// How a command names its host, for the error raised when no picker can be
+/// drawn. Commands take the host either as a flag or as a positional argument;
+/// naming the wrong one is worse than naming none.
+pub const HOST_FLAG: &str = "-H <host>";
+pub const HOST_POSITIONAL: &str = "the host name as an argument";
+
+pub fn host_choice(argument: &str) -> crate::prompt::Choice {
+    crate::prompt::Choice::new("host")
+        .resolved_by(argument)
+        .populated_by("auberge host add")
+}
+
+pub fn select_or_arg(arg: Option<String>, argument: &str) -> eyre::Result<Host> {
     match arg {
         Some(name) => HostManager::get_host(&name),
-        None => {
-            let hosts = HostManager::load_hosts()?;
-            crate::prompt::select_item(
-                &hosts,
-                |h: &Host| format!("{} ({}:{})", h.name, h.address, h.port),
-                "Select host",
-            )?
-            .ok_or_else(|| eyre::eyre!("No host selected"))
-        }
+        None => crate::prompt::select_item(
+            &HostManager::load_hosts()?,
+            |h: &Host| format!("{} ({}:{})", h.name, h.address, h.port),
+            host_choice(argument),
+        ),
     }
 }
 

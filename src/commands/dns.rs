@@ -1,6 +1,6 @@
 use crate::output;
 use crate::output::OutputFormat;
-use crate::prompt::select_item;
+use crate::prompt::{Choice, select_item};
 use crate::services::dns::DnsService;
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
@@ -350,8 +350,11 @@ fn resolve_subdomain(subdomain: Option<String>) -> Result<String> {
             }
             items.sort();
             items.dedup();
-            select_item(&items, |s: &String| s.clone(), "Select subdomain")?
-                .ok_or_else(|| eyre::eyre!("No subdomain selected — pass -s <name> to provide one"))
+            select_item(
+                &items,
+                |s: &String| s.clone(),
+                Choice::new("subdomain").resolved_by("-s <name>"),
+            )
         }
     }
 }

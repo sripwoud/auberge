@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::hosts::{Host, HostManager, select_or_arg};
+use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg};
 use crate::output::{self, OutputFormat};
 use crate::prompt;
 use crate::services::bichon::api::BichonApiClient;
@@ -88,7 +88,7 @@ fn resolve_host(arg: Option<String>) -> Result<Host> {
     if arg.is_none() && !HostManager::is_tty() {
         eyre::bail!("--host is required when stdin is not a TTY");
     }
-    select_or_arg(arg)
+    select_or_arg(arg, HOST_FLAG)
 }
 
 fn resolve_accounts(filter: Option<String>, known: &[String], is_tty: bool) -> Result<Vec<String>> {
@@ -109,8 +109,11 @@ fn resolve_accounts(filter: Option<String>, known: &[String], is_tty: bool) -> R
             let mut items = Vec::with_capacity(known.len() + 1);
             items.push(ALL_ACCOUNTS.to_string());
             items.extend_from_slice(known);
-            let choice = prompt::select_item(&items, |s: &String| s.clone(), "Select account")?
-                .ok_or_else(|| eyre::eyre!("no account selected"))?;
+            let choice = prompt::select_item(
+                &items,
+                |s: &String| s.clone(),
+                prompt::Choice::new("account").resolved_by("--account <email>"),
+            )?;
             if choice == ALL_ACCOUNTS {
                 Ok(known.to_vec())
             } else {

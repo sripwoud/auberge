@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::hosts::{Host, HostManager, select_or_arg as hosts_select_or_arg};
+use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg as hosts_select_or_arg};
 use crate::output;
 use crate::prompt::confirm;
 use crate::services::backup::executor::RecipeExecutor;
@@ -1340,9 +1340,10 @@ fn resolve_backup_dir(
                 let selection = crate::prompt::select_item(
                     &host_names,
                     |h: &String| h.clone(),
-                    "Select host backup to push",
-                )?
-                .ok_or_else(|| eyre::eyre!("No host selected"))?;
+                    crate::prompt::Choice::new("host backup")
+                        .with_prompt("Select host backup to push")
+                        .resolved_by("-H <host>"),
+                )?;
                 backup_root.join(&selection)
             }
         }
@@ -1400,12 +1401,15 @@ fn select_backup_id(host_backup_dir: &Path) -> Result<String> {
             .map(|e| e.file_name().to_string_lossy().into_owned()),
     );
 
-    crate::prompt::select_item(&options, |s: &String| s.clone(), "Select backup")?
-        .ok_or_else(|| eyre::eyre!("No backup selected"))
+    crate::prompt::select_item(
+        &options,
+        |s: &String| s.clone(),
+        crate::prompt::Choice::new("backup").resolved_by("the backup ID or 'latest'"),
+    )
 }
 
 fn get_host_or_select(host_arg: Option<String>) -> Result<Host> {
-    hosts_select_or_arg(host_arg)
+    hosts_select_or_arg(host_arg, HOST_FLAG)
 }
 
 fn default_backup_dir() -> PathBuf {
