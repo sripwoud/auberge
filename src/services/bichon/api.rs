@@ -5,12 +5,25 @@ use std::time::Duration;
 
 const MAX_RETRIES: usize = 3;
 
+/// Bichon 2.x renamed the read-side field to `download_folders` (nullable);
+/// 0.3.7 serves `sync_folders`, which also remains the update-payload name.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Account {
     pub id: u64,
     pub email: String,
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "download_folders",
+        deserialize_with = "deserialize_null_as_empty"
+    )]
     pub sync_folders: Vec<String>,
+}
+
+fn deserialize_null_as_empty<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<Vec<String>>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Debug, Deserialize)]
@@ -309,7 +322,7 @@ impl BichonApiClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{BichonApiClient, BichonApiHttpError, StoreEnvelope, is_retryable};
+    use super::{Account, BichonApiClient, BichonApiHttpError, StoreEnvelope, is_retryable};
     use reqwest::StatusCode;
     use serde_json::json;
     use wiremock::matchers::{body_partial_json, method, path};
@@ -434,6 +447,40 @@ mod tests {
         let client = BichonApiClient::new(server.uri(), "token").unwrap();
         let envelopes = client.search_messages(7, 999).await.unwrap();
         assert_eq!(envelopes.len(), 1);
+    }
+
+    #[test]
+    fn account_reads_v2_download_folders() {
+        let account: Account = serde_json::from_value(json!({
+            "id": 1, "email": "me@x.io", "download_folders": ["INBOX", "Sent"]
+        }))
+        .unwrap();
+        assert_eq!(account.sync_folders, vec!["INBOX", "Sent"]);
+    }
+
+    #[test]
+    fn account_reads_legacy_sync_folders() {
+        let account: Account = serde_json::from_value(json!({
+            "id": 1, "email": "me@x.io", "sync_folders": ["INBOX"]
+        }))
+        .unwrap();
+        assert_eq!(account.sync_folders, vec!["INBOX"]);
+    }
+
+    #[test]
+    fn account_reads_null_download_folders_as_empty() {
+        let account: Account = serde_json::from_value(json!({
+            "id": 1, "email": "me@x.io", "download_folders": null
+        }))
+        .unwrap();
+        assert!(account.sync_folders.is_empty());
+    }
+
+    #[test]
+    fn account_reads_missing_folders_as_empty() {
+        let account: Account =
+            serde_json::from_value(json!({"id": 1, "email": "me@x.io"})).unwrap();
+        assert!(account.sync_folders.is_empty());
     }
 
     #[test]
