@@ -74,8 +74,9 @@ pub fn sanitize_email(email: &str) -> String {
 
 // Cursor paths and reset commands interpolate the email into a remote shell
 // line; rejecting anything beyond the address characters Bichon accepts is
-// simpler and stricter than escaping.
-fn validate_email_for_shell(email: &str) -> Result<()> {
+// simpler and stricter than escaping. verify-coverage interpolates the same
+// value into its sidecar walk, so it applies the same rule.
+pub(crate) fn validate_email_for_shell(email: &str) -> Result<()> {
     let ok = !email.is_empty()
         && email
             .chars()
