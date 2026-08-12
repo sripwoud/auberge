@@ -47,6 +47,9 @@ Required from the Key Registry: `radio_subdomain`, `radio_listener_password`,
 - Memory Budgets for the `liquidsoap` and `icecast2` units are declared in
   `ansible/playbooks/radio.meta.yml` and injected at deploy (ADR-0021). Icecast's unit is
   generated from the apt-shipped init script, so its budget lands as a systemd drop-in.
+- The unit sets `OCAMLRUNPARAM=o=40`: OCaml's default GC keeps ~120% heap slack, which
+  measured 448M anonymous for two stations; bounding slack at 40% cut that to 164M with
+  both mounts still serving (#481). The budgets are sized from the tuned figure.
 
 ## Dependencies
 

@@ -10,6 +10,7 @@ Type=simple
 User={{ radio_liquidsoap_user }}
 Group={{ radio_liquidsoap_group }}
 ExecStart=/usr/bin/liquidsoap {{ radio_config_dir }}/radio.liq
+Environment=OCAMLRUNPARAM=o=40
 Restart=on-failure
 RestartSec=5
 MemoryHigh={{ liquidsoap_memory_high }}

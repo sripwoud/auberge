@@ -926,11 +926,11 @@ memory:
         let memory = load_meta("radio").memory;
         assert_eq!(memory.len(), 2);
         let liquidsoap = memory.get("liquidsoap").unwrap();
-        assert_eq!(liquidsoap.high, "512M");
-        assert_eq!(liquidsoap.max, "640M");
+        assert_eq!(liquidsoap.high, "320M");
+        assert_eq!(liquidsoap.max, "384M");
         let icecast = memory.get("icecast2").unwrap();
-        assert_eq!(icecast.high, "64M");
-        assert_eq!(icecast.max, "128M");
+        assert_eq!(icecast.high, "32M");
+        assert_eq!(icecast.max, "64M");
     }
 
     #[test]
