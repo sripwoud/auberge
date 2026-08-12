@@ -21,6 +21,8 @@
 //        WINDOW_DAYS  60                 (optional; default 60)
 //   2. Run syncBusyBlockers once to grant calendar authorization.
 //   3. Triggers -> add a time-driven trigger for syncBusyBlockers every 10 min.
+//   4. (One-off) Run cleanupDuplicateBlockers if an earlier version of this
+//      script left duplicate blockers in the recent past.
 //
 // Nothing is hardcoded; rotating the token is a Script Properties edit.
 
@@ -55,6 +57,12 @@ function syncBusyBlockers() {
   var seen = {};
 
   desired.forEach(function (block) {
+    // The feed keeps a short lookback, but existing blockers are only indexed
+    // from now onward; touching already-ended blocks would re-create them on
+    // every run.
+    if (block.end.getTime() <= now.getTime()) {
+      return;
+    }
     seen[block.uid] = true;
     var current = existing[block.uid];
     if (!current) {
@@ -126,7 +134,10 @@ function parseIcsDate(value) {
   var hour = parseInt(value.substr(9, 2), 10);
   var minute = parseInt(value.substr(11, 2), 10);
   var second = parseInt(value.substr(13, 2), 10);
-  return { allDay: false, date: new Date(Date.UTC(year, month, day, hour, minute, second)) };
+  if (value.charAt(value.length - 1) === 'Z') {
+    return { allDay: false, date: new Date(Date.UTC(year, month, day, hour, minute, second)) };
+  }
+  return { allDay: false, date: new Date(year, month, day, hour, minute, second) };
 }
 
 function indexExistingBlockers(calendar, start, end) {
@@ -161,4 +172,32 @@ function applyTimes(event, block) {
   } else {
     event.setTime(block.start, block.end);
   }
+}
+
+// One-off repair for calendars polluted by pre-fix runs: keeps the first
+// blocker per feed UID over the past 7 days and deletes the rest.
+function cleanupDuplicateBlockers() {
+  var props = PropertiesService.getScriptProperties();
+  var calendarId = props.getProperty('CALENDAR_ID') || 'primary';
+  var calendar = CalendarApp.getCalendarById(calendarId);
+  if (!calendar) {
+    throw new Error('Calendar not found: ' + calendarId);
+  }
+  var now = new Date();
+  var start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  var kept = {};
+  var deleted = 0;
+  calendar.getEvents(start, now).forEach(function (event) {
+    var uid = event.getTag(TAG_KEY);
+    if (!uid) {
+      return;
+    }
+    if (kept[uid]) {
+      event.deleteEvent();
+      deleted++;
+    } else {
+      kept[uid] = true;
+    }
+  });
+  Logger.log('duplicate blockers deleted: %s', deleted);
 }
