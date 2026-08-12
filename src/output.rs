@@ -1,8 +1,8 @@
 use clap::ValueEnum;
 use eyre::{Context, Result};
 use std::env;
-use std::io::{BufRead, BufReader, IsTerminal};
-use std::process::{Command, ExitStatus, Stdio};
+use std::io::{BufRead, BufReader, IsTerminal, Read};
+use std::process::{ChildStdout, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tabled::{Table, Tabled, settings::Style as TableStyle};
@@ -294,10 +294,10 @@ pub fn format_duration(seconds: u64) -> String {
     }
 }
 
-pub fn stream_command_stdout(
+fn stream_command(
     label: &str,
     cmd: &mut Command,
-    mut line_handler: impl FnMut(&str),
+    pump_stdout: impl FnOnce(ChildStdout, &str, bool),
 ) -> Result<ProgressResult> {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().wrap_err("failed to spawn subprocess")?;
@@ -320,13 +320,7 @@ pub fn stream_command_stdout(
             }
         });
 
-        for line_result in BufReader::new(stdout).lines() {
-            let Ok(line) = line_result else { continue };
-            if verbose {
-                emit_subprocess_line(label, &line);
-            }
-            line_handler(&line);
-        }
+        pump_stdout(stdout, label, verbose);
     });
 
     let status = child.wait().wrap_err("failed to wait on subprocess")?;
@@ -335,6 +329,76 @@ pub fn stream_command_stdout(
         status,
         last_stderr,
     })
+}
+
+pub fn stream_command_stdout(
+    label: &str,
+    cmd: &mut Command,
+    mut line_handler: impl FnMut(&str),
+) -> Result<ProgressResult> {
+    stream_command(label, cmd, |stdout, label, verbose| {
+        for line_result in BufReader::new(stdout).lines() {
+            let Ok(line) = line_result else { continue };
+            if verbose {
+                emit_subprocess_line(label, &line);
+            }
+            line_handler(&line);
+        }
+    })
+}
+
+/// Like `stream_command_stdout`, but treats `\r` as a line terminator too.
+///
+/// rsync's `--info=progress2` redraws one status line in place, emitting far
+/// more `\r` than `\n` (measured: nine to one). A `\n`-only reader sees nothing
+/// until the transfer ends, which is exactly when progress stops being useful.
+pub fn stream_command_segments(
+    label: &str,
+    cmd: &mut Command,
+    mut segment_handler: impl FnMut(&str),
+) -> Result<ProgressResult> {
+    stream_command(label, cmd, |stdout, label, verbose| {
+        read_segments(stdout, |segment| {
+            if verbose {
+                emit_subprocess_line(label, segment);
+            }
+            segment_handler(segment);
+        });
+    })
+}
+
+/// Splits a byte stream on `\r`, `\n`, or `\r\n`, flushing any trailing
+/// remainder that arrives without a terminator.
+///
+/// Empty segments are dropped, which is what collapses a `\r\n` pair into a
+/// single boundary rather than a boundary plus a blank segment.
+fn read_segments<R: Read>(reader: R, mut handler: impl FnMut(&str)) {
+    let mut reader = BufReader::new(reader);
+    let mut segment: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 4096];
+
+    while let Ok(read) = reader.read(&mut chunk) {
+        if read == 0 {
+            break;
+        }
+        for &byte in &chunk[..read] {
+            if byte == b'\r' || byte == b'\n' {
+                flush_segment(&mut segment, &mut handler);
+            } else {
+                segment.push(byte);
+            }
+        }
+    }
+
+    flush_segment(&mut segment, &mut handler);
+}
+
+fn flush_segment(segment: &mut Vec<u8>, handler: &mut impl FnMut(&str)) {
+    if segment.is_empty() {
+        return;
+    }
+    handler(&String::from_utf8_lossy(segment));
+    segment.clear();
 }
 
 #[cfg(test)]
@@ -576,6 +640,70 @@ mod tests {
         assert!(result.status.success());
         let seen = lines_seen.lock().unwrap();
         assert_eq!(*seen, vec!["line1", "line2", "line3"]);
+    }
+
+    fn segments_of(input: &str) -> Vec<String> {
+        let mut seen = Vec::new();
+        read_segments(input.as_bytes(), |segment| seen.push(segment.to_string()));
+        seen
+    }
+
+    #[test]
+    fn read_segments_splits_on_carriage_return() {
+        assert_eq!(segments_of("a\rb\rc"), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn read_segments_splits_on_newline() {
+        assert_eq!(segments_of("a\nb\nc"), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn read_segments_treats_crlf_as_one_boundary() {
+        assert_eq!(segments_of("a\r\nb\r\nc"), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn read_segments_flushes_trailing_partial_without_delimiter() {
+        assert_eq!(segments_of("done\rtrailing"), vec!["done", "trailing"]);
+    }
+
+    #[test]
+    fn read_segments_drops_empty_segments() {
+        assert_eq!(segments_of("\r\n\ra\n\n"), vec!["a"]);
+    }
+
+    #[test]
+    fn read_segments_yields_nothing_for_empty_input() {
+        assert!(segments_of("").is_empty());
+    }
+
+    #[test]
+    fn read_segments_yields_progress_redraws_between_newlines() {
+        let redraws = "  1,000  10%  1MB/s  0:00:09\r  2,000  20%  1MB/s  0:00:08\r";
+        assert_eq!(
+            segments_of(redraws),
+            vec![
+                "  1,000  10%  1MB/s  0:00:09",
+                "  2,000  20%  1MB/s  0:00:08"
+            ]
+        );
+    }
+
+    #[test]
+    fn stream_command_segments_invokes_handler_per_carriage_return() {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen_clone = std::sync::Arc::clone(&seen);
+
+        let result = stream_command_segments(
+            "test",
+            Command::new("printf").arg("one\\rtwo\\nthree"),
+            move |segment| seen_clone.lock().unwrap().push(segment.to_string()),
+        )
+        .unwrap();
+
+        assert!(result.status.success());
+        assert_eq!(*seen.lock().unwrap(), vec!["one", "two", "three"]);
     }
 
     #[test]
