@@ -1,7 +1,7 @@
 use crate::config::{Config, Preflight};
 use crate::hosts::{HOST_FLAG, HOST_POSITIONAL};
 use crate::output;
-use crate::playbook_meta::app_version_vars;
+use crate::playbook_meta::{app_memory_vars, app_version_vars};
 use crate::prompt::{Choice, select_item};
 use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::dependency_resolver::{
@@ -208,8 +208,10 @@ fn run_auto_resolved(
 
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     let app_versions = app_version_vars(&assets.playbooks_dir())?;
+    let memory_budgets = app_memory_vars(&assets.playbooks_dir())?;
     let mut extra_vars: Vec<(&str, &str)> = app_versions
         .iter()
+        .chain(memory_budgets.iter())
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
     if let Some(user) = user {
@@ -377,8 +379,10 @@ fn run_single_playbook(
 
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     let app_versions = app_version_vars(&assets.playbooks_dir())?;
+    let memory_budgets = app_memory_vars(&assets.playbooks_dir())?;
     let mut extra_vars: Vec<(&str, &str)> = app_versions
         .iter()
+        .chain(memory_budgets.iter())
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
     if let Some(user) = user {

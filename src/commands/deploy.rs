@@ -2,7 +2,7 @@ use crate::ansible_assets::AnsibleAssets;
 use crate::config::Config;
 use crate::hosts::HOST_FLAG;
 use crate::output;
-use crate::playbook_meta::app_version_vars;
+use crate::playbook_meta::{app_memory_vars, app_version_vars};
 use crate::prompt::{confirm, select_multi};
 use crate::services::ansible_runner::{InventoryHost, run_playbook};
 use crate::services::dependency_resolver::{
@@ -287,9 +287,12 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         user: host.vars.bootstrap_user.clone(),
     };
 
-    let app_versions = app_version_vars(&AnsibleAssets::prepare()?.playbooks_dir())?;
+    let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
+    let app_versions = app_version_vars(&playbooks_dir)?;
+    let memory_budgets = app_memory_vars(&playbooks_dir)?;
     let extra_vars: Vec<(&str, &str)> = app_versions
         .iter()
+        .chain(memory_budgets.iter())
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
 
