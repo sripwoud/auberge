@@ -6,6 +6,11 @@ version:
   datasource: github-releases
   depName: "paperless-ngx/paperless-ngx"
   extractVersion: "^v(?<version>.+)$"
+memory:
+  paperless-webserver: { high: 512M, max: 768M }
+  paperless-consumer: { high: 192M, max: 256M }
+  paperless-task-queue: { high: 768M, max: 1G }
+  paperless-scheduler: { high: 192M, max: 256M }
 backup:
   systemd_services:
     - paperless-webserver

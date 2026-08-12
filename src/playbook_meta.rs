@@ -403,6 +403,23 @@ mod tests {
     }
 
     #[test]
+    fn test_paperless_meta_memory_budgets() {
+        let memory = load_meta("paperless").memory;
+        assert_eq!(memory.len(), 4);
+        let task_queue = memory.get("paperless-task-queue").unwrap();
+        assert_eq!(task_queue.high, "768M");
+        assert_eq!(task_queue.max, "1G");
+        let webserver = memory.get("paperless-webserver").unwrap();
+        assert_eq!(webserver.high, "512M");
+        assert_eq!(webserver.max, "768M");
+        for unit in ["paperless-consumer", "paperless-scheduler"] {
+            let budget = memory.get(unit).unwrap();
+            assert_eq!(budget.high, "192M");
+            assert_eq!(budget.max, "256M");
+        }
+    }
+
+    #[test]
     fn test_remove_radicale_meta_parses_without_error() {
         let meta = load_meta("remove-radicale");
         assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
