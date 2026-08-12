@@ -27,6 +27,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0017 | [App Versions are declared in Playbook Meta; Tool Versions stay in role defaults](./adr/0017-app-versions-declared-in-playbook-meta.md)            |
 | 0018 | [Shell completion is static, generated at runtime by a `completions` subcommand](./adr/0018-static-shell-completion-via-completions-subcommand.md) |
 | 0019 | [The Archive's download skip is a Message-ID membership test](./adr/0019-archive-download-skip-is-a-message-id-membership-test.md)                 |
+| 0020 | [A Station is an m3u file in `Stations/`; broadcast is opt-in by directory](./adr/0020-station-is-an-m3u-in-stations-broadcast-opt-in.md)          |
 
 ## No Docker
 

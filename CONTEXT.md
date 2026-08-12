@@ -141,6 +141,14 @@ _Avoid_: API server, backend, master copy.
 The PSD2 open-banking aggregator Actual's bank sync uses on this deployment, chosen because GoCardless closed Bank Account Data to new signups in July 2025 (ADR-0016). Covers the operator's bank, C24 (AIS + PIS since October 2024). Configured once in Actual's UI — application ID plus credential file from Enable Banking's control panel; the credentials persist in **Actual**'s `account.sqlite`, inside the Backup Recipe and outside the Key Registry. Deliberately outside Actual's end-to-end encryption too: the server performs the bank pulls, so the credentials and in-flight transactions are server-readable by design — E2E protects the budget ledger at rest, not the bank-sync plumbing.
 _Avoid_: bank API (unqualified), Nordigen/GoCardless successor (a distinct product, not a rebrand).
 
+**Radio**:
+The App that broadcasts the operator's own music as continuous streams: Icecast2 and Liquidsoap, both from apt, behind one Caddy site. A **Public App** whose entire listener audience is gated by a single `basic_auth` credential from the **Key Registry**, hashed at deploy — the `colporteur` pattern. Has no **App Version** (apt chooses the bytes) and no **Backup Recipe** (no state: configs are role-rendered, and the m3u files' canonical copy is the operator's local `~/Music`). Distinct from a **Station**: the Radio is the App, a Station is one stream it serves (ADR-0020).
+_Avoid_: Icecast (the server, not the App), stream server, broadcast app
+
+**Station**:
+One continuous stream, defined by exactly one `.m3u` file under `<MusicFolder>/Stations/` and served at one Icecast mountpoint. The same file is simultaneously a Navidrome playlist — Navidrome's `PlaylistsPath` imports what Liquidsoap broadcasts — so there is no export step and no second copy to drift. **Broadcast is opt-in by directory, never by naming convention**: `Playlists/` is Navidrome-only, `Stations/` is Navidrome plus broadcast, and Liquidsoap globs `Stations/*.m3u` and nothing else. Every Station is a playlist; a playlist is a Station only by its location. Curated by beets query, transported by `auberge sync music`, whose rsync excludes only `.DS_Store` and `*.tmp` and so carries m3u for free (ADR-0020).
+_Avoid_: Mount / mountpoint (Icecast's term for the transport, not the thing), channel, radio (that is the App)
+
 **Progress**:
 The trait that runners (`AnsibleRunner`, `Recipe Executor`, `Backup Session`) emit events through. `TerminalProgress` is the production impl; tests use a `MockProgress`. Keeps runners free of terminal-output coupling.
 _Avoid_: Logger, reporter
@@ -161,7 +169,9 @@ _Avoid_: Logger, reporter
 - An **App** is either a **Public App** or a **Tailnet-only App**, determined by the `tailnet_only` flag in its **Playbook Meta**. **DNS Publication** is dispatched accordingly.
 - The **Busy Feed** is derived from **Baikal**'s calendar data — plus, optionally, a read-only external CalDAV calendar fetched Host-side — and served on Baikal's **Public App** site (Google's servers must reach it); auberge produces and serves it but ships no consumer.
 - **Actual** relays sync between clients that each hold the full budget; its Backup Recipe path (`/var/lib/actual`) also carries the **Enable Banking** credentials, so restoring it restores bank sync.
-- An **App Version** is declared in the **Playbook Meta** and injected at deploy; every App declares one, and no role resolves a version at run time.
+- An **App Version** is declared in the **Playbook Meta** and injected at deploy; every App whose upstream the repo chooses declares one, and no role resolves a version at run time. An App installed from apt has none — apt source priority, not the repo, decides which bytes land: Caddy (no meta file at all) and the **Radio** (a meta file with `subdomain:` and no `version:`).
+- The **Radio** serves one or more **Stations**; each Station is one `.m3u` under `Stations/` and one Icecast mountpoint. The same file is a Navidrome playlist, so Navidrome and the Radio read one artifact and neither owns it — `~/Music` does.
+- A playlist under `Playlists/` is not broadcast; moving it to `Stations/` is what publishes it. Nothing else in auberge makes publication a filesystem act, and nothing else needs to.
 
 ## Example dialogue
 
@@ -178,6 +188,7 @@ _Avoid_: Logger, reporter
 - "Append-only" was used of the **Email Archive** to mean "nothing is ever deleted," and was silently read as "everything is faithfully preserved." Resolved: it also means _nothing is ever updated_, which is correct for immutable bodies and wrong for mutable metadata. Say **append-only** of bodies and folder; say **snapshot** of tags (see **Tag Snapshot**, ADR-0012).
 - "Write-once" was then read as a rule about the sidecar _file_, which would have forbidden repairing a field the file had never carried. Resolved: it is a rule about **observations** — a fact the archive learned from Bichon at first sight, `folder` being the only one. A **derived index key** recomputed from the immutable `.eml` is not an observation and may be written in place (ADR-0013), and neither is a payload that was never a message — replacing it completes a write that did not happen (ADR-0015).
 - "Message id" was used for both the `<envelope-id>` in an `.eml` filename and the RFC 5322 `Message-ID`. Resolved: only the latter is an identity. Call the former the **envelope id** and treat it as a filename.
+- "Playlist" was used for both a Navidrome playlist and a broadcast **Station**, which made "add a playlist" ambiguous between a private act and a publication. Resolved: both are the same file format in the same library, distinguished only by directory — **Playlist** under `Playlists/`, **Station** under `Stations/`. Say which. The ambiguity is the reason the directory split exists rather than a naming convention (ADR-0020).
 - "Pinned" is used in two unrelated senses. Resolved: **Version Resolution / Pinned** fixes _which upstream release_ a role installs; **APT pinning** (`Pin-Priority` in `preferences.d`) fixes _which apt source wins_ for a package. `roles/actual` does both, ~70 lines apart. Say "Pinned version" or "APT pinning" — never bare "pinned".
 
 ## Stdout discipline
