@@ -392,6 +392,30 @@ mod tests {
         String::from_utf8(buf).expect("bash completion script is valid UTF-8")
     }
 
+    fn subcommands_missing_about(cmd: &clap::Command, path: &str) -> Vec<String> {
+        cmd.get_subcommands()
+            .filter(|sub| sub.get_name() != "help")
+            .flat_map(|sub| {
+                let sub_path = format!("{path} {}", sub.get_name());
+                let mut missing = subcommands_missing_about(sub, &sub_path);
+                if sub.get_about().is_none() {
+                    missing.push(sub_path);
+                }
+                missing
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_subcommand_has_a_description() {
+        let missing = subcommands_missing_about(&Cli::command(), "auberge");
+        assert!(
+            missing.is_empty(),
+            "subcommands render blank in --help: {}",
+            missing.join(", ")
+        );
+    }
+
     #[test]
     fn bash_completion_covers_subcommands() {
         let script = generate_bash_script();
