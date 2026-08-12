@@ -909,6 +909,31 @@ memory:
     }
 
     #[test]
+    fn test_radio_meta_is_a_public_app_with_no_version_and_no_backup() {
+        let meta = load_meta("radio");
+        assert_eq!(meta.subdomain.as_deref(), Some("radio"));
+        assert!(!meta.tailnet_only);
+        assert!(meta.version.is_none());
+        assert!(meta.backup.is_none());
+        assert!(
+            meta.required_keys
+                .contains(&"radio_listener_password".to_string())
+        );
+    }
+
+    #[test]
+    fn test_radio_meta_memory_budgets() {
+        let memory = load_meta("radio").memory;
+        assert_eq!(memory.len(), 2);
+        let liquidsoap = memory.get("liquidsoap").unwrap();
+        assert_eq!(liquidsoap.high, "512M");
+        assert_eq!(liquidsoap.max, "640M");
+        let icecast = memory.get("icecast2").unwrap();
+        assert_eq!(icecast.high, "64M");
+        assert_eq!(icecast.max, "128M");
+    }
+
+    #[test]
     fn test_unit_templates_carry_no_literal_memory_directives() {
         for (path, body) in role_template_bodies() {
             for line in body.lines() {

@@ -28,6 +28,8 @@
       tags: [apps, storage, media, music, navidrome]
     - role: paperless
       tags: [apps, storage, documents, paperless]
+    - role: radio
+      tags: [apps, media, radio]
     - role: syncthing
       tags: [apps, sync, syncthing]
     - role: tgtg

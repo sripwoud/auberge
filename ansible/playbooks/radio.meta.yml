@@ -1,0 +1,5 @@
+required_keys: [radio_listener_password]
+subdomain: radio
+memory:
+  liquidsoap: { high: 512M, max: 640M }
+  icecast2: { high: 64M, max: 128M }
