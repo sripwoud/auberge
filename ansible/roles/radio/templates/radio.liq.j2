@@ -7,7 +7,7 @@ def broadcast(m3u) =
   station = playlist(mode="randomize", reload_mode="watch", m3u)
   station = crossfade(station)
   station = mksafe(station)
-  ignore(output.icecast(%mp3(bitrate={{ radio_bitrate }}),
+  ignore(output.icecast(%mp3(pcm_s16, bitrate={{ radio_bitrate }}),
     host="127.0.0.1", port={{ radio_icecast_port }},
     password="{{ radio_source_password }}", mount="/#{name}",
     name=name, public=false,

@@ -50,6 +50,9 @@ Required from the Key Registry: `radio_subdomain`, `radio_listener_password`,
 - The unit sets `OCAMLRUNPARAM=o=40`: OCaml's default GC keeps ~120% heap slack, which
   measured 448M anonymous for two stations; bounding slack at 40% cut that to 164M with
   both mounts still serving (#481). The budgets are sized from the tuned figure.
+- The encoder requests `pcm_s16` frames, so buffered audio is held as 16-bit integers
+  instead of OCaml's native 64-bit floats — 4x less memory per buffered second. Operators
+  without s16 support (e.g. `crossfade`) convert at their boundary, trading a little CPU.
 
 ## Dependencies
 
