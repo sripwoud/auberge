@@ -150,8 +150,12 @@ The App that broadcasts the operator's own music as continuous streams: Icecast2
 _Avoid_: Icecast (the server, not the App), stream server, broadcast app
 
 **Station**:
-One continuous stream, defined by exactly one `.m3u` file under `<MusicFolder>/Stations/` and served at one Icecast mountpoint. The same file is simultaneously a Navidrome playlist — Navidrome's `PlaylistsPath` imports what Liquidsoap broadcasts — so there is no export step and no second copy to drift. **Broadcast is opt-in by directory, never by naming convention**: `Playlists/` is Navidrome-only, `Stations/` is Navidrome plus broadcast, and Liquidsoap globs `Stations/*.m3u` and nothing else. Every Station is a playlist; a playlist is a Station only by its location. Curated by beets query, transported by `auberge sync music`, whose rsync excludes only `.DS_Store` and `*.tmp` and so carries m3u for free (ADR-0020).
+One continuous stream, defined by exactly one `.m3u` file under `<MusicFolder>/Stations/` and served at one Icecast mountpoint. The same file is simultaneously a Navidrome playlist — Navidrome's `PlaylistsPath` imports what Liquidsoap broadcasts — so there is no export step and no second copy to drift. **Broadcast is opt-in by directory, never by naming convention**: `Playlists/` is Navidrome-only, `Stations/` is Navidrome plus broadcast, and Liquidsoap globs `Stations/*.m3u` and nothing else. Every Station is a playlist; a playlist is a Station only by its location. Curated by beets query, transported by `auberge sync music`, whose **Sync Blocklist** carries m3u for free (ADR-0020, ADR-0022).
 _Avoid_: Mount / mountpoint (Icecast's term for the transport, not the thing), channel, radio (that is the App)
+
+**Sync Blocklist**:
+The exclusion rules `auberge sync music` carries — hidden entries (`.*`) and `*.tmp` — together with `--delete-excluded`, so a match already on the Host is deleted rather than _protected_ by rsync's default two-sided exclude semantics. **A blocklist, never an allowlist**: `~/Music` holds heterogeneous and still-growing content — audio in five formats, cover art, album booklets, liner notes, and the `.m3u` files that are simultaneously Navidrome playlists and **Stations** — so anything an allowlist forgot to name would silently stop reaching the Host, and now be deleted from it. Hidden entries are excluded as a _class_ because a hidden entry in a music library is tool state (`.DS_Store`, a Claude Code session's `.memsearch`), never content; enumerating them costs one pattern per tool that ever writes one, each added only after its droppings reached Navidrome. Non-hidden droppings (`Thumbs.db`, `@eaDir`) are not covered and get enumerated if they ever appear — none has. **Every pattern is also a deletion authorization**, which is what makes the list self-healing and makes a careless addition destructive. See ADR-0022.
+_Avoid_: Ignore list, filter, exclusions (unqualified — the **Backup Recipe** path carries none at all).
 
 **Progress**:
 The trait that runners (`AnsibleRunner`, `Recipe Executor`, `Backup Session`) emit events through. `TerminalProgress` is the production impl; tests use a `MockProgress`. Keeps runners free of terminal-output coupling.
@@ -176,6 +180,7 @@ _Avoid_: Logger, reporter
 - An **App Version** is declared in the **Playbook Meta** and injected at deploy; every App whose upstream the repo chooses declares one, and no role resolves a version at run time. An App installed from apt has none — apt source priority, not the repo, decides which bytes land: Caddy (no meta file at all) and the **Radio** (a meta file with `subdomain:` and no `version:`).
 - The **Radio** serves one or more **Stations**; each Station is one `.m3u` under `Stations/` and one Icecast mountpoint. The same file is a Navidrome playlist, so Navidrome and the Radio read one artifact and neither owns it — `~/Music` does.
 - A playlist under `Playlists/` is not broadcast; moving it to `Stations/` is what publishes it. Nothing else in auberge makes publication a filesystem act, and nothing else needs to.
+- `~/Music` is the canonical copy of every **Station**, playlist and booklet; the **Sync Blocklist** decides what of it reaches the Host, and `--delete-excluded` makes the Host converge on that decision retroactively rather than accumulating whatever an older rule once allowed.
 
 ## Example dialogue
 
