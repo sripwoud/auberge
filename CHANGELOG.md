@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.23](https://github.com/sripwoud/auberge/compare/v0.14.22...v0.14.23) - 2026-08-12
+
+### Added
+
+- *(cli)* declare per-unit app memory budgets in playbook meta ([#483](https://github.com/sripwoud/auberge/pull/483))
+
+### Fixed
+
+- *(baikal)* interpret floating busy-feed times in the operator timezone ([#485](https://github.com/sripwoud/auberge/pull/485))
+- *(navidrome)* stop exposing transcoding profile editor in the UI ([#479](https://github.com/sripwoud/auberge/pull/479))
+
+### Other
+
+- *(adr)* make radio broadcast opt-in by directory
+
 ## [0.14.22](https://github.com/sripwoud/auberge/compare/v0.14.21...v0.14.22) - 2026-08-12
 
 ### Fixed
