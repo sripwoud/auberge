@@ -1,8 +1,8 @@
 # Radio Ansible Role
 
-Installs and configures the Radio: Icecast2 and Liquidsoap (both from apt) broadcasting
-each `.m3u` file under the stations directory as one continuous, password-gated stream
-(ADR-0020).
+Installs and configures the Radio: Icecast2 (apt) and Liquidsoap (upstream release deb)
+broadcasting each `.m3u` file under the stations directory as one continuous,
+password-gated stream (ADR-0020).
 
 ## Requirements
 
@@ -33,6 +33,12 @@ Required from the Key Registry: `radio_subdomain`, `radio_listener_password`,
 
 ## Behaviour
 
+- Liquidsoap installs from savonet's release deb, pinned as the `radio/liquidsoap` Tool
+  Version (ADR-0017) — Debian trixie ships 2.3.2, and 2.4.5 allocates far less transient
+  memory. The asset name embeds an OCaml build and package revision (`ocaml4.14.2-2`)
+  that upstream changes between releases: when Renovate bumps the version, a stale
+  suffix 404s the download task — fix `radio_liquidsoap_deb` against the release page.
+  Icecast2 stays on apt: Debian tracks its security fixes and its footprint is tiny.
 - A Station is one `.m3u` under `radio_stations_dir`, served at
   `https://{{ radio_domain }}/<filename-without-extension>`.
 - Liquidsoap globs `*.m3u` at startup: adding or removing a station file needs
@@ -50,6 +56,9 @@ Required from the Key Registry: `radio_subdomain`, `radio_listener_password`,
 - The unit sets `OCAMLRUNPARAM=o=40`: OCaml's default GC keeps ~120% heap slack, which
   measured 448M anonymous for two stations; bounding slack at 40% cut that to 164M with
   both mounts still serving (#481). The budgets are sized from the tuned figure.
+- The encoder requests `pcm_s16` frames, so buffered audio is held as 16-bit integers
+  instead of OCaml's native 64-bit floats — 4x less memory per buffered second. Operators
+  without s16 support (e.g. `crossfade`) convert at their boundary, trading a little CPU.
 
 ## Dependencies
 
