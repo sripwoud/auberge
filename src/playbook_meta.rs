@@ -901,6 +901,14 @@ memory:
     }
 
     #[test]
+    fn test_navidrome_meta_memory_budget() {
+        let memory = load_meta("navidrome").memory;
+        let budget = memory.get("navidrome").unwrap();
+        assert_eq!(budget.high, "256M");
+        assert_eq!(budget.max, "384M");
+    }
+
+    #[test]
     fn test_unit_templates_carry_no_literal_memory_directives() {
         for (path, body) in role_template_bodies() {
             for line in body.lines() {

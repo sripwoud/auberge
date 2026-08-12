@@ -2,6 +2,7 @@
   ansible.builtin.systemd_service:
     name: navidrome
     state: restarted
+    daemon_reload: true
 
 - name: Restart caddy
   ansible.builtin.systemd_service:
