@@ -5,7 +5,7 @@ navidrome_domain: "{{ navidrome_subdomain }}.{{ domain }}"
 navidrome_music_folder: /srv/music
 navidrome_log_level: info
 navidrome_scanner_interval: 24h
-navidrome_enable_transcoding: true
+navidrome_enable_transcoding_config: false
 navidrome_enable_downloads: true
 navidrome_enable_sharing: true
 
