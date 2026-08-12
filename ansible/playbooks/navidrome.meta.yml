@@ -1,5 +1,7 @@
 required_keys: []
 subdomain: navidrome
+memory:
+  navidrome: { high: 256M, max: 384M }
 version:
   value: "0.63.2"
   datasource: github-releases

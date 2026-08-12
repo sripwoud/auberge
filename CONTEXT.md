@@ -9,7 +9,7 @@ An Ansible playbook (`ansible/playbooks/<name>.yml`) that deploys exactly one ap
 _Avoid_: Role, recipe (Ansible-internal), task (Ansible-internal)
 
 **Playbook Meta**:
-A sibling YAML file (`ansible/playbooks/<name>.meta.yml`) declaring the Playbook's contract with auberge — its `required_keys` from the Key Registry and, optionally, a `backup` section holding a Backup Recipe.
+A sibling YAML file (`ansible/playbooks/<name>.meta.yml`) declaring the Playbook's contract with auberge — its `required_keys` from the Key Registry and, optionally, an App Version (`version:`), a Backup Recipe (`backup:`), and per-unit Memory Budgets (`memory:`).
 _Avoid_: Manifest, descriptor, schema
 
 **Key Registry**:
@@ -66,6 +66,10 @@ The two things a `_version` variable can name, distinguished because only one of
 
 The split is what makes Version Resolution declarable: Caddy has _no_ App Version (Caddy itself comes from apt), which is why it needs no meta file despite carrying two pins; blocky declares its App Version in its meta and pins lego as a Tool Version in role defaults.
 _Avoid_: calling both "the version"; "dependency version" (does not distinguish); "app version" lowercase for a Tool Version.
+
+**Memory Budget**:
+The declarative `memory:` section of a Playbook Meta, keyed by systemd unit name, declaring each unit's `high` (`MemoryHigh=`, the throttle-and-reclaim ceiling) and `max` (`MemoryMax=`, the OOM-kill line). Injected at deploy through the same `extra_vars` seam as App Versions, as `<unit>_memory_high` / `<unit>_memory_max`, and rendered into the role's unit template — or into a systemd drop-in when the unit ships with the upstream package (navidrome's `.deb`). Opt-in per unit like the Backup Recipe, sized from measured baselines (#482 records the first), so the Host's total memory commitment is reviewable in the repo instead of discoverable only via `systemctl status` (ADR-0021). Keyed by unit, not by App, because one App may run units an order of magnitude apart (paperless runs four).
+_Avoid_: Memory limit (systemd's vocabulary distinguishes high from max), quota, resource cap (unqualified).
 
 **Backup Recipe**:
 The declarative `backup:` section of a Playbook Meta describing how to back up the App: services to stop, paths to rsync, optional database dump, optional `post_restore_command`. Pure data — no imperative branching. Most Recipes capture an App's on-disk state directly; for Bichon the Recipe rsyncs an **Email Archive** instead, see ADR-0006.
@@ -157,7 +161,7 @@ _Avoid_: Logger, reporter
 
 - A **Playbook** has exactly one **Playbook Meta** sibling.
 - A **Playbook Meta** declares zero or more keys from the **Key Registry**.
-- A **Playbook Meta** declares zero or one **Backup Recipe**.
+- A **Playbook Meta** declares zero or one **Backup Recipe**, and zero or more **Memory Budgets** — one per systemd unit the App runs.
 - A **Preflight** binds one **Playbook Meta** to a validated **Config**.
 - The **Recipe Executor** consumes one **Backup Recipe**; the **Backup Session** consumes many.
 - A **Backup Verdict** reads only what a **Backup Session** already pushed, attributing a snapshot to a **Host** by the restic tag push writes (the same tag prune groups retention by).

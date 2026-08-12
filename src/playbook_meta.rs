@@ -15,6 +15,17 @@ pub struct PlaybookMeta {
     pub tailnet_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subdomain: Option<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub memory: HashMap<String, MemoryBudget>,
+}
+
+/// A Memory Budget: one systemd unit's `MemoryHigh=` (throttle-and-reclaim
+/// ceiling) and `MemoryMax=` (OOM-kill line), declared per unit in the App's
+/// Playbook Meta and injected at deploy like an App Version (ADR-0021).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MemoryBudget {
+    pub high: String,
+    pub max: String,
 }
 
 /// A Pinned version: the exact value plus the upstream coordinates Renovate
@@ -89,9 +100,8 @@ impl PlaybookMeta {
     }
 }
 
-/// Collect every App that declares a Version, with its full upstream
-/// coordinates, sorted by App name (ADR-0017).
-pub fn declared_app_versions(playbooks_dir: &Path) -> Result<Vec<(String, VersionPin)>> {
+/// Load every committed Playbook Meta, keyed by App name.
+pub fn load_all_metas(playbooks_dir: &Path) -> Result<Vec<(String, PlaybookMeta)>> {
     let entries = std::fs::read_dir(playbooks_dir).wrap_err_with(|| {
         format!(
             "Failed to read playbooks directory {}",
@@ -99,7 +109,7 @@ pub fn declared_app_versions(playbooks_dir: &Path) -> Result<Vec<(String, Versio
         )
     })?;
 
-    let mut versions = Vec::new();
+    let mut metas = Vec::new();
     for entry in entries {
         let path = entry
             .wrap_err("Failed to read playbooks directory entry")?
@@ -111,12 +121,37 @@ pub fn declared_app_versions(playbooks_dir: &Path) -> Result<Vec<(String, Versio
         else {
             continue;
         };
-        if let Some(version) = PlaybookMeta::load(&path)?.version {
-            versions.push((app.to_string(), version));
-        }
+        metas.push((app.to_string(), PlaybookMeta::load(&path)?));
     }
+    Ok(metas)
+}
+
+/// Collect every App that declares a Version, with its full upstream
+/// coordinates, sorted by App name (ADR-0017).
+pub fn declared_app_versions(playbooks_dir: &Path) -> Result<Vec<(String, VersionPin)>> {
+    let mut versions: Vec<(String, VersionPin)> = load_all_metas(playbooks_dir)?
+        .into_iter()
+        .filter_map(|(app, meta)| meta.version.map(|version| (app, version)))
+        .collect();
     versions.sort_by(|(a, _), (b, _)| a.cmp(b));
     Ok(versions)
+}
+
+/// Collect every declared Memory Budget as `<unit>_memory_high` /
+/// `<unit>_memory_max` extra-var pairs (unit-name hyphens become
+/// underscores), sorted by name. Injected at deploy through the same
+/// `extra_vars` seam as App Versions (ADR-0021).
+pub fn app_memory_vars(playbooks_dir: &Path) -> Result<Vec<(String, String)>> {
+    let mut vars = Vec::new();
+    for (_, meta) in load_all_metas(playbooks_dir)? {
+        for (unit, budget) in meta.memory {
+            let prefix = unit.replace('-', "_");
+            vars.push((format!("{prefix}_memory_high"), budget.high));
+            vars.push((format!("{prefix}_memory_max"), budget.max));
+        }
+    }
+    vars.sort();
+    Ok(vars)
 }
 
 /// Collect every declared App Version as a `<app>_version` extra-var pair,
@@ -368,6 +403,23 @@ mod tests {
     }
 
     #[test]
+    fn test_paperless_meta_memory_budgets() {
+        let memory = load_meta("paperless").memory;
+        assert_eq!(memory.len(), 4);
+        let task_queue = memory.get("paperless-task-queue").unwrap();
+        assert_eq!(task_queue.high, "768M");
+        assert_eq!(task_queue.max, "1G");
+        let webserver = memory.get("paperless-webserver").unwrap();
+        assert_eq!(webserver.high, "512M");
+        assert_eq!(webserver.max, "768M");
+        for unit in ["paperless-consumer", "paperless-scheduler"] {
+            let budget = memory.get(unit).unwrap();
+            assert_eq!(budget.high, "192M");
+            assert_eq!(budget.max, "256M");
+        }
+    }
+
+    #[test]
     fn test_remove_radicale_meta_parses_without_error() {
         let meta = load_meta("remove-radicale");
         assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
@@ -471,6 +523,7 @@ version:
             backup: None,
             tailnet_only: false,
             subdomain: None,
+            memory: HashMap::new(),
         };
         let yaml = serde_yaml::to_string(&meta).unwrap();
         let reparsed: PlaybookMeta = serde_yaml::from_str(&yaml).unwrap();
@@ -734,5 +787,157 @@ backup:
         };
         let effective = recipe.effective_paths(&HashMap::new());
         assert!(!effective.contains(&"/srv/music".to_string()));
+    }
+
+    #[test]
+    fn test_meta_memory_block_parses() {
+        let yaml = r#"
+required_keys: []
+memory:
+  paperless-task-queue: {high: 768M, max: 1G}
+  paperless-webserver: {high: 512M, max: 768M}
+"#;
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        let budget = meta.memory.get("paperless-task-queue").unwrap();
+        assert_eq!(budget.high, "768M");
+        assert_eq!(budget.max, "1G");
+        assert_eq!(meta.memory.len(), 2);
+    }
+
+    #[test]
+    fn test_meta_without_memory_parses_to_empty() {
+        let yaml = "required_keys: []\n";
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        assert!(meta.memory.is_empty());
+    }
+
+    #[test]
+    fn test_app_memory_vars_flattens_units_to_sorted_pairs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("zeta.meta.yml"),
+            "required_keys: []\nmemory:\n  zeta-worker: {high: 256M, max: 512M}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("alpha.meta.yml"),
+            "required_keys: []\nmemory:\n  alpha: {high: 128M, max: 256M}\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("gamma.meta.yml"), "required_keys: []\n").unwrap();
+
+        let vars = app_memory_vars(dir.path()).unwrap();
+        assert_eq!(
+            vars,
+            vec![
+                ("alpha_memory_high".to_string(), "128M".to_string()),
+                ("alpha_memory_max".to_string(), "256M".to_string()),
+                ("zeta_worker_memory_high".to_string(), "256M".to_string()),
+                ("zeta_worker_memory_max".to_string(), "512M".to_string()),
+            ]
+        );
+    }
+
+    fn parse_systemd_size(value: &str) -> Option<u64> {
+        let (digits, multiplier) = match value.as_bytes().last()? {
+            b'K' => (&value[..value.len() - 1], 1u64 << 10),
+            b'M' => (&value[..value.len() - 1], 1u64 << 20),
+            b'G' => (&value[..value.len() - 1], 1u64 << 30),
+            b'T' => (&value[..value.len() - 1], 1u64 << 40),
+            b'0'..=b'9' => (value, 1),
+            _ => return None,
+        };
+        digits.parse::<u64>().ok().map(|n| n * multiplier)
+    }
+
+    #[test]
+    fn test_declared_memory_budgets_use_systemd_sizes_with_high_below_max() {
+        for (app, meta) in load_all_metas(&playbooks_dir()).unwrap() {
+            for (unit, budget) in &meta.memory {
+                let high = parse_systemd_size(&budget.high).unwrap_or_else(|| {
+                    panic!("{app}: {unit} high {:?} is not a systemd size", budget.high)
+                });
+                let max = parse_systemd_size(&budget.max).unwrap_or_else(|| {
+                    panic!("{app}: {unit} max {:?} is not a systemd size", budget.max)
+                });
+                assert!(
+                    high <= max,
+                    "{app}: {unit} declares high {} above max {}",
+                    budget.high,
+                    budget.max
+                );
+            }
+        }
+    }
+
+    fn role_template_bodies() -> Vec<(std::path::PathBuf, String)> {
+        let roles_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("ansible")
+            .join("roles");
+        let mut bodies = Vec::new();
+        for role in std::fs::read_dir(&roles_dir).unwrap() {
+            let templates = role.unwrap().path().join("templates");
+            let Ok(entries) = std::fs::read_dir(&templates) else {
+                continue;
+            };
+            for entry in entries {
+                let path = entry.unwrap().path();
+                if path.is_file() {
+                    let body = std::fs::read_to_string(&path)
+                        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
+                    bodies.push((path, body));
+                }
+            }
+        }
+        bodies
+    }
+
+    #[test]
+    fn test_grimmory_meta_memory_budget() {
+        let memory = load_meta("grimmory").memory;
+        let budget = memory.get("grimmory").unwrap();
+        assert_eq!(budget.high, "1100M");
+        assert_eq!(budget.max, "1200M");
+    }
+
+    #[test]
+    fn test_navidrome_meta_memory_budget() {
+        let memory = load_meta("navidrome").memory;
+        let budget = memory.get("navidrome").unwrap();
+        assert_eq!(budget.high, "256M");
+        assert_eq!(budget.max, "384M");
+    }
+
+    #[test]
+    fn test_unit_templates_carry_no_literal_memory_directives() {
+        for (path, body) in role_template_bodies() {
+            for line in body.lines() {
+                if line.starts_with("MemoryHigh=") || line.starts_with("MemoryMax=") {
+                    assert!(
+                        line.contains("{{"),
+                        "{}: literal {line:?} — declare it in the Playbook Meta instead (ADR-0021)",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_declared_memory_budgets_render_into_role_templates() {
+        let templates = role_template_bodies();
+        for (app, meta) in load_all_metas(&playbooks_dir()).unwrap() {
+            for unit in meta.memory.keys() {
+                let prefix = unit.replace('-', "_");
+                let high = format!("MemoryHigh={{{{ {prefix}_memory_high }}}}");
+                let max = format!("MemoryMax={{{{ {prefix}_memory_max }}}}");
+                assert!(
+                    templates
+                        .iter()
+                        .any(|(_, body)| body.contains(&high) && body.contains(&max)),
+                    "{app}: no role template renders both {high} and {max}"
+                );
+            }
+        }
     }
 }

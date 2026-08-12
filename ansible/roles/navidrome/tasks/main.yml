@@ -64,6 +64,23 @@
         mode: "0644"
       notify: Restart navidrome
 
+    - name: Create Navidrome systemd drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/navidrome.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy Navidrome memory budget drop-in
+      ansible.builtin.template:
+        src: templates/memory.conf.j2
+        dest: /etc/systemd/system/navidrome.service.d/memory.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart navidrome
+
     - name: Enable and start Navidrome service
       ansible.builtin.systemd_service:
         name: navidrome

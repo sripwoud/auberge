@@ -23,6 +23,8 @@ ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ReadWritePaths={{ paperless_install_path }} {{ paperless_data_dir }} {{ paperless_media_root }} {{ paperless_consumption_dir }}
+MemoryHigh={{ paperless_scheduler_memory_high }}
+MemoryMax={{ paperless_scheduler_memory_max }}
 UMask=0027
 
 [Install]

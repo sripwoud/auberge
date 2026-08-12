@@ -1,5 +1,7 @@
 required_keys: []
 subdomain: grimmory
+memory:
+  grimmory: { high: 1100M, max: 1200M }
 version:
   value: "2.3.0"
   datasource: github-releases
