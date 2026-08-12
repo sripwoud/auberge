@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.22](https://github.com/sripwoud/auberge/compare/v0.14.21...v0.14.22) - 2026-08-12
+
+### Fixed
+
+- *(cli)* document sync music's ~/Music source default in --help ([#475](https://github.com/sripwoud/auberge/pull/475))
+- *(cli)* describe the 6 subcommands that render blank in --help ([#477](https://github.com/sripwoud/auberge/pull/477))
+
 ## [0.14.21](https://github.com/sripwoud/auberge/compare/v0.14.20...v0.14.21) - 2026-08-11
 
 ### Fixed
