@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.25](https://github.com/sripwoud/auberge/compare/v0.14.24...v0.14.25) - 2026-08-12
+
+### Other
+
+- *(radio)* install liquidsoap 2.4.5 from upstream trixie deb ([#490](https://github.com/sripwoud/auberge/pull/490))
+
 ## [0.14.24](https://github.com/sripwoud/auberge/compare/v0.14.23...v0.14.24) - 2026-08-12
 
 ### Added
