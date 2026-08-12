@@ -893,6 +893,29 @@ memory:
     }
 
     #[test]
+    fn test_grimmory_meta_memory_budget() {
+        let memory = load_meta("grimmory").memory;
+        let budget = memory.get("grimmory").unwrap();
+        assert_eq!(budget.high, "1100M");
+        assert_eq!(budget.max, "1200M");
+    }
+
+    #[test]
+    fn test_unit_templates_carry_no_literal_memory_directives() {
+        for (path, body) in role_template_bodies() {
+            for line in body.lines() {
+                if line.starts_with("MemoryHigh=") || line.starts_with("MemoryMax=") {
+                    assert!(
+                        line.contains("{{"),
+                        "{}: literal {line:?} — declare it in the Playbook Meta instead (ADR-0021)",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_declared_memory_budgets_render_into_role_templates() {
         let templates = role_template_bodies();
         for (app, meta) in load_all_metas(&playbooks_dir()).unwrap() {
