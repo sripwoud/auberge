@@ -171,6 +171,14 @@ keys:
     secret: false
     doc: "Tailscale IP address of the Paperless-ngx host"
 
+  radio_listener_password:
+    secret: true
+    doc: "Shared password gating every Radio stream behind Caddy basic auth (ADR-0020); rotating it revokes every listener at once"
+
+  radio_subdomain:
+    secret: false
+    doc: "Subdomain for the Radio streaming server"
+
   restic_password:
     secret: true
     doc: "Encryption password for the restic backup repository"

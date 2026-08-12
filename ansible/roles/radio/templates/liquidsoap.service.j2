@@ -1,0 +1,29 @@
+[Unit]
+Description=Radio station encoder (Liquidsoap)
+After=network.target icecast2.service
+Requires=icecast2.service
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{ radio_liquidsoap_user }}
+Group={{ radio_liquidsoap_group }}
+ExecStart=/usr/bin/liquidsoap {{ radio_config_dir }}/radio.liq
+Environment=OCAMLRUNPARAM=o=40
+Restart=on-failure
+RestartSec=5
+MemoryHigh={{ liquidsoap_memory_high }}
+MemoryMax={{ liquidsoap_memory_max }}
+CacheDirectory=liquidsoap
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+
+[Install]
+WantedBy=multi-user.target

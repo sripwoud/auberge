@@ -461,6 +461,7 @@ mod tests {
             "grimmory",
             "headscale",
             "navidrome",
+            "radio",
             "yourls",
         ]
         .iter()

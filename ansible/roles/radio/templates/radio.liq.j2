@@ -1,0 +1,25 @@
+settings.log.stdout := true
+
+stations_dir = "{{ radio_stations_dir }}"
+
+def broadcast(m3u) =
+  name = path.remove_extension(path.basename(m3u))
+  station = playlist(mode="randomize", reload_mode="watch", m3u)
+  station = crossfade(station)
+  station = mksafe(station)
+  ignore(output.icecast(%mp3(bitrate={{ radio_bitrate }}),
+    host="127.0.0.1", port={{ radio_icecast_port }},
+    password="{{ radio_source_password }}", mount="/#{name}",
+    name=name, public=false,
+    station))
+end
+
+stations = list.filter(fun (f) -> file.extension(f) == ".m3u",
+                       file.ls(absolute=true, stations_dir))
+
+if list.length(stations) == 0 then
+  log(label="radio", "No stations in #{stations_dir}; idling until restarted.")
+  ignore(output.dummy(blank()))
+end
+
+list.iter(broadcast, stations)

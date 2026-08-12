@@ -1,0 +1,48 @@
+<icecast>
+    <hostname>{{ radio_domain }}</hostname>
+
+    <limits>
+        <clients>{{ radio_max_clients }}</clients>
+        <sources>{{ radio_max_sources }}</sources>
+        <queue-size>524288</queue-size>
+        <client-timeout>30</client-timeout>
+        <header-timeout>15</header-timeout>
+        <source-timeout>10</source-timeout>
+        <burst-on-connect>1</burst-on-connect>
+        <burst-size>65535</burst-size>
+    </limits>
+
+    <authentication>
+        <source-password>{{ radio_source_password }}</source-password>
+        <relay-password>{{ radio_source_password }}</relay-password>
+        <admin-user>admin</admin-user>
+        <admin-password>{{ radio_source_password }}</admin-password>
+    </authentication>
+
+    <listen-socket>
+        <port>{{ radio_icecast_port }}</port>
+        <bind-address>127.0.0.1</bind-address>
+    </listen-socket>
+
+    <mount type="default">
+        <public>0</public>
+    </mount>
+
+    <paths>
+        <basedir>/usr/share/icecast2</basedir>
+        <logdir>/var/log/icecast2</logdir>
+        <webroot>/usr/share/icecast2/web</webroot>
+        <adminroot>/usr/share/icecast2/admin</adminroot>
+    </paths>
+
+    <logging>
+        <accesslog>access.log</accesslog>
+        <errorlog>error.log</errorlog>
+        <loglevel>3</loglevel>
+        <logsize>10000</logsize>
+    </logging>
+
+    <security>
+        <chroot>0</chroot>
+    </security>
+</icecast>

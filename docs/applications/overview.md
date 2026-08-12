@@ -33,6 +33,7 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | [FreshRSS](applications/apps/freshrss.md)       | RSS feed aggregator                     |
 | [Navidrome](applications/apps/navidrome.md)     | Music streaming server                  |
 | [Paperless-ngx](applications/apps/paperless.md) | Document management system              |
+| [Radio](applications/apps/radio.md)             | Password-gated music streams            |
 | [Syncthing](applications/apps/syncthing.md)     | Continuous file synchronization         |
 | [Gokapi](applications/apps/gokapi.md)           | Expiring-link file sharing              |
 | [YOURLS](applications/apps/yourls.md)           | URL shortener                           |
