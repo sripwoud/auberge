@@ -3,7 +3,7 @@
 		{{ admin_user_name }} {{ radio_hashed_password }}
 	}
 
-	@internal path /admin/* /status.xsl /server-version.xsl /status-json.xsl
+	@internal path /admin /admin/* /status.xsl /server-version.xsl /status-json.xsl
 	respond @internal 404
 
 	reverse_proxy 127.0.0.1:{{ radio_icecast_port }} {
