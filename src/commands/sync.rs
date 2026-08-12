@@ -18,7 +18,7 @@ pub enum SyncCommands {
     Music {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
-        #[arg(short, long, help = "Source music directory")]
+        #[arg(short, long, help = "Source music directory [default: ~/Music]")]
         source: Option<PathBuf>,
         #[arg(short = 'n', long, help = "Dry run (don't actually sync)")]
         dry_run: bool,
