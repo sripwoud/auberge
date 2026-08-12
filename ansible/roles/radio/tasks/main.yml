@@ -1,0 +1,134 @@
+- name: Install and configure Radio
+  block:
+    - name: Install Icecast2 and Liquidsoap
+      ansible.builtin.apt:
+        name:
+          - icecast2
+          - liquidsoap
+        state: present
+        update_cache: true
+
+    - name: Ensure stations directory exists
+      ansible.builtin.file:
+        path: "{{ radio_stations_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ radio_music_group }}"
+        mode: "2775"
+
+    - name: Generate Icecast source password
+      ansible.builtin.shell: |
+        set -o pipefail
+        umask 077 && openssl rand -hex 24 > {{ radio_source_password_file }}
+      args:
+        creates: "{{ radio_source_password_file }}"
+        executable: /bin/bash
+
+    - name: Read Icecast source password
+      ansible.builtin.slurp:
+        src: "{{ radio_source_password_file }}"
+      register: radio_source_password_slurp
+      no_log: true
+
+    - name: Set Icecast source password fact
+      ansible.builtin.set_fact:
+        radio_source_password: "{{ radio_source_password_slurp.content | b64decode | trim }}"
+      no_log: true
+
+    - name: Deploy Icecast configuration
+      ansible.builtin.template:
+        src: templates/icecast.xml.j2
+        dest: /etc/icecast2/icecast.xml
+        owner: root
+        group: "{{ radio_icecast_group }}"
+        mode: "0640"
+      notify: Restart icecast2
+
+    - name: Create Icecast systemd drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/icecast2.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy Icecast memory budget drop-in
+      ansible.builtin.template:
+        src: templates/memory.conf.j2
+        dest: /etc/systemd/system/icecast2.service.d/memory.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart icecast2
+
+    - name: Enable and start Icecast2 service
+      ansible.builtin.systemd_service:
+        name: icecast2
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Ensure Liquidsoap config directory exists
+      ansible.builtin.file:
+        path: "{{ radio_config_dir }}"
+        state: directory
+        owner: root
+        group: "{{ radio_liquidsoap_group }}"
+        mode: "0750"
+
+    - name: Deploy Liquidsoap stations script
+      ansible.builtin.template:
+        src: templates/radio.liq.j2
+        dest: "{{ radio_config_dir }}/radio.liq"
+        owner: root
+        group: "{{ radio_liquidsoap_group }}"
+        mode: "0640"
+      notify: Restart liquidsoap
+
+    - name: Deploy Liquidsoap systemd service file
+      ansible.builtin.template:
+        src: templates/liquidsoap.service.j2
+        dest: /etc/systemd/system/liquidsoap.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart liquidsoap
+
+    - name: Enable and start Liquidsoap service
+      ansible.builtin.systemd_service:
+        name: liquidsoap
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Hash Radio listener password
+      ansible.builtin.command:
+        argv:
+          - caddy
+          - hash-password
+          - --plaintext
+          - "{{ radio_listener_password }}"
+      register: radio_hashed_password
+      changed_when: false
+      no_log: true
+
+    - name: Set Radio hashed password fact
+      ansible.builtin.set_fact:
+        radio_hashed_password: "{{ radio_hashed_password.stdout | trim }}"
+
+    - name: Deploy Radio Caddyfile
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ radio_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
+    - name: Ensure Cloudflare DNS A record exists for {{ radio_subdomain + '.' + domain }}
+      ansible.builtin.include_role:
+        name: dns_record
+      vars:
+        dns_record_subdomain: "{{ radio_subdomain }}"
+        dns_record_domain: "{{ domain }}"
+        dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"

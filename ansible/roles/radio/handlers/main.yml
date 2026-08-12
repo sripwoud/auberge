@@ -1,0 +1,16 @@
+- name: Restart icecast2
+  ansible.builtin.systemd_service:
+    name: icecast2
+    state: restarted
+    daemon_reload: true
+
+- name: Restart liquidsoap
+  ansible.builtin.systemd_service:
+    name: liquidsoap
+    state: restarted
+    daemon_reload: true
+
+- name: Restart caddy
+  ansible.builtin.systemd_service:
+    name: caddy
+    state: restarted
