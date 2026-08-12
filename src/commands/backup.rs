@@ -149,21 +149,6 @@ pub enum BackupCommands {
         )]
         skip_playbook_unsafe: bool,
     },
-    #[command(visible_alias = "eo", about = "Export FreshRSS feeds to OPML file")]
-    ExportOpml {
-        #[arg(short = 'H', long, help = "Target host")]
-        host: Option<String>,
-        #[arg(short, long, help = "Output OPML file path")]
-        output: PathBuf,
-        #[arg(
-            short = 'k',
-            long,
-            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
-        )]
-        ssh_key: Option<PathBuf>,
-        #[arg(long, default_value = "admin", help = "FreshRSS username")]
-        user: String,
-    },
     #[command(
         visible_alias = "p",
         about = "Push backups to offsite restic repository"
@@ -206,6 +191,21 @@ pub enum BackupCommands {
             help = "Output format"
         )]
         output: OutputFormat,
+    },
+    #[command(visible_alias = "eo", about = "Export FreshRSS feeds to OPML file")]
+    ExportOpml {
+        #[arg(short = 'H', long, help = "Target host")]
+        host: Option<String>,
+        #[arg(short, long, help = "Output OPML file path")]
+        output: PathBuf,
+        #[arg(
+            short = 'k',
+            long,
+            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+        )]
+        ssh_key: Option<PathBuf>,
+        #[arg(long, default_value = "admin", help = "FreshRSS username")]
+        user: String,
     },
     #[command(visible_alias = "io", about = "Import OPML file to FreshRSS")]
     ImportOpml {

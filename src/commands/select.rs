@@ -6,12 +6,18 @@ use std::path::PathBuf;
 
 #[derive(Subcommand)]
 pub enum SelectCommands {
-    #[command(visible_alias = "h")]
+    #[command(
+        visible_alias = "h",
+        about = "Print the name of an interactively selected host"
+    )]
     Host {
         #[arg(short, long, help = "Filter hosts by group")]
         group: Option<String>,
     },
-    #[command(visible_alias = "p")]
+    #[command(
+        visible_alias = "p",
+        about = "Print the path of an interactively selected playbook"
+    )]
     Playbook,
 }
 
