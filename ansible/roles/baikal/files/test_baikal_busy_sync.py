@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pytest
 
@@ -14,6 +15,23 @@ spec.loader.exec_module(busy)
 
 PRINCIPAL = "principals/operator"
 DETAIL_TOKENS = ("LOCATION", "DESCRIPTION", "ATTENDEE", "ORGANIZER", "URL", "CATEGORIES", "CLASS")
+BERLIN = ZoneInfo("Europe/Berlin")
+EU_DST_RULES = (
+    "BEGIN:DAYLIGHT",
+    "TZOFFSETFROM:+0100",
+    "TZOFFSETTO:+0200",
+    "TZNAME:CEST",
+    "DTSTART:19700329T020000",
+    "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU",
+    "END:DAYLIGHT",
+    "BEGIN:STANDARD",
+    "TZOFFSETFROM:+0200",
+    "TZOFFSETTO:+0100",
+    "TZNAME:CET",
+    "DTSTART:19701025T030000",
+    "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU",
+    "END:STANDARD",
+)
 
 
 def build_db(path, calendars):
@@ -87,8 +105,44 @@ def make_all_day(uid, start_date, end_date, summary="Vacation"):
     return "\r\n".join(lines) + "\r\n"
 
 
+def make_zoned_event(uid, tzid, dtstart, dtend, summary="Zoned meeting", extra_lines=()):
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//test//EN",
+        "BEGIN:VTIMEZONE",
+        f"TZID:{tzid}",
+        *EU_DST_RULES,
+        "END:VTIMEZONE",
+        "BEGIN:VEVENT",
+        f"UID:{uid}",
+        "DTSTAMP:20260101T000000Z",
+        f"DTSTART;TZID={tzid}:{dtstart}",
+        f"DTEND;TZID={tzid}:{dtend}",
+        f"SUMMARY:{summary}",
+        *extra_lines,
+        "END:VEVENT",
+        "END:VCALENDAR",
+    ]
+    return "\r\n".join(lines) + "\r\n"
+
+
 def utc_stamp(dt):
     return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def floating_stamp(dt):
+    return dt.strftime("%Y%m%dT%H%M%S")
+
+
+def load_busy(monkeypatch, local_tz=None):
+    if local_tz is None:
+        monkeypatch.delenv("BAIKAL_BUSY_LOCAL_TZ", raising=False)
+    else:
+        monkeypatch.setenv("BAIKAL_BUSY_LOCAL_TZ", local_tz)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def parse_feed(text):
@@ -116,9 +170,14 @@ def out_path(tmp_path):
     return str(tmp_path / "busy" / "busy.ics")
 
 
-def run(db_path, out_path):
-    assert busy.BaikalBusySync(db_path, out_path).generate()
+def run(db_path, out_path, module=busy):
+    assert module.BaikalBusySync(db_path, out_path).generate()
     return parse_feed(Path(out_path).read_text())
+
+
+def render_between(module, db_path, out_path, calendar_data, window_start, window_end):
+    sync = module.BaikalBusySync(db_path, out_path)
+    return parse_feed(sync._render(sync._busy_blocks(calendar_data, window_start, window_end)))
 
 
 def test_busy_event_emitted_sanitized(db_path, out_path):
@@ -336,6 +395,118 @@ def test_wal_mode_db_readable(db_path, out_path):
     events = run(db_path, out_path)
 
     assert len(events) == 1
+
+
+def test_floating_datetime_interpreted_in_local_tz(monkeypatch, db_path, out_path):
+    module = load_busy(monkeypatch, "Europe/Berlin")
+    local = (datetime.now(BERLIN) + timedelta(days=2)).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    ics = make_event("float-1", floating_stamp(local), floating_stamp(local + timedelta(hours=1)))
+    build_db(db_path, [("icloud", [("a.ics", ics)])])
+
+    events = run(db_path, out_path, module)
+
+    assert len(events) == 1
+    assert events[0]["DTSTART"] == utc_stamp(local.replace(tzinfo=BERLIN))
+    assert events[0]["DTSTART"] != f"{floating_stamp(local)}Z"
+
+
+def test_floating_datetime_defaults_to_utc_when_unset(monkeypatch, db_path, out_path):
+    module = load_busy(monkeypatch)
+    local = (datetime.now(timezone.utc) + timedelta(days=2)).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    ics = make_event("float-2", floating_stamp(local), floating_stamp(local + timedelta(hours=1)))
+    build_db(db_path, [("icloud", [("a.ics", ics)])])
+
+    events = run(db_path, out_path, module)
+
+    assert len(events) == 1
+    assert events[0]["DTSTART"] == f"{floating_stamp(local)}Z"
+
+
+def test_floating_datetime_crosses_dst_boundary(monkeypatch, db_path, out_path):
+    module = load_busy(monkeypatch, "Europe/Berlin")
+    ics = make_event(
+        "float-dst",
+        "20261021T110000",
+        "20261021T120000",
+        extra_lines=("RRULE:FREQ=WEEKLY;COUNT=2",),
+    )
+    window_start = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    window_end = datetime(2026, 11, 15, tzinfo=timezone.utc)
+
+    events = render_between(module, db_path, out_path, [ics], window_start, window_end)
+
+    assert [e["DTSTART"] for e in events] == ["20261021T090000Z", "20261028T100000Z"]
+
+
+def test_floating_uid_stable_across_runs(monkeypatch, db_path, out_path):
+    module = load_busy(monkeypatch, "Europe/Berlin")
+    local = (datetime.now(BERLIN) + timedelta(days=2)).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    ics = make_event("float-uid", floating_stamp(local), floating_stamp(local + timedelta(hours=1)))
+    build_db(db_path, [("icloud", [("a.ics", ics)])])
+
+    run(db_path, out_path, module)
+    content_1 = Path(out_path).read_text()
+    run(db_path, out_path, module)
+
+    assert Path(out_path).read_text() == content_1
+
+
+def test_invalid_local_tz_raises(monkeypatch):
+    with pytest.raises(ZoneInfoNotFoundError):
+        load_busy(monkeypatch, "Europe/Nowhere")
+
+
+def test_tzid_event_converted_to_utc(monkeypatch, db_path, out_path):
+    module = load_busy(monkeypatch, "Europe/Berlin")
+    ics = make_zoned_event("tzid-1", "Europe/Berlin", "20260813T110000", "20260813T120000")
+    window_start = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    window_end = datetime(2026, 9, 1, tzinfo=timezone.utc)
+
+    events = render_between(module, db_path, out_path, [ics], window_start, window_end)
+
+    assert [e["DTSTART"] for e in events] == ["20260813T090000Z"]
+
+
+def test_tzid_event_ignores_local_tz(monkeypatch, db_path, out_path):
+    module = load_busy(monkeypatch, "America/New_York")
+    ics = make_zoned_event("tzid-2", "Europe/Berlin", "20260813T110000", "20260813T120000")
+    window_start = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    window_end = datetime(2026, 9, 1, tzinfo=timezone.utc)
+
+    events = render_between(module, db_path, out_path, [ics], window_start, window_end)
+
+    assert [e["DTSTART"] for e in events] == ["20260813T090000Z"]
+
+
+def test_tzid_event_crosses_dst_boundary(monkeypatch, db_path, out_path):
+    module = load_busy(monkeypatch, "Europe/Berlin")
+    ics = make_zoned_event(
+        "tzid-dst",
+        "Europe/Madrid",
+        "20261021T110000",
+        "20261021T120000",
+        extra_lines=("RRULE:FREQ=WEEKLY;COUNT=2",),
+    )
+    window_start = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    window_end = datetime(2026, 11, 15, tzinfo=timezone.utc)
+
+    events = render_between(module, db_path, out_path, [ics], window_start, window_end)
+
+    assert [e["DTSTART"] for e in events] == ["20261021T090000Z", "20261028T100000Z"]
+
+
+def test_all_day_unaffected_by_local_tz(monkeypatch, db_path, out_path):
+    module = load_busy(monkeypatch, "Pacific/Kiritimati")
+    start = (datetime.now(timezone.utc) + timedelta(days=3)).date()
+    end = start + timedelta(days=2)
+    ics = make_all_day("ad-tz", start.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
+    build_db(db_path, [("work", [("a.ics", ics)])])
+
+    events = run(db_path, out_path, module)
+
+    assert len(events) == 1
+    assert events[0]["DTSTART;VALUE=DATE"] == start.strftime("%Y%m%d")
+    assert events[0]["DTEND;VALUE=DATE"] == end.strftime("%Y%m%d")
 
 
 class FakeCalObject:

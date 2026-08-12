@@ -7,6 +7,7 @@ import sys
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import caldav
 import icalendar
@@ -18,6 +19,7 @@ WINDOW_FUTURE_DAYS = 60
 DEFAULT_DB_PATH = "/opt/baikal/Specific/db/db.sqlite"
 DEFAULT_OUT_PATH = "/opt/baikal/busy/busy.ics"
 ICLOUD_CALDAV_URL = "https://caldav.icloud.com"
+LOCAL_TZ = ZoneInfo(os.environ.get("BAIKAL_BUSY_LOCAL_TZ", "UTC"))
 
 
 @dataclass(frozen=True)
@@ -41,7 +43,7 @@ def _is_all_day(value):
 
 def _to_utc(value):
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
+        return value.replace(tzinfo=LOCAL_TZ).astimezone(timezone.utc)
     return value.astimezone(timezone.utc)
 
 
