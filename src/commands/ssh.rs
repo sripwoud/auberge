@@ -8,7 +8,10 @@ use std::process::Command;
 
 #[derive(Subcommand)]
 pub enum SshCommands {
-    #[command(visible_alias = "k")]
+    #[command(
+        visible_alias = "k",
+        about = "Generate an ed25519 SSH identity for a host"
+    )]
     Keygen {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,

@@ -11,7 +11,10 @@ const MUSIC_RSYNC_FLAGS: [&str; 2] = ["-rltzvP", "--omit-dir-times"];
 
 #[derive(Subcommand)]
 pub enum SyncCommands {
-    #[command(visible_alias = "m")]
+    #[command(
+        visible_alias = "m",
+        about = "Sync a local music library to the host's Navidrome directory"
+    )]
     Music {
         #[arg(short = 'H', long, help = "Target host")]
         host: Option<String>,
