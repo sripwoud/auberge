@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.24](https://github.com/sripwoud/auberge/compare/v0.14.23...v0.14.24) - 2026-08-12
+
+### Added
+
+- *(radio)* add password-gated icecast streams from m3u stations ([#489](https://github.com/sripwoud/auberge/pull/489))
+- *(cli)* show a progress bar and ETA during music sync ([#487](https://github.com/sripwoud/auberge/pull/487))
+
+### Fixed
+
+- *(baikal)* stop busy blocker example duplicating past feed events
+
 ## [0.14.23](https://github.com/sripwoud/auberge/compare/v0.14.22...v0.14.23) - 2026-08-12
 
 ### Added
