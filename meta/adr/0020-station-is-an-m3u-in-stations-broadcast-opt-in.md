@@ -4,6 +4,8 @@
 
 Accepted, 2026-08-12. Recorded before implementation — the build is tracked in a separate issue. This ADR fixes the design so the implementation has nothing left to decide.
 
+The rsync flags and exclude patterns quoted below were current when this was written; both have since changed (#487, #492). The property this ADR depends on — that the sync carries `.m3u` without naming it — is unchanged and now recorded as a decision in ADR-0022.
+
 ## Decision
 
 Auberge gains a **Radio**: a Public App running Icecast2 and Liquidsoap, both from apt, serving one or more **Stations** of the user's own music.

@@ -63,11 +63,18 @@ pub enum SyncCommands {
 
 // One builder for both passes: the scan's byte count is only a valid
 // denominator for the transfer if every file-selecting flag matches.
+// A hidden entry in a music library is tool state, never content, so the
+// class is excluded rather than each tool that writes one — `.DS_Store` and
+// `.memsearch` are both instances. Excludes are two-sided by default and
+// would `protect` whatever an earlier sync already copied; --delete-excluded
+// makes them sender-side only so the host loses it. Patterns carry no slash,
+// so rsync matches basenames at any depth.
 fn music_rsync_command(source: &Path, ssh_arg: &str, destination: &str) -> Command {
     let mut cmd = Command::new("rsync");
     cmd.args(MUSIC_RSYNC_FLAGS)
         .arg("--delete")
-        .arg("--exclude=.DS_Store")
+        .arg("--delete-excluded")
+        .arg("--exclude=.*")
         .arg("--exclude=*.tmp")
         .arg("-e")
         .arg(ssh_arg)
@@ -404,12 +411,60 @@ mod tests {
         assert_eq!(&scan[transfer.len()..], ["--dry-run", "--stats"]);
     }
 
+    fn exclude_patterns(cmd: &Command) -> Vec<String> {
+        args_of(cmd)
+            .iter()
+            .filter_map(|a| a.strip_prefix("--exclude=").map(str::to_string))
+            .collect()
+    }
+
     #[test]
     fn both_commands_delete_and_exclude_identically() {
-        for args in [args_of(&transfer_command()), args_of(&scan_command())] {
-            assert!(args.contains(&"--delete".to_string()));
-            assert!(args.contains(&"--exclude=.DS_Store".to_string()));
-            assert!(args.contains(&"--exclude=*.tmp".to_string()));
+        for cmd in [transfer_command(), scan_command()] {
+            assert!(args_of(&cmd).contains(&"--delete".to_string()));
+            assert_eq!(exclude_patterns(&cmd), [".*", "*.tmp"]);
+        }
+    }
+
+    // `.DS_Store` and `.memsearch` are instances of one class; enumerating
+    // them means a new pattern per tool that ever writes into the library,
+    // each added only after its droppings reached the host.
+    #[test]
+    fn hidden_entries_are_excluded_as_a_class_not_enumerated() {
+        let hidden: Vec<String> = exclude_patterns(&transfer_command())
+            .into_iter()
+            .filter(|p| p.starts_with('.'))
+            .collect();
+        assert_eq!(hidden, [".*"]);
+    }
+
+    // A slash would anchor the pattern to the transfer root and miss
+    // `Artist/Album/.memsearch`; without one rsync matches basenames.
+    #[test]
+    fn exclude_patterns_match_at_any_depth() {
+        for pattern in exclude_patterns(&transfer_command()) {
+            assert!(!pattern.contains('/'), "{pattern} is anchored to a path");
+        }
+    }
+
+    // The library's content is heterogeneous and still growing (audio, art,
+    // booklets, liner notes, and the m3u Stations that do not exist locally
+    // yet); an allowlist would silently drop whatever it forgot to name.
+    #[test]
+    fn excludes_are_a_blocklist_never_an_allowlist() {
+        assert!(
+            !args_of(&transfer_command())
+                .iter()
+                .any(|a| a.starts_with("--include"))
+        );
+    }
+
+    // An exclude alone would `protect` the copies an earlier sync already
+    // made, stranding them on the host forever.
+    #[test]
+    fn excluded_files_already_on_the_remote_are_deleted() {
+        for cmd in [transfer_command(), scan_command()] {
+            assert!(args_of(&cmd).contains(&"--delete-excluded".to_string()));
         }
     }
 
