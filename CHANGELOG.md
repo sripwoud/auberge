@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.26](https://github.com/sripwoud/auberge/compare/v0.14.25...v0.14.26) - 2026-08-13
+
+### Fixed
+
+- *(sync)* exclude hidden entries from the music library sync ([#493](https://github.com/sripwoud/auberge/pull/493))
+
 ## [0.14.25](https://github.com/sripwoud/auberge/compare/v0.14.24...v0.14.25) - 2026-08-12
 
 ### Other
