@@ -5,7 +5,7 @@ name: renovate-checksums
 # pushes the fix onto the same branch. A bump whose digest cannot be computed
 # stays red and does not merge. See ADR-0017.
 permissions:
-  contents: write
+  contents: read
 on:
   pull_request:
     branches: [master]
@@ -15,14 +15,22 @@ jobs:
     if: startsWith(github.head_ref, 'renovate/')
     runs-on: ubuntu-latest
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-          # A PAT rather than GITHUB_TOKEN: pushes made with GITHUB_TOKEN
-          # trigger no workflows, so the digest commit would sit on the PR
-          # with no CI runs on it.
-          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          # An app token rather than GITHUB_TOKEN: pushes made with
+          # GITHUB_TOKEN trigger no workflows, so the digest commit would
+          # sit on the PR with no CI runs on it.
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Recompute co-pinned checksums
         run: ./.github/scripts/recompute-checksums.sh "origin/${{ github.base_ref }}"
