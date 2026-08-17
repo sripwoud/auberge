@@ -13,7 +13,7 @@ jobs:
     outputs:
       any_rs_changed: ${{ steps.changed-files.outputs.any_changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: tj-actions/changed-files@v47
         id: changed-files
         with:
@@ -27,7 +27,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: rm -fr .mise/config.toml
       - uses: jdx/mise-action@v2
         with:
@@ -87,7 +87,7 @@ jobs:
     if: needs.changed-files.outputs.any_rs_changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
