@@ -96,10 +96,7 @@ pub fn snapshot_contains_path(
     snapshot_id: &str,
     path: &str,
 ) -> Result<bool> {
-    let mut child = command(repo, password)
-        .arg("ls")
-        .arg(snapshot_id)
-        .arg(path)
+    let mut child = ls_command(repo, password, snapshot_id, path)
         .stdout(Stdio::piped())
         .spawn()
         .wrap_err("Failed to run restic. Install restic: https://restic.net")?;
@@ -126,6 +123,15 @@ pub fn snapshot_contains_path(
     }
 
     Ok(false)
+}
+
+/// `--no-lock` because the caller SIGKILLs on first match: a killed `ls`
+/// skips restic's cleanup and would leave its default non-exclusive lock
+/// behind on every matching verify.
+fn ls_command(repo: &str, password: &str, snapshot_id: &str, path: &str) -> Command {
+    let mut cmd = command(repo, password);
+    cmd.arg("ls").arg("--no-lock").arg(snapshot_id).arg(path);
+    cmd
 }
 
 /// Whether a `restic ls` line is `path` itself or a descendant of it. The
@@ -224,6 +230,17 @@ mod tests {
         )));
         assert!(envs.contains(&("RESTIC_PASSWORD".to_string(), Some("s3cret".to_string()))));
         assert!(envs.contains(&("RESTIC_PASSWORD_COMMAND".to_string(), None)));
+    }
+
+    #[test]
+    fn ls_command_passes_no_lock_flag() {
+        let cmd = ls_command("rclone:remote:repo", "", "abc123", "/backups/x");
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+
+        assert_eq!(args, ["ls", "--no-lock", "abc123", "/backups/x"]);
     }
 
     #[test]
