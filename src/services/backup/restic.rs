@@ -234,12 +234,7 @@ mod tests {
 
     #[test]
     fn ls_command_passes_no_lock_flag() {
-        let cmd = ls_command(
-            "rclone:filen:auberge-backup",
-            "s3cret",
-            "abc123",
-            "/backups/x",
-        );
+        let cmd = ls_command("rclone:remote:repo", "", "abc123", "/backups/x");
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
