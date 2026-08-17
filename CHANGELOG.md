@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.27](https://github.com/sripwoud/auberge/compare/v0.14.26...v0.14.27) - 2026-08-17
+
+### Fixed
+
+- *(backup)* stop verify leaking a stale restic lock per matching run ([#499](https://github.com/sripwoud/auberge/pull/499))
+
+### Other
+
+- *(renovate-checksums)* push digests with a github app token ([#501](https://github.com/sripwoud/auberge/pull/501))
+- *(release)* authenticate release-plz with a github app token ([#500](https://github.com/sripwoud/auberge/pull/500))
+- *(uv)* bump to 0.12.5 ([#496](https://github.com/sripwoud/auberge/pull/496))
+- *(hermes)* bump to v2026.8.16 ([#495](https://github.com/sripwoud/auberge/pull/495))
+- *(cli)* fix select's self-defeating examples and stale playbook path
+
 ## [0.14.26](https://github.com/sripwoud/auberge/compare/v0.14.25...v0.14.26) - 2026-08-13
 
 ### Fixed
