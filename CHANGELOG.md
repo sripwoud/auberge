@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.28](https://github.com/sripwoud/auberge/compare/v0.14.27...v0.14.28) - 2026-08-17
+
+### Other
+
+- bump jdx/mise-action to v4 ([#506](https://github.com/sripwoud/auberge/pull/506))
+- *(colporteur)* bump to 0.6.0 ([#504](https://github.com/sripwoud/auberge/pull/504))
+- *(hermes)* bump to v2026.8.16.2 ([#503](https://github.com/sripwoud/auberge/pull/503))
+- bump actions/checkout to v7 ([#502](https://github.com/sripwoud/auberge/pull/502))
+
 ## [0.14.27](https://github.com/sripwoud/auberge/compare/v0.14.26...v0.14.27) - 2026-08-17
 
 ### Fixed
