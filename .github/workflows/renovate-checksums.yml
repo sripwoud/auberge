@@ -36,6 +36,8 @@ jobs:
         run: ./.github/scripts/recompute-checksums.sh "origin/${{ github.base_ref }}"
 
       - name: Push updated digests
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           if git diff --quiet; then
             echo "digests unchanged"
@@ -44,4 +46,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "build(deps): recompute co-pinned sha256 digests"
-          git push origin "HEAD:${{ github.head_ref }}"
+          git push origin "HEAD:${HEAD_REF}"
