@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.29](https://github.com/sripwoud/auberge/compare/v0.14.28...v0.14.29) - 2026-08-19
+
+### Other
+
+- *(bichon)* bump to 2.0.2 ([#509](https://github.com/sripwoud/auberge/pull/509))
+- *(hermes)* bump to v2026.8.18 ([#507](https://github.com/sripwoud/auberge/pull/507))
+
 ## [0.14.28](https://github.com/sripwoud/auberge/compare/v0.14.27...v0.14.28) - 2026-08-17
 
 ### Other
