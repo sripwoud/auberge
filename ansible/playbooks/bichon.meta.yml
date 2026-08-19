@@ -2,7 +2,7 @@ required_keys: []
 tailnet_only: true
 subdomain: bichon
 version:
-  value: "2.0.1"
+  value: "2.0.2"
   datasource: github-releases
   depName: "rustmailer/bichon"
 backup:
