@@ -275,6 +275,7 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         name,
         config_path.display()
     ));
+    sync_ssh_include()?;
 
     Ok(())
 }
@@ -313,6 +314,7 @@ pub fn run_host_remove(name: Option<String>, yes: bool) -> Result<()> {
 
     HostManager::remove_host(&host.name)?;
     output::success(&format!("Host '{}' removed", host.name));
+    sync_ssh_include()?;
 
     Ok(())
 }
@@ -360,6 +362,25 @@ pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
         "Cached tailscale_ip={} for host '{}'",
         detected, host.name
     ));
+    Ok(())
+}
+
+/// Regenerates the CLI-owned ~/.ssh/config.d/auberge.conf from the hosts.toml
+/// on disk after every host mutation (#534). The user's ~/.ssh/config is never
+/// written; when it lacks the Include line, only a hint is printed.
+fn sync_ssh_include() -> Result<()> {
+    let hosts = HostManager::load_hosts()?;
+    let home = dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
+    let ssh_dir = home.join(".ssh");
+    crate::services::ssh_include::write_include_file(&ssh_dir, &hosts).wrap_err(
+        "hosts.toml was updated but ~/.ssh/config.d/auberge.conf could not be regenerated; rerun any host subcommand after fixing",
+    )?;
+    if !crate::services::ssh_include::main_config_has_include(&ssh_dir) {
+        output::info(
+            "ssh aliases inactive: add this line at the top of ~/.ssh/config (first-obtained value wins):",
+        );
+        output::info(&format!("  {}", crate::services::ssh_include::INCLUDE_LINE));
+    }
     Ok(())
 }
 
@@ -460,6 +481,7 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
 
     HostManager::update_host(&host.name, updated_host)?;
     output::success(&format!("Host '{}' updated", host.name));
+    sync_ssh_include()?;
 
     Ok(())
 }
@@ -515,6 +537,7 @@ pub fn run_host_rename(old: String, new: String, yes: bool) -> Result<()> {
     HostManager::save_hosts(&updated)?;
 
     output::success(&format!("Host '{}' renamed to '{}'", old, new));
+    sync_ssh_include()?;
     print_rename_follow_ups(&old, &new);
     Ok(())
 }
@@ -692,9 +715,6 @@ fn rename_local(
 
 fn print_rename_follow_ups(old: &str, new: &str) {
     output::info("Not done by this command:");
-    output::info(&format!(
-        "  - ~/.ssh/config: update Host/IdentityFile entries mentioning '{old}' yourself (the CLI treats that file as read-only)"
-    ));
     output::info(&format!(
         "  - tailscale: the host re-advertises itself as '{new}' and releases the '{old}' tailnet name"
     ));
