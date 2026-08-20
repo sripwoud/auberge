@@ -402,6 +402,25 @@ fn run_single_playbook(
     }
 }
 
+fn confirm_or_abort(question: &str, abort_message: &str, force: bool) -> Result<()> {
+    if force {
+        output::info("Skipping confirmation (--force enabled)");
+        return Ok(());
+    }
+
+    eprint!("{} [y/N]: ", question);
+    io::stderr().flush()?;
+    let mut response = String::new();
+    io::stdin().read_line(&mut response)?;
+
+    if !response.trim().eq_ignore_ascii_case("y") {
+        eprintln!("{}", abort_message);
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
 fn configured_ssh_port(flat_vars: &HashMap<String, String>) -> String {
     flat_vars
         .get("ssh_port")
@@ -427,22 +446,11 @@ fn confirm_provider_firewall(preflight: &Preflight, force: bool) -> Result<()> {
     output::info("Without this, you'll be locked out after SSH port change!");
     eprintln!();
 
-    if force {
-        output::info("Skipping confirmation (--force enabled)");
-        return Ok(());
-    }
-
-    eprint!("Have you configured your provider's firewall? [y/N]: ");
-    io::stderr().flush()?;
-    let mut response = String::new();
-    io::stdin().read_line(&mut response)?;
-
-    if !response.trim().eq_ignore_ascii_case("y") {
-        eprintln!("Aborted. Configure provider firewall first, then re-run.");
-        std::process::exit(1);
-    }
-
-    Ok(())
+    confirm_or_abort(
+        "Have you configured your provider's firewall?",
+        "Aborted. Configure provider firewall first, then re-run.",
+        force,
+    )
 }
 
 fn show_playbook_warnings(playbook_name: &str, force: bool) -> Result<()> {
@@ -471,19 +479,11 @@ fn show_playbook_warnings(playbook_name: &str, force: bool) -> Result<()> {
         output::info("Without this, SSL certificate generation will fail!");
         eprintln!();
 
-        if !force {
-            eprint!("Have you configured your Cloudflare API token? [y/N]: ");
-            io::stderr().flush()?;
-            let mut response = String::new();
-            io::stdin().read_line(&mut response)?;
-
-            if !response.trim().eq_ignore_ascii_case("y") {
-                eprintln!("Aborted. Configure Cloudflare API token first, then re-run.");
-                std::process::exit(1);
-            }
-        } else {
-            output::info("Skipping confirmation (--force enabled)");
-        }
+        confirm_or_abort(
+            "Have you configured your Cloudflare API token?",
+            "Aborted. Configure Cloudflare API token first, then re-run.",
+            force,
+        )?;
 
         eprintln!();
         output::info("IMPORTANT: VPS Provider Firewall - Port 853 Required");
@@ -499,19 +499,11 @@ fn show_playbook_warnings(playbook_name: &str, force: bool) -> Result<()> {
         output::info("Without this, DNS over TLS will not be accessible!");
         eprintln!();
 
-        if !force {
-            eprint!("Have you opened port 853 in your provider's firewall? [y/N]: ");
-            io::stderr().flush()?;
-            let mut port_response = String::new();
-            io::stdin().read_line(&mut port_response)?;
-
-            if !port_response.trim().eq_ignore_ascii_case("y") {
-                eprintln!("Aborted. Open port 853 in provider firewall first, then re-run.");
-                std::process::exit(1);
-            }
-        } else {
-            output::info("Skipping confirmation (--force enabled)");
-        }
+        confirm_or_abort(
+            "Have you opened port 853 in your provider's firewall?",
+            "Aborted. Open port 853 in provider firewall first, then re-run.",
+            force,
+        )?;
     }
 
     Ok(())
