@@ -1,0 +1,16 @@
+---
+- name: Locale and Timezone Normalization
+  block:
+    - name: Set system locale
+      ansible.builtin.lineinfile:
+        path: /etc/default/locale
+        regexp: "^LANG="
+        line: "LANG={{ localization_lang }}"
+        create: true
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Set system timezone
+      community.general.timezone:
+        name: "{{ localization_timezone }}"
