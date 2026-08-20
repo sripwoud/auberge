@@ -29,7 +29,7 @@ A target machine in the Inventory (name, user, IP, SSH key). Playbooks run again
 _Avoid_: Server, node, target, machine
 
 **Inventory**:
-The version-controlled list of Hosts in `ansible/inventory.yml`. (Distinct from `hosts.toml`, which is user-local and used only by backup operations — see ADR.)
+The list of Hosts commands run against: user-local `hosts.toml` when present, else the version-controlled `ansible/inventory.yml`. At run time the CLI renders the selected Host into an ephemeral inventory file merged with `ansible/inventory.yml` (which carries the `vps` group vars); each hosts.toml `tag` becomes an ansible group there, so tag-gated Playbooks (`when: "'hermes' in group_names"`) fire only on tagged Hosts.
 _Avoid_: Hostlist, fleet
 
 **App**:
