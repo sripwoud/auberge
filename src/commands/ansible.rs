@@ -312,6 +312,13 @@ fn split_standalone_redirects(tags: Vec<String>) -> Result<(Vec<PathBuf>, Vec<St
     Ok((playbooks, unknown))
 }
 
+fn ssh_password_notice(user: &str) -> String {
+    format!(
+        "The \"SSH password\" prompt below asks for the login password of user '{}' (not an SSH key passphrase)",
+        user
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_single_playbook(
     host: &Host,
@@ -370,6 +377,12 @@ fn run_single_playbook(
     show_playbook_warnings(playbook_file, force)?;
 
     output::info(&format!("Running {} on {}", playbook_stem, host.name));
+
+    if is_fresh_bootstrap {
+        output::info(&ssh_password_notice(
+            user.unwrap_or(&host.vars.bootstrap_user),
+        ));
+    }
 
     let inventory_host = InventoryHost {
         name: host.name.clone(),
@@ -585,6 +598,7 @@ pub fn run_ansible_bootstrap(
         "Bootstrapping {} ({}) as {}",
         host_name, host_ip, bootstrap_user
     ));
+    output::info(&ssh_password_notice(&bootstrap_user));
 
     let inventory_host = InventoryHost {
         name: host_name,
@@ -748,5 +762,19 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("Playbook 'nope' not found"));
         assert!(msg.contains("apps, hardening, hermes, infrastructure"));
+    }
+
+    #[test]
+    fn test_ssh_password_notice_names_the_login_user() {
+        let notice = ssh_password_notice("root");
+        assert!(notice.contains("SSH password"));
+        assert!(notice.contains("login password"));
+        assert!(notice.contains("'root'"));
+        assert!(notice.contains("not an SSH key passphrase"));
+    }
+
+    #[test]
+    fn test_ssh_password_notice_interpolates_non_root_user() {
+        assert!(ssh_password_notice("debian").contains("'debian'"));
     }
 }
