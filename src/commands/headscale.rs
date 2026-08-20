@@ -185,7 +185,7 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
 
     let ssh_key = match &host.ssh_key {
         Some(key) => {
-            let path = PathBuf::from(shellexpand::tilde(key).as_ref());
+            let path = crate::services::ssh::configured_key_path(key);
             if !path.exists() {
                 eyre::bail!("SSH key not found: {}", path.display());
             }

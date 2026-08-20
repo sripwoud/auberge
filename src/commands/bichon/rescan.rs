@@ -51,7 +51,7 @@ async fn rescan_inner(
 
     let selected = resolve_accounts(account_filter.clone(), &known, HostManager::is_tty())?;
 
-    let ssh_key = crate::commands::backup::resolve_ssh_key_path(&host, None)?;
+    let ssh_key = crate::services::ssh::resolve_ssh_key_path(&host, None)?;
     let ssh = LiveSshSession::new(&host, &ssh_key);
 
     output::info(&format!(
