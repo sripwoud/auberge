@@ -1486,14 +1486,20 @@ fn validate_key_file(key_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Template instances (`syncthing@alice`) have no unit file of their own —
+/// `list-unit-files` only knows the template (`syncthing@.service`).
+fn unit_file_name(service: &str) -> String {
+    match service.split_once('@') {
+        Some((template, _)) => format!("{template}@.service"),
+        None => format!("{service}.service"),
+    }
+}
+
 fn check_remote_service_exists(host: &Host, ssh_key: &Path, service: &str) -> Result<bool> {
-    let output = SshSession::new(host, ssh_key).run_raw(&[
-        "systemctl",
-        "list-unit-files",
-        &format!("{}.service", service),
-    ])?;
-    Ok(output.status.success()
-        && String::from_utf8_lossy(&output.stdout).contains(&format!("{}.service", service)))
+    let unit_file = unit_file_name(service);
+    let output =
+        SshSession::new(host, ssh_key).run_raw(&["systemctl", "list-unit-files", &unit_file])?;
+    Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).contains(&unit_file))
 }
 
 fn check_remote_disk_space(host: &Host, ssh_key: &Path, path: &str) -> Result<u64> {
@@ -1613,6 +1619,16 @@ fn validate_cross_host_restore(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unit_file_name_appends_service_suffix() {
+        assert_eq!(unit_file_name("freshrss"), "freshrss.service");
+    }
+
+    #[test]
+    fn unit_file_name_maps_template_instance_to_template_file() {
+        assert_eq!(unit_file_name("syncthing@alice"), "syncthing@.service");
+    }
 
     #[test]
     fn test_push_variant_exists() {
