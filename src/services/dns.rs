@@ -405,6 +405,7 @@ mod tests {
         "hermes",
         "infrastructure",
         "remove-radicale",
+        "syncthing",
         "tgtg",
         "vibecoder",
     ];

@@ -1,0 +1,8 @@
+required_keys: []
+backup:
+  systemd_services: ["syncthing@{admin_user}"]
+  paths:
+    - "/home/{admin_user}/.local/state/syncthing/config.xml"
+    - "/home/{admin_user}/.local/state/syncthing/cert.pem"
+    - "/home/{admin_user}/.local/state/syncthing/key.pem"
+  owner: ["{admin_user}", "{admin_user}"]

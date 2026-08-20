@@ -267,7 +267,7 @@ pub fn run_backup_create(
     let app_names: Vec<String> = match apps {
         Some(names) => names
             .into_iter()
-            .filter(|name| load_app_recipe(&playbooks_dir, name).is_ok())
+            .filter(|name| load_app_recipe(&playbooks_dir, name, &host.user).is_ok())
             .collect(),
         None => discover_backuppable_apps(&playbooks_dir)?,
     };
@@ -293,7 +293,12 @@ pub fn run_backup_create(
 
     let recipes: Vec<(String, _)> = app_names
         .iter()
-        .map(|name| Ok::<_, eyre::Report>((name.clone(), load_app_recipe(&playbooks_dir, name)?)))
+        .map(|name| {
+            Ok::<_, eyre::Report>((
+                name.clone(),
+                load_app_recipe(&playbooks_dir, name, &host.user)?,
+            ))
+        })
         .collect::<Result<_>>()?;
 
     let start_time = Instant::now();
@@ -969,7 +974,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             Some(dir) => app_names
                 .iter()
                 .filter_map(|name| {
-                    load_app_recipe(dir, name)
+                    load_app_recipe(dir, name, &host.user)
                         .ok()
                         .map(|r| (name.clone(), r.systemd_services))
                 })
@@ -1025,7 +1030,7 @@ fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) 
     eprintln!("\n--- Restoring {} ---", app_name);
 
     let playbooks_dir = assets_playbooks_dir()?;
-    let recipe = load_app_recipe(&playbooks_dir, app_name)
+    let recipe = load_app_recipe(&playbooks_dir, app_name, &host.user)
         .wrap_err_with(|| format!("Unknown or non-backuppable app: {}", app_name))?;
 
     let session = LiveSshSession::new(host, ssh_key);
@@ -1487,14 +1492,20 @@ fn validate_key_file(key_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Template instances (`syncthing@alice`) have no unit file of their own —
+/// `list-unit-files` only knows the template (`syncthing@.service`).
+fn unit_file_name(service: &str) -> String {
+    match service.split_once('@') {
+        Some((template, _)) => format!("{template}@.service"),
+        None => format!("{service}.service"),
+    }
+}
+
 fn check_remote_service_exists(host: &Host, ssh_key: &Path, service: &str) -> Result<bool> {
-    let output = SshSession::new(host, ssh_key).run_raw(&[
-        "systemctl",
-        "list-unit-files",
-        &format!("{}.service", service),
-    ])?;
-    Ok(output.status.success()
-        && String::from_utf8_lossy(&output.stdout).contains(&format!("{}.service", service)))
+    let unit_file = unit_file_name(service);
+    let output =
+        SshSession::new(host, ssh_key).run_raw(&["systemctl", "list-unit-files", &unit_file])?;
+    Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).contains(&unit_file))
 }
 
 fn check_remote_disk_space(host: &Host, ssh_key: &Path, path: &str) -> Result<u64> {
@@ -1557,7 +1568,7 @@ fn validate_cross_host_restore(
     for app in apps {
         let recipe = match playbooks_dir
             .as_ref()
-            .and_then(|d| load_app_recipe(d, app).ok())
+            .and_then(|d| load_app_recipe(d, app, &host.user).ok())
         {
             Some(r) => r,
             None => continue,
@@ -1614,6 +1625,16 @@ fn validate_cross_host_restore(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unit_file_name_appends_service_suffix() {
+        assert_eq!(unit_file_name("freshrss"), "freshrss.service");
+    }
+
+    #[test]
+    fn unit_file_name_maps_template_instance_to_template_file() {
+        assert_eq!(unit_file_name("syncthing@alice"), "syncthing@.service");
+    }
 
     #[test]
     fn test_push_variant_exists() {

@@ -30,6 +30,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0020 | [A Station is an m3u file in `Stations/`; broadcast is opt-in by directory](./adr/0020-station-is-an-m3u-in-stations-broadcast-opt-in.md)          |
 | 0021 | [Memory Budgets are declared in Playbook Meta](./adr/0021-memory-budgets-declared-in-playbook-meta.md)                                             |
 | 0022 | [The music sync blocklists hidden entries as a class](./adr/0022-music-sync-blocklists-hidden-entries-as-a-class.md)                               |
+| 0023 | [Backup Recipes reference the admin user via a `{admin_user}` placeholder](./adr/0023-admin-user-placeholder-in-backup-recipes.md)                 |
 
 ## No Docker
 
