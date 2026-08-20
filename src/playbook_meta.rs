@@ -75,7 +75,39 @@ pub struct BackupParameter {
     pub adds_paths: Vec<String>,
 }
 
+pub const ADMIN_USER_PLACEHOLDER: &str = "{admin_user}";
+
 impl BackupRecipe {
+    /// Substitute `{admin_user}` with the Host's user in every string field,
+    /// so a Recipe can name per-user units and home paths (e.g. syncthing's
+    /// `syncthing@<user>`) while staying pure data (ADR-0023).
+    pub fn resolve(self, admin_user: &str) -> Self {
+        let sub = |s: String| s.replace(ADMIN_USER_PLACEHOLDER, admin_user);
+        Self {
+            systemd_services: self.systemd_services.into_iter().map(sub).collect(),
+            paths: self.paths.into_iter().map(sub).collect(),
+            owner: self.owner.map(|(user, group)| (sub(user), sub(group))),
+            db: self.db.map(|db| DbRecipe {
+                name: sub(db.name),
+                dump_path: sub(db.dump_path),
+            }),
+            post_restore_command: self.post_restore_command.map(sub),
+            parameters: self
+                .parameters
+                .into_iter()
+                .map(|(name, parameter)| {
+                    (
+                        name,
+                        BackupParameter {
+                            default: parameter.default,
+                            adds_paths: parameter.adds_paths.into_iter().map(sub).collect(),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
     pub fn effective_paths(&self, parameter_values: &HashMap<String, bool>) -> Vec<String> {
         let mut paths = self.paths.clone();
         for (name, parameter) in &self.parameters {
@@ -787,6 +819,65 @@ backup:
         };
         let effective = recipe.effective_paths(&HashMap::new());
         assert!(!effective.contains(&"/srv/music".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_substitutes_admin_user_in_every_string_field() {
+        let mut parameters = HashMap::new();
+        parameters.insert(
+            "include_extra".to_string(),
+            BackupParameter {
+                default: false,
+                adds_paths: vec!["/home/{admin_user}/extra".to_string()],
+            },
+        );
+        let recipe = BackupRecipe {
+            systemd_services: vec!["syncthing@{admin_user}".to_string()],
+            paths: vec!["/home/{admin_user}/.local/state/syncthing/config.xml".to_string()],
+            owner: Some(("{admin_user}".to_string(), "{admin_user}".to_string())),
+            db: None,
+            post_restore_command: Some("chown {admin_user} /tmp/x".to_string()),
+            parameters,
+        };
+
+        let resolved = recipe.resolve("alice");
+
+        assert_eq!(resolved.systemd_services, vec!["syncthing@alice"]);
+        assert_eq!(
+            resolved.paths,
+            vec!["/home/alice/.local/state/syncthing/config.xml"]
+        );
+        assert_eq!(
+            resolved.owner,
+            Some(("alice".to_string(), "alice".to_string()))
+        );
+        assert_eq!(
+            resolved.post_restore_command.as_deref(),
+            Some("chown alice /tmp/x")
+        );
+        assert_eq!(
+            resolved.parameters.get("include_extra").unwrap().adds_paths,
+            vec!["/home/alice/extra"]
+        );
+    }
+
+    #[test]
+    fn test_resolve_leaves_recipe_without_placeholders_unchanged() {
+        let recipe = BackupRecipe {
+            systemd_services: vec!["navidrome".to_string()],
+            paths: vec!["/var/lib/navidrome".to_string()],
+            owner: Some(("navidrome".to_string(), "navidrome".to_string())),
+            db: Some(DbRecipe {
+                name: "navidrome".to_string(),
+                dump_path: "/tmp/navidrome.dump".to_string(),
+            }),
+            post_restore_command: None,
+            parameters: HashMap::new(),
+        };
+
+        let resolved = recipe.clone().resolve("alice");
+
+        assert_eq!(resolved, recipe);
     }
 
     #[test]

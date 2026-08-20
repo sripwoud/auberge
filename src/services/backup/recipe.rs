@@ -3,11 +3,12 @@ use crate::playbook_meta::{BackupRecipe, PlaybookMeta};
 use eyre::{Result, WrapErr};
 use std::path::Path;
 
-pub fn load_app_recipe(playbooks_dir: &Path, app: &str) -> Result<BackupRecipe> {
+pub fn load_app_recipe(playbooks_dir: &Path, app: &str, admin_user: &str) -> Result<BackupRecipe> {
     let meta_path = playbooks_dir.join(format!("{app}.meta.yml"));
     let meta = PlaybookMeta::load(&meta_path)
         .wrap_err_with(|| format!("Failed to load Playbook Meta for app '{app}'"))?;
     meta.backup
+        .map(|recipe| recipe.resolve(admin_user))
         .ok_or_else(|| eyre::eyre!("Playbook Meta for '{app}' has no `backup:` section"))
 }
 
@@ -50,13 +51,13 @@ mod tests {
 
     #[test]
     fn test_load_app_recipe_returns_baikal() {
-        let recipe = load_app_recipe(&project_playbooks_dir(), "baikal").unwrap();
+        let recipe = load_app_recipe(&project_playbooks_dir(), "baikal", "alice").unwrap();
         assert_eq!(recipe.paths, vec!["/opt/baikal/Specific"]);
     }
 
     #[test]
     fn test_load_app_recipe_errors_when_meta_missing_backup_section() {
-        let result = load_app_recipe(&project_playbooks_dir(), "bootstrap");
+        let result = load_app_recipe(&project_playbooks_dir(), "bootstrap", "alice");
         assert!(result.is_err());
         assert!(
             result
@@ -68,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_load_app_recipe_errors_for_unknown_app() {
-        let result = load_app_recipe(&project_playbooks_dir(), "definitely-not-an-app");
+        let result = load_app_recipe(&project_playbooks_dir(), "definitely-not-an-app", "alice");
         assert!(result.is_err());
     }
 
