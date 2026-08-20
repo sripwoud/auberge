@@ -18,18 +18,18 @@ Requires existing SSH access to the target. Creates `~/.ssh` (700) if absent and
 | `-u, --user USER`        | Remote user                      | `ansible`   |
 | `-y, --yes`              | Skip confirmation                | false       |
 
-Both key options scan `~/.ssh/identities/` and `~/.ssh/` when prompting interactively.
+Both key options scan `~/.ssh/identities/<host>/`, `~/.ssh/identities/` and `~/.ssh/` when prompting interactively.
 
 ## Examples
 
 ```bash
-auberge ssh add-key --host myserver --authorize ~/.ssh/identities/ansible_myserver.pub
+auberge ssh add-key --host myserver --authorize ~/.ssh/identities/myserver/ansible.pub
 # key rotation: connect with old, authorize new
 auberge ssh add-key --host myserver \
-  --connect-with ~/.ssh/identities/ansible_myserver_old \
-  --authorize ~/.ssh/identities/ansible_myserver.pub
+  --connect-with ~/.ssh/identities/myserver/ansible-old \
+  --authorize ~/.ssh/identities/myserver/ansible.pub
 # different remote user
-auberge ssh add-key --host myserver --user deploy --authorize ~/.ssh/identities/deploy_myserver.pub
+auberge ssh add-key --host myserver --user deploy --authorize ~/.ssh/identities/myserver/deploy.pub
 ```
 
 ## Gotchas

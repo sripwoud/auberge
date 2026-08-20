@@ -40,7 +40,7 @@ name: myserver
 address: 192.168.1.10
 user: ansible
 port: 2222
-ssh_key: ~/.ssh/identities/ansible_myserver
+ssh_key: ~/.ssh/identities/myserver/ansible
 tags:
   - production
   - web

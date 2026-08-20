@@ -6,7 +6,7 @@ Synchronize a local music directory to `/srv/music` on a remote host. Alias: `au
 auberge sync music [OPTIONS]
 ```
 
-Uses `rsync -rltz --partial --delete --delete-excluded`, mirroring local state (remote files not present locally are deleted). Excludes hidden entries (`.*`) and `*.tmp` at any depth — everything else transfers, including cover art, booklets, liner notes and `.m3u` playlists. SSH key: `~/.ssh/identities/ansible_{host}`.
+Uses `rsync -rltz --partial --delete --delete-excluded`, mirroring local state (remote files not present locally are deleted). Excludes hidden entries (`.*`) and `*.tmp` at any depth — everything else transfers, including cover art, booklets, liner notes and `.m3u` playlists. SSH key: `~/.ssh/identities/{host}/ansible`.
 
 ## Options
 

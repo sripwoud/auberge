@@ -21,7 +21,7 @@ auberge backup restore [OPTIONS] [BACKUP_ID]
 | `-H, --host HOST`        | Target host                             | Interactive                       |
 | `-F, --from-host HOST`   | Source host (cross-host migration)      | Same as target                    |
 | `-a, --apps APPS`        | Apps to restore (comma-separated)       | All in backup                     |
-| `-k, --ssh-key PATH`     | SSH private key                         | `~/.ssh/identities/{user}_{host}` |
+| `-k, --ssh-key PATH`     | SSH private key                         | `~/.ssh/identities/{host}/{user}` |
 | `-n, --dry-run`          | Preview without restoring               | false                             |
 | `-y, --yes`              | Skip confirmation prompt                | false                             |
 | `--skip-playbook-unsafe` | Skip Ansible playbook run after restore | false                             |

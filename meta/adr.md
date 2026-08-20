@@ -105,13 +105,15 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 
 ## SSH Key Derivation
 
-**Decision:** Use pattern `~/.ssh/identities/{user}_{hostname}` for default keys.
+**Decision:** Use pattern `~/.ssh/identities/{hostname}/{user}` for default keys. Flat files directly under `identities/` are reserved for service keys (`github`, ...).
+
+**Amended 2026-08-20** (was `~/.ssh/identities/{user}_{hostname}`): `_` stops being a reliable separator once hostnames contain hyphens — `ansible_vieille-auberge` parses two ways — and flat names are glob-ambiguous during a host rename (`*-auberge` matches `ansible-vieille-auberge`). A directory per host removes the separator class entirely: host-scoped `ls`, and a host rename is one `mv`.
 
 **Reasoning:**
 
 - **Predictable:** Easy to find keys
-- **Organized:** All keys in one directory
-- **Naming clarity:** User and host explicit in filename
+- **Organized:** One directory per host
+- **Naming clarity:** Host is the directory, user is the filename
 - **Override-able:** Can specify custom keys
 
 **Trade-offs:**
