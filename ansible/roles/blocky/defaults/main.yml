@@ -12,11 +12,17 @@ blocky_checksums_url: "https://github.com/0xERR0R/blocky/releases/download/v{{ b
 blocky_lego_version: "5.3.1"
 blocky_lego_url: "https://github.com/go-acme/lego/releases/download/v{{ blocky_lego_version }}/lego_v{{ blocky_lego_version }}_linux_amd64.tar.gz"
 blocky_lego_sha256: "b3c71b122ee1947eacfe0b809b955647f6377239fe4bfc49f73b1a091ae1252a"
+# --dns.propagation.disable-rns drops lego's recursive-nameserver propagation
+# check. A recursor that negative-caches the challenge name for the zone's SOA
+# minimum (1800s on Cloudflare) can never clear inside lego's 2m poll window,
+# which wedged issuance behind the recursors in netcup's /etc/resolv.conf. The
+# authoritative-NS check still runs, and Cloudflare's NS see the record at once.
 blocky_lego_run_cmd: >-
   /usr/local/bin/lego run
   --domains '{{ blocky_domain }}'
   --email {{ blocky_letsencrypt_email }}
   --dns cloudflare
+  --dns.propagation.disable-rns
   --accept-tos
   --path {{ blocky_config_path }}
 
