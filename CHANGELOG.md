@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.4](https://github.com/sripwoud/auberge/compare/v0.15.3...v0.15.4) - 2026-08-20
+
+### Fixed
+
+- *(blocky)* flush handlers before probing the tailscale listener ([#547](https://github.com/sripwoud/auberge/pull/547))
+
 ## [0.15.3](https://github.com/sripwoud/auberge/compare/v0.15.2...v0.15.3) - 2026-08-20
 
 ### Fixed
