@@ -244,6 +244,95 @@ mod tests {
         }
     }
 
+    fn syncthing_recipe() -> BackupRecipe {
+        BackupRecipe {
+            systemd_services: vec!["syncthing@alice".to_string()],
+            paths: vec![
+                "/home/alice/.local/state/syncthing/config.xml".to_string(),
+                "/home/alice/.local/state/syncthing/cert.pem".to_string(),
+                "/home/alice/.local/state/syncthing/key.pem".to_string(),
+            ],
+            owner: Some(("alice".to_string(), "alice".to_string())),
+            db: None,
+            post_restore_command: None,
+            parameters: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_backup_syncthing_stops_unit_rsyncs_identity_files_then_starts() {
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .backup(
+                &syncthing_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
+            .unwrap();
+
+        let calls = mock.calls();
+        assert_eq!(
+            calls[0],
+            SshOp::Systemctl {
+                action: "stop".to_string(),
+                service: "syncthing@alice".to_string(),
+            }
+        );
+        let rsync_remotes: Vec<String> = calls
+            .iter()
+            .filter_map(|c| match c {
+                SshOp::RsyncFrom { remote, .. } => Some(remote.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            rsync_remotes,
+            vec![
+                "/home/alice/.local/state/syncthing/config.xml",
+                "/home/alice/.local/state/syncthing/cert.pem",
+                "/home/alice/.local/state/syncthing/key.pem",
+            ]
+        );
+        assert_eq!(
+            calls.last().unwrap(),
+            &SshOp::Systemctl {
+                action: "start".to_string(),
+                service: "syncthing@alice".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_restore_syncthing_rsyncs_identity_files_and_chowns_to_admin_user() {
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .restore(
+                &syncthing_recipe(),
+                Path::new("/tmp/source"),
+                &HashMap::new(),
+                &mut progress,
+            )
+            .unwrap();
+
+        let calls = mock.calls();
+        assert!(matches!(
+            &calls[1],
+            SshOp::RsyncTo { local, remote }
+            if remote == "/home/alice/.local/state/syncthing/config.xml"
+                && local.ends_with("home/alice/.local/state/syncthing/config.xml")
+        ));
+        assert!(calls.contains(&SshOp::SetOwnership {
+            remote: "/home/alice/.local/state/syncthing/key.pem".to_string(),
+            user: "alice".to_string(),
+            group: "alice".to_string(),
+        }));
+    }
+
     #[test]
     fn test_backup_no_services_just_rsyncs_paths() {
         let mock = MockSshSession::new();

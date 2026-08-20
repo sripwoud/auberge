@@ -56,6 +56,24 @@ mod tests {
     }
 
     #[test]
+    fn test_load_app_recipe_resolves_admin_user_placeholder() {
+        let recipe = load_app_recipe(&project_playbooks_dir(), "syncthing", "alice").unwrap();
+        assert_eq!(recipe.systemd_services, vec!["syncthing@alice"]);
+        assert_eq!(
+            recipe.paths,
+            vec![
+                "/home/alice/.local/state/syncthing/config.xml",
+                "/home/alice/.local/state/syncthing/cert.pem",
+                "/home/alice/.local/state/syncthing/key.pem",
+            ]
+        );
+        assert_eq!(
+            recipe.owner,
+            Some(("alice".to_string(), "alice".to_string()))
+        );
+    }
+
+    #[test]
     fn test_load_app_recipe_errors_when_meta_missing_backup_section() {
         let result = load_app_recipe(&project_playbooks_dir(), "bootstrap", "alice");
         assert!(result.is_err());
@@ -86,6 +104,7 @@ mod tests {
             "headscale",
             "navidrome",
             "paperless",
+            "syncthing",
             "tgtg",
             "yourls",
         ]

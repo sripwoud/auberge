@@ -376,6 +376,31 @@ mod tests {
     }
 
     #[test]
+    fn test_syncthing_meta_backup_recipe() {
+        let meta = load_meta("syncthing");
+        assert!(meta.required_keys.is_empty());
+        assert!(meta.version.is_none());
+        let backup = meta
+            .backup
+            .expect("syncthing.meta.yml should declare backup");
+        assert_eq!(backup.systemd_services, vec!["syncthing@{admin_user}"]);
+        assert_eq!(
+            backup.paths,
+            vec![
+                "/home/{admin_user}/.local/state/syncthing/config.xml",
+                "/home/{admin_user}/.local/state/syncthing/cert.pem",
+                "/home/{admin_user}/.local/state/syncthing/key.pem",
+            ]
+        );
+        assert_eq!(
+            backup.owner,
+            Some(("{admin_user}".to_string(), "{admin_user}".to_string()))
+        );
+        assert!(backup.db.is_none());
+        assert!(backup.post_restore_command.is_none());
+    }
+
+    #[test]
     fn test_headscale_meta_backup_recipe() {
         let backup = load_meta("headscale").backup.unwrap();
         assert_eq!(backup.systemd_services, vec!["headscale"]);
