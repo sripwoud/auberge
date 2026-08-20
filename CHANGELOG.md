@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0](https://github.com/sripwoud/auberge/compare/v0.14.29...v0.15.0) - 2026-08-20
+
+### Added
+
+- *(host)* add rename subcommand ([#524](https://github.com/sripwoud/auberge/pull/524))
+- *(host)* allow editing the ssh key via host edit ([#523](https://github.com/sripwoud/auberge/pull/523))
+- *(ssh)* [**breaking**] restructure key layout to identities/{host}/{user} ([#521](https://github.com/sripwoud/auberge/pull/521))
+- *(syncthing)* back up device identity via playbook meta ([#516](https://github.com/sripwoud/auberge/pull/516))
+
+### Fixed
+
+- *(sync)* resolve hermes ssh_key through the tiered resolver ([#522](https://github.com/sripwoud/auberge/pull/522))
+- *(cli)* emit hosts.toml tags as groups in the generated inventory ([#514](https://github.com/sripwoud/auberge/pull/514))
+
 ## [0.14.29](https://github.com/sripwoud/auberge/compare/v0.14.28...v0.14.29) - 2026-08-19
 
 ### Other
