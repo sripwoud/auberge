@@ -229,6 +229,9 @@
     daemon_reload: true
     enabled: true
 
+- name: Flush handlers so a pending blocky restart lands before the probe
+  ansible.builtin.meta: flush_handlers
+
 - name: Wait for Blocky to listen on Tailscale interface
   ansible.builtin.wait_for:
     host: "{{ blocky_tailscale_ipv4 }}"
