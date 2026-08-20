@@ -383,6 +383,10 @@ fn is_cgnat_ipv4(addr: &Ipv4Addr) -> bool {
     octets[0] == 100 && (64..=127).contains(&octets[1])
 }
 
+fn none_if_empty(value: String) -> Option<String> {
+    if value.is_empty() { None } else { Some(value) }
+}
+
 pub fn run_host_edit(name: Option<String>) -> Result<()> {
     let host = crate::hosts::select_or_arg(name, crate::hosts::HOST_POSITIONAL)?;
 
@@ -399,6 +403,12 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
     let port = Input::<u16>::with_theme(&ColorfulTheme::default())
         .with_prompt("SSH port")
         .default(host.port)
+        .interact_text()?;
+
+    let ssh_key = Input::<String>::with_theme(&ColorfulTheme::default())
+        .with_prompt("SSH key (empty for derived default)")
+        .with_initial_text(host.ssh_key.clone().unwrap_or_default())
+        .allow_empty(true)
         .interact_text()?;
 
     let tags_str = host.tags.join(", ");
@@ -428,13 +438,9 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
         address,
         user,
         port,
-        ssh_key: host.ssh_key,
+        ssh_key: none_if_empty(ssh_key),
         tags: tags_vec,
-        description: if description.is_empty() {
-            None
-        } else {
-            Some(description)
-        },
+        description: none_if_empty(description),
         python_interpreter: host.python_interpreter,
         become_method: host.become_method,
         tailscale_ip: host.tailscale_ip,
@@ -487,6 +493,15 @@ mod tests {
         assert_eq!(
             parse_tailscale_cgnat_ipv4("not-an-ip\nfd7a:115c:a1e0::1\n"),
             None
+        );
+    }
+
+    #[test]
+    fn none_if_empty_maps_empty_input_to_none() {
+        assert_eq!(none_if_empty(String::new()), None);
+        assert_eq!(
+            none_if_empty("~/.ssh/identities/custom".to_string()),
+            Some("~/.ssh/identities/custom".to_string())
         );
     }
 
