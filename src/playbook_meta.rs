@@ -75,7 +75,7 @@ pub struct BackupParameter {
     pub adds_paths: Vec<String>,
 }
 
-pub const ADMIN_USER_PLACEHOLDER: &str = "{admin_user}";
+const ADMIN_USER_PLACEHOLDER: &str = "{admin_user}";
 
 impl BackupRecipe {
     /// Substitute `{admin_user}` with the Host's user in every string field,
