@@ -31,6 +31,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0021 | [Memory Budgets are declared in Playbook Meta](./adr/0021-memory-budgets-declared-in-playbook-meta.md)                                             |
 | 0022 | [The music sync blocklists hidden entries as a class](./adr/0022-music-sync-blocklists-hidden-entries-as-a-class.md)                               |
 | 0023 | [Backup Recipes reference the admin user via a `{admin_user}` placeholder](./adr/0023-admin-user-placeholder-in-backup-recipes.md)                 |
+| 0024 | [Host rename recovers by rerun, never by rollback or history rewrite](./adr/0024-host-rename-recovers-by-rerun.md)                                 |
 
 ## No Docker
 

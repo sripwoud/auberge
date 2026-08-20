@@ -92,8 +92,12 @@ fn validate_key_file(key_path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn identities_dir(home_dir: &Path) -> PathBuf {
+    home_dir.join(".ssh/identities")
+}
+
 pub fn identity_scan_dirs(home_dir: &Path, host: &str) -> [PathBuf; 2] {
-    let identities = home_dir.join(".ssh/identities");
+    let identities = identities_dir(home_dir);
     [identities.join(host), identities]
 }
 

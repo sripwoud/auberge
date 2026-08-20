@@ -35,7 +35,7 @@ use commands::headscale::{
 };
 use commands::host::{
     AddHostArgs, HostCommands, run_host_add, run_host_detect_tailscale_ip, run_host_edit,
-    run_host_list, run_host_remove, run_host_show,
+    run_host_list, run_host_remove, run_host_rename, run_host_show,
 };
 use commands::select::{SelectCommands, run_select_host, run_select_playbook};
 use commands::ssh::{SshCommands, run_ssh_add_key, run_ssh_keygen};
@@ -169,6 +169,7 @@ async fn main() -> Result<()> {
             HostCommands::Remove { name, yes } => run_host_remove(name, yes),
             HostCommands::Show { name } => run_host_show(name),
             HostCommands::Edit { name } => run_host_edit(name),
+            HostCommands::Rename { old, new, yes } => run_host_rename(old, new, yes),
             HostCommands::DetectTailscaleIp { name } => run_host_detect_tailscale_ip(name),
         },
         Commands::Ansible(cmd) => match cmd {
