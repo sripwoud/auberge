@@ -32,8 +32,8 @@
     - name: Test connection on new port as ansible user
       ansible.builtin.command:
         cmd: >-
-          ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no
-          -o IdentityFile={{ ansible_ssh_private_key_file }}
+          ssh -F /dev/null -o ConnectTimeout=5 -o StrictHostKeyChecking=no
+          -o IdentitiesOnly=yes -o IdentityFile={{ ansible_ssh_private_key_file }}
           -p {{ ssh_port }} ansible@{{ ansible_host }} echo 'Connection successful'
       delegate_to: localhost
       become: false
@@ -43,7 +43,7 @@
 
     - name: Fail if new port connection failed
       ansible.builtin.fail:
-        msg: "Cannot connect to SSH on port {{ ssh_port }}. Keeping port 22 open for safety."
+        msg: "Cannot connect to SSH on port {{ ssh_port }} ({{ ssh_test.stderr | default('no stderr') }}). Keeping port 22 open for safety."
       when: ssh_test.rc != 0
 
     - name: Close port 22 only after confirming new port works
