@@ -32,6 +32,10 @@ _Avoid_: Server, node, target, machine
 The list of Hosts commands run against: user-local `hosts.toml` when present, else the version-controlled `ansible/inventory.yml`. At run time the CLI renders the selected Host into an ephemeral inventory file merged with `ansible/inventory.yml` (which carries the `vps` group vars); each hosts.toml `tag` becomes an ansible group there, so tag-gated Playbooks (`when: "'hermes' in group_names"`) fire only on tagged Hosts.
 _Avoid_: Hostlist, fleet
 
+**SSH Include**:
+The CLI-owned ssh client config (`~/.ssh/config.d/auberge.conf`), regenerated from `hosts.toml` by every `host add|edit|rename|remove` so each Host gets an ssh alias (`ssh <name>`). Loaded via one `Include` line the user adds at the top of `~/.ssh/config` — the CLI never writes that file, only prints the line while missing.
+_Avoid_: ssh aliases file, generated ssh config, config.d
+
 **App**:
 An application deployed by a Playbook (e.g. paperless, navidrome, baikal). An App has a Backup Recipe iff its Playbook Meta includes a `backup:` section.
 _Avoid_: Service, package, workload
