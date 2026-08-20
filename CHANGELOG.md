@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.3](https://github.com/sripwoud/auberge/compare/v0.15.2...v0.15.3) - 2026-08-20
+
+### Fixed
+
+- *(ansible)* surface fatal task lines when a play fails ([#545](https://github.com/sripwoud/auberge/pull/545))
+- *(blocky)* skip lego's recursive-nameserver propagation check ([#543](https://github.com/sripwoud/auberge/pull/543))
+
 ## [0.15.2](https://github.com/sripwoud/auberge/compare/v0.15.1...v0.15.2) - 2026-08-20
 
 ### Added
