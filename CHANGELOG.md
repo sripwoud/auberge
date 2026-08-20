@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2](https://github.com/sripwoud/auberge/compare/v0.15.1...v0.15.2) - 2026-08-20
+
+### Added
+
+- *(host)* maintain a cli-owned ssh config include ([#540](https://github.com/sripwoud/auberge/pull/540))
+
+### Fixed
+
+- *(bootstrap)* show provider firewall confirmation before connecting ([#539](https://github.com/sripwoud/auberge/pull/539))
+- *(bootstrap)* remove dead localhost validation play ([#538](https://github.com/sripwoud/auberge/pull/538))
+- *(bootstrap)* explain that the ssh password prompt wants a login password ([#536](https://github.com/sripwoud/auberge/pull/536))
+- *(bootstrap)* isolate ssh port test and re-fail swallowed rescue ([#535](https://github.com/sripwoud/auberge/pull/535))
+
 ## [0.15.1](https://github.com/sripwoud/auberge/compare/v0.15.0...v0.15.1) - 2026-08-20
 
 ### Added
