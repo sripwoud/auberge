@@ -44,6 +44,7 @@
     - [list](cli-reference/host/list.md)
     - [show](cli-reference/host/show.md)
     - [edit](cli-reference/host/edit.md)
+    - [rename](cli-reference/host/rename.md)
     - [remove](cli-reference/host/remove.md)
     - [detect-tailscale-ip](cli-reference/host/detect-tailscale-ip.md)
   - SSH

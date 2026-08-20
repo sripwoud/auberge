@@ -15,7 +15,7 @@ Opens an interactive prompt to edit an existing host's configuration. Allows upd
 
 If `NAME` is omitted, you'll be prompted to select a host.
 
-Note: Host name cannot be changed through this command. To change the name, remove and re-add the host.
+Note: Host name cannot be changed through this command — the name is a foreign key into the key directory layout, the remote hostname, and restic snapshot grouping. Use [`auberge host rename`](rename.md), which migrates all three.
 
 ## Arguments
 

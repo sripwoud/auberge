@@ -2,10 +2,10 @@ use crate::hosts::{Host, HostManager};
 use crate::output;
 use crate::output::OutputFormat;
 use crate::prompt::{Choice, confirm, select_item};
-use crate::ssh_session::SshSession;
+use crate::services::ssh::{LiveSshSession, SshSession};
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
-use eyre::Result;
+use eyre::{Context, Result};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use tabled::Tabled;
@@ -97,6 +97,18 @@ pub enum HostCommands {
     Edit {
         #[arg(help = "Host name (omit to be prompted)")]
         name: Option<String>,
+    },
+    #[command(
+        visible_alias = "mv",
+        about = "Rename a host: remote hostname, hosts.toml entry, and key directory"
+    )]
+    Rename {
+        #[arg(help = "Current host name")]
+        old: String,
+        #[arg(help = "New host name")]
+        new: String,
+        #[arg(short, long, help = "Skip confirmation")]
+        yes: bool,
     },
     #[command(
         visible_alias = "dti",
@@ -314,7 +326,7 @@ pub fn run_host_show(name: Option<String>) -> Result<()> {
 pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
     let host = crate::hosts::select_or_arg(name_arg, crate::hosts::HOST_POSITIONAL)?;
     let ssh_key = resolve_ssh_key(&host)?;
-    let session = SshSession::new(&host, &ssh_key);
+    let session = crate::ssh_session::SshSession::new(&host, &ssh_key);
 
     output::info(&format!(
         "Querying Tailscale IPv4 on {}@{}…",
@@ -452,6 +464,245 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
     Ok(())
 }
 
+pub fn run_host_rename(old: String, new: String, yes: bool) -> Result<()> {
+    validate_rename_name(&old)?;
+    validate_rename_name(&new)?;
+
+    let home = dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
+    let identities = crate::services::ssh::identities_dir(&home);
+
+    let hosts = HostManager::load_hosts()?;
+    let host = preflight_names(&hosts, &old, &new)?;
+    preflight_identities(&identities, &old, &new)?;
+
+    let ssh_key = rename_key_candidates(&host, &home, &new)
+        .into_iter()
+        .find(|p| p.exists())
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "SSH key not found for '{}'. Run 'auberge ssh keygen --host {} --user {}' first.",
+                host.name,
+                host.name,
+                host.user
+            )
+        })?;
+
+    let session = LiveSshSession::new(&host, &ssh_key);
+    let probe = session.run("true")?;
+    if !probe.success {
+        eyre::bail!(
+            "SSH preflight to {}@{} failed: {}",
+            host.user,
+            host.address,
+            probe.stderr_str().trim()
+        );
+    }
+
+    if !confirm(
+        &format!(
+            "Rename host '{}' -> '{}' (sets the remote hostname and rewrites local config)?",
+            old, new
+        ),
+        yes,
+    ) {
+        eprintln!("Cancelled.");
+        return Ok(());
+    }
+
+    rename_remote(&session, &old, &new)?;
+
+    let updated = rename_local(&identities, hosts, &old, &new, &home)?;
+    HostManager::save_hosts(&updated)?;
+
+    output::success(&format!("Host '{}' renamed to '{}'", old, new));
+    print_rename_follow_ups(&old, &new);
+    Ok(())
+}
+
+fn validate_rename_name(name: &str) -> Result<()> {
+    let starts_alphanumeric = name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric());
+    let charset_ok = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+    if !starts_alphanumeric || !charset_ok {
+        eyre::bail!(
+            "Invalid host name '{}': must start with a letter or digit and contain only letters, digits, '.', '_' and '-'",
+            name
+        );
+    }
+    Ok(())
+}
+
+fn preflight_names(hosts: &[Host], old: &str, new: &str) -> Result<Host> {
+    let host = hosts
+        .iter()
+        .find(|h| h.name == old)
+        .cloned()
+        .ok_or_else(|| eyre::eyre!("Host '{}' not found", old))?;
+    if hosts.iter().any(|h| h.name == new) {
+        eyre::bail!("Host '{}' already exists", new);
+    }
+    Ok(host)
+}
+
+/// A pre-existing `identities/<new>` blocks the rename only while
+/// `identities/<old>` also exists (the mv would clobber it). With `<old>`
+/// gone, `<new>` is the already-moved state a rerun recovers through
+/// (ADR-0024).
+fn preflight_identities(identities: &std::path::Path, old: &str, new: &str) -> Result<()> {
+    let old_dir = identities.join(old);
+    let new_dir = identities.join(new);
+    if old_dir.exists() && new_dir.exists() {
+        eyre::bail!(
+            "Both {} and {} exist; move the keys out of one before renaming",
+            old_dir.display(),
+            new_dir.display()
+        );
+    }
+    Ok(())
+}
+
+/// Rewrites a configured ssh_key iff it lives under `~/.ssh/identities/<old>/`,
+/// preserving the raw prefix style (`~` or absolute). A custom key outside the
+/// derived tree returns None: file and configured path stay untouched (#520).
+fn rewrite_ssh_key(raw: &str, home: &std::path::Path, old: &str, new: &str) -> Option<String> {
+    let expanded = match raw.strip_prefix("~/") {
+        Some(rest) => home.join(rest),
+        None => PathBuf::from(raw),
+    };
+    let identities = crate::services::ssh::identities_dir(home);
+    let rest = expanded
+        .strip_prefix(identities.join(old))
+        .ok()?
+        .to_path_buf();
+    let rewritten = identities.join(new).join(rest);
+    if raw.starts_with("~/") {
+        let relative = rewritten.strip_prefix(home).ok()?;
+        Some(format!("~/{}", relative.display()))
+    } else {
+        Some(rewritten.display().to_string())
+    }
+}
+
+/// After a partial rename the key may already live under the new name while
+/// hosts.toml still says old, so the preflight probes both locations.
+fn rename_key_candidates(host: &Host, home: &std::path::Path, new: &str) -> Vec<PathBuf> {
+    match &host.ssh_key {
+        Some(raw) => {
+            let mut candidates = vec![crate::services::ssh::configured_key_path(raw)];
+            if let Some(rewritten) = rewrite_ssh_key(raw, home, &host.name, new) {
+                candidates.push(crate::services::ssh::configured_key_path(&rewritten));
+            }
+            candidates
+        }
+        None => {
+            let [old_dir, _] = crate::services::ssh::identity_scan_dirs(home, &host.name);
+            let [new_dir, _] = crate::services::ssh::identity_scan_dirs(home, new);
+            vec![old_dir.join(&host.user), new_dir.join(&host.user)]
+        }
+    }
+}
+
+fn sed_hostname_pattern(name: &str) -> String {
+    name.replace('.', "\\.")
+}
+
+fn etc_hosts_sed_script(old: &str, new: &str) -> String {
+    let pattern = sed_hostname_pattern(old);
+    format!("s/(^|[[:space:]]){pattern}([[:space:]]|\\.|$)/\\1{new}\\2/g")
+}
+
+fn rename_remote_commands(old: &str, new: &str) -> [String; 2] {
+    let script = etc_hosts_sed_script(old, new);
+    // The substitution runs twice: sed resumes scanning after each
+    // replacement, so a boundary consumed as `\2` hides an adjacent
+    // occurrence from the first pass.
+    [
+        format!("sudo hostnamectl set-hostname {new}"),
+        format!("sudo sed -E -i -e '{script}' -e '{script}' /etc/hosts"),
+    ]
+}
+
+fn rename_remote(
+    session: &impl crate::services::ssh::SshSession,
+    old: &str,
+    new: &str,
+) -> Result<()> {
+    for command in rename_remote_commands(old, new) {
+        let result = session.run(&command)?;
+        if !result.success {
+            let stderr = result.stderr_str();
+            let stderr = stderr.trim();
+            eyre::bail!(
+                "Remote step failed ({}): {}. No local changes were made; rerun after fixing.",
+                command,
+                if stderr.is_empty() {
+                    "no output"
+                } else {
+                    stderr
+                }
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Local mutations ordered so the hosts.toml write (done by the caller) is the
+/// commit point: the key-directory move happens first and is skipped when
+/// already done, so a rerun after any partial failure converges (ADR-0024).
+fn rename_local(
+    identities: &std::path::Path,
+    hosts: Vec<Host>,
+    old: &str,
+    new: &str,
+    home: &std::path::Path,
+) -> Result<Vec<Host>> {
+    let old_dir = identities.join(old);
+    if old_dir.exists() {
+        let new_dir = identities.join(new);
+        std::fs::rename(&old_dir, &new_dir).wrap_err_with(|| {
+            format!(
+                "Failed to move {} to {}",
+                old_dir.display(),
+                new_dir.display()
+            )
+        })?;
+    }
+
+    Ok(hosts
+        .into_iter()
+        .map(|mut h| {
+            if h.name == old {
+                h.name = new.to_string();
+                if let Some(rewritten) = h
+                    .ssh_key
+                    .as_deref()
+                    .and_then(|raw| rewrite_ssh_key(raw, home, old, new))
+                {
+                    h.ssh_key = Some(rewritten);
+                }
+            }
+            h
+        })
+        .collect())
+}
+
+fn print_rename_follow_ups(old: &str, new: &str) {
+    output::info("Not done by this command:");
+    output::info(&format!(
+        "  - ~/.ssh/config: update Host/IdentityFile entries mentioning '{old}' yourself (the CLI treats that file as read-only)"
+    ));
+    output::info(&format!(
+        "  - tailscale: the host re-advertises itself as '{new}' and releases the '{old}' tailnet name"
+    ));
+    output::warn(&format!(
+        "restic snapshots group by host name: the '{old}' lineage freezes here and '{new}' starts a new one — never rewrite snapshot tags"
+    ));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,5 +763,308 @@ mod tests {
         assert!(run_host_show(unknown()).is_err());
         assert!(run_host_remove(unknown(), true).is_err());
         assert!(run_host_edit(unknown()).is_err());
+    }
+
+    fn rename_fixture_host(name: &str, ssh_key: Option<&str>) -> Host {
+        Host {
+            name: name.to_string(),
+            address: "203.0.113.10".to_string(),
+            user: "ansible".to_string(),
+            port: 22,
+            ssh_key: ssh_key.map(str::to_string),
+            tags: vec![],
+            description: None,
+            python_interpreter: None,
+            become_method: "sudo".to_string(),
+            tailscale_ip: None,
+        }
+    }
+
+    #[test]
+    fn validate_rename_name_accepts_hostname_shapes() {
+        assert!(validate_rename_name("auberge").is_ok());
+        assert!(validate_rename_name("vieille-auberge").is_ok());
+        assert!(validate_rename_name("vps.example.com").is_ok());
+        assert!(validate_rename_name("box_2").is_ok());
+    }
+
+    #[test]
+    fn validate_rename_name_rejects_shell_hostile_names() {
+        assert!(validate_rename_name("").is_err());
+        assert!(validate_rename_name("-flag").is_err());
+        assert!(validate_rename_name("a b").is_err());
+        assert!(validate_rename_name("a'b").is_err());
+        assert!(validate_rename_name("a/b").is_err());
+        assert!(validate_rename_name("a&b").is_err());
+    }
+
+    #[test]
+    fn preflight_names_rejects_missing_old_and_taken_new() {
+        let hosts = vec![
+            rename_fixture_host("auberge", None),
+            rename_fixture_host("relais", None),
+        ];
+
+        assert!(preflight_names(&hosts, "ghost", "x").is_err());
+        assert!(preflight_names(&hosts, "auberge", "relais").is_err());
+
+        let found = preflight_names(&hosts, "auberge", "vieille-auberge").unwrap();
+        assert_eq!(found.name, "auberge");
+    }
+
+    #[test]
+    fn preflight_identities_bails_only_on_true_collision() {
+        let tmp = tempfile::tempdir().unwrap();
+        let identities = tmp.path();
+
+        assert!(preflight_identities(identities, "old", "new").is_ok());
+
+        std::fs::create_dir_all(identities.join("new")).unwrap();
+        assert!(
+            preflight_identities(identities, "old", "new").is_ok(),
+            "new-only is the already-moved rerun state"
+        );
+
+        std::fs::create_dir_all(identities.join("old")).unwrap();
+        assert!(
+            preflight_identities(identities, "old", "new").is_err(),
+            "both dirs present is a clobbering collision"
+        );
+
+        std::fs::remove_dir(identities.join("new")).unwrap();
+        assert!(preflight_identities(identities, "old", "new").is_ok());
+    }
+
+    #[test]
+    fn rewrite_ssh_key_rewrites_derived_tree_paths_preserving_style() {
+        let home = std::path::Path::new("/home/x");
+
+        assert_eq!(
+            rewrite_ssh_key(
+                "~/.ssh/identities/auberge/ansible",
+                home,
+                "auberge",
+                "vieille-auberge"
+            ),
+            Some("~/.ssh/identities/vieille-auberge/ansible".to_string())
+        );
+        assert_eq!(
+            rewrite_ssh_key(
+                "/home/x/.ssh/identities/auberge/ansible",
+                home,
+                "auberge",
+                "vieille-auberge"
+            ),
+            Some("/home/x/.ssh/identities/vieille-auberge/ansible".to_string())
+        );
+        assert_eq!(
+            rewrite_ssh_key("~/.ssh/identities/auberge/sub/key", home, "auberge", "next"),
+            Some("~/.ssh/identities/next/sub/key".to_string())
+        );
+    }
+
+    #[test]
+    fn rewrite_ssh_key_leaves_custom_paths_untouched() {
+        let home = std::path::Path::new("/home/x");
+
+        assert_eq!(
+            rewrite_ssh_key("~/.ssh/custom/key", home, "auberge", "n"),
+            None
+        );
+        assert_eq!(
+            rewrite_ssh_key("~/.ssh/identities/other/ansible", home, "auberge", "n"),
+            None,
+            "another host's tree is not ours to rewrite"
+        );
+        assert_eq!(
+            rewrite_ssh_key("~/.ssh/identities/github", home, "auberge", "n"),
+            None,
+            "flat service keys live directly under identities/"
+        );
+        assert_eq!(
+            rewrite_ssh_key("/etc/keys/ansible", home, "auberge", "n"),
+            None
+        );
+    }
+
+    #[test]
+    fn rename_key_candidates_probe_old_then_new_location() {
+        let home = std::path::Path::new("/home/x");
+
+        let derived = rename_fixture_host("auberge", None);
+        assert_eq!(
+            rename_key_candidates(&derived, home, "vieille-auberge"),
+            vec![
+                PathBuf::from("/home/x/.ssh/identities/auberge/ansible"),
+                PathBuf::from("/home/x/.ssh/identities/vieille-auberge/ansible"),
+            ]
+        );
+
+        let custom = rename_fixture_host("auberge", Some("/etc/keys/ansible"));
+        assert_eq!(
+            rename_key_candidates(&custom, home, "vieille-auberge"),
+            vec![PathBuf::from("/etc/keys/ansible")],
+            "a custom key has no rewritten twin to probe"
+        );
+
+        let configured =
+            rename_fixture_host("auberge", Some("/home/x/.ssh/identities/auberge/ansible"));
+        assert_eq!(
+            rename_key_candidates(&configured, home, "vieille-auberge"),
+            vec![
+                PathBuf::from("/home/x/.ssh/identities/auberge/ansible"),
+                PathBuf::from("/home/x/.ssh/identities/vieille-auberge/ansible"),
+            ]
+        );
+    }
+
+    #[test]
+    fn rename_remote_commands_set_hostname_then_patch_etc_hosts() {
+        let [hostnamectl, sed] = rename_remote_commands("auberge", "vieille-auberge");
+        assert_eq!(hostnamectl, "sudo hostnamectl set-hostname vieille-auberge");
+        let script = "s/(^|[[:space:]])auberge([[:space:]]|\\.|$)/\\1vieille-auberge\\2/g";
+        assert_eq!(
+            sed,
+            format!("sudo sed -E -i -e '{script}' -e '{script}' /etc/hosts")
+        );
+    }
+
+    #[test]
+    fn rename_remote_commands_escape_dots_in_the_sed_pattern() {
+        let [_, sed] = rename_remote_commands("a.example.com", "b");
+        assert!(sed.contains("a\\.example\\.com"), "{sed}");
+    }
+
+    fn run_etc_hosts_sed(script: &str, input: &str) -> String {
+        use std::io::Write;
+        let mut child = std::process::Command::new("sed")
+            .args(["-E", "-e", script, "-e", script])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success());
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    #[test]
+    fn etc_hosts_sed_renames_adjacent_tokens_fqdns_and_line_ends() {
+        let script = etc_hosts_sed_script("auberge", "relais");
+        let input = "127.0.1.1 auberge auberge.lan auberge\n\
+                     10.0.0.2 auberge.example.com\n\
+                     auberge 10.0.0.3\n";
+        assert_eq!(
+            run_etc_hosts_sed(&script, input),
+            "127.0.1.1 relais relais.lan relais\n\
+             10.0.0.2 relais.example.com\n\
+             relais 10.0.0.3\n"
+        );
+    }
+
+    #[test]
+    fn etc_hosts_sed_leaves_hyphenated_supersets_alone() {
+        let script = etc_hosts_sed_script("auberge", "relais");
+        let input = "10.0.0.2 vieille-auberge auberge-next\n";
+        assert_eq!(run_etc_hosts_sed(&script, input), input);
+    }
+
+    #[test]
+    fn rename_remote_runs_both_steps_in_order() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        rename_remote(&mock, "auberge", "vieille-auberge").unwrap();
+
+        let expected: Vec<crate::services::ssh::SshOp> =
+            rename_remote_commands("auberge", "vieille-auberge")
+                .into_iter()
+                .map(crate::services::ssh::SshOp::Run)
+                .collect();
+        assert_eq!(mock.calls(), expected);
+    }
+
+    #[test]
+    fn rename_remote_aborts_on_first_failing_step() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: b"hostnamectl: access denied".to_vec(),
+        });
+
+        let err = rename_remote(&mock, "auberge", "vieille-auberge").unwrap_err();
+        assert!(err.to_string().contains("access denied"), "{err}");
+        assert_eq!(mock.calls().len(), 1, "second step must not run");
+    }
+
+    #[test]
+    fn rename_local_moves_key_dir_and_rewrites_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let identities = tmp.path().join(".ssh/identities");
+        std::fs::create_dir_all(identities.join("auberge")).unwrap();
+        std::fs::write(identities.join("auberge/ansible"), b"key").unwrap();
+
+        let raw_key = identities.join("auberge/ansible").display().to_string();
+        let hosts = vec![
+            rename_fixture_host("auberge", Some(&raw_key)),
+            rename_fixture_host("relais", None),
+        ];
+
+        let updated =
+            rename_local(&identities, hosts, "auberge", "vieille-auberge", tmp.path()).unwrap();
+
+        assert!(!identities.join("auberge").exists());
+        assert!(identities.join("vieille-auberge/ansible").exists());
+        assert_eq!(updated[0].name, "vieille-auberge");
+        assert_eq!(
+            updated[0].ssh_key.as_deref(),
+            Some(
+                identities
+                    .join("vieille-auberge/ansible")
+                    .display()
+                    .to_string()
+            )
+            .as_deref()
+        );
+        assert_eq!(updated[1].name, "relais", "other entries untouched");
+    }
+
+    #[test]
+    fn rename_local_leaves_custom_key_file_and_path_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let identities = tmp.path().join(".ssh/identities");
+        std::fs::create_dir_all(&identities).unwrap();
+
+        let hosts = vec![rename_fixture_host("auberge", Some("/etc/keys/ansible"))];
+        let updated = rename_local(&identities, hosts, "auberge", "next", tmp.path()).unwrap();
+
+        assert_eq!(updated[0].name, "next");
+        assert_eq!(updated[0].ssh_key.as_deref(), Some("/etc/keys/ansible"));
+    }
+
+    #[test]
+    fn rename_local_rerun_after_partial_failure_converges() {
+        let tmp = tempfile::tempdir().unwrap();
+        let identities = tmp.path().join(".ssh/identities");
+        std::fs::create_dir_all(identities.join("vieille-auberge")).unwrap();
+        std::fs::write(identities.join("vieille-auberge/ansible"), b"key").unwrap();
+
+        let hosts = vec![rename_fixture_host("auberge", None)];
+
+        preflight_identities(&identities, "auberge", "vieille-auberge").unwrap();
+        let updated =
+            rename_local(&identities, hosts, "auberge", "vieille-auberge", tmp.path()).unwrap();
+
+        assert_eq!(updated[0].name, "vieille-auberge");
+        assert!(
+            identities.join("vieille-auberge/ansible").exists(),
+            "already-moved key dir survives the rerun"
+        );
     }
 }
