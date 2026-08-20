@@ -16,6 +16,8 @@ auberge ansible bootstrap [HOST] [OPTIONS]
 | `--ip IP`     | Target IP (required with `--force`) | Prompt  |
 | `-f, --force` | Skip confirmation prompts (CI/CD)   | `false` |
 
+Without `--ip`, bootstrap prompts for the target IP. When the host's configured address is an IP, the prompt offers it as the default (`Enter IP address for my-vps [203.0.113.10]:`) — press Enter to accept. Input is validated; an invalid IP re-prompts.
+
 ## Prerequisites
 
 ```bash
