@@ -18,7 +18,7 @@ port = 22
 ssh_key = "~/.ssh/identities/custom_key"
 ```
 
-?> When the derived path doesn't exist, the CLI scans `~/.ssh/`, `~/.ssh/identities/` and `~/.ssh/identities/<host>/` and offers an interactive picker. You can save the selection to `hosts.toml` so future runs skip the prompt.
+?> When the derived path doesn't exist, commands fail and point at `auberge ssh keygen`. The only interactive picker lives in `auberge ssh add-key`, which scans `~/.ssh/`, `~/.ssh/identities/`, and `~/.ssh/identities/<host>/` to choose its connection and authorize keys; the selection is never saved to `hosts.toml`.
 
 ## Importing from `~/.ssh/config`
 
@@ -26,8 +26,9 @@ ssh_key = "~/.ssh/identities/custom_key"
 
 ## Common errors
 
-| Error                           | Fix                                                                                       |
-| ------------------------------- | ----------------------------------------------------------------------------------------- |
-| `No SSH keys found`             | `auberge ssh keygen --host <host>` or copy keys into `~/.ssh/identities/`                 |
-| `Configured SSH key not found`  | Updates config or falls back to interactive picker. Edit with `auberge host edit <host>`. |
-| `Permissions 0644 are too open` | `chmod 600 /path/to/key`                                                                  |
+| Error                                    | Fix                                                                                     |
+| ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| `SSH key not found`                      | `auberge ssh keygen --host <host>` or fix the path with `auberge host edit <host>`      |
+| `Configured SSH key not found` (warning) | Falls back to the derived path; fix the stale `ssh_key` with `auberge host edit <host>` |
+| `No SSH private keys found`              | `auberge ssh keygen --host <host>` or copy keys into `~/.ssh/identities/`               |
+| `Permissions 0644 are too open`          | `chmod 600 /path/to/key`                                                                |
