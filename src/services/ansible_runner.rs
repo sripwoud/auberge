@@ -34,6 +34,78 @@ pub struct AnsibleResult {
     pub last_output: String,
 }
 
+const MAX_FAILURE_LINES: usize = 10;
+const MAX_RECAP_LINES: usize = 15;
+
+/// Harvests failure diagnostics from ansible's stdout stream.
+///
+/// Ansible's default callback writes task failures (`fatal:`/`failed:`) and
+/// the PLAY RECAP to stdout; stderr carries only warnings and pre-play
+/// `ERROR!` messages. The stderr tail alone therefore misses the root cause
+/// of any task failure (#542).
+///
+/// An ignored task prints `...ignoring` directly after its failure lines
+/// (per-item `failed:` lines for loops, with no intervening output), so the
+/// whole trailing run of failures is cancelled. Failures of distinct tasks
+/// are always separated by a `TASK [...]` header, which resets the run.
+#[derive(Default)]
+struct FailureDigest {
+    failures: Vec<String>,
+    recap: Vec<String>,
+    in_recap: bool,
+    trailing_failures: usize,
+}
+
+impl FailureDigest {
+    fn observe(&mut self, line: &str) {
+        let trimmed = line.trim();
+        if trimmed.starts_with("PLAY RECAP") {
+            self.in_recap = true;
+        }
+        if self.in_recap {
+            if !trimmed.is_empty() && self.recap.len() < MAX_RECAP_LINES {
+                self.recap.push(trimmed.to_string());
+            }
+            return;
+        }
+        if trimmed == "...ignoring" {
+            self.failures
+                .truncate(self.failures.len() - self.trailing_failures);
+            self.trailing_failures = 0;
+            return;
+        }
+        if trimmed.starts_with("fatal:") || trimmed.starts_with("failed:") {
+            if self.failures.len() < MAX_FAILURE_LINES {
+                self.failures.push(trimmed.to_string());
+                self.trailing_failures += 1;
+            }
+            return;
+        }
+        self.trailing_failures = 0;
+    }
+
+    fn has_failures(&self) -> bool {
+        !self.failures.is_empty()
+    }
+
+    fn render(&self) -> String {
+        self.failures
+            .iter()
+            .chain(self.recap.iter())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+/// Env vars override the embedded ansible.cfg, so a user-exported
+/// `ANSIBLE_CALLBACK_RESULT_FORMAT=yaml` (or a custom stdout callback) would
+/// break the line-based scraping in `FailureDigest` and `parse_ansible_task`.
+fn pin_output_format(cmd: &mut Command) {
+    cmd.env("ANSIBLE_STDOUT_CALLBACK", "ansible.builtin.default")
+        .env("ANSIBLE_CALLBACK_RESULT_FORMAT", "json");
+}
+
 pub struct InventoryHost {
     pub name: String,
     pub address: String,
@@ -191,8 +263,11 @@ pub fn run_playbook(
         .file_stem()
         .and_then(|n| n.to_str())
         .unwrap_or("ansible");
+    pin_output_format(&mut cmd);
     progress.task_started(&format!("Running {}...", playbook_label));
+    let mut digest = FailureDigest::default();
     let result = output::stream_command_stdout("ansible", &mut cmd, |line| {
+        digest.observe(line);
         if let Some(task) = parse_ansible_task(line) {
             progress.task_started(&format!("Running: {}", format_ansible_task(&task)));
         }
@@ -200,10 +275,17 @@ pub fn run_playbook(
     .wrap_err("Failed to execute ansible-playbook")?;
     progress.task_done();
 
+    let success = result.status.success();
+    let last_output = if success || !digest.has_failures() {
+        result.last_stderr
+    } else {
+        digest.render()
+    };
+
     Ok(AnsibleResult {
-        success: result.status.success(),
+        success,
         exit_code: result.status.code().unwrap_or(-1),
-        last_output: result.last_stderr,
+        last_output,
     })
 }
 
@@ -353,6 +435,191 @@ mod tests {
         let host_entry = &parsed["all"]["children"]["vps"]["hosts"]["tagged-vps"];
         assert_eq!(host_entry["ansible_host"].as_str().unwrap(), "203.0.113.9");
         assert_eq!(host_entry["ansible_port"].as_u64().unwrap(), 2222);
+    }
+
+    fn digest_of(lines: &[&str]) -> FailureDigest {
+        let mut digest = FailureDigest::default();
+        for line in lines {
+            digest.observe(line);
+        }
+        digest
+    }
+
+    #[test]
+    fn failure_digest_keeps_fatal_line_after_long_output() {
+        let ok_lines: Vec<String> = (0..100)
+            .map(|i| format!("ok: [auberge] task {i}"))
+            .collect();
+        let mut lines: Vec<&str> = ok_lines.iter().map(String::as_str).collect();
+        lines.push(r#"fatal: [auberge]: FAILED! => {"msg": "lego run failed", "rc": 1}"#);
+
+        let digest = digest_of(&lines);
+        assert!(digest.render().contains("lego run failed"));
+    }
+
+    #[test]
+    fn failure_digest_captures_failed_item_lines() {
+        let digest = digest_of(&[
+            r#"failed: [auberge] (item=example.com) => {"msg": "boom"}"#,
+            r#"fatal: [auberge]: FAILED! => {"msg": "All items completed"}"#,
+        ]);
+        let rendered = digest.render();
+        assert!(rendered.contains("item=example.com"));
+        assert!(rendered.contains("All items completed"));
+    }
+
+    #[test]
+    fn failure_digest_captures_unreachable_line() {
+        let digest = digest_of(&[
+            r#"fatal: [auberge]: UNREACHABLE! => {"msg": "Failed to connect via ssh"}"#,
+        ]);
+        assert!(digest.render().contains("UNREACHABLE"));
+    }
+
+    #[test]
+    fn failure_digest_has_no_failures_without_failure_lines() {
+        let digest = digest_of(&[
+            "PLAY [vps] ****",
+            "TASK [Gathering Facts] ****",
+            "ok: [auberge]",
+            "changed: [auberge]",
+        ]);
+        assert!(!digest.has_failures());
+    }
+
+    #[test]
+    fn failure_digest_drops_fatal_cancelled_by_ignoring() {
+        let digest = digest_of(&[
+            r#"fatal: [auberge]: FAILED! => {"msg": "expected failure"}"#,
+            "...ignoring",
+        ]);
+        assert!(!digest.has_failures());
+    }
+
+    #[test]
+    fn failure_digest_ignoring_cancels_all_items_of_ignored_loop_task() {
+        let digest = digest_of(&[
+            r#"failed: [auberge] (item=a) => {"msg": "boom a"}"#,
+            r#"failed: [auberge] (item=b) => {"msg": "boom b"}"#,
+            r#"failed: [auberge] (item=c) => {"msg": "boom c"}"#,
+            "...ignoring",
+        ]);
+        assert!(!digest.has_failures());
+    }
+
+    #[test]
+    fn failure_digest_ignoring_does_not_cancel_failures_of_earlier_tasks() {
+        let digest = digest_of(&[
+            "TASK [lego : run] ****",
+            r#"fatal: [auberge]: FAILED! => {"msg": "real failure"}"#,
+            "TASK [lego : cleanup] ****",
+            r#"failed: [auberge] (item=x) => {"msg": "ignored"}"#,
+            "...ignoring",
+        ]);
+        let rendered = digest.render();
+        assert!(rendered.contains("real failure"));
+        assert!(!rendered.contains("ignored"));
+    }
+
+    #[test]
+    fn failure_digest_ignoring_only_cancels_immediately_preceding_run() {
+        let digest = digest_of(&[
+            r#"fatal: [auberge]: FAILED! => {"msg": "real failure"}"#,
+            "ok: [auberge]",
+            "...ignoring",
+        ]);
+        assert!(digest.render().contains("real failure"));
+    }
+
+    #[test]
+    fn failure_digest_captures_play_recap() {
+        let digest = digest_of(&[
+            r#"fatal: [auberge]: FAILED! => {"msg": "boom"}"#,
+            "PLAY RECAP *********************",
+            "auberge : ok=12 changed=3 unreachable=0 failed=1 skipped=2",
+        ]);
+        let rendered = digest.render();
+        assert!(rendered.contains("PLAY RECAP"));
+        assert!(rendered.contains("failed=1"));
+    }
+
+    #[test]
+    fn failure_digest_recap_alone_has_no_failures() {
+        let digest = digest_of(&[
+            "PLAY RECAP *********************",
+            "auberge : ok=12 changed=3 unreachable=1 failed=0",
+        ]);
+        assert!(!digest.has_failures());
+    }
+
+    #[test]
+    fn failure_digest_renders_failures_before_recap() {
+        let digest = digest_of(&["PLAY RECAP ****", "auberge : ok=1 failed=1"]);
+        let mut with_failure = digest_of(&[r#"fatal: [auberge]: FAILED! => {"msg": "boom"}"#]);
+        with_failure.observe("PLAY RECAP ****");
+        with_failure.observe("auberge : ok=1 failed=1");
+
+        let rendered = with_failure.render();
+        let fatal_pos = rendered.find("fatal:").unwrap();
+        let recap_pos = rendered.find("PLAY RECAP").unwrap();
+        assert!(fatal_pos < recap_pos);
+        assert!(digest.render().starts_with("PLAY RECAP"));
+    }
+
+    #[test]
+    fn failure_digest_caps_failure_lines() {
+        let failure_lines: Vec<String> = (0..MAX_FAILURE_LINES + 5)
+            .map(|i| format!(r#"fatal: [auberge]: FAILED! => {{"msg": "failure {i}"}}"#))
+            .collect();
+        let lines: Vec<&str> = failure_lines.iter().map(String::as_str).collect();
+
+        let digest = digest_of(&lines);
+        let rendered = digest.render();
+        assert_eq!(rendered.lines().count(), MAX_FAILURE_LINES);
+        assert!(rendered.contains("failure 0"));
+        assert!(!rendered.contains(&format!("failure {MAX_FAILURE_LINES}")));
+    }
+
+    #[test]
+    fn failure_digest_ignoring_past_cap_does_not_pop_kept_failure() {
+        let mut digest = FailureDigest::default();
+        for i in 0..MAX_FAILURE_LINES {
+            digest.observe(&format!("TASK [role : task {i}] ****"));
+            digest.observe(&format!(
+                r#"fatal: [auberge]: FAILED! => {{"msg": "failure {i}"}}"#
+            ));
+        }
+        digest.observe("TASK [role : over cap] ****");
+        digest.observe(r#"fatal: [auberge]: FAILED! => {"msg": "over cap"}"#);
+        digest.observe("...ignoring");
+
+        let rendered = digest.render();
+        assert_eq!(rendered.lines().count(), MAX_FAILURE_LINES);
+        assert!(rendered.contains(&format!("failure {}", MAX_FAILURE_LINES - 1)));
+    }
+
+    #[test]
+    fn pin_output_format_forces_default_callback_and_json_results() {
+        let mut cmd = Command::new("ansible-playbook");
+        pin_output_format(&mut cmd);
+
+        let envs: Vec<(String, String)> = cmd
+            .get_envs()
+            .filter_map(|(k, v)| {
+                Some((
+                    k.to_str()?.to_string(),
+                    v.and_then(|v| v.to_str())?.to_string(),
+                ))
+            })
+            .collect();
+        assert!(envs.contains(&(
+            "ANSIBLE_STDOUT_CALLBACK".to_string(),
+            "ansible.builtin.default".to_string()
+        )));
+        assert!(envs.contains(&(
+            "ANSIBLE_CALLBACK_RESULT_FORMAT".to_string(),
+            "json".to_string()
+        )));
     }
 
     #[test]
