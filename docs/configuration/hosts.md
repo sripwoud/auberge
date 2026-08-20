@@ -36,7 +36,7 @@ user = "sripwoud"
 port = 22
 tags = ["production"]
 description = "Main VPS"
-ssh_key = "~/.ssh/identities/sripwoud_auberge"
+ssh_key = "~/.ssh/identities/auberge/sripwoud"
 tailscale_ip = "100.99.62.26"  # optional, see below
 ```
 

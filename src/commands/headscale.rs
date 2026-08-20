@@ -192,9 +192,7 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
             path
         }
         None => {
-            let path = dirs::home_dir()
-                .ok_or_else(|| eyre::eyre!("Could not determine home directory"))?
-                .join(format!(".ssh/identities/{}_{}", host.user, host.name));
+            let path = crate::services::ssh::default_ssh_key_path(&host.user, &host.name)?;
             if !path.exists() {
                 eyre::bail!(
                     "SSH key not found: {}\nRun 'auberge ssh keygen --host {} --user {}'",

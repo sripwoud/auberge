@@ -6,7 +6,7 @@ Generate an ED25519 SSH key pair for host authentication. Alias: `auberge ss k`.
 auberge ssh keygen [OPTIONS]
 ```
 
-Keys are stored in `~/.ssh/identities/` as `{user}_{host}` (private) and `{user}_{host}.pub` (public), without a passphrase (required for Ansible and backup automation).
+Keys are stored in `~/.ssh/identities/{host}/` as `{user}` (private) and `{user}.pub` (public), without a passphrase (required for Ansible and backup automation).
 
 ## Options
 
@@ -26,6 +26,6 @@ auberge ssh keygen --host myserver --force   # rotate key
 
 ## Gotchas
 
-- Keys are stored in `~/.ssh/identities/` rather than `~/.ssh/` to avoid clutter and enable per-host/per-user management.
+- Keys are stored in `~/.ssh/identities/{host}/` rather than `~/.ssh/` to avoid clutter and enable per-host/per-user management: `ls ~/.ssh/identities/<host>` lists a host's keys, and a host rename is a single `mv`.
 - Use `--force` to rotate; without it the command refuses to overwrite an existing key.
 - After generating, authorize the key on the remote with `auberge ssh add-key`.

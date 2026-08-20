@@ -6,7 +6,7 @@ Three-tier resolution. Precedence: `--ssh-key` flag > `host.ssh_key` in `hosts.t
 | ---- | ------------------------------------------------ | ------------------------------------------------------------ |
 | 1    | `--ssh-key` flag (one-off)                       | `auberge backup create --host my-vps --ssh-key /path/to/key` |
 | 2    | `host.ssh_key` in `~/.config/auberge/hosts.toml` | `auberge host add my-vps --ssh-key ~/.ssh/custom`            |
-| 3    | Derived: `~/.ssh/identities/{user}_{hostname}`   | `auberge ssh keygen --host my-vps --user ansible`            |
+| 3    | Derived: `~/.ssh/identities/{hostname}/{user}`   | `auberge ssh keygen --host my-vps --user ansible`            |
 
 ```toml
 # ~/.config/auberge/hosts.toml
@@ -18,7 +18,7 @@ port = 22
 ssh_key = "~/.ssh/identities/custom_key"
 ```
 
-?> When the derived path doesn't exist, the CLI scans `~/.ssh/` and `~/.ssh/identities/` and offers an interactive picker. You can save the selection to `hosts.toml` so future runs skip the prompt.
+?> When the derived path doesn't exist, the CLI scans `~/.ssh/`, `~/.ssh/identities/` and `~/.ssh/identities/<host>/` and offers an interactive picker. You can save the selection to `hosts.toml` so future runs skip the prompt.
 
 ## Importing from `~/.ssh/config`
 

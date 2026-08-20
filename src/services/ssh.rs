@@ -1,8 +1,26 @@
 use crate::hosts::Host;
 use crate::ssh_session::SshSession as InnerSession;
 use eyre::{Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+pub fn default_ssh_key_path(user: &str, host: &str) -> Result<PathBuf> {
+    let home = dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
+    let [host_dir, _] = identity_scan_dirs(&home, host);
+    Ok(host_dir.join(user))
+}
+
+pub fn legacy_ssh_key_path(user: &str, host: &str) -> Result<PathBuf> {
+    let home = dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
+    Ok(home
+        .join(".ssh/identities")
+        .join(format!("{}_{}", user, host)))
+}
+
+pub fn identity_scan_dirs(home_dir: &Path, host: &str) -> [PathBuf; 2] {
+    let identities = home_dir.join(".ssh/identities");
+    [identities.join(host), identities]
+}
 
 #[derive(Debug, Clone)]
 pub struct CommandResult {
@@ -290,6 +308,36 @@ mod tests {
         let arg = rsync_source_arg(&file);
         assert!(!arg.ends_with('/'), "{arg}");
         assert_eq!(arg, file.display().to_string());
+    }
+
+    #[test]
+    fn test_default_ssh_key_path_is_host_scoped() {
+        let path = default_ssh_key_path("ansible", "vieille-auberge").unwrap();
+        assert!(path.ends_with(".ssh/identities/vieille-auberge/ansible"));
+    }
+
+    #[test]
+    fn test_legacy_ssh_key_path_uses_flat_underscore_layout() {
+        let path = legacy_ssh_key_path("ansible", "auberge").unwrap();
+        assert!(path.ends_with(".ssh/identities/ansible_auberge"));
+    }
+
+    #[test]
+    fn test_identity_scan_dirs_lists_host_dir_before_flat_dir() {
+        let home = std::path::Path::new("/home/x");
+        let [host_dir, flat_dir] = identity_scan_dirs(home, "myserver");
+        assert_eq!(
+            host_dir,
+            std::path::Path::new("/home/x/.ssh/identities/myserver")
+        );
+        assert_eq!(flat_dir, std::path::Path::new("/home/x/.ssh/identities"));
+    }
+
+    #[test]
+    fn test_default_ssh_key_path_places_user_as_filename() {
+        let path = default_ssh_key_path("sripwoud", "auberge").unwrap();
+        assert_eq!(path.file_name().unwrap(), "sripwoud");
+        assert_eq!(path.parent().unwrap().file_name().unwrap(), "auberge");
     }
 
     #[test]

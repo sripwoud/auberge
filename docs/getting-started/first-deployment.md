@@ -17,7 +17,7 @@ auberge host add my-vps 203.0.113.10
 auberge ssh keygen --host my-vps
 ```
 
-Key is written to `~/.ssh/identities/root_my-vps`.
+Key is written to `~/.ssh/identities/my-vps/root`.
 
 ## Step 3: Initialize config
 

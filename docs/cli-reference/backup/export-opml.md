@@ -12,7 +12,7 @@ auberge backup export-opml [OPTIONS] --output <FILE>
 | -------------------- | --------------------- | --------------------------------- |
 | `-H, --host HOST`    | Source host           | Interactive                       |
 | `-o, --output FILE`  | Output OPML file path | Required                          |
-| `-k, --ssh-key PATH` | SSH private key       | `~/.ssh/identities/{user}_{host}` |
+| `-k, --ssh-key PATH` | SSH private key       | `~/.ssh/identities/{host}/{user}` |
 | `--user USER`        | FreshRSS username     | `admin`                           |
 
 ## Examples

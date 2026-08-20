@@ -17,7 +17,7 @@ name = "my-vps"
 address = "203.0.113.10"
 user = "sripwoud"
 port = 59865
-ssh_key = "~/.ssh/identities/sripwoud_my-vps"
+ssh_key = "~/.ssh/identities/my-vps/sripwoud"
 tags = ["production"]
 ```
 
@@ -31,7 +31,7 @@ all:
     vps:
       vars:
         ansible_user: ansible
-        ansible_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }}"
+        ansible_ssh_private_key_file: "{{ ssh_identities_dir }}/ansible"
         ansible_python_interpreter: /usr/bin/python3
 ```
 

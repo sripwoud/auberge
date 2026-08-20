@@ -5,7 +5,7 @@
 | Symptom                         | Likely cause               | Fix                                                                |
 | ------------------------------- | -------------------------- | ------------------------------------------------------------------ |
 | `Connection refused`            | Wrong port after bootstrap | `auberge config get ssh_port`; connect with `-p PORT`              |
-| `Permission denied (publickey)` | Wrong or missing key       | `ssh -i ~/.ssh/identities/ansible_vps ansible@vps-ip -p $SSH_PORT` |
+| `Permission denied (publickey)` | Wrong or missing key       | `ssh -i ~/.ssh/identities/vps/ansible ansible@vps-ip -p $SSH_PORT` |
 | `Host key verification failed`  | VPS reinstalled            | `ssh-keygen -R vps-ip`                                             |
 | `Connection timed out`          | Wrong IP or VPS offline    | `auberge host list`; check provider console                        |
 | Ansible hangs (ControlPersist)  | Stale socket               | `rm -rf ~/.ssh/ctl-*`                                              |
@@ -34,7 +34,17 @@ Bootstrap changes the SSH port and deploys keys. If you can't connect afterwards
 ## Key permission errors
 
 ```bash
-chmod 600 ~/.ssh/identities/ansible_vps
+chmod 600 ~/.ssh/identities/vps/ansible
+```
+
+## Key not found after upgrade
+
+Keys created before the `identities/{host}/{user}` layout still sit at the flat legacy path. Move them instead of generating new ones — a fresh key is not authorized on the remote:
+
+```bash
+mkdir -p ~/.ssh/identities/<host>
+mv ~/.ssh/identities/<user>_<host> ~/.ssh/identities/<host>/<user>
+mv ~/.ssh/identities/<user>_<host>.pub ~/.ssh/identities/<host>/<user>.pub
 ```
 
 ## Wrong ansible_user

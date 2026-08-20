@@ -43,9 +43,9 @@ jobs:
 
       - name: Set up SSH key
         run: |
-          mkdir -p ~/.ssh/identities
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/identities/ansible_production
-          chmod 600 ~/.ssh/identities/ansible_production
+          mkdir -p ~/.ssh/identities/production
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/identities/production/ansible
+          chmod 600 ~/.ssh/identities/production/ansible
           ssh-keyscan -p "${{ secrets.SSH_PORT }}" "${{ secrets.AUBERGE_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Configure auberge

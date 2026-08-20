@@ -12,8 +12,8 @@ all:
     vps:
       vars:
         ansible_user: ansible
-        ansible_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/ansible_{{ inventory_hostname }}"
-        admin_ssh_private_key_file: "{{ lookup('env', 'HOME') }}/.ssh/identities/{{ admin_user_name }}_{{ inventory_hostname }}"
+        ansible_ssh_private_key_file: "{{ ssh_identities_dir }}/ansible"
+        admin_ssh_private_key_file: "{{ ssh_identities_dir }}/{{ admin_user_name }}"
         ansible_python_interpreter: /usr/bin/python3
         ansible_ssh_pipelining: true
 ```
@@ -30,6 +30,7 @@ When running `auberge ansible run`, the CLI:
 ## Group Variables
 
 - `ansible_user` - SSH user after bootstrap (`ansible`)
+- `ssh_identities_dir` - Host's key directory, `~/.ssh/identities/{{ inventory_hostname }}` (defined in `group_vars/all/main.yml`)
 - `ansible_ssh_private_key_file` - Path to SSH key (pattern-based per host)
 - `admin_ssh_private_key_file` - Admin user's SSH key path
 - `ansible_python_interpreter` - Python 3 path

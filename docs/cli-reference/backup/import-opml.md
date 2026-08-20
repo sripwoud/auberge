@@ -14,7 +14,7 @@ Uploads the OPML to `/tmp/` on the remote, runs the FreshRSS CLI import, then cl
 | -------------------- | ------------------- | --------------------------------- |
 | `-H, --host HOST`    | Target host         | Interactive                       |
 | `-i, --input FILE`   | OPML file to import | Required                          |
-| `-k, --ssh-key PATH` | SSH private key     | `~/.ssh/identities/{user}_{host}` |
+| `-k, --ssh-key PATH` | SSH private key     | `~/.ssh/identities/{host}/{user}` |
 | `--user USER`        | FreshRSS username   | `admin`                           |
 
 ## Examples
