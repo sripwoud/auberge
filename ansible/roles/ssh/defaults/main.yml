@@ -1,4 +1,4 @@
-ssh_public_key_path: "{{ lookup('env', 'HOME') }}/.ssh/identities/{{ user_name }}_{{ inventory_hostname }}.pub"
+ssh_public_key_path: "{{ ssh_identities_dir }}/{{ user_name }}.pub"
 ssh_max_auth_tries: 3
 ssh_max_sessions: 5
 ssh_login_grace_time: 30

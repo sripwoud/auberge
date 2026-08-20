@@ -148,9 +148,7 @@ pub fn run_sync_music(
         );
     }
 
-    let ssh_key = dirs::home_dir()
-        .ok_or_else(|| eyre::eyre!("Could not determine home directory"))?
-        .join(format!(".ssh/identities/{}_{}", ansible_user, host.name));
+    let ssh_key = crate::services::ssh::default_ssh_key_path(ansible_user, &host.name)?;
 
     if !ssh_key.exists() {
         eyre::bail!(

@@ -62,7 +62,7 @@ pub enum BackupCommands {
         #[arg(
             short = 'k',
             long,
-            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+            help = "SSH private key (default: ~/.ssh/identities/{host}/{user})"
         )]
         ssh_key: Option<PathBuf>,
         #[arg(long, help = "Include music files in Navidrome backup (large, slow)")]
@@ -87,7 +87,7 @@ pub enum BackupCommands {
         #[arg(
             short = 'k',
             long,
-            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+            help = "SSH private key (default: ~/.ssh/identities/{host}/{user})"
         )]
         ssh_key: Option<PathBuf>,
         #[arg(long, help = "Include music files in Navidrome backup (large, slow)")]
@@ -136,7 +136,7 @@ pub enum BackupCommands {
         #[arg(
             short = 'k',
             long,
-            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+            help = "SSH private key (default: ~/.ssh/identities/{host}/{user})"
         )]
         ssh_key: Option<PathBuf>,
         #[arg(short = 'n', long, help = "Dry run (show what would be restored)")]
@@ -201,7 +201,7 @@ pub enum BackupCommands {
         #[arg(
             short = 'k',
             long,
-            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+            help = "SSH private key (default: ~/.ssh/identities/{host}/{user})"
         )]
         ssh_key: Option<PathBuf>,
         #[arg(long, default_value = "admin", help = "FreshRSS username")]
@@ -216,7 +216,7 @@ pub enum BackupCommands {
         #[arg(
             short = 'k',
             long,
-            help = "SSH private key (default: ~/.ssh/identities/{user}_{host})"
+            help = "SSH private key (default: ~/.ssh/identities/{host}/{user})"
         )]
         ssh_key: Option<PathBuf>,
         #[arg(long, default_value = "admin", help = "FreshRSS username")]
@@ -1450,9 +1450,7 @@ pub(crate) fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -
         eprintln!("  Falling back to default key derivation");
     }
 
-    let ssh_key = dirs::home_dir()
-        .ok_or_else(|| eyre::eyre!("Could not determine home directory"))?
-        .join(format!(".ssh/identities/{}_{}", host.user, host.name));
+    let ssh_key = crate::services::ssh::default_ssh_key_path(&host.user, &host.name)?;
 
     if !ssh_key.exists() {
         eyre::bail!(

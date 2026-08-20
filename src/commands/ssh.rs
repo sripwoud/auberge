@@ -4,6 +4,7 @@ use crate::prompt::{Choice, select_item};
 use crate::services::inventory::select_or_arg as inventory_select_or_arg;
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
+use std::os::unix::fs::DirBuilderExt;
 use std::process::Command;
 
 #[derive(Subcommand)]
@@ -51,17 +52,42 @@ pub enum SshCommands {
 pub fn run_ssh_keygen(host_arg: Option<String>, user: String, force: bool) -> Result<()> {
     let host = inventory_select_or_arg(host_arg, HOST_FLAG)?;
 
-    let ssh_dir = dirs::home_dir()
-        .ok_or_else(|| eyre::eyre!("Could not determine home directory"))?
-        .join(".ssh/identities");
-
-    std::fs::create_dir_all(&ssh_dir).wrap_err("Failed to create SSH identities directory")?;
-
-    let key_path = ssh_dir.join(format!("{}_{}", user, host.name));
+    let key_path = crate::services::ssh::default_ssh_key_path(&user, &host.name)?;
 
     if key_path.exists() && !force {
         output::success(&format!("Key already exists: {}", key_path.display()));
         return Ok(());
+    }
+
+    let host_dir = key_path
+        .parent()
+        .expect("derived key path always has a parent");
+
+    let legacy_path = crate::services::ssh::legacy_ssh_key_path(&user, &host.name)?;
+    if !force && legacy_path.exists() {
+        eyre::bail!(
+            "Found key at legacy path: {}\nMigrate it: mkdir -p {} && mv {} {} && mv {}.pub {}.pub\nOr re-run with --force to generate a fresh key instead",
+            legacy_path.display(),
+            host_dir.display(),
+            legacy_path.display(),
+            key_path.display(),
+            legacy_path.display(),
+            key_path.display()
+        );
+    }
+
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(host_dir)
+        .wrap_err("Failed to create SSH identities directory")?;
+
+    if force && key_path.exists() {
+        std::fs::remove_file(&key_path).wrap_err("Failed to remove existing key")?;
+        let pub_path = std::path::PathBuf::from(format!("{}.pub", key_path.display()));
+        if pub_path.exists() {
+            std::fs::remove_file(&pub_path).wrap_err("Failed to remove existing public key")?;
+        }
     }
 
     output::info(&format!("Generating SSH key for {}@{}", user, host.name));
@@ -75,10 +101,6 @@ pub fn run_ssh_keygen(host_arg: Option<String>, user: String, force: bool) -> Re
         .arg(format!("{}@{}", user, host.name))
         .arg("-N")
         .arg("");
-
-    if force {
-        cmd.arg("-y");
-    }
 
     let result =
         output::run_piped("ssh-keygen", &mut cmd).wrap_err("Failed to execute ssh-keygen")?;
@@ -107,9 +129,7 @@ pub fn run_ssh_add_key(
     let connect_key = match connect_with {
         Some(path) => path,
         None => {
-            let default_key = home_dir
-                .join(".ssh/identities")
-                .join(format!("{}_{}", user, host.name));
+            let default_key = crate::services::ssh::default_ssh_key_path(&user, &host.name)?;
 
             if default_key.exists() {
                 output::info(&format!(
@@ -118,7 +138,7 @@ pub fn run_ssh_add_key(
                 ));
                 default_key
             } else {
-                let available_keys = scan_private_keys(&home_dir)?;
+                let available_keys = scan_private_keys(&home_dir, &host.name)?;
                 if available_keys.is_empty() {
                     eyre::bail!(
                         "No SSH private keys found. Generate one with 'auberge ssh keygen'"
@@ -143,9 +163,9 @@ pub fn run_ssh_add_key(
     let pubkey_to_authorize = match authorize {
         Some(path) => path,
         None => {
-            let available_pubkeys = scan_public_keys(&home_dir)?;
+            let available_pubkeys = scan_public_keys(&home_dir, &host.name)?;
             if available_pubkeys.is_empty() {
-                eyre::bail!("No public keys found in ~/.ssh/");
+                eyre::bail!("No SSH public keys found. Generate one with 'auberge ssh keygen'");
             }
 
             select_item(
@@ -220,70 +240,124 @@ pub fn run_ssh_add_key(
     Ok(())
 }
 
-fn scan_private_keys(home_dir: &std::path::Path) -> Result<Vec<std::path::PathBuf>> {
+fn sorted_key_files(
+    dir: &std::path::Path,
+    is_match: impl Fn(&std::path::Path) -> bool,
+) -> Result<Vec<std::path::PathBuf>> {
     let mut keys = Vec::new();
-
-    let identities_dir = home_dir.join(".ssh/identities");
-    if identities_dir.is_dir() {
-        for entry in std::fs::read_dir(&identities_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() && path.extension().is_none_or(|ext| ext != "pub") {
-                keys.push(path);
-            }
+    if !dir.is_dir() {
+        return Ok(keys);
+    }
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_file() && is_match(&path) {
+            keys.push(path);
         }
     }
-
-    let ssh_dir = home_dir.join(".ssh");
-    if ssh_dir.is_dir() {
-        for entry in std::fs::read_dir(&ssh_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-            if path.is_file()
-                && path.extension().is_none_or(|ext| ext != "pub")
-                && (file_name.starts_with("id_") || file_name == "identity")
-                && file_name != "known_hosts"
-                && file_name != "authorized_keys"
-                && file_name != "config"
-            {
-                keys.push(path);
-            }
-        }
-    }
-
     keys.sort();
-    keys.dedup();
     Ok(keys)
 }
 
-fn scan_public_keys(home_dir: &std::path::Path) -> Result<Vec<std::path::PathBuf>> {
+fn scan_private_keys(
+    home_dir: &std::path::Path,
+    host_name: &str,
+) -> Result<Vec<std::path::PathBuf>> {
+    let is_private = |path: &std::path::Path| path.extension().is_none_or(|ext| ext != "pub");
+
     let mut keys = Vec::new();
-
-    let identities_dir = home_dir.join(".ssh/identities");
-    if identities_dir.is_dir() {
-        for entry in std::fs::read_dir(&identities_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "pub") {
-                keys.push(path);
-            }
-        }
+    for dir in crate::services::ssh::identity_scan_dirs(home_dir, host_name) {
+        keys.extend(sorted_key_files(&dir, is_private)?);
     }
-
-    let ssh_dir = home_dir.join(".ssh");
-    if ssh_dir.is_dir() {
-        for entry in std::fs::read_dir(&ssh_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "pub") {
-                keys.push(path);
-            }
-        }
-    }
-
-    keys.sort();
-    keys.dedup();
+    keys.extend(sorted_key_files(&home_dir.join(".ssh"), |path| {
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        is_private(path) && (file_name.starts_with("id_") || file_name == "identity")
+    })?);
     Ok(keys)
+}
+
+fn scan_public_keys(
+    home_dir: &std::path::Path,
+    host_name: &str,
+) -> Result<Vec<std::path::PathBuf>> {
+    let is_public = |path: &std::path::Path| path.extension().is_some_and(|ext| ext == "pub");
+
+    let mut keys = Vec::new();
+    for dir in crate::services::ssh::identity_scan_dirs(home_dir, host_name) {
+        keys.extend(sorted_key_files(&dir, is_public)?);
+    }
+    keys.extend(sorted_key_files(&home_dir.join(".ssh"), is_public)?);
+    Ok(keys)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_file(path: &std::path::Path, content: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, content).unwrap();
+    }
+
+    #[test]
+    fn test_scan_private_keys_includes_host_subdir_and_flat_service_keys() {
+        let home = tempfile::tempdir().unwrap();
+        let identities = home.path().join(".ssh/identities");
+        write_file(&identities.join("myserver/ansible"), "key");
+        write_file(&identities.join("myserver/ansible.pub"), "pub");
+        write_file(&identities.join("github"), "key");
+        write_file(&identities.join("other-host/ansible"), "key");
+
+        let keys = scan_private_keys(home.path(), "myserver").unwrap();
+
+        assert!(keys.contains(&identities.join("myserver/ansible")));
+        assert!(keys.contains(&identities.join("github")));
+        assert!(!keys.contains(&identities.join("myserver/ansible.pub")));
+        assert!(!keys.contains(&identities.join("other-host/ansible")));
+    }
+
+    #[test]
+    fn test_scan_public_keys_includes_host_subdir_and_flat_service_keys() {
+        let home = tempfile::tempdir().unwrap();
+        let identities = home.path().join(".ssh/identities");
+        write_file(&identities.join("myserver/ansible"), "key");
+        write_file(&identities.join("myserver/ansible.pub"), "pub");
+        write_file(&identities.join("github.pub"), "pub");
+
+        let keys = scan_public_keys(home.path(), "myserver").unwrap();
+
+        assert!(keys.contains(&identities.join("myserver/ansible.pub")));
+        assert!(keys.contains(&identities.join("github.pub")));
+        assert!(!keys.contains(&identities.join("myserver/ansible")));
+    }
+
+    #[test]
+    fn test_scan_private_keys_lists_host_subdir_keys_first() {
+        let home = tempfile::tempdir().unwrap();
+        let identities = home.path().join(".ssh/identities");
+        write_file(&home.path().join(".ssh/id_ed25519"), "key");
+        write_file(&identities.join("aaa-service"), "key");
+        write_file(&identities.join("myserver/ansible"), "key");
+
+        let keys = scan_private_keys(home.path(), "myserver").unwrap();
+
+        assert_eq!(
+            keys,
+            vec![
+                identities.join("myserver/ansible"),
+                identities.join("aaa-service"),
+                home.path().join(".ssh/id_ed25519"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_scan_skips_host_subdir_itself_as_flat_key() {
+        let home = tempfile::tempdir().unwrap();
+        let identities = home.path().join(".ssh/identities");
+        write_file(&identities.join("myserver/ansible"), "key");
+
+        let keys = scan_private_keys(home.path(), "myserver").unwrap();
+
+        assert!(!keys.contains(&identities.join("myserver")));
+    }
 }
