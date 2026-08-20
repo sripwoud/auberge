@@ -228,14 +228,7 @@ pub fn run_sync_hermes(
                     eyre::eyre!("Could not determine home directory for Hermes config")
                 })?,
         };
-        let ssh_key = xdg_host
-            .ssh_key
-            .as_ref()
-            .map(PathBuf::from)
-            .ok_or_else(|| eyre::eyre!("No SSH key configured for host '{}'", xdg_host.name))?;
-        if !ssh_key.exists() {
-            eyre::bail!("SSH key not found: {}", ssh_key.display());
-        }
+        let ssh_key = crate::services::ssh::resolve_ssh_key_path(&xdg_host, None)?;
         if let Some(parent) = local_dest.parent() {
             std::fs::create_dir_all(parent)
                 .wrap_err_with(|| format!("Failed to create directory: {}", parent.display()))?;
@@ -264,15 +257,7 @@ pub fn run_sync_hermes(
         );
     }
 
-    let ssh_key = xdg_host
-        .ssh_key
-        .as_ref()
-        .map(PathBuf::from)
-        .ok_or_else(|| eyre::eyre!("No SSH key configured for host '{}'", xdg_host.name))?;
-
-    if !ssh_key.exists() {
-        eyre::bail!("SSH key not found: {}", ssh_key.display());
-    }
+    let ssh_key = crate::services::ssh::resolve_ssh_key_path(&xdg_host, None)?;
 
     let session = SshSession::new(&xdg_host, &ssh_key);
     let remote_dest = format!("{}@{}:.hermes/config.yaml", xdg_host.user, xdg_host.address);
