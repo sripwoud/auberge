@@ -115,7 +115,7 @@ impl SshSession for LiveSshSession<'_> {
             .arg("--rsync-path=sudo rsync")
             .arg("-e")
             .arg(self.inner.rsync_e_arg())
-            .arg(format!("{}/", local.display()))
+            .arg(rsync_source_arg(local))
             .arg(format!(
                 "{}@{}:{}",
                 self.host.user, self.host.address, remote
@@ -140,6 +140,16 @@ impl SshSession for LiveSshSession<'_> {
             eyre::bail!("chown -R {}:{} {} failed", user, group, remote);
         }
         Ok(())
+    }
+}
+
+/// A trailing slash means "contents of" to rsync — required for directory
+/// sources, fatal for single-file sources (Backup Recipe paths can be either).
+fn rsync_source_arg(local: &Path) -> String {
+    if local.is_dir() {
+        format!("{}/", local.display())
+    } else {
+        local.display().to_string()
     }
 }
 
@@ -264,6 +274,23 @@ impl SshSession for MockSshSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_rsync_source_arg_appends_slash_to_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let arg = rsync_source_arg(tmp.path());
+        assert!(arg.ends_with('/'), "{arg}");
+    }
+
+    #[test]
+    fn test_rsync_source_arg_keeps_file_path_bare() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("config.xml");
+        std::fs::write(&file, b"x").unwrap();
+        let arg = rsync_source_arg(&file);
+        assert!(!arg.ends_with('/'), "{arg}");
+        assert_eq!(arg, file.display().to_string());
+    }
 
     #[test]
     fn test_command_result_ok_is_success() {
