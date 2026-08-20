@@ -11,7 +11,7 @@ use crate::services::backup::session::{
     BackupSession, CreateOutcome, SessionOpts, restic_prune, restic_push,
 };
 use crate::services::backup::verify::{self, MaxAge, Status, Verdict, VerifyRequest};
-use crate::services::ssh::LiveSshSession;
+use crate::services::ssh::{LiveSshSession, resolve_ssh_key_path};
 use crate::ssh_session::SshSession;
 use chrono::Utc;
 use clap::Subcommand;
@@ -1422,72 +1422,6 @@ fn default_backup_dir() -> PathBuf {
     dirs::data_local_dir()
         .map(|d| d.join("auberge").join("backups"))
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
-}
-
-pub(crate) fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
-    if let Some(key_path) = override_key {
-        if !key_path.exists() {
-            eyre::bail!(
-                "Specified SSH key not found: {}\nCheck the path and try again",
-                key_path.display()
-            );
-        }
-
-        validate_key_file(&key_path)?;
-        return Ok(key_path);
-    }
-
-    if let Some(ref configured_key) = host.ssh_key {
-        let key_path = PathBuf::from(shellexpand::tilde(configured_key).as_ref());
-        if key_path.exists() {
-            validate_key_file(&key_path)?;
-            return Ok(key_path);
-        }
-        eprintln!(
-            "⚠ Warning: Configured SSH key not found: {}",
-            key_path.display()
-        );
-        eprintln!("  Falling back to default key derivation");
-    }
-
-    let ssh_key = crate::services::ssh::default_ssh_key_path(&host.user, &host.name)?;
-
-    if !ssh_key.exists() {
-        eyre::bail!(
-            "SSH key not found: {}\nRun 'auberge ssh keygen --host {} --user {}' or configure with 'auberge host edit {}'",
-            ssh_key.display(),
-            host.name,
-            host.user,
-            host.name
-        );
-    }
-
-    Ok(ssh_key)
-}
-
-fn validate_key_file(key_path: &Path) -> Result<()> {
-    let metadata = std::fs::metadata(key_path)
-        .wrap_err_with(|| format!("Cannot read SSH key: {}", key_path.display()))?;
-
-    if !metadata.is_file() {
-        eyre::bail!("SSH key path is not a file: {}", key_path.display());
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = metadata.permissions();
-        let mode = perms.mode() & 0o777;
-        if mode & 0o077 != 0 {
-            eprintln!(
-                "⚠ Warning: SSH key has overly permissive permissions: {:o}",
-                mode
-            );
-            eprintln!("  Consider running: chmod 600 {}", key_path.display());
-        }
-    }
-
-    Ok(())
 }
 
 /// Template instances (`syncthing@alice`) have no unit file of their own —

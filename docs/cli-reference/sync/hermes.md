@@ -6,7 +6,7 @@ Sync `~/.config/hermes/config.yaml` to `~/.hermes/config.yaml` on a remote host 
 auberge sync hermes [OPTIONS]
 ```
 
-Creates `~/.hermes/` on the remote if absent. Pass `--pull` to reverse direction (downloads remote → local, no service restart).
+Creates `~/.hermes/` on the remote if absent. Pass `--pull` to reverse direction (downloads remote → local, no service restart). SSH key: `host.ssh_key` from `hosts.toml` if set, else `~/.ssh/identities/{host}/{user}`.
 
 ## Options
 

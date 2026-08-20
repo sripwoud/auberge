@@ -353,7 +353,7 @@ pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
 
 fn resolve_ssh_key(host: &Host) -> Result<PathBuf> {
     let key = match host.ssh_key.as_ref() {
-        Some(p) => PathBuf::from(shellexpand::tilde(p).into_owned()),
+        Some(p) => crate::services::ssh::configured_key_path(p),
         None => crate::services::ssh::default_ssh_key_path(&host.user, &host.name)?,
     };
     if !key.exists() {

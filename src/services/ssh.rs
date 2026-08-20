@@ -17,6 +17,81 @@ pub fn legacy_ssh_key_path(user: &str, host: &str) -> Result<PathBuf> {
         .join(format!("{}_{}", user, host)))
 }
 
+/// Tier 2 of SSH key resolution (docs/configuration/ssh-keys.md): hosts.toml
+/// `ssh_key` values may carry `~`, which must expand before any `.exists()`
+/// check.
+pub fn configured_key_path(raw: &str) -> PathBuf {
+    PathBuf::from(shellexpand::tilde(raw).as_ref())
+}
+
+/// Full three-tier resolution: `--ssh-key` flag > hosts.toml `ssh_key` >
+/// derived `~/.ssh/identities/{host}/{user}` (docs/configuration/ssh-keys.md).
+pub fn resolve_ssh_key_path(host: &Host, override_key: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(key_path) = override_key {
+        if !key_path.exists() {
+            eyre::bail!(
+                "Specified SSH key not found: {}\nCheck the path and try again",
+                key_path.display()
+            );
+        }
+
+        validate_key_file(&key_path)?;
+        return Ok(key_path);
+    }
+
+    if let Some(ref configured_key) = host.ssh_key {
+        let key_path = configured_key_path(configured_key);
+        if key_path.exists() {
+            validate_key_file(&key_path)?;
+            return Ok(key_path);
+        }
+        eprintln!(
+            "⚠ Warning: Configured SSH key not found: {}",
+            key_path.display()
+        );
+        eprintln!("  Falling back to default key derivation");
+    }
+
+    let ssh_key = default_ssh_key_path(&host.user, &host.name)?;
+
+    if !ssh_key.exists() {
+        eyre::bail!(
+            "SSH key not found: {}\nRun 'auberge ssh keygen --host {} --user {}' or configure with 'auberge host edit {}'",
+            ssh_key.display(),
+            host.name,
+            host.user,
+            host.name
+        );
+    }
+
+    Ok(ssh_key)
+}
+
+fn validate_key_file(key_path: &Path) -> Result<()> {
+    let metadata = std::fs::metadata(key_path)
+        .wrap_err_with(|| format!("Cannot read SSH key: {}", key_path.display()))?;
+
+    if !metadata.is_file() {
+        eyre::bail!("SSH key path is not a file: {}", key_path.display());
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = metadata.permissions();
+        let mode = perms.mode() & 0o777;
+        if mode & 0o077 != 0 {
+            eprintln!(
+                "⚠ Warning: SSH key has overly permissive permissions: {:o}",
+                mode
+            );
+            eprintln!("  Consider running: chmod 600 {}", key_path.display());
+        }
+    }
+
+    Ok(())
+}
+
 pub fn identity_scan_dirs(home_dir: &Path, host: &str) -> [PathBuf; 2] {
     let identities = home_dir.join(".ssh/identities");
     [identities.join(host), identities]
@@ -331,6 +406,65 @@ mod tests {
             std::path::Path::new("/home/x/.ssh/identities/myserver")
         );
         assert_eq!(flat_dir, std::path::Path::new("/home/x/.ssh/identities"));
+    }
+
+    fn test_host() -> Host {
+        Host {
+            name: "test".to_string(),
+            address: "192.0.2.1".to_string(),
+            user: "deploy".to_string(),
+            port: 2222,
+            ssh_key: None,
+            tags: vec![],
+            description: None,
+            python_interpreter: None,
+            become_method: "sudo".to_string(),
+            tailscale_ip: None,
+        }
+    }
+
+    #[test]
+    fn test_resolve_ssh_key_path_returns_existing_configured_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let key = tmp.path().join("key");
+        std::fs::write(&key, b"k").unwrap();
+        let host = Host {
+            ssh_key: Some(key.display().to_string()),
+            ..test_host()
+        };
+        assert_eq!(resolve_ssh_key_path(&host, None).unwrap(), key);
+    }
+
+    #[test]
+    fn test_resolve_ssh_key_path_falls_back_to_derivation_when_configured_key_missing() {
+        let host = Host {
+            name: "no-such-host-518".to_string(),
+            ssh_key: Some("~/no-such-key-518".to_string()),
+            ..test_host()
+        };
+        let err = resolve_ssh_key_path(&host, None).unwrap_err().to_string();
+        assert!(
+            err.contains(".ssh/identities/no-such-host-518/deploy"),
+            "{err}"
+        );
+        assert!(!err.contains('~'), "{err}");
+    }
+
+    #[test]
+    fn test_configured_key_path_expands_tilde_to_home() {
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(
+            configured_key_path("~/.ssh/identities/auberge/ansible"),
+            home.join(".ssh/identities/auberge/ansible")
+        );
+    }
+
+    #[test]
+    fn test_configured_key_path_keeps_absolute_paths() {
+        assert_eq!(
+            configured_key_path("/etc/keys/ansible"),
+            PathBuf::from("/etc/keys/ansible")
+        );
     }
 
     #[test]
