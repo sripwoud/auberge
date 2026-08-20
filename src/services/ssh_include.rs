@@ -3,10 +3,9 @@ use eyre::{Context, Result};
 use std::path::{Path, PathBuf};
 
 pub const INCLUDE_LINE: &str = "Include ~/.ssh/config.d/auberge.conf";
-const RELATIVE_PATH: &str = "config.d/auberge.conf";
 
 pub fn include_file_path(ssh_dir: &Path) -> PathBuf {
-    ssh_dir.join(RELATIVE_PATH)
+    ssh_dir.join("config.d/auberge.conf")
 }
 
 pub fn render(hosts: &[Host]) -> String {
@@ -67,15 +66,20 @@ fn create_private_dir(dir: &Path) -> Result<()> {
         .wrap_err_with(|| format!("Failed to create {}", dir.display()))
 }
 
-pub fn main_config_has_include(ssh_dir: &Path) -> bool {
-    std::fs::read_to_string(ssh_dir.join("config"))
-        .map(|content| has_include(&content))
-        .unwrap_or(false)
+/// A missing ~/.ssh/config legitimately means "no include yet"; any other
+/// read failure is a real problem the caller must surface, not a nag trigger.
+pub fn main_config_has_include(ssh_dir: &Path) -> Result<bool> {
+    let path = ssh_dir.join("config");
+    match std::fs::read_to_string(&path) {
+        Ok(content) => Ok(has_include(&content, ssh_dir)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e).wrap_err_with(|| format!("Failed to read {}", path.display())),
+    }
 }
 
 /// A glob include (`Include ~/.ssh/config.d/*.conf`) also loads the auberge
 /// file, so it counts: a false "missing" would nag on every host subcommand.
-pub fn has_include(main_config: &str) -> bool {
+pub fn has_include(main_config: &str, ssh_dir: &Path) -> bool {
     main_config.lines().any(|line| {
         let mut tokens = line.split_whitespace();
         let Some(directive) = tokens.next() else {
@@ -84,11 +88,35 @@ pub fn has_include(main_config: &str) -> bool {
         if !directive.eq_ignore_ascii_case("include") {
             return false;
         }
-        tokens.any(|arg| {
-            let arg = arg.trim_matches('"');
-            arg.ends_with(RELATIVE_PATH) || (arg.contains("config.d/") && arg.contains('*'))
-        })
+        tokens.any(|arg| include_arg_loads_auberge_conf(arg.trim_matches('"'), ssh_dir))
     })
+}
+
+/// The directory must be ~/.ssh/config.d itself — tilde, absolute, or
+/// ssh_dir-relative form (relative Include paths resolve against ~/.ssh) —
+/// so an unrelated `Include /etc/ssh/config.d/*` never counts.
+fn include_arg_loads_auberge_conf(arg: &str, ssh_dir: &Path) -> bool {
+    let Some((dir, file)) = arg.rsplit_once('/') else {
+        return false;
+    };
+    let dir_matches =
+        dir == "~/.ssh/config.d" || dir == "config.d" || Path::new(dir) == ssh_dir.join("config.d");
+    dir_matches && glob_matches(file, "auberge.conf")
+}
+
+/// The glob(3) subset ssh Include arguments use in practice: `*` and `?`.
+fn glob_matches(pattern: &str, name: &str) -> bool {
+    fn go(pattern: &[char], name: &[char]) -> bool {
+        match pattern.split_first() {
+            None => name.is_empty(),
+            Some(('*', rest)) => (0..=name.len()).any(|skip| go(rest, &name[skip..])),
+            Some(('?', rest)) => !name.is_empty() && go(rest, &name[1..]),
+            Some((c, rest)) => name.first() == Some(c) && go(rest, &name[1..]),
+        }
+    }
+    let pattern: Vec<char> = pattern.chars().collect();
+    let name: Vec<char> = name.chars().collect();
+    go(&pattern, &name)
 }
 
 #[cfg(test)]
@@ -152,27 +180,73 @@ mod tests {
         assert!(beta < alpha);
     }
 
-    #[test]
-    fn has_include_matches_exact_line() {
-        assert!(has_include(INCLUDE_LINE));
-        assert!(has_include("  Include ~/.ssh/config.d/auberge.conf"));
-        assert!(has_include("include ~/.ssh/config.d/auberge.conf"));
-        assert!(has_include("Include \"~/.ssh/config.d/auberge.conf\""));
-        assert!(has_include("Include config.d/auberge.conf"));
+    const SSH_DIR: &str = "/home/x/.ssh";
+
+    fn ssh_dir() -> &'static Path {
+        Path::new(SSH_DIR)
     }
 
     #[test]
-    fn has_include_matches_glob_over_config_d() {
-        assert!(has_include("Include ~/.ssh/config.d/*.conf"));
-        assert!(has_include("Include ~/.ssh/config.d/*"));
+    fn has_include_matches_exact_line() {
+        assert!(has_include(INCLUDE_LINE, ssh_dir()));
+        assert!(has_include(
+            "  Include ~/.ssh/config.d/auberge.conf",
+            ssh_dir()
+        ));
+        assert!(has_include(
+            "include ~/.ssh/config.d/auberge.conf",
+            ssh_dir()
+        ));
+        assert!(has_include(
+            "Include \"~/.ssh/config.d/auberge.conf\"",
+            ssh_dir()
+        ));
+        assert!(has_include("Include config.d/auberge.conf", ssh_dir()));
+        assert!(has_include(
+            &format!("Include {SSH_DIR}/config.d/auberge.conf"),
+            ssh_dir()
+        ));
+    }
+
+    #[test]
+    fn has_include_matches_glob_over_own_config_d() {
+        assert!(has_include("Include ~/.ssh/config.d/*.conf", ssh_dir()));
+        assert!(has_include("Include ~/.ssh/config.d/*", ssh_dir()));
+        assert!(has_include("Include config.d/auberge.*", ssh_dir()));
     }
 
     #[test]
     fn has_include_rejects_comments_and_other_includes() {
-        assert!(!has_include("# Include ~/.ssh/config.d/auberge.conf"));
-        assert!(!has_include("Include ~/.ssh/other.conf"));
-        assert!(!has_include("Host auberge\n  HostName 1.2.3.4"));
-        assert!(!has_include(""));
+        assert!(!has_include(
+            "# Include ~/.ssh/config.d/auberge.conf",
+            ssh_dir()
+        ));
+        assert!(!has_include("Include ~/.ssh/other.conf", ssh_dir()));
+        assert!(!has_include("Host auberge\n  HostName 1.2.3.4", ssh_dir()));
+        assert!(!has_include("", ssh_dir()));
+    }
+
+    #[test]
+    fn has_include_rejects_globs_over_foreign_config_d_dirs() {
+        assert!(!has_include("Include /etc/ssh/config.d/*", ssh_dir()));
+        assert!(!has_include("Include ~/other/config.d/*.conf", ssh_dir()));
+        assert!(!has_include("Include ~/.ssh/config.d/*.bak", ssh_dir()));
+        assert!(!has_include(
+            "Include /etc/ssh/config.d/auberge.conf",
+            ssh_dir()
+        ));
+    }
+
+    #[test]
+    fn glob_matches_covers_star_and_question_mark() {
+        assert!(glob_matches("auberge.conf", "auberge.conf"));
+        assert!(glob_matches("*", "auberge.conf"));
+        assert!(glob_matches("*.conf", "auberge.conf"));
+        assert!(glob_matches("auberge.*", "auberge.conf"));
+        assert!(glob_matches("a?berge.conf", "auberge.conf"));
+        assert!(!glob_matches("*.bak", "auberge.conf"));
+        assert!(!glob_matches("other.conf", "auberge.conf"));
+        assert!(!glob_matches("auberge.conf?", "auberge.conf"));
     }
 
     #[test]
@@ -219,16 +293,28 @@ mod tests {
         let ssh_dir = tmp.path().join(".ssh");
         std::fs::create_dir_all(&ssh_dir).unwrap();
 
-        assert!(!main_config_has_include(&ssh_dir), "missing file");
+        assert!(!main_config_has_include(&ssh_dir).unwrap(), "missing file");
 
         std::fs::write(ssh_dir.join("config"), "Host x\n  HostName 1.2.3.4\n").unwrap();
-        assert!(!main_config_has_include(&ssh_dir), "no include line");
+        assert!(
+            !main_config_has_include(&ssh_dir).unwrap(),
+            "no include line"
+        );
 
         std::fs::write(
             ssh_dir.join("config"),
             format!("{INCLUDE_LINE}\n\nHost x\n  HostName 1.2.3.4\n"),
         )
         .unwrap();
-        assert!(main_config_has_include(&ssh_dir));
+        assert!(main_config_has_include(&ssh_dir).unwrap());
+    }
+
+    #[test]
+    fn main_config_has_include_propagates_non_notfound_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ssh_dir = tmp.path().join(".ssh");
+        std::fs::create_dir_all(ssh_dir.join("config")).unwrap();
+
+        assert!(main_config_has_include(&ssh_dir).is_err());
     }
 }

@@ -375,7 +375,7 @@ fn sync_ssh_include() -> Result<()> {
     crate::services::ssh_include::write_include_file(&ssh_dir, &hosts).wrap_err(
         "hosts.toml was updated but ~/.ssh/config.d/auberge.conf could not be regenerated; rerun any host subcommand after fixing",
     )?;
-    if !crate::services::ssh_include::main_config_has_include(&ssh_dir) {
+    if !crate::services::ssh_include::main_config_has_include(&ssh_dir)? {
         output::info(
             "ssh aliases inactive: add this line at the top of ~/.ssh/config (first-obtained value wins):",
         );
