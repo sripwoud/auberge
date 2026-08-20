@@ -39,6 +39,7 @@ pub struct InventoryHost {
     pub address: String,
     pub port: u16,
     pub user: String,
+    pub groups: Vec<String>,
 }
 
 fn extra_var_args(extra_vars: Option<&[(&str, &str)]>) -> Vec<String> {
@@ -79,6 +80,17 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
 
     let mut children = Mapping::new();
     children.insert(Value::String("vps".into()), Value::Mapping(vps));
+
+    for group in &host.groups {
+        if children.contains_key(Value::String(group.clone())) {
+            continue;
+        }
+        let mut group_hosts = Mapping::new();
+        group_hosts.insert(Value::String(host.name.clone()), Value::Null);
+        let mut group_entry = Mapping::new();
+        group_entry.insert(Value::String("hosts".into()), Value::Mapping(group_hosts));
+        children.insert(Value::String(group.clone()), Value::Mapping(group_entry));
+    }
 
     let mut all = Mapping::new();
     all.insert(Value::String("children".into()), Value::Mapping(children));
@@ -243,6 +255,7 @@ mod tests {
             address: "198.51.100.1".to_string(),
             port: 59865,
             user: "root".to_string(),
+            groups: vec![],
         };
 
         let tmpfile = write_inventory_file(&host).unwrap();
@@ -261,6 +274,7 @@ mod tests {
             address: "203.0.113.42".to_string(),
             port: 22,
             user: "debian".to_string(),
+            groups: vec![],
         };
 
         let tmpfile = write_inventory_file(&host).unwrap();
@@ -268,6 +282,77 @@ mod tests {
 
         let parsed: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();
         assert!(parsed["all"]["children"]["vps"]["hosts"]["myserver"].is_mapping());
+    }
+
+    #[test]
+    fn test_write_inventory_file_emits_tag_groups() {
+        let host = InventoryHost {
+            name: "openclaw".to_string(),
+            address: "203.0.113.7".to_string(),
+            port: 22,
+            user: "root".to_string(),
+            groups: vec!["hermes".to_string(), "gpu".to_string()],
+        };
+
+        let tmpfile = write_inventory_file(&host).unwrap();
+        let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
+
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();
+        let children = parsed["all"]["children"].as_mapping().unwrap();
+        assert!(children.contains_key("hermes"));
+        assert!(children.contains_key("gpu"));
+        assert!(
+            parsed["all"]["children"]["hermes"]["hosts"]
+                .as_mapping()
+                .unwrap()
+                .contains_key("openclaw")
+        );
+        assert!(
+            parsed["all"]["children"]["gpu"]["hosts"]
+                .as_mapping()
+                .unwrap()
+                .contains_key("openclaw")
+        );
+    }
+
+    #[test]
+    fn test_write_inventory_file_no_tags_yields_only_vps_group() {
+        let host = InventoryHost {
+            name: "plain".to_string(),
+            address: "203.0.113.8".to_string(),
+            port: 22,
+            user: "root".to_string(),
+            groups: vec![],
+        };
+
+        let tmpfile = write_inventory_file(&host).unwrap();
+        let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
+
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();
+        let children = parsed["all"]["children"].as_mapping().unwrap();
+        assert_eq!(children.len(), 1);
+        assert!(children.contains_key("vps"));
+    }
+
+    #[test]
+    fn test_write_inventory_file_vps_tag_does_not_clobber_vps_group() {
+        let host = InventoryHost {
+            name: "tagged-vps".to_string(),
+            address: "203.0.113.9".to_string(),
+            port: 2222,
+            user: "root".to_string(),
+            groups: vec!["vps".to_string(), "vps".to_string()],
+        };
+
+        let tmpfile = write_inventory_file(&host).unwrap();
+        let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
+
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();
+        let children = parsed["all"]["children"].as_mapping().unwrap();
+        assert_eq!(children.len(), 1);
+        let host_entry = &parsed["all"]["children"]["vps"]["hosts"]["tagged-vps"];
+        assert_eq!(host_entry["ansible_host"].as_str().unwrap(), "203.0.113.9");
+        assert_eq!(host_entry["ansible_port"].as_u64().unwrap(), 2222);
     }
 
     #[test]
@@ -358,6 +443,7 @@ mod tests {
             address: "198.51.100.1".to_string(),
             port: 22,
             user: "root".to_string(),
+            groups: vec![],
         };
 
         let tmpfile = write_inventory_file(&host).unwrap();

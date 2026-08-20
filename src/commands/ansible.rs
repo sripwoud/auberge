@@ -253,6 +253,7 @@ fn run_auto_resolved(
             address: host.vars.ansible_host.clone(),
             port: host.vars.ansible_port,
             user: host.vars.bootstrap_user.clone(),
+            groups: host.groups.clone(),
         };
 
         let mut progress = crate::services::progress::TerminalProgress::new("");
@@ -375,6 +376,7 @@ fn run_single_playbook(
         address: host.vars.ansible_host.clone(),
         port: host.vars.ansible_port,
         user: host.vars.bootstrap_user.clone(),
+        groups: host.groups.clone(),
     };
 
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
@@ -565,6 +567,7 @@ pub fn run_ansible_bootstrap(
         address: host_ip,
         port,
         user: bootstrap_user,
+        groups: host.groups.clone(),
     };
 
     let result = run_bootstrap(&preflight, &bootstrap_playbook, &inventory_host)?;

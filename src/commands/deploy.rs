@@ -285,6 +285,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         address: host.vars.ansible_host.clone(),
         port: host.vars.ansible_port,
         user: host.vars.bootstrap_user.clone(),
+        groups: host.groups.clone(),
     };
 
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();

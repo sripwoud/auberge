@@ -886,6 +886,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                 address: host.address.clone(),
                 port: host.port,
                 user: host.user.clone(),
+                groups: host.tags.clone(),
             };
 
             // Build a Preflight — best-effort; if config is incomplete we warn and skip.

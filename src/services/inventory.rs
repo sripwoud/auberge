@@ -47,7 +47,6 @@ fn default_bootstrap_user() -> String {
 pub struct Host {
     pub name: String,
     pub vars: HostVars,
-    #[allow(dead_code)]
     pub groups: Vec<String>,
 }
 
