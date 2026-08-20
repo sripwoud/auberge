@@ -510,14 +510,38 @@ fn validate_ip(ip: &str) -> Result<()> {
     }
 }
 
-fn prompt_for_ip(host_name: &str) -> Result<String> {
-    eprint!("Enter IP address for {}: ", host_name);
-    io::stderr().flush()?;
-    let mut host_ip = String::new();
-    io::stdin()
-        .read_line(&mut host_ip)
-        .wrap_err("Failed to read IP address")?;
-    Ok(host_ip.trim().to_string())
+fn offered_default(configured_address: &str) -> Option<&str> {
+    Some(configured_address).filter(|addr| validate_ip(addr).is_ok())
+}
+
+fn resolve_prompted_ip(input: &str, default_ip: Option<&str>) -> Result<String> {
+    let trimmed = input.trim();
+    let candidate = match default_ip {
+        Some(default) if trimmed.is_empty() => default,
+        _ => trimmed,
+    };
+    validate_ip(candidate)?;
+    Ok(candidate.to_string())
+}
+
+fn prompt_for_ip(host_name: &str, configured_address: &str) -> Result<String> {
+    let default_ip = offered_default(configured_address);
+    loop {
+        match default_ip {
+            Some(ip) => eprint!("Enter IP address for {} [{}]: ", host_name, ip),
+            None => eprint!("Enter IP address for {}: ", host_name),
+        }
+        io::stderr().flush()?;
+        let mut host_ip = String::new();
+        let bytes_read = io::stdin()
+            .read_line(&mut host_ip)
+            .wrap_err("Failed to read IP address")?;
+        match resolve_prompted_ip(&host_ip, default_ip) {
+            Ok(ip) => return Ok(ip),
+            Err(err) if bytes_read == 0 => return Err(err),
+            Err(err) => output::warn(&err.to_string()),
+        }
+    }
 }
 
 pub fn run_ansible_bootstrap(
@@ -549,7 +573,7 @@ pub fn run_ansible_bootstrap(
         (None, true) => {
             eyre::bail!("--ip is required when using --force")
         }
-        (None, false) => prompt_for_ip(&host_name)?,
+        (None, false) => prompt_for_ip(&host_name, &host.vars.ansible_host)?,
     };
 
     let bootstrap_user = user
@@ -641,6 +665,53 @@ mod tests {
         assert!(validate_ip("localhost").is_err());
         assert!(validate_ip("192.168.1.1 ").is_err());
         assert!(validate_ip(" 192.168.1.1").is_err());
+    }
+
+    #[test]
+    fn test_resolve_prompted_ip_empty_input_accepts_default() {
+        assert_eq!(
+            resolve_prompted_ip("\n", Some("203.0.113.10")).unwrap(),
+            "203.0.113.10"
+        );
+    }
+
+    #[test]
+    fn test_resolve_prompted_ip_whitespace_input_accepts_default() {
+        assert_eq!(
+            resolve_prompted_ip("   \n", Some("203.0.113.10")).unwrap(),
+            "203.0.113.10"
+        );
+    }
+
+    #[test]
+    fn test_resolve_prompted_ip_trims_explicit_input() {
+        assert_eq!(
+            resolve_prompted_ip(" 10.0.0.5 \n", Some("203.0.113.10")).unwrap(),
+            "10.0.0.5"
+        );
+    }
+
+    #[test]
+    fn test_resolve_prompted_ip_rejects_invalid_input() {
+        let err = resolve_prompted_ip("999.999.999.999\n", Some("203.0.113.10")).unwrap_err();
+        assert!(err.to_string().contains("Invalid IP format"));
+    }
+
+    #[test]
+    fn test_resolve_prompted_ip_requires_explicit_input_without_default() {
+        let err = resolve_prompted_ip("\n", None).unwrap_err();
+        assert!(err.to_string().contains("Invalid IP format"));
+    }
+
+    #[test]
+    fn test_offered_default_accepts_ip_addresses() {
+        assert_eq!(offered_default("203.0.113.10"), Some("203.0.113.10"));
+        assert_eq!(offered_default("2001:db8::1"), Some("2001:db8::1"));
+    }
+
+    #[test]
+    fn test_offered_default_rejects_hostname_addresses() {
+        assert_eq!(offered_default("vps.example.com"), None);
     }
 
     fn sample_playbooks() -> Vec<PathBuf> {
