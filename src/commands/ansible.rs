@@ -11,6 +11,7 @@ use crate::services::inventory::{Host, get_playbooks, select_or_arg};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use regex::Regex;
+use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -340,38 +341,7 @@ fn run_single_playbook(
     let is_fresh_bootstrap = playbook_file == "bootstrap.yml";
 
     if is_fresh_bootstrap {
-        eprintln!();
-        output::info("IMPORTANT: Provider Firewall Configuration Required");
-        output::info("Before running bootstrap, ensure your VPS provider's firewall");
-        output::info("allows your custom SSH port (separate from UFW on the VPS)");
-        eprintln!();
-        let ssh_port = preflight
-            .flat_vars()
-            .get("ssh_port")
-            .cloned()
-            .unwrap_or_else(|| "not configured".to_string());
-        output::info("Required steps:");
-        output::info(&format!("  1. Your target SSH port: {}", ssh_port));
-        output::info("  2. Log into your VPS provider dashboard (IONOS, etc.)");
-        output::info("  3. Add firewall rule: Allow TCP on your SSH port");
-        output::info("  4. Save and confirm the rule is active");
-        eprintln!();
-        output::info("Without this, you'll be locked out after SSH port change!");
-        eprintln!();
-
-        if !force {
-            eprint!("Have you configured your provider's firewall? [y/N]: ");
-            io::stderr().flush()?;
-            let mut response = String::new();
-            io::stdin().read_line(&mut response)?;
-
-            if !response.trim().eq_ignore_ascii_case("y") {
-                eprintln!("Aborted. Configure provider firewall first, then re-run.");
-                std::process::exit(1);
-            }
-        } else {
-            output::info("Skipping confirmation (--force enabled)");
-        }
+        confirm_provider_firewall(&preflight, force)?;
     }
 
     show_playbook_warnings(playbook_file, force)?;
@@ -430,6 +400,49 @@ fn run_single_playbook(
             result.last_output.trim()
         )
     }
+}
+
+fn configured_ssh_port(flat_vars: &HashMap<String, String>) -> String {
+    flat_vars
+        .get("ssh_port")
+        .cloned()
+        .unwrap_or_else(|| "not configured".to_string())
+}
+
+fn confirm_provider_firewall(preflight: &Preflight, force: bool) -> Result<()> {
+    eprintln!();
+    output::info("IMPORTANT: Provider Firewall Configuration Required");
+    output::info("Before running bootstrap, ensure your VPS provider's firewall");
+    output::info("allows your custom SSH port (separate from UFW on the VPS)");
+    eprintln!();
+    output::info("Required steps:");
+    output::info(&format!(
+        "  1. Your target SSH port: {}",
+        configured_ssh_port(preflight.flat_vars())
+    ));
+    output::info("  2. Log into your VPS provider dashboard (IONOS, etc.)");
+    output::info("  3. Add firewall rule: Allow TCP on your SSH port");
+    output::info("  4. Save and confirm the rule is active");
+    eprintln!();
+    output::info("Without this, you'll be locked out after SSH port change!");
+    eprintln!();
+
+    if force {
+        output::info("Skipping confirmation (--force enabled)");
+        return Ok(());
+    }
+
+    eprint!("Have you configured your provider's firewall? [y/N]: ");
+    io::stderr().flush()?;
+    let mut response = String::new();
+    io::stdin().read_line(&mut response)?;
+
+    if !response.trim().eq_ignore_ascii_case("y") {
+        eprintln!("Aborted. Configure provider firewall first, then re-run.");
+        std::process::exit(1);
+    }
+
+    Ok(())
 }
 
 fn show_playbook_warnings(playbook_name: &str, force: bool) -> Result<()> {
@@ -578,6 +591,8 @@ pub fn run_ansible_bootstrap(
         );
     }
 
+    confirm_provider_firewall(&preflight, force)?;
+
     let host_ip = match (ip, force) {
         (Some(ip_addr), _) => {
             validate_ip(&ip_addr)?;
@@ -621,6 +636,18 @@ pub fn run_ansible_bootstrap(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_configured_ssh_port_reads_flat_vars() {
+        let mut vars = HashMap::new();
+        vars.insert("ssh_port".to_string(), "2222".to_string());
+        assert_eq!(configured_ssh_port(&vars), "2222");
+    }
+
+    #[test]
+    fn test_configured_ssh_port_falls_back_when_unset() {
+        assert_eq!(configured_ssh_port(&HashMap::new()), "not configured");
+    }
 
     #[test]
     fn test_validate_ip_valid_ipv4() {
