@@ -61,6 +61,6 @@
       when: ssh_test.rc == 0
 
   rescue:
-    - name: Keep port 22 open and firewall disabled on failure
-      ansible.builtin.debug:
+    - name: Fail so the recap and CLI report the validation failure
+      ansible.builtin.fail:
         msg: "SSH validation failed. Port 22 remains open and firewall disabled for recovery. Fix issues and re-run."
