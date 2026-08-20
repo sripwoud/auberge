@@ -211,6 +211,22 @@ mod tests {
         PlaybookMeta::load(&path).unwrap_or_else(|e| panic!("Failed to load {name}.meta.yml: {e}"))
     }
 
+    fn playbook_files() -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(playbooks_dir())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.extension().and_then(|e| e.to_str()) == Some("yml")
+                    && !p
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .ends_with(".meta")
+            })
+            .collect()
+    }
+
     fn role_default(role: &str, key: &str) -> String {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("ansible")
@@ -492,20 +508,7 @@ mod tests {
 
     #[test]
     fn test_all_committed_playbooks_have_meta_files() {
-        let playbooks_dir = playbooks_dir();
-        let playbook_files: Vec<_> = std::fs::read_dir(&playbooks_dir)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| {
-                p.extension().and_then(|e| e.to_str()) == Some("yml")
-                    && !p
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("")
-                        .ends_with(".meta")
-            })
-            .collect();
+        let playbook_files = playbook_files();
 
         assert!(
             !playbook_files.is_empty(),
@@ -514,7 +517,7 @@ mod tests {
 
         for playbook in &playbook_files {
             let stem = playbook.file_stem().and_then(|s| s.to_str()).unwrap();
-            let meta_path = playbooks_dir.join(format!("{stem}.meta.yml"));
+            let meta_path = playbooks_dir().join(format!("{stem}.meta.yml"));
             assert!(
                 meta_path.exists(),
                 "Missing meta file for playbook: {stem}.yml (expected {meta_path:?})"
@@ -1060,6 +1063,38 @@ memory:
                         path.display()
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn test_no_playbook_targets_localhost() {
+        for path in playbook_files() {
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            let raw = std::fs::read_to_string(&path).unwrap();
+            let plays: Vec<serde_yaml::Value> = serde_yaml::from_str(&raw)
+                .unwrap_or_else(|e| panic!("Failed to parse {name}: {e}"));
+            for play in &plays {
+                if play.get("import_playbook").is_some() {
+                    continue;
+                }
+                let patterns: Vec<&str> = match play.get("hosts") {
+                    Some(serde_yaml::Value::String(s)) => {
+                        s.split([',', ':']).map(str::trim).collect()
+                    }
+                    Some(serde_yaml::Value::Sequence(seq)) => {
+                        seq.iter().filter_map(|v| v.as_str()).collect()
+                    }
+                    other => panic!(
+                        "{name}: expected a scalar or list hosts target, got {other:?} — \
+                         update this test for the new play shape"
+                    ),
+                };
+                assert!(
+                    !patterns.contains(&"localhost"),
+                    "{name}: `run_playbook` always passes --limit, which excludes \
+                     implicit localhost — a localhost play never executes"
+                );
             }
         }
     }
