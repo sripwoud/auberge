@@ -34,4 +34,4 @@ The same question reappears in backup history: restic snapshots group by host na
 
 - Between the remote step and the hosts.toml write, the remote hostname and the local config disagree. The window is seconds long and closed by rerunning.
 - The frozen `<old>` lineage ages out via retention rather than being pruned as one group with `<new>`.
-- Deliberately out of scope, printed as follow-ups: `~/.ssh/config` (the CLI treats it as read-only) and the tailnet name (tailscale re-advertises the new hostname on its own).
+- Deliberately out of scope, printed as a follow-up: the tailnet name (tailscale re-advertises the new hostname on its own). The ssh aliases stopped being a follow-up with #534: every host subcommand regenerates the CLI-owned `~/.ssh/config.d/auberge.conf`, and the user's `~/.ssh/config` stays read-only.

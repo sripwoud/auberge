@@ -14,7 +14,7 @@ auberge host rename <OLD> <NEW> [--yes]
 Renames a host everywhere its name is load-bearing, in one command:
 
 1. **Remote**: `hostnamectl set-hostname <NEW>` and the matching `/etc/hosts` entries (via sudo over SSH).
-2. **Local**: the `hosts.toml` entry, the key directory `~/.ssh/identities/<OLD>` → `<NEW>`, and the configured `ssh_key` path when it points inside that directory. A custom `ssh_key` outside the derived tree is left untouched — file and path.
+2. **Local**: the `hosts.toml` entry, the key directory `~/.ssh/identities/<OLD>` → `<NEW>`, and the configured `ssh_key` path when it points inside that directory. A custom `ssh_key` outside the derived tree is left untouched — file and path. The generated `~/.ssh/config.d/auberge.conf` is rewritten, so `ssh <NEW>` works immediately (see [SSH keys](../../configuration/ssh-keys.md)).
 
 Preflight bails before touching anything: `<OLD>` must exist in `hosts.toml`, `<NEW>` must not, the key directories must not collide, and SSH to the host must succeed.
 
@@ -35,7 +35,6 @@ Remote steps run first, so a failure there aborts with zero local change. Every 
 
 ## Not done by this command
 
-- **`~/.ssh/config`**: update `Host`/`IdentityFile` entries yourself (the CLI treats that file as read-only).
 - **tailscale**: the host re-advertises itself under the new name and releases the old tailnet name.
 - **restic**: snapshots group by host name — the old lineage freezes at the rename and the new name starts a fresh one. Never rewrite snapshot tags.
 

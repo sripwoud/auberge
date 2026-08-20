@@ -20,6 +20,19 @@ ssh_key = "~/.ssh/identities/custom_key"
 
 ?> When the derived path doesn't exist, commands fail and point at `auberge ssh keygen`. The only interactive picker lives in `auberge ssh add-key`, which scans `~/.ssh/`, `~/.ssh/identities/`, and `~/.ssh/identities/<host>/` to choose its connection and authorize keys; the selection is never saved to `hosts.toml`.
 
+## Generated ssh aliases
+
+Every `auberge host add|edit|rename|remove` regenerates `~/.ssh/config.d/auberge.conf` from `hosts.toml`: one `Host` block per entry with `HostName`, `Port`, `User`, `IdentityFile` (tiers 2–3 above), `IdentitiesOnly yes`, and `StrictHostKeyChecking accept-new`. The file is CLI-owned — hand edits are lost on the next host subcommand.
+
+Activate the aliases once:
+
+```
+# first line of ~/.ssh/config
+Include ~/.ssh/config.d/auberge.conf
+```
+
+The CLI never writes `~/.ssh/config`; it prints this line as a hint while missing. ssh keeps the first value it obtains per option, so the `Include` position decides precedence: on the first line, the generated blocks beat stale manual blocks for the same hosts.
+
 ## Importing from `~/.ssh/config`
 
 `auberge host add` (no args) detects an existing `~/.ssh/config` and offers to import host name, address, user, port, and `IdentityFile` from any host block.
