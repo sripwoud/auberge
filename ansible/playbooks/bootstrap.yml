@@ -27,9 +27,20 @@
   hosts: vps
   remote_user: "{{ ansible_user }}"
   become: true
-  gather_facts: true
+  gather_facts: false
   vars:
     ansible_port: 22
+  pre_tasks:
+    - name: Install python3 if the image ships without it
+      ansible.builtin.raw: test -e /usr/bin/python3 || (apt-get update && apt-get install -y python3 && echo python3-installed)
+      register: bootstrap_python3
+      changed_when: "'python3-installed' in bootstrap_python3.stdout"
+      tags: [always]
+
+    - name: Gather facts
+      ansible.builtin.setup:
+      tags: [always]
+
   tasks:
     - name: Set hostname
       ansible.builtin.hostname:
