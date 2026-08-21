@@ -1,6 +1,9 @@
 [Unit]
 Description=Immich offsite backup to B2 (restic)
-Requires=immich.service
+# After= only, deliberately no Requires=: a backup tick while the operator has
+# stopped the stack (a restore in progress, say) must fail loudly, not start
+# immich as a side effect — docker exec against the absent postgres container
+# is that failure.
 After=immich.service
 
 [Service]
