@@ -19,10 +19,6 @@
       when: ansible_facts['distribution'] == "Debian"
       ansible.builtin.copy:
         content: |
-          Package: *
-          Pin: release a=stable
-          Pin-Priority: 900
-
           Package: dasel
           Pin: release a=testing
           Pin-Priority: 990
