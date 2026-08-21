@@ -1,0 +1,4 @@
+---
+ingress_gate_unit: caddy
+ingress_gate_port: 443
+ingress_gate_sites_dir: /etc/caddy/sites
