@@ -26,6 +26,8 @@
       tags: [apps, web, rss, freshrss]
     - role: gokapi
       tags: [apps, storage, share, gokapi]
+    - role: immich
+      tags: [apps, storage, media, photos, immich]
     - role: navidrome
       tags: [apps, storage, media, music, navidrome]
     - role: paperless

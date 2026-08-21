@@ -1,0 +1,7 @@
+---
+# Deploy resolves app tags against apps.yml only, where immich cannot drag the
+# docker role in without docker becoming a selectable pseudo-app — so the
+# engine requirement lives here. Role tags inherit to dependencies, so
+# `apps.yml --tags immich` runs docker first.
+dependencies:
+  - role: docker

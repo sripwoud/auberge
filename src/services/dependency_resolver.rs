@@ -202,6 +202,10 @@ mod tests {
         assert!(role_names.contains(&"baikal"));
         assert!(role_names.contains(&"freshrss"));
         assert!(role_names.contains(&"gokapi"));
+        // Apps with a standalone playbook still deploy through this roster —
+        // omitting them here made deploy reject calibre (#559) and immich (#580).
+        assert!(role_names.contains(&"calibre"));
+        assert!(role_names.contains(&"immich"));
     }
 
     #[test]
