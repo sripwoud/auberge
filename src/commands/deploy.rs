@@ -11,7 +11,7 @@ use crate::services::dependency_resolver::{
 use crate::services::dns_verify::{
     AppVerifyConfig, HickoryLookup, app_verify_config, format_dns_error, verify_a_record,
 };
-use crate::services::inventory::{Host, select_or_arg};
+use crate::services::inventory::{Host, hosts_ignoreip_var, select_or_arg};
 use clap::Args;
 use eyre::Result;
 
@@ -291,9 +291,11 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
     let app_versions = app_version_vars(&playbooks_dir)?;
     let memory_budgets = app_memory_vars(&playbooks_dir)?;
+    let hosts_ignoreip = hosts_ignoreip_var()?;
     let extra_vars: Vec<(&str, &str)> = app_versions
         .iter()
         .chain(memory_budgets.iter())
+        .chain(std::iter::once(&hosts_ignoreip))
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
 

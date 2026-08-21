@@ -239,6 +239,24 @@ pub fn get_host(name: &str, inventory_path: Option<&Path>) -> Result<Host> {
         .ok_or_else(|| eyre::eyre!("Host not found: {}", name))
 }
 
+/// fail2ban must never ban an Inventory peer: cross-host restores and
+/// jump-host recovery source from peer public IPs, and banning one turns a
+/// retry storm into a full lockout (#582). Sorted so the rendered jail.local
+/// is stable across deploys; comma-separated because a space-separated
+/// `-e key=value` would be split into bogus extra pairs by ansible's parse_kv.
+fn hosts_ignoreip_value(hosts: &[Host]) -> String {
+    let ips: std::collections::BTreeSet<&str> =
+        hosts.iter().map(|h| h.vars.ansible_host.as_str()).collect();
+    ips.into_iter().collect::<Vec<_>>().join(",")
+}
+
+pub fn hosts_ignoreip_var() -> Result<(String, String)> {
+    Ok((
+        "fail2ban_ignoreip_hosts".to_string(),
+        hosts_ignoreip_value(&get_hosts(None, None)?),
+    ))
+}
+
 pub fn discover_hosts_with_ips(inventory_path: Option<&Path>) -> Result<HashMap<String, String>> {
     let hosts = get_hosts(None, inventory_path)?;
 
@@ -304,6 +322,36 @@ pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<PathBuf>> {
 mod tests {
     use super::*;
     use std::fs;
+
+    fn host(name: &str, address: &str) -> Host {
+        Host {
+            name: name.to_string(),
+            vars: HostVars {
+                ansible_host: address.to_string(),
+                ansible_port: 22,
+                bootstrap_user: "root".to_string(),
+                extra: HashMap::new(),
+            },
+            groups: vec![],
+        }
+    }
+
+    #[test]
+    fn test_hosts_ignoreip_value_sorts_and_comma_joins_addresses() {
+        let hosts = [host("b", "203.0.113.9"), host("a", "198.51.100.7")];
+        assert_eq!(hosts_ignoreip_value(&hosts), "198.51.100.7,203.0.113.9");
+    }
+
+    #[test]
+    fn test_hosts_ignoreip_value_dedupes_addresses() {
+        let hosts = [host("a", "203.0.113.9"), host("b", "203.0.113.9")];
+        assert_eq!(hosts_ignoreip_value(&hosts), "203.0.113.9");
+    }
+
+    #[test]
+    fn test_hosts_ignoreip_value_empty_inventory_yields_empty_string() {
+        assert_eq!(hosts_ignoreip_value(&[]), "");
+    }
 
     #[test]
     fn test_get_playbooks_excludes_meta_sidecars() {
