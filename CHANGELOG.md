@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.10](https://github.com/sripwoud/auberge/compare/v0.15.9...v0.15.10) - 2026-08-21
+
+### Fixed
+
+- *(immich)* add role to apps.yml roster
+
 ## [0.15.9](https://github.com/sripwoud/auberge/compare/v0.15.8...v0.15.9) - 2026-08-21
 
 ### Fixed
