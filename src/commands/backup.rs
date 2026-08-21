@@ -1,8 +1,9 @@
 use crate::config::Config;
 use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg as hosts_select_or_arg};
 use crate::output;
+use crate::playbook_meta::BackupRecipe;
 use crate::prompt::confirm;
-use crate::services::backup::executor::RecipeExecutor;
+use crate::services::backup::executor::{RecipeExecutor, staged_paths};
 use crate::services::backup::recipe::{
     assets_playbooks_dir, discover_backuppable_apps, load_app_recipe,
 };
@@ -702,6 +703,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     let ssh_key_path = resolve_ssh_key_path(&host, opts.ssh_key)?;
     eprintln!("Using SSH key: {}", ssh_key_path.display());
 
+    let playbooks_dir = assets_playbooks_dir()?;
     let mut restore_plan = Vec::new();
 
     for app_name in &app_names {
@@ -715,7 +717,9 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             continue;
         }
 
-        restore_plan.push((app_name.clone(), backup_path));
+        let recipe = load_app_recipe(&playbooks_dir, app_name, &host.user)
+            .wrap_err_with(|| format!("Unknown or non-backuppable app: {}", app_name))?;
+        restore_plan.push((app_name.clone(), backup_path, recipe));
     }
 
     if restore_plan.is_empty() {
@@ -724,7 +728,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
 
     let total_backup_size: u64 = restore_plan
         .iter()
-        .map(|(_, path)| calculate_dir_size(path).unwrap_or(0))
+        .map(|(_, path, _)| calculate_dir_size(path).unwrap_or(0))
         .sum();
 
     if is_cross_host {
@@ -746,8 +750,11 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         eprintln!("Backup ID: {}", backup_id);
     }
     eprintln!("\nApps to restore:");
-    for (app, path) in &restore_plan {
+    for (app, path, recipe) in &restore_plan {
         eprintln!("  - {:<12} from {}", app, path.display());
+        for staged in staged_paths(recipe, path) {
+            eprintln!("      → {}", staged);
+        }
     }
 
     if opts.dry_run {
@@ -837,8 +844,8 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     };
     eprintln!("\n{}Starting restore...", phase_label);
 
-    for (app_name, backup_path) in restore_plan {
-        restore_app(&host, &app_name, &backup_path, &ssh_key_path)?;
+    for (app_name, backup_path, recipe) in restore_plan {
+        restore_app(&host, &app_name, &recipe, &backup_path, &ssh_key_path)?;
     }
 
     eprintln!("\n✓ All restores completed successfully");
@@ -939,18 +946,14 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     if is_cross_host {
         eprintln!("\n=== Post-Restore Actions Required ===");
         eprintln!("  Cross-host restore completed. Manual verification needed:\n");
-        let cross_host_dir = assets_playbooks_dir().ok();
-        let recipes_for_apps: Vec<(String, Vec<String>)> = match &cross_host_dir {
-            Some(dir) => app_names
-                .iter()
-                .filter_map(|name| {
-                    load_app_recipe(dir, name, &host.user)
-                        .ok()
-                        .map(|r| (name.clone(), r.systemd_services))
-                })
-                .collect(),
-            None => Vec::new(),
-        };
+        let recipes_for_apps: Vec<(String, Vec<String>)> = app_names
+            .iter()
+            .filter_map(|name| {
+                load_app_recipe(&playbooks_dir, name, &host.user)
+                    .ok()
+                    .map(|r| (name.clone(), r.systemd_services))
+            })
+            .collect();
         let all_services: Vec<&str> = recipes_for_apps
             .iter()
             .flat_map(|(_, services)| services.iter().map(String::as_str))
@@ -996,19 +999,20 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     Ok(())
 }
 
-fn restore_app(host: &Host, app_name: &str, backup_path: &Path, ssh_key: &Path) -> Result<()> {
+fn restore_app(
+    host: &Host,
+    app_name: &str,
+    recipe: &BackupRecipe,
+    backup_path: &Path,
+    ssh_key: &Path,
+) -> Result<()> {
     eprintln!("\n--- Restoring {} ---", app_name);
-
-    let playbooks_dir = assets_playbooks_dir()?;
-    let recipe = load_app_recipe(&playbooks_dir, app_name, &host.user)
-        .wrap_err_with(|| format!("Unknown or non-backuppable app: {}", app_name))?;
 
     let session = LiveSshSession::new(host, ssh_key);
     let executor = RecipeExecutor::new(&session);
     let mut progress =
         crate::services::progress::TerminalProgress::new(&format!("Restoring {}", app_name));
-    let result = executor.restore(&recipe, backup_path, &HashMap::new(), &mut progress);
-    result?;
+    executor.restore(recipe, backup_path, &mut progress)?;
 
     eprintln!("✓ {} restore completed", app_name);
     Ok(())

@@ -3,7 +3,7 @@ use crate::services::progress::Progress;
 use crate::services::ssh::SshSession;
 use eyre::Result;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub struct RecipeExecutor<'a, S: SshSession + ?Sized> {
     session: &'a S,
@@ -85,11 +85,13 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
         }
     }
 
+    /// Restore whatever the staged snapshot holds. Takes no parameter map:
+    /// the values that shaped the snapshot are gone by restore time, so the
+    /// snapshot itself is the only record of what was backed up (#572).
     pub fn restore(
         &self,
         recipe: &BackupRecipe,
         source_dir: &Path,
-        parameters: &HashMap<String, bool>,
         progress: &mut dyn Progress,
     ) -> Result<()> {
         let mut stopped: Vec<&str> = Vec::new();
@@ -103,11 +105,11 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
         }
 
         let result = (|| -> Result<()> {
-            let paths = recipe.effective_paths(parameters);
+            let paths = staged_paths(recipe, source_dir);
             for path in &paths {
                 progress.task_started(&format!("rsync {}", path));
-                let local_source = source_dir.join(path.trim_start_matches('/'));
-                self.session.rsync_to(&local_source, path)?;
+                self.session
+                    .rsync_to(&staged_source(source_dir, path), path)?;
             }
 
             if let Some((user, group)) = &recipe.owner {
@@ -183,6 +185,30 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
             })
             .collect()
     }
+}
+
+/// The paths a staged snapshot holds: the Recipe's declared paths, plus every
+/// parameter-gated path present on disk. A snapshot is the record of what was
+/// backed up, and a parameter's default says nothing about it — resolving the
+/// recipe against defaults dropped `/srv/music` from every navidrome restore
+/// while reporting success (#572).
+pub fn staged_paths(recipe: &BackupRecipe, source_dir: &Path) -> Vec<String> {
+    let mut optional: Vec<String> = recipe
+        .parameters
+        .values()
+        .flat_map(|parameter| parameter.adds_paths.iter())
+        .filter(|path| staged_source(source_dir, path).exists())
+        .cloned()
+        .collect();
+    optional.sort();
+
+    let mut paths = recipe.paths.clone();
+    paths.extend(optional);
+    paths
+}
+
+fn staged_source(source_dir: &Path, path: &str) -> PathBuf {
+    source_dir.join(path.trim_start_matches('/'))
 }
 
 fn is_warnings_only(text: &str) -> bool {
@@ -311,12 +337,7 @@ mod tests {
         let executor = RecipeExecutor::new(&mock);
         let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .restore(
-                &syncthing_recipe(),
-                Path::new("/tmp/source"),
-                &HashMap::new(),
-                &mut progress,
-            )
+            .restore(&syncthing_recipe(), Path::new("/tmp/source"), &mut progress)
             .unwrap();
 
         let calls = mock.calls();
@@ -511,12 +532,7 @@ mod tests {
         };
         let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .restore(
-                &recipe,
-                Path::new("/tmp/source"),
-                &HashMap::new(),
-                &mut progress,
-            )
+            .restore(&recipe, Path::new("/tmp/source"), &mut progress)
             .unwrap();
 
         let calls = mock.calls();
@@ -558,12 +574,7 @@ mod tests {
         let executor = RecipeExecutor::new(&mock);
         let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .restore(
-                &paperless_recipe(),
-                tmp.path(),
-                &HashMap::new(),
-                &mut progress,
-            )
+            .restore(&paperless_recipe(), tmp.path(), &mut progress)
             .unwrap();
 
         let calls = mock.calls();
@@ -593,12 +604,7 @@ mod tests {
         let executor = RecipeExecutor::new(&mock);
         let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .restore(
-                &paperless_recipe(),
-                tmp.path(),
-                &HashMap::new(),
-                &mut progress,
-            )
+            .restore(&paperless_recipe(), tmp.path(), &mut progress)
             .unwrap();
 
         let calls = mock.calls();
@@ -648,6 +654,121 @@ mod tests {
             progress.events().last(),
             Some(ProgressEvent::TaskDone)
         ));
+    }
+
+    fn staged_snapshot(paths: &[&str]) -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        for path in paths {
+            std::fs::create_dir_all(tmp.path().join(path.trim_start_matches('/'))).unwrap();
+        }
+        tmp
+    }
+
+    #[test]
+    fn test_restore_includes_optional_path_the_snapshot_holds() {
+        let snapshot = staged_snapshot(&["/var/lib/navidrome", "/srv/music"]);
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .restore(&navidrome_recipe(), snapshot.path(), &mut progress)
+            .unwrap();
+
+        let calls = mock.calls();
+        let rsync_remotes: Vec<String> = calls
+            .iter()
+            .filter_map(|c| match c {
+                SshOp::RsyncTo { remote, .. } => Some(remote.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rsync_remotes, vec!["/var/lib/navidrome", "/srv/music"]);
+        assert!(calls.contains(&SshOp::SetOwnership {
+            remote: "/srv/music".to_string(),
+            user: "navidrome".to_string(),
+            group: "navidrome".to_string(),
+        }));
+    }
+
+    #[test]
+    fn test_restore_omits_optional_path_the_snapshot_lacks() {
+        let snapshot = staged_snapshot(&["/var/lib/navidrome"]);
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .restore(&navidrome_recipe(), snapshot.path(), &mut progress)
+            .unwrap();
+
+        let rsync_remotes: Vec<String> = mock
+            .calls()
+            .iter()
+            .filter_map(|c| match c {
+                SshOp::RsyncTo { remote, .. } => Some(remote.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rsync_remotes, vec!["/var/lib/navidrome"]);
+    }
+
+    #[test]
+    fn test_staged_paths_appends_present_optional_paths_sorted() {
+        let mut params = HashMap::new();
+        params.insert(
+            "include_music".to_string(),
+            BackupParameter {
+                default: false,
+                adds_paths: vec!["/srv/music".to_string()],
+            },
+        );
+        params.insert(
+            "include_artwork".to_string(),
+            BackupParameter {
+                default: false,
+                adds_paths: vec!["/srv/artwork".to_string()],
+            },
+        );
+        let recipe = BackupRecipe {
+            parameters: params,
+            ..navidrome_recipe()
+        };
+        let snapshot = staged_snapshot(&["/srv/music", "/srv/artwork"]);
+
+        assert_eq!(
+            staged_paths(&recipe, snapshot.path()),
+            vec!["/var/lib/navidrome", "/srv/artwork", "/srv/music"]
+        );
+    }
+
+    #[test]
+    fn test_staged_paths_ignores_a_parameter_default_of_true() {
+        let mut params = HashMap::new();
+        params.insert(
+            "include_music".to_string(),
+            BackupParameter {
+                default: true,
+                adds_paths: vec!["/srv/music".to_string()],
+            },
+        );
+        let recipe = BackupRecipe {
+            parameters: params,
+            ..navidrome_recipe()
+        };
+        let snapshot = staged_snapshot(&["/var/lib/navidrome"]);
+
+        assert_eq!(
+            staged_paths(&recipe, snapshot.path()),
+            vec!["/var/lib/navidrome"]
+        );
+    }
+
+    #[test]
+    fn test_staged_paths_keeps_declared_paths_the_snapshot_lacks() {
+        let snapshot = staged_snapshot(&[]);
+        assert_eq!(
+            staged_paths(&baikal_recipe(), snapshot.path()),
+            vec!["/opt/baikal/Specific"]
+        );
     }
 
     #[test]
