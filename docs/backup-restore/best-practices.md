@@ -50,6 +50,8 @@ auberge backup create --host my-vps
 auberge backup create --host my-vps --include-music
 ```
 
+Restore has no matching flag: a backup that holds music restores it, one that doesn't can't. `rsync --delete` applies, so restoring a music-bearing backup over a library that has grown since removes the newer files — check `--dry-run` first, which lists the paths per app.
+
 ## Off-Site Backups
 
 The default backup location is `~/.local/share/auberge/backups/`. Consider:

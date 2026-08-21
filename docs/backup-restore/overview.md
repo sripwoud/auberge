@@ -29,7 +29,7 @@ graph TD
 - **Baikal**: Calendar and contact data, configuration files
 - **Bichon**: Email archives, search indices, configuration
 - **FreshRSS**: SQLite database, configuration, user data
-- **Navidrome**: Database and configuration (music files excluded by default)
+- **Navidrome**: Database and configuration (music files only with `--include-music`; a backup that holds them restores them)
 - **Calibre**: Book library, metadata database, user database (login credentials)
 - **Gokapi**: SQLite database and uploaded shared files
 - **Paperless-ngx**: Documents, media, PostgreSQL database (tags, correspondents, document types, users)
@@ -69,7 +69,7 @@ One directory per run, holding one directory per app backed up in that run. `aub
 2. Emergency backup creation (cross-host only)
 3. User confirmation (hostname typing for cross-host, Y/N for same-host)
 4. Services are stopped on target
-5. Data is synced to remote using `rsync` with SSH
+5. Data is synced to remote using `rsync` with SSH — every path the backup holds, including optional ones like Navidrome's `/srv/music`
 6. For apps with databases: dump is uploaded via `scp`, restored with `pg_restore --clean --if-exists`, then Django migrations are run
 7. File ownership is set to service user (e.g., `chown -R calibre:calibre /home/calibre`)
 8. Services are restarted on target

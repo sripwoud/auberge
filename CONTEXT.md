@@ -89,6 +89,8 @@ _Avoid_: Backup config, backup plan, strategy
 
 **Recipe Executor**:
 The Rust module that executes one Backup Recipe against one Host: stop services → optional DB dump → rsync paths → optional DB restore → start services. Issues every command through the `SshSession` trait (the only test seam).
+
+**Which paths it pushes is asked of the operator on create, and of the staged backup on restore.** A Recipe's `parameters` are a create-time input: `--include-music` selects what `backup create` collects, and that choice is recorded nowhere a later restore can read it — not in the staged backup, not in the timestamp directory name, not in restic metadata. So `restore` takes no parameter map at all; it restores the Recipe's declared paths plus every parameter-gated path present under the staged backup, which `rsync --relative` lays out as `<app>/srv/music`. Resolving the Recipe against parameter _defaults_ instead reported success while dropping 19.92 GB of music from every navidrome restore. The pre-migration backup a cross-host restore takes first is created with the same derived parameters, because `rsync --delete` reaches every path the restore pushes and a rollback narrower than the blast radius is not a rollback (ADR-0026).
 _Avoid_: Backup runner, recipe runner
 
 **Backup Session**:
@@ -211,6 +213,7 @@ _Avoid_: Logger, reporter
 - "Write-once" was then read as a rule about the sidecar _file_, which would have forbidden repairing a field the file had never carried. Resolved: it is a rule about **observations** — a fact the archive learned from Bichon at first sight, `folder` being the only one. A **derived index key** recomputed from the immutable `.eml` is not an observation and may be written in place (ADR-0013), and neither is a payload that was never a message — replacing it completes a write that did not happen (ADR-0015).
 - "Message id" was used for both the `<envelope-id>` in an `.eml` filename and the RFC 5322 `Message-ID`. Resolved: only the latter is an identity. Call the former the **envelope id** and treat it as a filename.
 - "Playlist" was used for both a Navidrome playlist and a broadcast **Station**, which made "add a playlist" ambiguous between a private act and a publication. Resolved: both are the same file format in the same library, distinguished only by directory — **Playlist** under `Playlists/`, **Station** under `Stations/`. Say which. The ambiguity is the reason the directory split exists rather than a naming convention (ADR-0020).
+- "Snapshot" was used of both the local `{host}/{timestamp}/{app}/` run directory and a restic snapshot in the offsite repository, which made "restore what the snapshot holds" ambiguous between a directory on the laptop and an object the **Backup Verdict** reads. Resolved: say **staged backup** of the local directory, **snapshot** only of restic's (and of tags, see **Tag Snapshot**). A restore reads a staged backup and never a snapshot; `backup push` is the one step that turns the former into the latter.
 - "Pinned" is used in two unrelated senses. Resolved: **Version Resolution / Pinned** fixes _which upstream release_ a role installs; **APT pinning** (`Pin-Priority` in `preferences.d`) fixes _which apt source wins_ for a package. `roles/actual` does both, ~70 lines apart. Say "Pinned version" or "APT pinning" — never bare "pinned".
 
 ## Stdout discipline
