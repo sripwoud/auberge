@@ -85,6 +85,8 @@ _Avoid_: Backup config, backup plan, strategy
 
 **Recipe Executor**:
 The Rust module that executes one Backup Recipe against one Host: stop services → optional DB dump → rsync paths → optional DB restore → start services. Issues every command through the `SshSession` trait (the only test seam).
+
+**Which paths it pushes is asked of the snapshot on restore, and of the operator only on create.** A Recipe's `parameters` are a create-time input: `--include-music` selects what `backup create` collects, and that choice is not recorded anywhere a later restore can read — not in the snapshot, not in the timestamp directory name, not in restic metadata. So `restore` takes no parameter map at all; it restores the Recipe's declared paths plus every parameter-gated path present under the snapshot directory, which `rsync --relative` stages as `<app>/srv/music`. Resolving the Recipe against parameter _defaults_ instead reported success while dropping 19.92 GB of music from every navidrome restore (ADR-0026).
 _Avoid_: Backup runner, recipe runner
 
 **Backup Session**:

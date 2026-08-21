@@ -36,6 +36,12 @@ auberge backup restore latest --host newserver --from-host oldserver  # migratio
 auberge backup restore latest --host myserver --dry-run
 ```
 
+## What gets restored
+
+Every path the backup directory holds, including optional ones. `backup create --include-music` stages `/srv/music`; restoring that backup pushes it back. There is no `--include-music` on `restore` — the backup is the record of what was collected, and a restore never drops part of it.
+
+`rsync --delete` applies to each restored path: files on the target that the backup lacks are removed. `--dry-run` lists the paths per app before anything is overwritten.
+
 ## Gotchas
 
 !> Cross-host migration runs a pre-flight check (SSH, services, disk ≥120% of backup size), creates an emergency backup tagged `pre-migration-{timestamp}` on the target, then requires you to retype the target hostname to confirm. After restore, Ansible playbooks run automatically to fix ownership and permissions. Use `--skip-playbook-unsafe` only as a last resort; if skipped, run manually: `cd ansible && ansible-playbook playbooks/apps.yml --tags <apps>`.
