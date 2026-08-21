@@ -1,0 +1,46 @@
+---
+- name: Verify the ingress unit still serves every vhost on this host
+  when: not ansible_check_mode
+  block:
+    - name: Read the ingress unit state
+      ansible.builtin.systemd_service:
+        name: "{{ ingress_gate_unit }}"
+      register: ingress_gate_state
+
+    - name: Assert the ingress unit is active rather than auto-restarting
+      ansible.builtin.assert:
+        that:
+          - ingress_gate_state.status.ActiveState == "active"
+          - ingress_gate_state.status.SubState == "running"
+        fail_msg: >-
+          {{ ingress_gate_unit }} is {{ ingress_gate_state.status.ActiveState }}
+          ({{ ingress_gate_state.status.SubState }}), so every vhost on this host is
+          unreachable. Restarting a unit that auto-restarts still exits 0, which is how a
+          vhost binding an address the host does not own reports a green deploy. Read
+          `journalctl -u {{ ingress_gate_unit }} -n 30` and the `bind` lines under
+          {{ ingress_gate_sites_dir }}.
+        success_msg: "{{ ingress_gate_unit }} is active (running)"
+        quiet: true
+
+    - name: Count the vhosts the ingress unit is configured to serve
+      ansible.builtin.find:
+        paths: "{{ ingress_gate_sites_dir }}"
+        patterns: "*.caddyfile"
+      register: ingress_gate_vhosts
+
+    - name: Read the TCP listeners on port {{ ingress_gate_port }}
+      ansible.builtin.command: ss --listening --tcp --numeric --no-header sport = :{{ ingress_gate_port }}
+      register: ingress_gate_listeners
+      changed_when: false
+      when: ingress_gate_vhosts.matched > 0
+
+    - name: Assert the ingress unit accepts connections on port {{ ingress_gate_port }}
+      ansible.builtin.assert:
+        that: ingress_gate_listeners.stdout | length > 0
+        fail_msg: >-
+          {{ ingress_gate_unit }} is active but nothing listens on :{{ ingress_gate_port }}
+          while {{ ingress_gate_vhosts.matched }} vhost(s) are configured under
+          {{ ingress_gate_sites_dir }} — ingress is down for every app on this host.
+        success_msg: port {{ ingress_gate_port }} is listening
+        quiet: true
+      when: ingress_gate_vhosts.matched > 0

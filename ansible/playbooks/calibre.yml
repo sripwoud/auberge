@@ -5,3 +5,11 @@
   roles:
     - role: calibre
       tags: [calibre]
+
+  post_tasks:
+    - name: Verify caddy ingress survived this deploy
+      ansible.builtin.include_role:
+        name: ingress_gate
+        apply:
+          tags: [always]
+      tags: [always]

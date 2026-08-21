@@ -21,6 +21,20 @@ ssh ansible@vps "sudo ss -tulpn | grep PORT"   # port conflict
 auberge ansible run --host vps --tags service-name  # fix permissions/config
 ```
 
+## Ingress gate failed
+
+Every play that can restart caddy ends with an `ingress_gate` assertion. It fails when caddy is not `active (running)`, or when vhosts exist and nothing listens on `:443` — this deploy took ingress down for every app on the host.
+
+The cause is almost always a vhost that `bind`s an address the host does not own: caddy exits, systemd auto-restarts it, and `systemctl restart` still exits 0.
+
+```bash
+ssh ansible@vps "systemctl status caddy; journalctl -u caddy -n 30"
+ssh ansible@vps "grep -r bind /etc/caddy/sites"   # every bind must be an address the host owns
+ssh ansible@vps "ip -4 -brief addr"               # what it actually owns
+```
+
+A stale `<app>_tailscale_ip` in `~/.config/auberge/config.toml` is the usual source: config keys reach ansible as extra-vars, which outrank the Tailscale IP the role detects at run time. Correct or delete the key, then redeploy.
+
 ## Handler not running
 
 Task must be marked `changed` for handler to fire. If config was already in the desired state, the handler is skipped.

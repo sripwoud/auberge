@@ -24,6 +24,14 @@
     - role: tailscale
       tags: [infrastructure, network, vpn, tailscale]
 
+  post_tasks:
+    - name: Verify caddy ingress survived this deploy
+      ansible.builtin.include_role:
+        name: ingress_gate
+        apply:
+          tags: [always]
+      tags: [always]
+
   handlers:
     - name: Reload systemd
       ansible.builtin.systemd_service:
