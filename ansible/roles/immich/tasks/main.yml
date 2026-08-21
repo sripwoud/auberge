@@ -80,3 +80,61 @@
         dns_record_subdomain: "{{ immich_subdomain }}"
         dns_record_domain: "{{ domain }}"
         dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"
+
+    - name: Install backup dependencies
+      ansible.builtin.apt:
+        name: [restic]
+        state: present
+        update_cache: false
+
+    - name: Create database dump directory
+      ansible.builtin.file:
+        path: "{{ immich_backup_db_dump_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Deploy backup script
+      ansible.builtin.copy:
+        src: immich-backup.sh
+        dest: "{{ immich_backup_script_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart immich-backup timer
+
+    - name: Deploy backup environment file
+      ansible.builtin.template:
+        src: immich-backup.env.j2
+        dest: "{{ immich_backup_env_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      notify: Restart immich-backup timer
+
+    - name: Deploy backup systemd service unit
+      ansible.builtin.template:
+        src: immich-backup.service.j2
+        dest: /etc/systemd/system/immich-backup.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart immich-backup timer
+
+    - name: Deploy backup systemd timer unit
+      ansible.builtin.template:
+        src: immich-backup.timer.j2
+        dest: /etc/systemd/system/immich-backup.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart immich-backup timer
+
+    - name: Enable and start backup timer
+      ansible.builtin.systemd_service:
+        name: immich-backup.timer
+        enabled: true
+        state: started
+        daemon_reload: true

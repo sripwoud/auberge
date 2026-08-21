@@ -1,0 +1,12 @@
+[Unit]
+Description=Immich offsite backup to B2 (restic)
+# After= only, deliberately no Requires=: a backup tick while the operator has
+# stopped the stack (a restore in progress, say) must fail loudly, not start
+# immich as a side effect — docker exec against the absent postgres container
+# is that failure.
+After=immich.service
+
+[Service]
+Type=oneshot
+EnvironmentFile={{ immich_backup_env_path }}
+ExecStart={{ immich_backup_script_path }}

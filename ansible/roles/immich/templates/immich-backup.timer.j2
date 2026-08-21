@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Immich offsite backup nightly
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+RandomizedDelaySec=30min
+Persistent=true
+Unit=immich-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -5,3 +5,9 @@ immich_db_data_dir: /var/lib/immich/postgres
 # Must match the host port published in files/docker-compose.yml.
 immich_port: 2283
 immich_domain: "{{ immich_subdomain }}.{{ domain }}"
+# Outside immich_upload_dir so the dump never lands inside the photo library.
+immich_backup_db_dump_dir: /var/lib/immich/db-dump
+immich_backup_script_path: /usr/local/bin/immich-backup
+immich_backup_env_path: /opt/immich/immich-backup.env
+# Must match the database container_name in files/docker-compose.yml.
+immich_backup_db_container: immich_postgres
