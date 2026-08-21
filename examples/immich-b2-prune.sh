@@ -63,8 +63,10 @@
 #
 # Exit codes:
 #   0 — backup fresh, retention applied
-#   1 — watchdog tripped (stale/empty/unreadable repo) or retention failed
-#   2 — missing prerequisite, bad configuration, or credential resolution failed
+#   1 — watchdog finding (stale or empty repository) or retention failed
+#   2 — operational error: missing prerequisite, credential resolution failed,
+#       or the repository could not be read (distinguishable from "found
+#       stale", the way the fleet's other watchers keep the two apart)
 #
 # shellcheck shell=bash
 
@@ -150,9 +152,12 @@ resolve_credentials() {
 # offset delta, noise against a 48h threshold.
 watchdog() {
   local snapshots_json
+  # exit 2, not 1: an unreadable repository is an operational error, not a
+  # staleness finding — but it blocks retention all the same, and the operator
+  # still gets woken up.
   if ! snapshots_json=$(restic snapshots --json); then
     alert 'cannot read the B2 repository — the offsite backup cannot be vouched for'
-    exit 1
+    exit 2
   fi
 
   local newest

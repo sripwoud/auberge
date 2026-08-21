@@ -159,10 +159,10 @@ assert_eq 'empty repository raises a desktop notification' '1' \
 assert_eq 'empty repository blocks retention' \
   'snapshots --json' "$(cat "${RESTIC_ARGS}")"
 
-# ── unreadable repository: not readable is not "fresh" ──
+# ── unreadable repository: an operational error, not a staleness finding ──
 
 stage 1 0 "$(hours_ago 6)"
-assert_eq 'unreadable repository exits 1' '1' "$(run_prune)"
+assert_eq 'unreadable repository exits 2' '2' "$(run_prune)"
 assert_eq 'unreadable repository raises a desktop notification' '1' \
   "$(grep -c 'immich' "${NOTIFY_ARGS}")"
 assert_eq 'unreadable repository blocks retention' \
