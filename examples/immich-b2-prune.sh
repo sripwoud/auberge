@@ -19,27 +19,29 @@
 #   2. retention  restic forget --keep-within 30d --keep-monthly 12 --prune,
 #                 per restic's append-only guidance.
 #
-# Credentials — this script deliberately knows nothing about any particular
-# secret store:
-#   AWS_ACCESS_KEY_ID /    REQUIRED in the environment. Must be the FULL B2
-#   AWS_SECRET_ACCESS_KEY  key — the one with deleteFiles — never the box key:
-#                          retention against the box key fails, which is
-#                          exactly the capability split #558 exists to prove.
-#   RESTIC_REPOSITORY      default: auberge config get immich_restic_repository
-#   RESTIC_PASSWORD        default: auberge config get immich_restic_password
-# The 48h threshold is overridable via IMMICH_SNAPSHOT_MAX_AGE_HOURS.
+# Configuration — the environment is the whole surface. restic reads its own
+# variables: RESTIC_REPOSITORY, RESTIC_PASSWORD (or RESTIC_PASSWORD_COMMAND /
+# RESTIC_PASSWORD_FILE), and whatever the backend needs — for B2's S3 API,
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY. This script assumes an offsite
+# repository already exists and the environment can reach it; it deliberately
+# knows nothing about any secret store or config tool. The credentials it runs
+# with must be the FULL key — the one with deleteFiles — never the box key:
+# retention against the box key fails, which is exactly the capability split
+# #558 exists to prove. The 48h threshold is overridable via
+# IMMICH_SNAPSHOT_MAX_AGE_HOURS.
 #
-# Install on the laptop — a wrapper owns the secret-store integration, so the
-# unit file holds no credentials and this script stays store-agnostic:
+# Install on the laptop — a wrapper owns provisioning the environment, so the
+# unit file holds no credentials and this script stays tool-agnostic:
 #
 #   cp examples/immich-b2-prune.sh ~/.local/bin/immich-b2-prune
 #
-#   ~/.local/bin/immich-b2-prune-wrapped (0700), adapted to your own store:
+#   ~/.local/bin/immich-b2-prune-wrapped (0700), adapted to your own tooling:
 #     #!/usr/bin/env bash
 #     set -euo pipefail
-#     AWS_ACCESS_KEY_ID=$(your-secret-tool get immich-b2-key-id)
-#     AWS_SECRET_ACCESS_KEY=$(your-secret-tool get immich-b2-key)
-#     export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+#     export RESTIC_REPOSITORY='s3:https://s3.example.com/my-immich-bucket'
+#     export RESTIC_PASSWORD="$(your-secret-tool get immich-restic-password)"
+#     export AWS_ACCESS_KEY_ID="$(your-secret-tool get immich-b2-key-id)"
+#     export AWS_SECRET_ACCESS_KEY="$(your-secret-tool get immich-b2-key)"
 #     exec "${HOME}/.local/bin/immich-b2-prune"
 #
 #   ~/.config/systemd/user/immich-b2-prune.service:
@@ -65,9 +67,7 @@
 # Verify the watchdog once by pointing RESTIC_REPOSITORY at an empty or stale
 # repository and watching the run fail with a notification.
 #
-# Prerequisites: restic, jq, GNU date, and — unless RESTIC_REPOSITORY and
-# RESTIC_PASSWORD are passed via the environment too — auberge, configured
-# with the immich keys.
+# Prerequisites: restic, jq, GNU date.
 #
 # Exit codes:
 #   0 — backup fresh, retention applied
@@ -121,30 +121,17 @@ check_prerequisites() {
     || die 2 "IMMICH_SNAPSHOT_MAX_AGE_HOURS must be a positive integer, got: ${MAX_SNAPSHOT_AGE_HOURS}"
 }
 
-# The full B2 key comes only from the environment: which secret store holds it
-# is the wrapper's business (see the Install block above), and guessing one
-# here would quietly couple every operator to it. auberge's config is
-# different — it is this repo's own tool, and the same source of truth the
-# deploy templated onto the box, so the repository URL and password cannot
-# drift between the two halves.
-resolve_credentials() {
-  [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]] \
-    || die 2 'AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be in the environment' \
-      'export the FULL B2 key — the one with deleteFiles — from your own' \
-      'secret store in the wrapper that launches this script; never the box key'
-  if [[ -z "${RESTIC_REPOSITORY:-}" ]]; then
-    RESTIC_REPOSITORY=$(auberge config get immich_restic_repository) \
-      || die 2 'auberge could not read immich_restic_repository' \
-        'set it: auberge config set immich_restic_repository' \
-        'or pass RESTIC_REPOSITORY in the environment'
-  fi
-  if [[ -z "${RESTIC_PASSWORD:-}" ]]; then
-    RESTIC_PASSWORD=$(auberge config get immich_restic_password) \
-      || die 2 'auberge could not read immich_restic_password' \
-        'set it: auberge config set immich_restic_password' \
-        'or pass RESTIC_PASSWORD in the environment'
-  fi
-  export RESTIC_REPOSITORY RESTIC_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+# Which tool provisions the environment is the wrapper's business (see the
+# Install block above); guessing one here would quietly couple every operator
+# to it. Only the repository location is checked — restic's own complaint for
+# it is cryptic, while a missing password or backend credential varies by
+# backend and surfaces through the watchdog as an unreadable repository.
+require_repository() {
+  [[ -n "${RESTIC_REPOSITORY:-}" ]] \
+    || die 2 'RESTIC_REPOSITORY must be set in the environment' \
+      'this script assumes an offsite restic repository already exists;' \
+      'the wrapper that launches it provisions the environment (see Install' \
+      'in the header)'
 }
 
 # Newest snapshot time, taken as the lexicographic max of the RFC 3339 strings
@@ -190,7 +177,7 @@ apply_retention() {
 
 main() {
   check_prerequisites
-  resolve_credentials
+  require_repository
   watchdog
   apply_retention
 }

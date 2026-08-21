@@ -6,13 +6,13 @@
 # weekly watchdog + retention script that holds the only key allowed to
 # destroy repository data.
 #
-# No restic, no B2, no auberge — all stubs on PATH whose behavior each case
-# stages (jq and date are real). The properties worth pinning are the ones the
-# append-only posture depends on: that a stale, empty, or unreadable
-# repository raises the alarm and blocks retention (pruning a repo the box has
-# stopped writing to would destroy the only history left), and that the full
-# B2 key is refused unless the operator's environment supplies it — the script
-# deliberately knows nothing about any particular secret store.
+# No restic, no B2 — stubs on PATH whose behavior each case stages (jq and
+# date are real). The properties worth pinning are the ones the append-only
+# posture depends on: that a stale, empty, or unreadable repository raises the
+# alarm and blocks retention (pruning a repo the box has stopped writing to
+# would destroy the only history left), and that the whole configuration
+# surface is the environment — the script deliberately knows nothing about any
+# secret store or config tool.
 #
 # Run: ./tests/immich-b2-prune.test.sh
 
@@ -36,7 +36,6 @@ readonly SNAPSHOTS_RC="${WORK}/snapshots.rc"
 readonly FORGET_RC="${WORK}/forget.rc"
 readonly FORGET_SEEN_PASSWORD="${WORK}/forget.seen-password"
 readonly FORGET_SEEN_AWS_KEY="${WORK}/forget.seen-aws-key"
-readonly AUBERGE_ARGS="${WORK}/auberge.args"
 readonly NOTIFY_ARGS="${WORK}/notify.args"
 
 mkdir -p "${BIN}"
@@ -58,17 +57,6 @@ case "\$1" in
 esac
 STUB
 chmod 0755 "${BIN}/restic"
-
-cat >"${BIN}/auberge" <<STUB
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >>"${AUBERGE_ARGS}"
-case "\$3" in
-  immich_restic_repository) printf 's3:https://s3.example.test/immich\n' ;;
-  immich_restic_password) printf 'repo-pass\n' ;;
-  *) exit 1 ;;
-esac
-STUB
-chmod 0755 "${BIN}/auberge"
 
 cat >"${BIN}/notify-send" <<STUB
 #!/usr/bin/env bash
@@ -93,17 +81,18 @@ stage() {
     printf '%s' "${entries[*]-}"
   )" >"${SNAPSHOTS_OUT}"
   : >"${RESTIC_ARGS}"
-  : >"${AUBERGE_ARGS}"
   : >"${NOTIFY_ARGS}"
   : >"${FORGET_SEEN_PASSWORD}"
   : >"${FORGET_SEEN_AWS_KEY}"
 }
 
-# The full B2 key arrives via the environment — the wrapper's job in a real
-# install; the repo URL and password resolve through the auberge stub.
+# The environment is the whole configuration surface — provisioning it is the
+# wrapper's job in a real install.
 run_prune() {
   local status=0
   env \
+    RESTIC_REPOSITORY='s3:https://s3.example.test/immich' \
+    RESTIC_PASSWORD='repo-pass' \
     AWS_ACCESS_KEY_ID='full-key-id' \
     AWS_SECRET_ACCESS_KEY='full-key-secret' \
     "${SCRIPT}" >/dev/null 2>&1 || status=$?
@@ -123,11 +112,7 @@ assert_eq 'watchdog reads the repo, then retention prunes it' \
 forget --keep-within 30d --keep-monthly 12 --prune" \
   "$(cat "${RESTIC_ARGS}")"
 assert_eq 'no notification when the backup is healthy' '' "$(cat "${NOTIFY_ARGS}")"
-assert_eq 'repository URL and password come from auberge config' \
-  'config get immich_restic_repository
-config get immich_restic_password' \
-  "$(cat "${AUBERGE_ARGS}")"
-assert_eq 'restic sees the password from auberge config' \
+assert_eq 'restic sees the repository password from the environment' \
   'repo-pass' "$(cat "${FORGET_SEEN_PASSWORD}")"
 assert_eq 'restic sees the application key from the environment' \
   'full-key-secret' "$(cat "${FORGET_SEEN_AWS_KEY}")"
@@ -159,28 +144,13 @@ assert_eq 'unreadable repository raises a desktop notification' '1' \
 assert_eq 'unreadable repository blocks retention' \
   'snapshots --json' "$(cat "${RESTIC_ARGS}")"
 
-# ── a missing full key refuses the run before restic — no secret-store guess ──
+# ── a missing repository refuses the run before restic — no tool guessing ──
 
 stage 0 0 "$(hours_ago 6)"
 status=0
 "${SCRIPT}" >/dev/null 2>&1 || status=$?
-assert_eq 'missing B2 credentials exit 2' '2' "${status}"
-assert_eq 'missing B2 credentials touch restic not at all' '' "$(cat "${RESTIC_ARGS}")"
-
-# ── a fully-provisioned environment never calls auberge ──
-
-stage 0 0 "$(hours_ago 6)"
-status=0
-env \
-  RESTIC_REPOSITORY='s3:https://s3.example.test/other' \
-  RESTIC_PASSWORD='override-pass' \
-  AWS_ACCESS_KEY_ID='override-id' \
-  AWS_SECRET_ACCESS_KEY='override-secret' \
-  "${SCRIPT}" >/dev/null 2>&1 || status=$?
-assert_eq 'env overrides exit 0 without auberge' '0' "${status}"
-assert_eq 'env overrides never call auberge' '' "$(cat "${AUBERGE_ARGS}")"
-assert_eq 'env override password reaches restic' \
-  'override-pass' "$(cat "${FORGET_SEEN_PASSWORD}")"
+assert_eq 'missing RESTIC_REPOSITORY exits 2' '2' "${status}"
+assert_eq 'missing RESTIC_REPOSITORY touches restic not at all' '' "$(cat "${RESTIC_ARGS}")"
 
 # ── a failed forget fails the unit ──
 
