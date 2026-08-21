@@ -49,8 +49,7 @@ Feature ideas and directions. Not commitments — items here may become GitHub i
 
 ## Under Consideration
 
-- Docker support as alternative to systemd
-- Podman integration
+- Podman instead of the Docker daemon for ADR-0025 exceptions — needs 0025's `docker compose` unit shape amended
 - FreeBSD support
 - Raspberry Pi optimizations
 - Automatic SSL certificate rotation
@@ -59,6 +58,7 @@ Feature ideas and directions. Not commitments — items here may become GitHub i
 ## Probably Not
 
 - **Windows VPS support** — systemd dependency
+- **Docker as an alternative deployment mode** — ADR-0025 grants containers per app when upstream supports nothing else; there is no container-first path
 - **Multi-tenancy** — designed for personal use
 - **GUI installer** — CLI-first philosophy
 - **Proprietary cloud integrations** — FOSS priority

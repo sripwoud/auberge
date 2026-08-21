@@ -6,7 +6,7 @@ Accepted, 2026-08-03.
 
 ## Context
 
-Actual Budget's sync server is distributed two ways: a Docker image and the npm package `@actual-app/sync-server`. Auberge's No-Docker decision (see `meta/adr.md`) leaves npm as the only upstream channel — there is no standalone binary or `.deb` to mirror the navidrome/gokapi install patterns.
+Actual Budget's sync server is distributed two ways: a Docker image and the npm package `@actual-app/sync-server`. Auberge's native-systemd default (`meta/adr.md` §"Native systemd by default", ADR-0025) leaves npm as the only upstream channel — there is no standalone binary or `.deb` to mirror the navidrome/gokapi install patterns.
 
 Two sub-decisions follow from picking npm:
 

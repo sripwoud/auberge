@@ -9,12 +9,12 @@
 
 > Ansible-powered VPS management without Docker bloat
 
-Auberge is a CLI tool for managing self-hosted infrastructure using Ansible automation. Deploy a full FOSS stack on a minimal VPS with no container overhead.
+Auberge is a CLI tool for managing self-hosted infrastructure using Ansible automation. Deploy a full FOSS stack on a minimal VPS, natively via systemd.
 
 ## Features
 
 - **Minimal footprint**: Runs on a 2GB RAM VPS (4GB recommended with Grimmory)
-- **No Docker bloat**: Native systemd services
+- **Native systemd by default**: Direct services; Immich alone runs containerized, because upstream supports nothing else
 - **Automated deployment**: Ansible playbooks handle everything
 - **Declared versions**: Every app and tool version pinned in the repo, kept fresh by Renovate, with `auberge versions` drift reporting
 - **Built-in backups**: Full backup and restore with cross-host migration

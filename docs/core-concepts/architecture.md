@@ -4,7 +4,7 @@ Auberge: Rust CLI → Ansible → systemd services
 
 ## Design Philosophy
 
-**No Docker**: Direct systemd services for minimal resource overhead
+**Native systemd by default**: Direct systemd services for minimal resource overhead. Containers are per-app exceptions granted only when the App is required and upstream supports nothing else — currently Immich alone ([ADR-0025](https://github.com/sripwoud/auberge/blob/master/meta/adr/0025-containers-are-per-app-exceptions.md))
 
 **Rust CLI**: Type-safe wrapper around Ansible with safety checks and backup automation
 

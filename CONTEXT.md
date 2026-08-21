@@ -52,6 +52,10 @@ _Avoid_: External app, world-facing app
 An App whose deploy state must be present and correct before another App's deploy can verify reachability — currently Caddy (HTTPS for every App), Headscale (login server for Tailscale on first deploy), and Blocky (DNS Publication for every Tailnet-only App). Substrate Apps are declared in `ansible/playbooks/infrastructure.yml` and run on every `auberge deploy`, regardless of `--tags`. Orthogonal to the Public App / Tailnet-only App axis: a Substrate App may itself have a subdomain (e.g. `hs`, `blocky`) but is placed by its dependency role, not by `tailnet_only`. See ADR-0005.
 _Avoid_: Infrastructure component, shared service, platform service
 
+**Containerized App**:
+An App granted a container exception under ADR-0025, because it is required and its upstream ships no supportable native install. Its compose stack is vendored in the role's `files/` and wrapped in one systemd unit, publishes only on `127.0.0.1` behind Caddy, and pins exact image versions. It declares no Backup Recipe — its offsite backup runs on the Host instead. Currently Immich alone. Orthogonal to the Public App / Tailnet-only App axis.
+_Avoid_: Docker app, compose app, container service
+
 **DNS Publication**:
 The act of making an App's hostname resolvable, performed during deploy. For Public Apps it is a Cloudflare A record; for Tailnet-only Apps it is a Blocky `customDNS` entry. Either is part of `auberge deploy`'s success criterion — a deploy that completes without a working DNS answer is treated as a failure.
 _Avoid_: DNS setup, record creation, A-record provisioning

@@ -5,7 +5,7 @@ How the engineering skills should consume this repo's domain documentation when 
 ## Before exploring, read these
 
 - **`CONTEXT.md`** at the repo root — the project's domain glossary.
-- **`meta/adr.md`** — the curated overview of foundational architectural decisions (no Docker, Rust CLI, Ansible, etc.).
+- **`meta/adr.md`** — the curated overview of foundational architectural decisions (native systemd by default, Rust CLI, Ansible, etc.).
 - **`meta/adr/`** — granular per-decision ADR files added over time. Read the ones touching the area you're about to work in.
 
 > ADRs live under `meta/`, not the canonical `docs/adr/`. The `docs/` directory is owned by the docsify site for the auberge CLI; internal architectural decisions stay outside it.

@@ -119,7 +119,7 @@ the risk is variance, not the mean.
 | Third-party abandonment stalls security updates        | No third party in the path                                                                                                              | Demonstrated: 85-day stall over 20 releases; bus factor 1                        |
 | Extension/ABI drift (PG major, vchord, glibc, libvips) | Absorbed by image tags                                                                                                                  | Operator-managed across 4 independent upgrade streams                            |
 | Disaster recovery blocked by an upstream outage/change | One registry                                                                                                                            | ≥6 online sources incl. one unpinned branch                                      |
-| Docker daemon as ops/attack surface, ~200-300 MB RSS   | Accepted (contra `meta/adr.md` "No Docker")                                                                                             | Absent                                                                           |
+| Docker daemon as ops/attack surface, ~200-300 MB RSS   | Accepted (contra `meta/adr.md` "Native systemd by default")                                                                             | Absent                                                                           |
 | Docker iptables bypassing ufw/fail2ban                 | **Neutralized** — every published port bound `127.0.0.1` (`ansible/roles/immich/files/docker-compose.yml`); live check in #549 ops list | N/A                                                                              |
 | HEIC (iPhone) thumbnails missing                       | Works (upstream base image compiles libvips/libheif)                                                                                    | Broken on trixie without hand-built libvips ≥ 8.18.3                             |
 
@@ -140,7 +140,7 @@ ADR-0025, with revisit triggers: upstream ships a `.deb`/official native path, o
 gains tags + CI + a second maintainer (the #44 Debian-packaging effort maturing).
 
 **Strongest argument against this verdict**: it trades the repo's identity for upstream's comfort.
-Auberge is bare-metal _by decision_ (`meta/adr.md` "No Docker"; ADR-0016 chose npm+NodeSource over
+Auberge is bare-metal _by decision_ (`meta/adr.md` "Native systemd by default"; ADR-0016 chose npm+NodeSource over
 docker for actual); the host already runs the substrate a native Immich needs (Debian postgres,
 redis, NodeSource); VectorChord ships trixie-ready `.deb`s for PG 14–18; the DB half is officially
 documented; the standard `db:` backup recipe would work natively while compose forces the repo's

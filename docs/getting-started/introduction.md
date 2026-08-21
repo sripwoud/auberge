@@ -30,6 +30,6 @@ Backups, DNS sync, and offsite restic snapshots are first-class CLI verbs.
 
 ## Philosophy
 
-_Selfware_: direct control, no abstraction layers, no container runtime, transparent operations.
+_Selfware_: direct control, no abstraction layers, transparent operations.
 
 Continue: [Quick Start](getting-started/quick-start.md) · [Installation](getting-started/installation.md) · [First Deployment](getting-started/first-deployment.md)
