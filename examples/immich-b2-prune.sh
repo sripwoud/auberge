@@ -19,27 +19,37 @@
 #   2. retention  restic forget --keep-within 30d --keep-monthly 12 --prune,
 #                 per restic's append-only guidance.
 #
-# Credentials — env vars override; nothing is stored in the unit file:
-#   RESTIC_REPOSITORY      default: auberge config get immich_restic_repository
-#   RESTIC_PASSWORD        default: auberge config get immich_restic_password
-#   AWS_ACCESS_KEY_ID      default: pa show immich/b2-key-id
-#   AWS_SECRET_ACCESS_KEY  default: pa show immich/b2-key
-# The pa entry names are overridable via IMMICH_B2_KEY_ID_PA_ENTRY and
-# IMMICH_B2_KEY_PA_ENTRY, the 48h threshold via IMMICH_SNAPSHOT_MAX_AGE_HOURS.
-# The pa entries must hold the FULL B2 key — the one with deleteFiles — never
-# the box key: retention against the box key fails, which is exactly the
-# capability split #558 exists to prove.
+# Configuration — the environment is the whole surface. restic reads its own
+# variables: RESTIC_REPOSITORY, RESTIC_PASSWORD (or RESTIC_PASSWORD_COMMAND /
+# RESTIC_PASSWORD_FILE), and whatever the backend needs — for B2's S3 API,
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY. This script assumes an offsite
+# repository already exists and the environment can reach it; it deliberately
+# knows nothing about any secret store or config tool. The credentials it runs
+# with must be the FULL key — the one with deleteFiles — never the box key:
+# retention against the box key fails, which is exactly the capability split
+# #558 exists to prove. The 48h threshold is overridable via
+# IMMICH_SNAPSHOT_MAX_AGE_HOURS.
 #
-# Install on the laptop:
+# Install on the laptop — a wrapper owns provisioning the environment, so the
+# unit file holds no credentials and this script stays tool-agnostic:
 #
 #   cp examples/immich-b2-prune.sh ~/.local/bin/immich-b2-prune
+#
+#   ~/.local/bin/immich-b2-prune-wrapped (0700), adapted to your own tooling:
+#     #!/usr/bin/env bash
+#     set -euo pipefail
+#     export RESTIC_REPOSITORY='s3:https://s3.example.com/my-immich-bucket'
+#     export RESTIC_PASSWORD="$(your-secret-tool get immich-restic-password)"
+#     export AWS_ACCESS_KEY_ID="$(your-secret-tool get immich-b2-key-id)"
+#     export AWS_SECRET_ACCESS_KEY="$(your-secret-tool get immich-b2-key)"
+#     exec "${HOME}/.local/bin/immich-b2-prune"
 #
 #   ~/.config/systemd/user/immich-b2-prune.service:
 #     [Unit]
 #     Description=Immich B2 retention and staleness watchdog
 #     [Service]
 #     Type=oneshot
-#     ExecStart=%h/.local/bin/immich-b2-prune
+#     ExecStart=%h/.local/bin/immich-b2-prune-wrapped
 #
 #   ~/.config/systemd/user/immich-b2-prune.timer:
 #     [Unit]
@@ -57,9 +67,7 @@
 # Verify the watchdog once by pointing RESTIC_REPOSITORY at an empty or stale
 # repository and watching the run fail with a notification.
 #
-# Prerequisites: restic, jq, GNU date, and — unless every credential is passed
-# via the environment — auberge (configured with the immich keys) and pa
-# (https://github.com/biox/pa) holding the full B2 key.
+# Prerequisites: restic, jq, GNU date.
 #
 # Exit codes:
 #   0 — backup fresh, retention applied
@@ -76,8 +84,6 @@ readonly PROGRAM_NAME="${0##*/}"
 readonly KEEP_WITHIN='30d'
 readonly KEEP_MONTHLY=12
 readonly MAX_SNAPSHOT_AGE_HOURS="${IMMICH_SNAPSHOT_MAX_AGE_HOURS:-48}"
-readonly B2_KEY_ID_PA_ENTRY="${IMMICH_B2_KEY_ID_PA_ENTRY:-immich/b2-key-id}"
-readonly B2_KEY_PA_ENTRY="${IMMICH_B2_KEY_PA_ENTRY:-immich/b2-key}"
 
 # die <exit-code> <message> [remediation-line...]
 die() {
@@ -115,36 +121,17 @@ check_prerequisites() {
     || die 2 "IMMICH_SNAPSHOT_MAX_AGE_HOURS must be a positive integer, got: ${MAX_SNAPSHOT_AGE_HOURS}"
 }
 
-# auberge's config is the same source of truth the deploy templated onto the
-# box, so the repository URL and password cannot drift between the two halves.
-# Only the full B2 key has no place there — the config holds the box key — so
-# it comes from pa.
-resolve_credentials() {
-  if [[ -z "${RESTIC_REPOSITORY:-}" ]]; then
-    RESTIC_REPOSITORY=$(auberge config get immich_restic_repository) \
-      || die 2 'auberge could not read immich_restic_repository' \
-        'set it: auberge config set immich_restic_repository' \
-        'or pass RESTIC_REPOSITORY in the environment'
-  fi
-  if [[ -z "${RESTIC_PASSWORD:-}" ]]; then
-    RESTIC_PASSWORD=$(auberge config get immich_restic_password) \
-      || die 2 'auberge could not read immich_restic_password' \
-        'set it: auberge config set immich_restic_password' \
-        'or pass RESTIC_PASSWORD in the environment'
-  fi
-  if [[ -z "${AWS_ACCESS_KEY_ID:-}" ]]; then
-    AWS_ACCESS_KEY_ID=$(pa show "${B2_KEY_ID_PA_ENTRY}") \
-      || die 2 "pa could not read ${B2_KEY_ID_PA_ENTRY}" \
-        "store the full key's id: pa add ${B2_KEY_ID_PA_ENTRY}" \
-        'or point IMMICH_B2_KEY_ID_PA_ENTRY at the entry that holds it'
-  fi
-  if [[ -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-    AWS_SECRET_ACCESS_KEY=$(pa show "${B2_KEY_PA_ENTRY}") \
-      || die 2 "pa could not read ${B2_KEY_PA_ENTRY}" \
-        "store the full key: pa add ${B2_KEY_PA_ENTRY}" \
-        'or point IMMICH_B2_KEY_PA_ENTRY at the entry that holds it'
-  fi
-  export RESTIC_REPOSITORY RESTIC_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+# Which tool provisions the environment is the wrapper's business (see the
+# Install block above); guessing one here would quietly couple every operator
+# to it. Only the repository location is checked — restic's own complaint for
+# it is cryptic, while a missing password or backend credential varies by
+# backend and surfaces through the watchdog as an unreadable repository.
+require_repository() {
+  [[ -n "${RESTIC_REPOSITORY:-}" ]] \
+    || die 2 'RESTIC_REPOSITORY must be set in the environment' \
+      'this script assumes an offsite restic repository already exists;' \
+      'the wrapper that launches it provisions the environment (see Install' \
+      'in the header)'
 }
 
 # Newest snapshot time, taken as the lexicographic max of the RFC 3339 strings
@@ -190,7 +177,7 @@ apply_retention() {
 
 main() {
   check_prerequisites
-  resolve_credentials
+  require_repository
   watchdog
   apply_retention
 }
