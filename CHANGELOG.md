@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.8](https://github.com/sripwoud/auberge/compare/v0.15.7...v0.15.8) - 2026-08-21
+
+### Added
+
+- *(immich)* back up on-host to b2 with an append-only restic key ([#567](https://github.com/sripwoud/auberge/pull/567))
+
+### Fixed
+
+- *(apt)* drop blanket stable pin that buried trixie-updates ([#565](https://github.com/sripwoud/auberge/pull/565))
+
+### Other
+
+- *(adr)* grant containers as per-app exceptions, retitle the no-docker stance ([#564](https://github.com/sripwoud/auberge/pull/564))
+
 ## [0.15.7](https://github.com/sripwoud/auberge/compare/v0.15.6...v0.15.7) - 2026-08-21
 
 ### Added
