@@ -883,8 +883,11 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
                 Ok(preflight) => {
                     let app_versions =
                         crate::playbook_meta::app_version_vars(&assets.playbooks_dir())?;
+                    let memory_budgets =
+                        crate::playbook_meta::app_memory_vars(&assets.playbooks_dir())?;
                     let extra_vars: Vec<(&str, &str)> = app_versions
                         .iter()
+                        .chain(memory_budgets.iter())
                         .map(|(name, value)| (name.as_str(), value.as_str()))
                         .collect();
                     let mut progress = crate::services::progress::TerminalProgress::new("");
