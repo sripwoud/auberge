@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.11](https://github.com/sripwoud/auberge/compare/v0.15.10...v0.15.11) - 2026-08-21
+
+### Fixed
+
+- *(fail2ban)* never ban operator, tailnet, or inventory host ips ([#583](https://github.com/sripwoud/auberge/pull/583))
+
+### Other
+
+- *(blocky)* bump to 5.4.0 ([#585](https://github.com/sripwoud/auberge/pull/585))
+
 ## [0.15.10](https://github.com/sripwoud/auberge/compare/v0.15.9...v0.15.10) - 2026-08-21
 
 ### Fixed
