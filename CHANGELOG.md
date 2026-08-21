@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.7](https://github.com/sripwoud/auberge/compare/v0.15.6...v0.15.7) - 2026-08-21
+
+### Added
+
+- *(immich)* deploy via docker compose wrapped in a systemd unit ([#560](https://github.com/sripwoud/auberge/pull/560))
+
+### Fixed
+
+- *(calibre)* add role to apps.yml roster ([#561](https://github.com/sripwoud/auberge/pull/561))
+
 ## [0.15.6](https://github.com/sripwoud/auberge/compare/v0.15.5...v0.15.6) - 2026-08-21
 
 ### Fixed
