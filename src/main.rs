@@ -15,9 +15,9 @@ mod tool_versions;
 use clap::{CommandFactory, Parser, Subcommand};
 use commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ansible_run};
 use commands::backup::{
-    BackupCommands, RestoreOptions, VerifyOptions, run_backup_create, run_backup_list,
-    run_backup_prune, run_backup_push, run_backup_restore, run_backup_sync, run_backup_verify,
-    run_export_opml, run_import_opml,
+    BackupCommands, RestoreOptions, VerifyOptions, create_parameters, run_backup_create,
+    run_backup_list, run_backup_prune, run_backup_push, run_backup_restore, run_backup_sync,
+    run_backup_verify, run_export_opml, run_import_opml,
 };
 use commands::bichon::{BichonCommands, run_bichon_command};
 use commands::config_cmd::{
@@ -204,16 +204,22 @@ async fn main() -> Result<()> {
                 include_music,
                 dry_run,
             } => signal::with_ctrlc(|| {
-                run_backup_create(host, apps, dest, ssh_key, include_music, dry_run).and_then(
-                    |outcome| {
-                        let failed = outcome.failed_apps();
-                        if failed.is_empty() {
-                            Ok(())
-                        } else {
-                            eyre::bail!("{} backup(s) failed", failed.len());
-                        }
-                    },
+                run_backup_create(
+                    host,
+                    apps,
+                    dest,
+                    ssh_key,
+                    create_parameters(include_music),
+                    dry_run,
                 )
+                .and_then(|outcome| {
+                    let failed = outcome.failed_apps();
+                    if failed.is_empty() {
+                        Ok(())
+                    } else {
+                        eyre::bail!("{} backup(s) failed", failed.len());
+                    }
+                })
             }),
             BackupCommands::Sync {
                 host,

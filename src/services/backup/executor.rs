@@ -85,9 +85,8 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
         }
     }
 
-    /// Restore whatever the staged snapshot holds. Takes no parameter map:
-    /// the values that shaped the snapshot are gone by restore time, so the
-    /// snapshot itself is the only record of what was backed up (#572).
+    /// Restore whatever the staged backup holds — see [`staged_paths`] for
+    /// why this takes no parameter map.
     pub fn restore(
         &self,
         recipe: &BackupRecipe,
@@ -109,7 +108,7 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
             for path in &paths {
                 progress.task_started(&format!("rsync {}", path));
                 self.session
-                    .rsync_to(&staged_source(source_dir, path), path)?;
+                    .rsync_to(&staged_copy(source_dir, path), path)?;
             }
 
             if let Some((user, group)) = &recipe.owner {
@@ -187,17 +186,19 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
     }
 }
 
-/// The paths a staged snapshot holds: the Recipe's declared paths, plus every
-/// parameter-gated path present on disk. A snapshot is the record of what was
-/// backed up, and a parameter's default says nothing about it — resolving the
-/// recipe against defaults dropped `/srv/music` from every navidrome restore
-/// while reporting success (#572).
+/// The paths a staged backup holds: the Recipe's declared paths, plus every
+/// parameter-gated path present on disk. A Recipe's `parameters` are a
+/// create-time input — the choice is recorded nowhere a later restore can
+/// read it, so resolving the Recipe against parameter defaults dropped
+/// 19.92 GB of music from every navidrome restore while reporting success
+/// (ADR-0026). Optional paths are appended sorted, so the plan an operator
+/// reads and the order pushed are stable across `HashMap` iteration.
 pub fn staged_paths(recipe: &BackupRecipe, source_dir: &Path) -> Vec<String> {
     let mut optional: Vec<String> = recipe
         .parameters
         .values()
         .flat_map(|parameter| parameter.adds_paths.iter())
-        .filter(|path| staged_source(source_dir, path).exists())
+        .filter(|path| staged_copy(source_dir, path).exists())
         .cloned()
         .collect();
     optional.sort();
@@ -207,7 +208,28 @@ pub fn staged_paths(recipe: &BackupRecipe, source_dir: &Path) -> Vec<String> {
     paths
 }
 
-fn staged_source(source_dir: &Path, path: &str) -> PathBuf {
+/// The parameter values a staged backup implies, on when any path the
+/// parameter adds is present. What a `backup create` needs to cover the paths
+/// a restore from this backup will overwrite: `rsync --delete` reaches every
+/// path [`staged_paths`] returns, so a pre-migration backup taken with less
+/// than this is not a rollback (ADR-0026).
+pub fn staged_parameters(recipe: &BackupRecipe, source_dir: &Path) -> HashMap<String, bool> {
+    recipe
+        .parameters
+        .iter()
+        .map(|(name, parameter)| {
+            let present = parameter
+                .adds_paths
+                .iter()
+                .any(|path| staged_copy(source_dir, path).exists());
+            (name.clone(), present)
+        })
+        .collect()
+}
+
+/// Where a staged backup keeps its copy of a remote path: `rsync --relative`
+/// preserves the tree, so `/srv/music` lands at `<app>/srv/music`.
+fn staged_copy(source_dir: &Path, path: &str) -> PathBuf {
     source_dir.join(path.trim_start_matches('/'))
 }
 
@@ -656,7 +678,7 @@ mod tests {
         ));
     }
 
-    fn staged_snapshot(paths: &[&str]) -> tempfile::TempDir {
+    fn staged_backup(paths: &[&str]) -> tempfile::TempDir {
         let tmp = tempfile::tempdir().unwrap();
         for path in paths {
             std::fs::create_dir_all(tmp.path().join(path.trim_start_matches('/'))).unwrap();
@@ -665,13 +687,13 @@ mod tests {
     }
 
     #[test]
-    fn test_restore_includes_optional_path_the_snapshot_holds() {
-        let snapshot = staged_snapshot(&["/var/lib/navidrome", "/srv/music"]);
+    fn test_restore_includes_optional_path_the_backup_holds() {
+        let backup = staged_backup(&["/var/lib/navidrome", "/srv/music"]);
         let mock = MockSshSession::new();
         let executor = RecipeExecutor::new(&mock);
         let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .restore(&navidrome_recipe(), snapshot.path(), &mut progress)
+            .restore(&navidrome_recipe(), backup.path(), &mut progress)
             .unwrap();
 
         let calls = mock.calls();
@@ -691,13 +713,13 @@ mod tests {
     }
 
     #[test]
-    fn test_restore_omits_optional_path_the_snapshot_lacks() {
-        let snapshot = staged_snapshot(&["/var/lib/navidrome"]);
+    fn test_restore_omits_optional_path_the_backup_lacks() {
+        let backup = staged_backup(&["/var/lib/navidrome"]);
         let mock = MockSshSession::new();
         let executor = RecipeExecutor::new(&mock);
         let mut progress = crate::services::progress::MockProgress::new();
         executor
-            .restore(&navidrome_recipe(), snapshot.path(), &mut progress)
+            .restore(&navidrome_recipe(), backup.path(), &mut progress)
             .unwrap();
 
         let rsync_remotes: Vec<String> = mock
@@ -732,10 +754,10 @@ mod tests {
             parameters: params,
             ..navidrome_recipe()
         };
-        let snapshot = staged_snapshot(&["/srv/music", "/srv/artwork"]);
+        let backup = staged_backup(&["/srv/music", "/srv/artwork"]);
 
         assert_eq!(
-            staged_paths(&recipe, snapshot.path()),
+            staged_paths(&recipe, backup.path()),
             vec!["/var/lib/navidrome", "/srv/artwork", "/srv/music"]
         );
     }
@@ -754,21 +776,45 @@ mod tests {
             parameters: params,
             ..navidrome_recipe()
         };
-        let snapshot = staged_snapshot(&["/var/lib/navidrome"]);
+        let backup = staged_backup(&["/var/lib/navidrome"]);
 
         assert_eq!(
-            staged_paths(&recipe, snapshot.path()),
+            staged_paths(&recipe, backup.path()),
             vec!["/var/lib/navidrome"]
         );
     }
 
     #[test]
-    fn test_staged_paths_keeps_declared_paths_the_snapshot_lacks() {
-        let snapshot = staged_snapshot(&[]);
+    fn test_staged_paths_keeps_declared_paths_the_backup_lacks() {
+        let backup = staged_backup(&[]);
         assert_eq!(
-            staged_paths(&baikal_recipe(), snapshot.path()),
+            staged_paths(&baikal_recipe(), backup.path()),
             vec!["/opt/baikal/Specific"]
         );
+    }
+
+    #[test]
+    fn test_staged_parameters_are_on_when_the_backup_holds_their_path() {
+        let backup = staged_backup(&["/var/lib/navidrome", "/srv/music"]);
+        assert_eq!(
+            staged_parameters(&navidrome_recipe(), backup.path()),
+            HashMap::from([("include_music".to_string(), true)])
+        );
+    }
+
+    #[test]
+    fn test_staged_parameters_are_off_when_the_backup_lacks_their_path() {
+        let backup = staged_backup(&["/var/lib/navidrome"]);
+        assert_eq!(
+            staged_parameters(&navidrome_recipe(), backup.path()),
+            HashMap::from([("include_music".to_string(), false)])
+        );
+    }
+
+    #[test]
+    fn test_staged_parameters_is_empty_for_a_recipe_without_parameters() {
+        let backup = staged_backup(&["/opt/baikal/Specific"]);
+        assert!(staged_parameters(&baikal_recipe(), backup.path()).is_empty());
     }
 
     #[test]
