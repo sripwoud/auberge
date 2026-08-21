@@ -6,13 +6,13 @@
 # weekly watchdog + retention script that holds the only key allowed to
 # destroy repository data.
 #
-# No restic, no B2, no pa, no auberge — all stubs on PATH whose behavior each
-# case stages (jq, date, and dasel are real). The properties worth pinning are
-# the ones the append-only posture depends on: that a stale, empty, or
-# unreadable repository raises the alarm and blocks retention (pruning a repo
-# the box has stopped writing to would destroy the only history left), and
-# that the full credentials come out of the operator's pa store — one
-# decryption, both fields — rather than living in the unit file.
+# No restic, no B2, no auberge — all stubs on PATH whose behavior each case
+# stages (jq and date are real). The properties worth pinning are the ones the
+# append-only posture depends on: that a stale, empty, or unreadable
+# repository raises the alarm and blocks retention (pruning a repo the box has
+# stopped writing to would destroy the only history left), and that the full
+# B2 key is refused unless the operator's environment supplies it — the script
+# deliberately knows nothing about any particular secret store.
 #
 # Run: ./tests/immich-b2-prune.test.sh
 
@@ -36,9 +36,6 @@ readonly SNAPSHOTS_RC="${WORK}/snapshots.rc"
 readonly FORGET_RC="${WORK}/forget.rc"
 readonly FORGET_SEEN_PASSWORD="${WORK}/forget.seen-password"
 readonly FORGET_SEEN_AWS_KEY="${WORK}/forget.seen-aws-key"
-readonly PA_ARGS="${WORK}/pa.args"
-readonly PA_RC="${WORK}/pa.rc"
-readonly PA_YAML="${WORK}/pa.yaml"
 readonly AUBERGE_ARGS="${WORK}/auberge.args"
 readonly NOTIFY_ARGS="${WORK}/notify.args"
 
@@ -61,32 +58,6 @@ case "\$1" in
 esac
 STUB
 chmod 0755 "${BIN}/restic"
-
-# The backblaze entry's shape: first line is the account password (tail'ed
-# away by the script), the rest is YAML keyed by application key name. The
-# keyID is YAML-quoted deliberately: an all-digit id would otherwise parse as
-# a number, and the script must hand restic the string.
-cat >"${BIN}/pa" <<STUB
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >>"${PA_ARGS}"
-if [ "\$(cat "${PA_RC}")" -ne 0 ]; then exit 1; fi
-[ "\$1" = 'show' ] && [ "\$2" = 'backblaze' ] || exit 1
-cat "${PA_YAML}"
-STUB
-chmod 0755 "${BIN}/pa"
-
-stage_pa_yaml() {
-  cat >"${PA_YAML}" <<'YAML'
-account-web-password
-applicationKeys:
-  master:
-    keyID: "0012master"
-    applicationKey: master-secret
-  immich-laptop:
-    keyID: "0034full"
-    applicationKey: full-key-secret
-YAML
-}
 
 cat >"${BIN}/auberge" <<STUB
 #!/usr/bin/env bash
@@ -115,8 +86,6 @@ stage() {
   shift 2
   printf '%s' "${snapshots_rc}" >"${SNAPSHOTS_RC}"
   printf '%s' "${forget_rc}" >"${FORGET_RC}"
-  printf '0' >"${PA_RC}"
-  stage_pa_yaml
   local time entries=()
   for time in "$@"; do entries+=("{\"time\": \"${time}\"}"); done
   printf '[%s]\n' "$(
@@ -124,16 +93,20 @@ stage() {
     printf '%s' "${entries[*]-}"
   )" >"${SNAPSHOTS_OUT}"
   : >"${RESTIC_ARGS}"
-  : >"${PA_ARGS}"
   : >"${AUBERGE_ARGS}"
   : >"${NOTIFY_ARGS}"
   : >"${FORGET_SEEN_PASSWORD}"
   : >"${FORGET_SEEN_AWS_KEY}"
 }
 
+# The full B2 key arrives via the environment — the wrapper's job in a real
+# install; the repo URL and password resolve through the auberge stub.
 run_prune() {
   local status=0
-  "${SCRIPT}" >/dev/null 2>&1 || status=$?
+  env \
+    AWS_ACCESS_KEY_ID='full-key-id' \
+    AWS_SECRET_ACCESS_KEY='full-key-secret' \
+    "${SCRIPT}" >/dev/null 2>&1 || status=$?
   printf '%s' "${status}"
 }
 
@@ -154,11 +127,9 @@ assert_eq 'repository URL and password come from auberge config' \
   'config get immich_restic_repository
 config get immich_restic_password' \
   "$(cat "${AUBERGE_ARGS}")"
-assert_eq 'full B2 key comes from the backblaze pa entry, decrypted once' \
-  'show backblaze' "$(cat "${PA_ARGS}")"
 assert_eq 'restic sees the password from auberge config' \
   'repo-pass' "$(cat "${FORGET_SEEN_PASSWORD}")"
-assert_eq 'restic sees the application key from the pa yaml' \
+assert_eq 'restic sees the application key from the environment' \
   'full-key-secret' "$(cat "${FORGET_SEEN_AWS_KEY}")"
 
 # ── stale repository: alarm, and retention must not run ──
@@ -188,24 +159,17 @@ assert_eq 'unreadable repository raises a desktop notification' '1' \
 assert_eq 'unreadable repository blocks retention' \
   'snapshots --json' "$(cat "${RESTIC_ARGS}")"
 
-# ── credential resolution failure refuses the run before restic ──
+# ── a missing full key refuses the run before restic — no secret-store guess ──
 
 stage 0 0 "$(hours_ago 6)"
-printf '1' >"${PA_RC}"
-assert_eq 'pa failure exits 2' '2' "$(run_prune)"
-assert_eq 'pa failure touches restic not at all' '' "$(cat "${RESTIC_ARGS}")"
+status=0
+"${SCRIPT}" >/dev/null 2>&1 || status=$?
+assert_eq 'missing B2 credentials exit 2' '2' "${status}"
+assert_eq 'missing B2 credentials touch restic not at all' '' "$(cat "${RESTIC_ARGS}")"
 
-# ── a yaml that lacks the key is the same refusal, not empty credentials ──
-
-stage 0 0 "$(hours_ago 6)"
-printf 'account-web-password\napplicationKeys:\n  master:\n    keyID: "0012master"\n' >"${PA_YAML}"
-assert_eq 'missing applicationKeys entry exits 2' '2' "$(run_prune)"
-assert_eq 'missing applicationKeys entry touches restic not at all' '' "$(cat "${RESTIC_ARGS}")"
-
-# ── environment overrides skip auberge and pa entirely ──
+# ── a fully-provisioned environment never calls auberge ──
 
 stage 0 0 "$(hours_ago 6)"
-printf '1' >"${PA_RC}"
 status=0
 env \
   RESTIC_REPOSITORY='s3:https://s3.example.test/other' \
@@ -213,8 +177,7 @@ env \
   AWS_ACCESS_KEY_ID='override-id' \
   AWS_SECRET_ACCESS_KEY='override-secret' \
   "${SCRIPT}" >/dev/null 2>&1 || status=$?
-assert_eq 'env overrides exit 0 without pa or auberge' '0' "${status}"
-assert_eq 'env overrides never call pa' '' "$(cat "${PA_ARGS}")"
+assert_eq 'env overrides exit 0 without auberge' '0' "${status}"
 assert_eq 'env overrides never call auberge' '' "$(cat "${AUBERGE_ARGS}")"
 assert_eq 'env override password reaches restic' \
   'override-pass' "$(cat "${FORGET_SEEN_PASSWORD}")"
