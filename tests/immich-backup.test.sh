@@ -108,8 +108,8 @@ assert_eq 'database is dumped live via docker exec' \
 assert_eq 'dump lands gzipped at its stable path' \
   'CREATE TABLE immich_assets;' \
   "$(gunzip -c "${DUMP_DIR}/immich-db.sql.gz")"
-assert_eq 'restic snapshots the dump dir and the upload dir together' \
-  "backup ${DUMP_DIR} ${UPLOAD_DIR}" \
+assert_eq 'restic snapshots the dump file and the upload dir together' \
+  "backup ${DUMP_DIR}/immich-db.sql.gz ${UPLOAD_DIR}" \
   "$(cat "${RESTIC_ARGS}")"
 assert_eq 'credentials reach restic through the environment' \
   'repo-pass' "$(cat "${RESTIC_SEEN_PASSWORD}")"

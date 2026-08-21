@@ -25,9 +25,7 @@ set -euo pipefail
 : "${IMMICH_DB_DUMP_DIR:?required}"
 : "${IMMICH_UPLOAD_DIR:?required}"
 
-# systemd already exports EnvironmentFile variables; this keeps an ad-hoc
-# `VAR=… ./immich-backup.sh` run equivalent to a unit run.
-export RESTIC_REPOSITORY RESTIC_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+readonly DUMP_PATH="${IMMICH_DB_DUMP_DIR}/immich-db.sql.gz"
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2
@@ -37,24 +35,25 @@ log() {
 # the previous night's good one — pipefail carries a pg_dumpall failure
 # through gzip.
 dump_database() {
-  local dump_path="${IMMICH_DB_DUMP_DIR}/immich-db.sql.gz"
   local tmp
-  tmp=$(mktemp "${dump_path}.XXXXXX")
+  tmp=$(mktemp "${DUMP_PATH}.XXXXXX")
   if ! docker exec "${IMMICH_DB_CONTAINER}" \
     pg_dumpall --clean --if-exists --username=postgres \
     | gzip >"${tmp}"; then
     rm -f "${tmp}"
     return 1
   fi
-  mv "${tmp}" "${dump_path}"
-  log "dumped database to ${dump_path} ($(stat -c '%s' "${dump_path}") bytes)"
+  mv "${tmp}" "${DUMP_PATH}"
+  log "dumped database to ${DUMP_PATH} ($(stat -c '%s' "${DUMP_PATH}") bytes)"
 }
 
 main() {
   log "dumping database from ${IMMICH_DB_CONTAINER}"
   dump_database
   log "pushing snapshot to ${RESTIC_REPOSITORY}"
-  restic backup "${IMMICH_DB_DUMP_DIR}" "${IMMICH_UPLOAD_DIR}"
+  # The dump file, not its directory: a staging file orphaned by a hard kill
+  # must never ride into a snapshot.
+  restic backup "${DUMP_PATH}" "${IMMICH_UPLOAD_DIR}"
   log 'backup complete'
 }
 
