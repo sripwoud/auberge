@@ -32,10 +32,11 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0022 | [The music sync blocklists hidden entries as a class](./adr/0022-music-sync-blocklists-hidden-entries-as-a-class.md)                               |
 | 0023 | [Backup Recipes reference the admin user via a `{admin_user}` placeholder](./adr/0023-admin-user-placeholder-in-backup-recipes.md)                 |
 | 0024 | [Host rename recovers by rerun, never by rollback or history rewrite](./adr/0024-host-rename-recovers-by-rerun.md)                                 |
+| 0025 | [Containers are per-app exceptions granted only when upstream supports nothing else](./adr/0025-containers-are-per-app-exceptions.md)              |
 
-## No Docker
+## Native systemd by default
 
-**Decision:** Use systemd services instead of containers.
+**Decision:** Apps run as systemd services, not containers. A container is a per-app exception, granted only when the App is required and upstream supports nothing else — the grant tests and the required shape are in [ADR-0025](./adr/0025-containers-are-per-app-exceptions.md). Immich is the only one so far.
 
 **Reasoning:**
 
@@ -50,6 +51,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 - Less portable across different Linux distributions
 - No application isolation (mitigated by systemd user isolation)
 - Manual dependency management
+- The Docker daemon's 200-300MB is paid on any Host running a granted exception
 
 ## Rust CLI
 

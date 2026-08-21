@@ -2,7 +2,7 @@
 
 > Ansible-powered VPS management without Docker bloat.
 
-Auberge is a Rust CLI for managing self-hosted infrastructure. Deploys a full FOSS stack on a 2 GB VPS using native systemd — no containers.
+Auberge is a Rust CLI for managing self-hosted infrastructure. Deploys a full FOSS stack on a 2 GB VPS using native systemd.
 
 ```bash
 cargo install auberge

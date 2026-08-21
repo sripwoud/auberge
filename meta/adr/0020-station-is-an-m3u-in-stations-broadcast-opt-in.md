@@ -60,7 +60,7 @@ This surfaced a contradiction: `CONTEXT.md:165` asserted that "every App declare
 
 - **Public, unauthenticated.** Rejected on the audience reasoning above.
 
-- **AzuraCast.** A complete station manager with a web UI, which would have answered the curation question outright. Rejected: it is Docker-only, and `meta/adr.md` §"No Docker" rules containers out on memory grounds — it would also drag in MariaDB, Redis and a second reverse proxy.
+- **AzuraCast.** A complete station manager with a web UI, which would have answered the curation question outright. Rejected: it is Docker-only, and a container is a per-app exception granted only to an App with no native alternative (`meta/adr.md` §"Native systemd by default", ADR-0025) — the m3u design below is that alternative. It would also drag in MariaDB, Redis and a second reverse proxy.
 
 ## Consequences
 
@@ -92,7 +92,7 @@ This surfaced a contradiction: `CONTEXT.md:165` asserted that "every App declare
 - ADR-0003 — the Public App / Tailnet-only App split this chooses between. The Radio is a Public App with app-layer auth, which `colporteur` already establishes as a third position rather than a new one.
 - ADR-0016 — the bare-metal-from-a-package-manager precedent, and the origin of the two-regimes observation ADR-0017 resolved.
 - ADR-0017 — App Version versus Tool Version. The Radio has neither: apt chooses the bytes. Its `CONTEXT.md` overreach ("every App declares one") is corrected here.
-- `meta/adr.md` §"No Docker" — why AzuraCast is not an option.
+- `meta/adr.md` §"Native systemd by default" and ADR-0025 — why AzuraCast is not an option: it clears the upstream-support test but fails the one asking whether the App is required.
 - `ansible/roles/colporteur/` — the auth pattern copied verbatim: `keys.yml` plaintext, `caddy hash-password` at deploy, hash rendered into the Caddyfile.
 - `src/commands/sync.rs:10,97-98` — the rsync flags that make m3u transport free.
 - `CONTEXT.md` — **Radio**, **Station**, **Public App**, **Key Registry**, **Backup Recipe**.
