@@ -7,11 +7,12 @@
 # destroy repository data.
 #
 # No restic, no B2, no pa, no auberge — all stubs on PATH whose behavior each
-# case stages (jq and date are real). The properties worth pinning are the
-# ones the append-only posture depends on: that a stale, empty, or unreadable
-# repository raises the alarm and blocks retention (pruning a repo the box has
-# stopped writing to would destroy the only history left), and that the full
-# credentials come from pa/auberge rather than living in the unit file.
+# case stages (jq, date, and dasel are real). The properties worth pinning are
+# the ones the append-only posture depends on: that a stale, empty, or
+# unreadable repository raises the alarm and blocks retention (pruning a repo
+# the box has stopped writing to would destroy the only history left), and
+# that the full credentials come out of the operator's pa store — one
+# decryption, both fields — rather than living in the unit file.
 #
 # Run: ./tests/immich-b2-prune.test.sh
 
@@ -34,8 +35,10 @@ readonly SNAPSHOTS_OUT="${WORK}/snapshots.out"
 readonly SNAPSHOTS_RC="${WORK}/snapshots.rc"
 readonly FORGET_RC="${WORK}/forget.rc"
 readonly FORGET_SEEN_PASSWORD="${WORK}/forget.seen-password"
+readonly FORGET_SEEN_AWS_KEY="${WORK}/forget.seen-aws-key"
 readonly PA_ARGS="${WORK}/pa.args"
 readonly PA_RC="${WORK}/pa.rc"
+readonly PA_YAML="${WORK}/pa.yaml"
 readonly AUBERGE_ARGS="${WORK}/auberge.args"
 readonly NOTIFY_ARGS="${WORK}/notify.args"
 
@@ -52,23 +55,38 @@ case "\$1" in
     ;;
   forget)
     printf '%s\n' "\${RESTIC_PASSWORD:-}" >"${FORGET_SEEN_PASSWORD}"
+    printf '%s\n' "\${AWS_SECRET_ACCESS_KEY:-}" >"${FORGET_SEEN_AWS_KEY}"
     exit "\$(cat "${FORGET_RC}")"
     ;;
 esac
 STUB
 chmod 0755 "${BIN}/restic"
 
+# The backblaze entry's shape: first line is the account password (tail'ed
+# away by the script), the rest is YAML keyed by application key name. The
+# keyID is YAML-quoted deliberately: an all-digit id would otherwise parse as
+# a number, and the script must hand restic the string.
 cat >"${BIN}/pa" <<STUB
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >>"${PA_ARGS}"
 if [ "\$(cat "${PA_RC}")" -ne 0 ]; then exit 1; fi
-case "\$2" in
-  immich/b2-key-id) printf 'full-key-id\n' ;;
-  immich/b2-key) printf 'full-key-secret\n' ;;
-  *) exit 1 ;;
-esac
+[ "\$1" = 'show' ] && [ "\$2" = 'backblaze' ] || exit 1
+cat "${PA_YAML}"
 STUB
 chmod 0755 "${BIN}/pa"
+
+stage_pa_yaml() {
+  cat >"${PA_YAML}" <<'YAML'
+account-web-password
+applicationKeys:
+  master:
+    keyID: "0012master"
+    applicationKey: master-secret
+  immich-laptop:
+    keyID: "0034full"
+    applicationKey: full-key-secret
+YAML
+}
 
 cat >"${BIN}/auberge" <<STUB
 #!/usr/bin/env bash
@@ -98,6 +116,7 @@ stage() {
   printf '%s' "${snapshots_rc}" >"${SNAPSHOTS_RC}"
   printf '%s' "${forget_rc}" >"${FORGET_RC}"
   printf '0' >"${PA_RC}"
+  stage_pa_yaml
   local time entries=()
   for time in "$@"; do entries+=("{\"time\": \"${time}\"}"); done
   printf '[%s]\n' "$(
@@ -109,6 +128,7 @@ stage() {
   : >"${AUBERGE_ARGS}"
   : >"${NOTIFY_ARGS}"
   : >"${FORGET_SEEN_PASSWORD}"
+  : >"${FORGET_SEEN_AWS_KEY}"
 }
 
 run_prune() {
@@ -134,12 +154,12 @@ assert_eq 'repository URL and password come from auberge config' \
   'config get immich_restic_repository
 config get immich_restic_password' \
   "$(cat "${AUBERGE_ARGS}")"
-assert_eq 'full B2 key comes from pa' \
-  'show immich/b2-key-id
-show immich/b2-key' \
-  "$(cat "${PA_ARGS}")"
+assert_eq 'full B2 key comes from the backblaze pa entry, decrypted once' \
+  'show backblaze' "$(cat "${PA_ARGS}")"
 assert_eq 'restic sees the password from auberge config' \
   'repo-pass' "$(cat "${FORGET_SEEN_PASSWORD}")"
+assert_eq 'restic sees the application key from the pa yaml' \
+  'full-key-secret' "$(cat "${FORGET_SEEN_AWS_KEY}")"
 
 # ── stale repository: alarm, and retention must not run ──
 
@@ -174,6 +194,13 @@ stage 0 0 "$(hours_ago 6)"
 printf '1' >"${PA_RC}"
 assert_eq 'pa failure exits 2' '2' "$(run_prune)"
 assert_eq 'pa failure touches restic not at all' '' "$(cat "${RESTIC_ARGS}")"
+
+# ── a yaml that lacks the key is the same refusal, not empty credentials ──
+
+stage 0 0 "$(hours_ago 6)"
+printf 'account-web-password\napplicationKeys:\n  master:\n    keyID: "0012master"\n' >"${PA_YAML}"
+assert_eq 'missing applicationKeys entry exits 2' '2' "$(run_prune)"
+assert_eq 'missing applicationKeys entry touches restic not at all' '' "$(cat "${RESTIC_ARGS}")"
 
 # ── environment overrides skip auberge and pa entirely ──
 

@@ -22,12 +22,14 @@
 # Credentials — env vars override; nothing is stored in the unit file:
 #   RESTIC_REPOSITORY      default: auberge config get immich_restic_repository
 #   RESTIC_PASSWORD        default: auberge config get immich_restic_password
-#   AWS_ACCESS_KEY_ID      default: pa show immich/b2-key-id
-#   AWS_SECRET_ACCESS_KEY  default: pa show immich/b2-key
-# The pa entry names are overridable via IMMICH_B2_KEY_ID_PA_ENTRY and
-# IMMICH_B2_KEY_PA_ENTRY, the 48h threshold via IMMICH_SNAPSHOT_MAX_AGE_HOURS.
-# The pa entries must hold the FULL B2 key — the one with deleteFiles — never
-# the box key: retention against the box key fails, which is exactly the
+#   AWS_ACCESS_KEY_ID /    default: the operator's pa `backblaze` entry, whose
+#   AWS_SECRET_ACCESS_KEY  first line is the account password and whose rest is
+#                          YAML — applicationKeys.<name>.{keyID,applicationKey}
+#                          — read via dasel under the name `immich-laptop`
+# The pa entry and key name are overridable via IMMICH_B2_PA_ENTRY and
+# IMMICH_B2_KEY_NAME, the 48h threshold via IMMICH_SNAPSHOT_MAX_AGE_HOURS.
+# That pa key must be the FULL B2 key — the one with deleteFiles — never the
+# box key: retention against the box key fails, which is exactly the
 # capability split #558 exists to prove.
 #
 # Install on the laptop:
@@ -58,8 +60,9 @@
 # repository and watching the run fail with a notification.
 #
 # Prerequisites: restic, jq, GNU date, and — unless every credential is passed
-# via the environment — auberge (configured with the immich keys) and pa
-# (https://github.com/biox/pa) holding the full B2 key.
+# via the environment — auberge (configured with the immich keys), plus pa
+# (https://github.com/biox/pa) and dasel to read the full B2 key out of the
+# backblaze entry's YAML.
 #
 # Exit codes:
 #   0 — backup fresh, retention applied
@@ -76,8 +79,13 @@ readonly PROGRAM_NAME="${0##*/}"
 readonly KEEP_WITHIN='30d'
 readonly KEEP_MONTHLY=12
 readonly MAX_SNAPSHOT_AGE_HOURS="${IMMICH_SNAPSHOT_MAX_AGE_HOURS:-48}"
-readonly B2_KEY_ID_PA_ENTRY="${IMMICH_B2_KEY_ID_PA_ENTRY:-immich/b2-key-id}"
-readonly B2_KEY_PA_ENTRY="${IMMICH_B2_KEY_PA_ENTRY:-immich/b2-key}"
+readonly B2_PA_ENTRY="${IMMICH_B2_PA_ENTRY:-backblaze}"
+readonly B2_KEY_NAME="${IMMICH_B2_KEY_NAME:-immich-laptop}"
+
+# The pa entry's decrypted YAML (first line — the account password — already
+# stripped). Loaded at most once, so both credential fields cost one
+# decryption.
+B2_YAML=''
 
 # die <exit-code> <message> [remediation-line...]
 die() {
@@ -115,10 +123,33 @@ check_prerequisites() {
     || die 2 "IMMICH_SNAPSHOT_MAX_AGE_HOURS must be a positive integer, got: ${MAX_SNAPSHOT_AGE_HOURS}"
 }
 
+# pipefail carries a pa failure through tail, so an undecryptable entry is
+# never read as an empty document.
+load_b2_yaml() {
+  [[ -n "${B2_YAML}" ]] && return 0
+  B2_YAML=$(pa show "${B2_PA_ENTRY}" | tail -n +2) \
+    || die 2 "pa could not read the ${B2_PA_ENTRY} entry" \
+      'pa printed the reason above'
+  [[ -n "${B2_YAML}" ]] \
+    || die 2 "the ${B2_PA_ENTRY} entry holds no YAML below its first line" \
+      'expected: line 1 the account password, then' \
+      'applicationKeys.<name>.{keyID,applicationKey}'
+}
+
+# Bracket selector, not dotted: dasel parses a bare immich-laptop as a
+# subtraction.
+b2_key_field() {
+  printf '%s\n' "${B2_YAML}" \
+    | dasel -i yaml "applicationKeys['${B2_KEY_NAME}'].$1" \
+    || die 2 "no applicationKeys.${B2_KEY_NAME}.$1 in the ${B2_PA_ENTRY} pa entry" \
+      "add the full key under that name: pa edit ${B2_PA_ENTRY}" \
+      'or point IMMICH_B2_KEY_NAME at the name that holds it'
+}
+
 # auberge's config is the same source of truth the deploy templated onto the
 # box, so the repository URL and password cannot drift between the two halves.
 # Only the full B2 key has no place there — the config holds the box key — so
-# it comes from pa.
+# it comes out of the pa entry's YAML.
 resolve_credentials() {
   if [[ -z "${RESTIC_REPOSITORY:-}" ]]; then
     RESTIC_REPOSITORY=$(auberge config get immich_restic_repository) \
@@ -133,16 +164,12 @@ resolve_credentials() {
         'or pass RESTIC_PASSWORD in the environment'
   fi
   if [[ -z "${AWS_ACCESS_KEY_ID:-}" ]]; then
-    AWS_ACCESS_KEY_ID=$(pa show "${B2_KEY_ID_PA_ENTRY}") \
-      || die 2 "pa could not read ${B2_KEY_ID_PA_ENTRY}" \
-        "store the full key's id: pa add ${B2_KEY_ID_PA_ENTRY}" \
-        'or point IMMICH_B2_KEY_ID_PA_ENTRY at the entry that holds it'
+    load_b2_yaml
+    AWS_ACCESS_KEY_ID=$(b2_key_field keyID)
   fi
   if [[ -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-    AWS_SECRET_ACCESS_KEY=$(pa show "${B2_KEY_PA_ENTRY}") \
-      || die 2 "pa could not read ${B2_KEY_PA_ENTRY}" \
-        "store the full key: pa add ${B2_KEY_PA_ENTRY}" \
-        'or point IMMICH_B2_KEY_PA_ENTRY at the entry that holds it'
+    load_b2_yaml
+    AWS_SECRET_ACCESS_KEY=$(b2_key_field applicationKey)
   fi
   export RESTIC_REPOSITORY RESTIC_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 }
