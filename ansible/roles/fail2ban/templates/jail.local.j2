@@ -2,6 +2,7 @@
 bantime = {{ fail2ban_bantime }}
 findtime = {{ fail2ban_findtime }}
 maxretry = {{ fail2ban_maxretry }}
+ignoreip = {{ ['127.0.0.1/8 ::1 100.64.0.0/10', fail2ban_ignoreip_hosts | replace(',', ' '), fail2ban_ignoreip_extra] | select | join(' ') }}
 destemail = root@localhost
 action = %(action_mw)s
 
