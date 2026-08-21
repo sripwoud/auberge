@@ -1331,20 +1331,26 @@ fn resolve_backup_dir(
     }
 }
 
-fn latest_timestamp_dir(host_backup_dir: &Path) -> Result<PathBuf> {
-    let mut timestamps: Vec<_> = fs::read_dir(host_backup_dir)?
+fn sorted_timestamp_entries(host_backup_dir: &Path) -> Result<Vec<fs::DirEntry>> {
+    let mut entries: Vec<_> = fs::read_dir(host_backup_dir)?
         .filter_map(Result::ok)
         .filter(is_backup_timestamp_dir)
         .collect();
 
-    timestamps.sort_by_key(|e| std::cmp::Reverse(e.file_name()));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.file_name()));
+    Ok(entries)
+}
 
-    timestamps.first().map(|e| e.path()).ok_or_else(|| {
-        eyre::eyre!(
-            "No backup timestamps found in {}",
-            host_backup_dir.display()
-        )
-    })
+fn latest_timestamp_dir(host_backup_dir: &Path) -> Result<PathBuf> {
+    sorted_timestamp_entries(host_backup_dir)?
+        .first()
+        .map(|e| e.path())
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "No backup timestamps found in {}",
+                host_backup_dir.display()
+            )
+        })
 }
 
 fn resolve_timestamp_dir(host_backup_dir: &Path, backup_id: &str) -> Result<PathBuf> {
@@ -1362,7 +1368,7 @@ fn resolve_timestamp_dir(host_backup_dir: &Path, backup_id: &str) -> Result<Path
 fn list_restorable_apps(timestamp_dir: &Path) -> Result<Vec<String>> {
     let mut apps: Vec<String> = fs::read_dir(timestamp_dir)?
         .filter_map(Result::ok)
-        .filter(|e| e.path().is_dir())
+        .filter(|e| !e.path().is_symlink() && e.path().is_dir())
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
 
@@ -1376,7 +1382,7 @@ fn select_restore_apps(timestamp_dir: &Path) -> Result<Vec<String>> {
         eyre::bail!("No app backups found in {}", timestamp_dir.display());
     }
 
-    if !std::io::stdin().is_terminal() {
+    if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
         eyre::bail!("Apps are required in non-interactive mode (pass -a <apps>)");
     }
 
@@ -1391,10 +1397,7 @@ fn select_backup_id(host_backup_dir: &Path) -> Result<String> {
         );
     }
 
-    let mut entries: Vec<fs::DirEntry> = fs::read_dir(host_backup_dir)?
-        .filter_map(Result::ok)
-        .filter(is_backup_timestamp_dir)
-        .collect();
+    let entries = sorted_timestamp_entries(host_backup_dir)?;
 
     if entries.is_empty() {
         eyre::bail!(
@@ -1402,8 +1405,6 @@ fn select_backup_id(host_backup_dir: &Path) -> Result<String> {
             host_backup_dir.display()
         );
     }
-
-    entries.sort_by_key(|e| std::cmp::Reverse(e.file_name())); // newest first
 
     let mut options = vec!["latest".to_string()];
     options.extend(
@@ -1927,9 +1928,23 @@ mod tests {
         fs::create_dir(tmp.path().join("actual")).unwrap();
         fs::create_dir(tmp.path().join("baikal")).unwrap();
         fs::write(tmp.path().join("stray-file.txt"), b"not an app").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(tmp.path().join("baikal"), tmp.path().join("linked")).unwrap();
 
         let apps = list_restorable_apps(tmp.path()).unwrap();
         assert_eq!(apps, vec!["actual", "baikal", "navidrome"]);
+    }
+
+    #[test]
+    fn test_resolve_backup_dir_literal_latest_resolves_newest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let host_dir = tmp.path().join("myserver");
+        fs::create_dir(&host_dir).unwrap();
+        fs::create_dir(host_dir.join("2026-03-01_10-00-00")).unwrap();
+        fs::create_dir(host_dir.join("2026-03-09_14-30-00")).unwrap();
+
+        let result = resolve_backup_dir(tmp.path(), Some("myserver"), Some("latest")).unwrap();
+        assert_eq!(result, host_dir.join("2026-03-09_14-30-00"));
     }
 
     #[test]
@@ -1948,8 +1963,8 @@ mod tests {
 
     #[test]
     fn select_restore_apps_errors_in_non_interactive_mode() {
-        // Tests run without a TTY; a destructive restore must never fall back
-        // to an implicit app subset, so the guard demands -a instead.
+        // A destructive restore must never fall back to an implicit app
+        // subset, so without a TTY the guard demands -a instead.
         let tmp = tempfile::tempdir().unwrap();
         fs::create_dir(tmp.path().join("navidrome")).unwrap();
 
