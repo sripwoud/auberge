@@ -85,7 +85,7 @@
       args:
         executable: /bin/bash
       changed_when: true
-      notify: Restart php-fpm
+      notify: Restart baikal php-fpm
 
     - name: Remove Baikal zip file
       when: baikal_installed_version != baikal_version
@@ -120,13 +120,32 @@
         owner: root
         group: root
         mode: "0644"
-      notify: Restart php-fpm
+      register: baikal_fpm_pool
 
     - name: Remove default PHP-FPM pool if it exists
       ansible.builtin.file:
         path: /etc/php/{{ baikal_php_version }}/fpm/pool.d/www.conf
         state: absent
-      notify: Restart php-fpm
+      register: baikal_fpm_default_pool
+
+    - name: Check whether the baikal PHP-FPM pool is listening
+      ansible.builtin.stat:
+        path: "{{ baikal_fpm_socket }}"
+      register: baikal_fpm_socket_probe
+
+    - name: Restart PHP-FPM to load the baikal pool
+      when: >-
+        baikal_fpm_pool is changed
+        or baikal_fpm_default_pool is changed
+        or not baikal_fpm_socket_probe.stat.exists
+      ansible.builtin.systemd_service:
+        name: php{{ baikal_php_version }}-fpm
+        state: restarted
+
+    - name: Wait for the baikal PHP-FPM socket
+      ansible.builtin.wait_for:
+        path: "{{ baikal_fpm_socket }}"
+        timeout: 30
 
     - name: Copy Baikal Caddyfile to sites directory
       ansible.builtin.template:

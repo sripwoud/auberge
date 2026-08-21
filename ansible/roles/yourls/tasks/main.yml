@@ -104,7 +104,7 @@
         owner: "{{ yourls_sys_user }}"
         group: "{{ yourls_sys_group }}"
         mode: "0640"
-      notify: Restart php-fpm
+      notify: Restart yourls php-fpm
 
     - name: Check if YOURLS tables exist # noqa: fqcn[canonical]
       community.mysql.mysql_query:
