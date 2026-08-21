@@ -1,4 +1,4 @@
-- name: Restart php-fpm
+- name: Restart yourls php-fpm
   when: yourls_php_fpm_version is defined
   ansible.builtin.systemd_service:
     name: "php{{ yourls_php_fpm_version }}-fpm"
