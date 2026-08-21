@@ -128,7 +128,7 @@
         cmd: |
           php -r "
             define('YOURLS_INSTALLING', true);
-            require '{{ yourls_install_path }}/includes/load.php';
+            require '{{ yourls_install_path }}/includes/load-yourls.php';
             yourls_create_sql_tables();
             yourls_initialize_options();
           "
