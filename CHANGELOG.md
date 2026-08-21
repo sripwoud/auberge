@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.9](https://github.com/sripwoud/auberge/compare/v0.15.8...v0.15.9) - 2026-08-21
+
+### Fixed
+
+- *(baikal)* load the php-fpm pool by unshadowing the restart handler ([#579](https://github.com/sripwoud/auberge/pull/579))
+- *(backup)* restore every path the staged backup holds ([#578](https://github.com/sripwoud/auberge/pull/578))
+- *(caddy)* fail the deploy when a restart leaves ingress down ([#576](https://github.com/sripwoud/auberge/pull/576))
+- *(backup)* pass memory-budget vars to restore's playbook phase ([#573](https://github.com/sripwoud/auberge/pull/573))
+
+### Other
+
+- *(hermes)* bump to v2026.8.19 ([#577](https://github.com/sripwoud/auberge/pull/577))
+- *(examples)* make the prune script fully tool-agnostic ([#575](https://github.com/sripwoud/auberge/pull/575))
+
 ## [0.15.8](https://github.com/sripwoud/auberge/compare/v0.15.7...v0.15.8) - 2026-08-21
 
 ### Added
