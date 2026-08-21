@@ -1,0 +1,7 @@
+docker_apt_key_url: https://download.docker.com/linux/debian/gpg
+docker_apt_repo_url: https://download.docker.com/linux/debian
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-compose-plugin

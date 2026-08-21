@@ -1,0 +1,7 @@
+immich_install_dir: /opt/immich
+immich_data_dir: /var/lib/immich
+immich_upload_dir: /var/lib/immich/upload
+immich_db_data_dir: /var/lib/immich/postgres
+# Must match the host port published in files/docker-compose.yml.
+immich_port: 2283
+immich_domain: "{{ immich_subdomain }}.{{ domain }}"

@@ -1,0 +1,26 @@
+---
+- name: Install docker engine and compose plugin
+  block:
+    - name: Download Docker apt signing key
+      ansible.builtin.get_url:
+        url: "{{ docker_apt_key_url }}"
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Add Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] {{ docker_apt_repo_url }} {{ ansible_distribution_release }} stable"
+        filename: docker
+        state: present
+
+    - name: Install Docker packages
+      ansible.builtin.apt:
+        name: "{{ docker_packages }}"
+        state: present
+        update_cache: true
+
+    - name: Enable and start Docker service
+      ansible.builtin.systemd_service:
+        name: docker
+        enabled: true
+        state: started

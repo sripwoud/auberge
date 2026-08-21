@@ -1,0 +1,9 @@
+---
+- name: Deploy Immich
+  hosts: vps
+  become: true
+  roles:
+    - role: docker
+      tags: [immich, docker]
+    - role: immich
+      tags: [immich]

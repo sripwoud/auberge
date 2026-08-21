@@ -378,6 +378,19 @@ mod tests {
     }
 
     #[test]
+    fn test_immich_meta_declares_no_backup_recipe() {
+        let meta = load_meta("immich");
+        assert!(!meta.tailnet_only);
+        assert_eq!(meta.subdomain.as_deref(), Some("photos"));
+        assert!(
+            meta.backup.is_none(),
+            "immich offsite backup runs on the Host (#558); a recipe here would \
+             put a nightly multi-GiB stopped-unit pull into `backup sync`'s \
+             default app set"
+        );
+    }
+
+    #[test]
     fn test_tgtg_meta_backup_recipe() {
         let meta = load_meta("tgtg");
         assert!(
@@ -638,6 +651,7 @@ version:
             "grimmory_version",
             "headscale_version",
             "hermes_version",
+            "immich_version",
             "navidrome_version",
             "paperless_version",
             "tgtg_version",

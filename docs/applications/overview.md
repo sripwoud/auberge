@@ -1,6 +1,6 @@
 # Applications Overview
 
-Auberge deploys a curated stack of self-hosted FOSS applications. All services run natively via systemd without Docker overhead.
+Auberge deploys a curated stack of self-hosted FOSS applications. Services run natively via systemd; containers are per-app exceptions granted only when upstream supports nothing else (currently Immich).
 
 ## Infrastructure
 
@@ -31,6 +31,7 @@ Auberge deploys a curated stack of self-hosted FOSS applications. All services r
 | [Calibre](applications/apps/calibre.md)         | Ebook library (alternative to Grimmory) |
 | [Colporteur](applications/apps/colporteur.md)   | Newsletter-to-feed converter            |
 | [FreshRSS](applications/apps/freshrss.md)       | RSS feed aggregator                     |
+| [Immich](applications/apps/immich.md)           | Photo and video management              |
 | [Navidrome](applications/apps/navidrome.md)     | Music streaming server                  |
 | [Paperless-ngx](applications/apps/paperless.md) | Document management system              |
 | [Radio](applications/apps/radio.md)             | Password-gated music streams            |
