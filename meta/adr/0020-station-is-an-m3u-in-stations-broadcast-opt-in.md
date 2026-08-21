@@ -60,7 +60,7 @@ This surfaced a contradiction: `CONTEXT.md:165` asserted that "every App declare
 
 - **Public, unauthenticated.** Rejected on the audience reasoning above.
 
-- **AzuraCast.** A complete station manager with a web UI, which would have answered the curation question outright. Rejected: it is Docker-only, and a container is a per-app exception granted only to an App with no native alternative (`meta/adr.md` §"Native systemd by default", ADR-0025) — the m3u design below is that alternative. It would also drag in MariaDB, Redis and a second reverse proxy.
+- **AzuraCast.** A complete station manager with a web UI, which would have answered the curation question outright. Rejected: it is Docker-only, and a container is a per-app exception granted only to a required App that upstream ships no other way (`meta/adr.md` §"Native systemd by default", ADR-0025) — the m3u design below is why the Radio is not that App. It would also drag in MariaDB, Redis and a second reverse proxy.
 
 ## Consequences
 

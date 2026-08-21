@@ -14,7 +14,7 @@ Auberge is a CLI tool for managing self-hosted infrastructure using Ansible auto
 ## Features
 
 - **Minimal footprint**: Runs on a 2GB RAM VPS (4GB recommended with Grimmory)
-- **Native systemd by default**: Direct services, no container orchestration layer (Immich is the one upstream-forced exception)
+- **Native systemd by default**: Direct services; Immich alone runs containerized, because upstream supports nothing else
 - **Automated deployment**: Ansible playbooks handle everything
 - **Declared versions**: Every app and tool version pinned in the repo, kept fresh by Renovate, with `auberge versions` drift reporting
 - **Built-in backups**: Full backup and restore with cross-host migration

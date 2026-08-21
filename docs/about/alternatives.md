@@ -4,7 +4,7 @@ How Auberge compares to established self-hosting platforms — and why it exists
 
 ## Context
 
-Several platforms make self-hosting accessible: web UIs, one-click installs, app stores. They solve real problems for real users. Auberge takes a different approach — a Rust CLI that drives Ansible playbooks to deploy native systemd services on a minimal VPS. No containers, no web UI, no app store.
+Several platforms make self-hosting accessible: web UIs, one-click installs, app stores. They solve real problems for real users. Auberge takes a different approach — a Rust CLI that drives Ansible playbooks to deploy native systemd services on a minimal VPS. No web UI, no app store, and no containers unless upstream leaves no choice.
 
 This page explains where these platforms excel, where their priorities diverge from Auberge's, and what motivated building something new.
 
@@ -84,7 +84,7 @@ Interesting for a home NAS appliance, but not designed for the VPS use case.
 
 The platforms above solve real problems. Auberge targets a narrower set of priorities:
 
-- **Native services**: systemd services with no container overhead on a 2-4GB VPS
+- **Native services**: systemd services on a 2-4GB VPS; containers only where upstream supports nothing else
 - **Full control**: every service, every config file, every firewall rule
 - **Reproducibility**: if the server dies, `auberge deploy --all` on a fresh box gets you back
 - **Minimal attack surface**: only the services you chose, nothing else

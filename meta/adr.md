@@ -6,33 +6,33 @@ Why Auberge is built the way it is. This file is the curated overview of foundat
 
 One number, one file. Every file in `meta/adr/` is listed here; a number that appears twice is a bug, enforced by `.github/scripts/check-adr-numbering.sh`.
 
-| #    | Decision                                                                                                                                           |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0001 | [Declarative YAML backup recipes, not a Rust trait](./adr/0001-declarative-backup-recipes.md)                                                      |
-| 0002 | [Three small utilities, not a god-runner, for command orchestration](./adr/0002-no-god-runner-for-commands.md)                                     |
-| 0003 | [Tailnet-only Apps publish DNS via Blocky only](./adr/0003-tailnet-only-app-dns.md)                                                                |
-| 0004 | [CLI structured output is `--output {human,json}`](./adr/0004-cli-structured-output.md)                                                            |
-| 0005 | [Substrate Apps live in `infrastructure.yml`](./adr/0005-substrate-apps-in-infrastructure.md)                                                      |
-| 0006 | [Bichon archive feeds the Backup Recipe; internal store is not backed up](./adr/0006-bichon-archive-feeds-backup-recipe.md)                        |
-| 0007 | [Auberge owns folder reconcile; expunge and verification stay external](./adr/0007-auberge-folder-reconcile-scope.md)                              |
-| 0008 | [WebDAV role removed in favor of Gokapi](./adr/0008-webdav-removed-in-favor-of-gokapi.md)                                                          |
-| 0009 | [Gokapi headless first-deploy via templated config](./adr/0009-gokapi-headless-bootstrap.md)                                                       |
-| 0010 | [Baikal Busy Feed — host-sanitized availability, external consumer](./adr/0010-baikal-busy-feed-host-sanitized-external-consumer.md)               |
-| 0011 | [Exclude `rust/cleartext-logging` via advanced CodeQL setup](./adr/0011-suppress-codeql-cleartext-logging-on-cli-stdout.md)                        |
-| 0012 | [Email Archive splits immutable bodies from mutable metadata](./adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md)                 |
-| 0013 | [Archive message identity is the Message-ID, read from the body](./adr/0013-archive-message-identity-is-the-message-id.md)                         |
-| 0014 | [The UIDVALIDITY rebuild alert is a latched failing unit](./adr/0014-uidvalidity-rebuild-alert-is-a-latched-failing-unit.md)                       |
-| 0015 | [The Archive publishes a downloaded body only if it is a message](./adr/0015-archive-publishes-a-body-only-if-it-is-a-message.md)                  |
-| 0016 | [Actual deploys bare-metal from npm; bank sync uses Enable Banking](./adr/0016-actual-bare-metal-npm-enable-banking.md)                            |
-| 0017 | [App Versions are declared in Playbook Meta; Tool Versions stay in role defaults](./adr/0017-app-versions-declared-in-playbook-meta.md)            |
-| 0018 | [Shell completion is static, generated at runtime by a `completions` subcommand](./adr/0018-static-shell-completion-via-completions-subcommand.md) |
-| 0019 | [The Archive's download skip is a Message-ID membership test](./adr/0019-archive-download-skip-is-a-message-id-membership-test.md)                 |
-| 0020 | [A Station is an m3u file in `Stations/`; broadcast is opt-in by directory](./adr/0020-station-is-an-m3u-in-stations-broadcast-opt-in.md)          |
-| 0021 | [Memory Budgets are declared in Playbook Meta](./adr/0021-memory-budgets-declared-in-playbook-meta.md)                                             |
-| 0022 | [The music sync blocklists hidden entries as a class](./adr/0022-music-sync-blocklists-hidden-entries-as-a-class.md)                               |
-| 0023 | [Backup Recipes reference the admin user via a `{admin_user}` placeholder](./adr/0023-admin-user-placeholder-in-backup-recipes.md)                 |
-| 0024 | [Host rename recovers by rerun, never by rollback or history rewrite](./adr/0024-host-rename-recovers-by-rerun.md)                                 |
-| 0025 | [Containers are per-app exceptions granted only when upstream supports nothing else](./adr/0025-containers-are-per-app-exceptions.md)              |
+| #    | Decision                                                                                                                                                       |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0001 | [Declarative YAML backup recipes, not a Rust trait](./adr/0001-declarative-backup-recipes.md)                                                                  |
+| 0002 | [Three small utilities, not a god-runner, for command orchestration](./adr/0002-no-god-runner-for-commands.md)                                                 |
+| 0003 | [Tailnet-only Apps publish DNS via Blocky only](./adr/0003-tailnet-only-app-dns.md)                                                                            |
+| 0004 | [CLI structured output is `--output {human,json}`](./adr/0004-cli-structured-output.md)                                                                        |
+| 0005 | [Substrate Apps live in `infrastructure.yml`](./adr/0005-substrate-apps-in-infrastructure.md)                                                                  |
+| 0006 | [Bichon archive feeds the Backup Recipe; internal store is not backed up](./adr/0006-bichon-archive-feeds-backup-recipe.md)                                    |
+| 0007 | [Auberge owns folder reconcile; expunge and verification stay external](./adr/0007-auberge-folder-reconcile-scope.md)                                          |
+| 0008 | [WebDAV role removed in favor of Gokapi](./adr/0008-webdav-removed-in-favor-of-gokapi.md)                                                                      |
+| 0009 | [Gokapi headless first-deploy via templated config](./adr/0009-gokapi-headless-bootstrap.md)                                                                   |
+| 0010 | [Baikal Busy Feed — host-sanitized availability, external consumer](./adr/0010-baikal-busy-feed-host-sanitized-external-consumer.md)                           |
+| 0011 | [Exclude `rust/cleartext-logging` via advanced CodeQL setup](./adr/0011-suppress-codeql-cleartext-logging-on-cli-stdout.md)                                    |
+| 0012 | [Email Archive splits immutable bodies from mutable metadata](./adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md)                             |
+| 0013 | [Archive message identity is the Message-ID, read from the body](./adr/0013-archive-message-identity-is-the-message-id.md)                                     |
+| 0014 | [The UIDVALIDITY rebuild alert is a latched failing unit](./adr/0014-uidvalidity-rebuild-alert-is-a-latched-failing-unit.md)                                   |
+| 0015 | [The Archive publishes a downloaded body only if it is a message](./adr/0015-archive-publishes-a-body-only-if-it-is-a-message.md)                              |
+| 0016 | [Actual deploys bare-metal from npm; bank sync uses Enable Banking](./adr/0016-actual-bare-metal-npm-enable-banking.md)                                        |
+| 0017 | [App Versions are declared in Playbook Meta; Tool Versions stay in role defaults](./adr/0017-app-versions-declared-in-playbook-meta.md)                        |
+| 0018 | [Shell completion is static, generated at runtime by a `completions` subcommand](./adr/0018-static-shell-completion-via-completions-subcommand.md)             |
+| 0019 | [The Archive's download skip is a Message-ID membership test](./adr/0019-archive-download-skip-is-a-message-id-membership-test.md)                             |
+| 0020 | [A Station is an m3u file in `Stations/`; broadcast is opt-in by directory](./adr/0020-station-is-an-m3u-in-stations-broadcast-opt-in.md)                      |
+| 0021 | [Memory Budgets are declared in Playbook Meta](./adr/0021-memory-budgets-declared-in-playbook-meta.md)                                                         |
+| 0022 | [The music sync blocklists hidden entries as a class](./adr/0022-music-sync-blocklists-hidden-entries-as-a-class.md)                                           |
+| 0023 | [Backup Recipes reference the admin user via a `{admin_user}` placeholder](./adr/0023-admin-user-placeholder-in-backup-recipes.md)                             |
+| 0024 | [Host rename recovers by rerun, never by rollback or history rewrite](./adr/0024-host-rename-recovers-by-rerun.md)                                             |
+| 0025 | [Containers are per-app exceptions, granted only when the App is required and upstream supports nothing else](./adr/0025-containers-are-per-app-exceptions.md) |
 
 ## Native systemd by default
 
@@ -51,7 +51,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 - Less portable across different Linux distributions
 - No application isolation (mitigated by systemd user isolation)
 - Manual dependency management
-- The Docker daemon's 200-300MB is paid on any Host running a granted exception
+- The Docker daemon's overhead is paid on any Host running a granted exception
 
 ## Rust CLI
 

@@ -49,7 +49,7 @@ Feature ideas and directions. Not commitments — items here may become GitHub i
 
 ## Under Consideration
 
-- Podman as the runtime for ADR-0025 container exceptions (rootless, no daemon)
+- Podman instead of the Docker daemon for ADR-0025 exceptions — needs 0025's `docker compose` unit shape amended
 - FreeBSD support
 - Raspberry Pi optimizations
 - Automatic SSL certificate rotation

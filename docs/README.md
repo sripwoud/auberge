@@ -37,6 +37,6 @@ That's it. Auberge configures hardening, infrastructure, and applications.
 
 ## Philosophy
 
-_Selfware_ — direct control, no abstraction layers, no container runtime, transparent operations.
+_Selfware_ — direct control, no abstraction layers, transparent operations.
 
 [GitHub](https://github.com/sripwoud/auberge) · [Issues](https://github.com/sripwoud/auberge/issues) · [Contributing](development/contributing.md)
