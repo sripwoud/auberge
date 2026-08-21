@@ -1,7 +1,11 @@
 required_keys:
   - domain
   - cloudflare_dns_api_token
+  - immich_b2_application_key
+  - immich_b2_key_id
   - immich_db_password
+  - immich_restic_password
+  - immich_restic_repository
   - immich_subdomain
 subdomain: photos
 version:

@@ -1,0 +1,9 @@
+[Unit]
+Description=Immich offsite backup to B2 (restic)
+Requires=immich.service
+After=immich.service
+
+[Service]
+Type=oneshot
+EnvironmentFile={{ immich_backup_env_path }}
+ExecStart={{ immich_backup_script_path }}

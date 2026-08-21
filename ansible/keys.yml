@@ -143,9 +143,25 @@ keys:
     secret: false
     doc: "Hostname to set on the remote server during bootstrap"
 
+  immich_b2_application_key:
+    secret: true
+    doc: "B2 application key the Immich Host backs up with — crippled, created without deleteFiles so a compromised box can add but never destroy (#558)"
+
+  immich_b2_key_id:
+    secret: false
+    doc: "Key ID of the crippled B2 application key the Immich Host backs up with (#558)"
+
   immich_db_password:
     secret: true
     doc: "Password for Immich's PostgreSQL database (containers only; upstream allows only A-Za-z0-9)"
+
+  immich_restic_password:
+    secret: true
+    doc: "Encryption password for Immich's dedicated B2 restic repository"
+
+  immich_restic_repository:
+    secret: false
+    doc: "Immich's dedicated restic repository URL (s3: URL of the B2 bucket, e.g. s3:https://s3.eu-central-003.backblazeb2.com/bucket)"
 
   immich_subdomain:
     secret: false
