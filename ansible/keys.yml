@@ -143,6 +143,14 @@ keys:
     secret: false
     doc: "Hostname to set on the remote server during bootstrap"
 
+  immich_db_password:
+    secret: true
+    doc: "Password for Immich's PostgreSQL database (containers only; upstream allows only A-Za-z0-9)"
+
+  immich_subdomain:
+    secret: false
+    doc: "Subdomain for the Immich photo server"
+
   navidrome_subdomain:
     secret: false
     doc: "Subdomain for the Navidrome music server"

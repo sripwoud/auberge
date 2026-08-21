@@ -461,6 +461,7 @@ mod tests {
             "gokapi",
             "grimmory",
             "headscale",
+            "immich",
             "navidrome",
             "radio",
             "yourls",

@@ -1,0 +1,82 @@
+- name: Install and configure Immich
+  block:
+    - name: Validate required Immich variables are set
+      ansible.builtin.assert:
+        that:
+          - immich_db_password is defined
+          - immich_db_password | length > 0
+          - immich_db_password is match('^[A-Za-z0-9]+$')
+        fail_msg: >-
+          immich_db_password must be set and contain only A-Za-z0-9 — the
+          upstream compose forbids special characters in DB_PASSWORD
+
+    - name: Create Immich directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ immich_install_dir }}"
+        - "{{ immich_data_dir }}"
+        - "{{ immich_upload_dir }}"
+
+    - name: Create Immich database directory
+      ansible.builtin.file:
+        path: "{{ immich_db_data_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Deploy Immich docker compose file
+      ansible.builtin.copy:
+        src: docker-compose.yml
+        dest: "{{ immich_install_dir }}/docker-compose.yml"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart immich
+
+    - name: Deploy Immich environment file
+      ansible.builtin.template:
+        src: immich.env.j2
+        dest: "{{ immich_install_dir }}/.env"
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart immich
+
+    - name: Deploy Immich systemd unit
+      ansible.builtin.template:
+        src: immich.service.j2
+        dest: /etc/systemd/system/immich.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart immich
+
+    - name: Enable and start Immich service
+      ansible.builtin.systemd_service:
+        name: immich
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Deploy Immich Caddyfile
+      ansible.builtin.template:
+        src: Caddyfile.j2
+        dest: "/etc/caddy/sites/{{ immich_domain }}.caddyfile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart caddy
+
+    - name: Ensure Cloudflare DNS A record exists for {{ immich_subdomain + '.' + domain }}
+      ansible.builtin.include_role:
+        name: dns_record
+      vars:
+        dns_record_subdomain: "{{ immich_subdomain }}"
+        dns_record_domain: "{{ domain }}"
+        dns_record_cloudflare_api_token: "{{ cloudflare_dns_api_token }}"

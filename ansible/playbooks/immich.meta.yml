@@ -1,0 +1,11 @@
+required_keys:
+  - domain
+  - cloudflare_dns_api_token
+  - immich_db_password
+  - immich_subdomain
+subdomain: photos
+version:
+  value: "3.1.0"
+  datasource: github-releases
+  depName: "immich-app/immich"
+  extractVersion: "^v(?<version>.+)$"

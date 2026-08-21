@@ -421,6 +421,7 @@ mod tests {
             "calibre",
             "gokapi",
             "hermes",
+            "immich",
             "remove-radicale",
             "vibecoder",
         ] {
