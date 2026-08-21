@@ -83,6 +83,10 @@ keys:
     secret: false
     doc: "Primary domain name used for all services (e.g. example.com)"
 
+  fail2ban_ignoreip_extra:
+    secret: false
+    doc: "Space-separated operator IPs/CIDRs fail2ban must never ban (optional); loopback, tailnet CGNAT, and Inventory host IPs are always ignored."
+
   freshrss_subdomain:
     secret: false
     doc: "Subdomain for the FreshRSS feed reader"

@@ -4,6 +4,12 @@ fail2ban_bantime: 3600
 fail2ban_findtime: 600
 fail2ban_maxretry: 5
 
+# Never-ban lists appended to the built-in loopback + tailnet CGNAT ranges.
+# hosts: comma-separated Inventory host IPs, injected by the CLI.
+# extra: operator-supplied space-separated IPs/CIDRs from config.toml.
+fail2ban_ignoreip_hosts: ""
+fail2ban_ignoreip_extra: ""
+
 # SSH jail settings
 fail2ban_ssh_maxretry: 3
 fail2ban_ssh_bantime: 7200
