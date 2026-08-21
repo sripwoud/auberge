@@ -130,7 +130,7 @@ pub enum BackupCommands {
             short,
             long,
             value_delimiter = ',',
-            help = "Apps to restore (actual,baikal,bichon,freshrss,gokapi,headscale,navidrome,calibre,yourls,paperless). Default: all"
+            help = "Apps to restore (default: pick from the apps present in the backup)"
         )]
         apps: Option<Vec<String>>,
         #[arg(
@@ -692,58 +692,28 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         None => select_backup_id(&host_backup_dir)?,
     };
 
+    let timestamp_dir = resolve_timestamp_dir(&host_backup_dir, &backup_id)?;
+
+    let app_names = match opts.apps {
+        Some(apps) => apps,
+        None => select_restore_apps(&timestamp_dir)?,
+    };
+
     let ssh_key_path = resolve_ssh_key_path(&host, opts.ssh_key)?;
     eprintln!("Using SSH key: {}", ssh_key_path.display());
-
-    let app_names = opts.apps.unwrap_or_else(|| {
-        vec![
-            "baikal".to_string(),
-            "freshrss".to_string(),
-            "gokapi".to_string(),
-            "navidrome".to_string(),
-            "calibre".to_string(),
-            "yourls".to_string(),
-        ]
-    });
 
     let mut restore_plan = Vec::new();
 
     for app_name in &app_names {
-        let backup_path = if backup_id == "latest" {
-            let mut timestamps: Vec<_> = fs::read_dir(&host_backup_dir)?
-                .filter_map(Result::ok)
-                .filter(is_backup_timestamp_dir)
-                .collect();
-
-            timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
-
-            let latest_timestamp = timestamps.first();
-
-            if let Some(timestamp_entry) = latest_timestamp {
-                let app_path = timestamp_entry.path().join(app_name);
-                if !app_path.exists() {
-                    eprintln!(
-                        "⚠ No backup found for {} in latest backup, skipping",
-                        app_name
-                    );
-                    continue;
-                }
-                app_path
-            } else {
-                eprintln!("⚠ No backups found for {}, skipping", app_name);
-                continue;
-            }
-        } else {
-            let backup_path = host_backup_dir.join(&backup_id).join(app_name);
-            if !backup_path.exists() {
-                eprintln!(
-                    "⚠ Backup {} not found for {}, skipping",
-                    backup_id, app_name
-                );
-                continue;
-            }
-            backup_path
-        };
+        let backup_path = timestamp_dir.join(app_name);
+        if !backup_path.exists() {
+            eprintln!(
+                "⚠ No backup found for {} in {}, skipping",
+                app_name,
+                timestamp_dir.display()
+            );
+            continue;
+        }
 
         restore_plan.push((app_name.clone(), backup_path));
     }
@@ -1356,27 +1326,62 @@ fn resolve_backup_dir(
     };
 
     match backup_id {
-        Some(id) => {
-            let dir = host_dir.join(id);
-            if !dir.exists() {
-                eyre::bail!("Backup not found: {}", dir.display());
-            }
-            Ok(dir)
-        }
-        None => {
-            let mut timestamps: Vec<_> = fs::read_dir(&host_dir)?
-                .filter_map(Result::ok)
-                .filter(is_backup_timestamp_dir)
-                .collect();
-
-            timestamps.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
-
-            timestamps
-                .first()
-                .map(|e| e.path())
-                .ok_or_else(|| eyre::eyre!("No backup timestamps found in {}", host_dir.display()))
-        }
+        Some(id) => resolve_timestamp_dir(&host_dir, id),
+        None => latest_timestamp_dir(&host_dir),
     }
+}
+
+fn latest_timestamp_dir(host_backup_dir: &Path) -> Result<PathBuf> {
+    let mut timestamps: Vec<_> = fs::read_dir(host_backup_dir)?
+        .filter_map(Result::ok)
+        .filter(is_backup_timestamp_dir)
+        .collect();
+
+    timestamps.sort_by_key(|e| std::cmp::Reverse(e.file_name()));
+
+    timestamps.first().map(|e| e.path()).ok_or_else(|| {
+        eyre::eyre!(
+            "No backup timestamps found in {}",
+            host_backup_dir.display()
+        )
+    })
+}
+
+fn resolve_timestamp_dir(host_backup_dir: &Path, backup_id: &str) -> Result<PathBuf> {
+    if backup_id == "latest" {
+        return latest_timestamp_dir(host_backup_dir);
+    }
+
+    let dir = host_backup_dir.join(backup_id);
+    if !dir.exists() {
+        eyre::bail!("Backup not found: {}", dir.display());
+    }
+    Ok(dir)
+}
+
+fn list_restorable_apps(timestamp_dir: &Path) -> Result<Vec<String>> {
+    let mut apps: Vec<String> = fs::read_dir(timestamp_dir)?
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+
+    apps.sort();
+    Ok(apps)
+}
+
+fn select_restore_apps(timestamp_dir: &Path) -> Result<Vec<String>> {
+    let apps = list_restorable_apps(timestamp_dir)?;
+    if apps.is_empty() {
+        eyre::bail!("No app backups found in {}", timestamp_dir.display());
+    }
+
+    if !std::io::stdin().is_terminal() {
+        eyre::bail!("Apps are required in non-interactive mode (pass -a <apps>)");
+    }
+
+    crate::prompt::select_multi(&apps, "Select apps to restore")
+        .ok_or_else(|| eyre::eyre!("No apps selected"))
 }
 
 fn select_backup_id(host_backup_dir: &Path) -> Result<String> {
@@ -1875,6 +1880,82 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn resolve_timestamp_dir_latest_picks_newest() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("2026-03-01_10-00-00")).unwrap();
+        fs::create_dir(tmp.path().join("2026-03-09_14-30-00")).unwrap();
+
+        let dir = resolve_timestamp_dir(tmp.path(), "latest").unwrap();
+        assert_eq!(dir, tmp.path().join("2026-03-09_14-30-00"));
+    }
+
+    #[test]
+    fn resolve_timestamp_dir_latest_errors_without_timestamps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = resolve_timestamp_dir(tmp.path(), "latest")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("No backup timestamps found"), "{err}");
+    }
+
+    #[test]
+    fn resolve_timestamp_dir_joins_specific_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ts = tmp.path().join("2026-03-09_14-30-00");
+        fs::create_dir(&ts).unwrap();
+
+        let dir = resolve_timestamp_dir(tmp.path(), "2026-03-09_14-30-00").unwrap();
+        assert_eq!(dir, ts);
+    }
+
+    #[test]
+    fn resolve_timestamp_dir_errors_on_missing_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = resolve_timestamp_dir(tmp.path(), "2026-01-01_00-00-00")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Backup not found"), "{err}");
+    }
+
+    #[test]
+    fn list_restorable_apps_returns_sorted_app_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("navidrome")).unwrap();
+        fs::create_dir(tmp.path().join("actual")).unwrap();
+        fs::create_dir(tmp.path().join("baikal")).unwrap();
+        fs::write(tmp.path().join("stray-file.txt"), b"not an app").unwrap();
+
+        let apps = list_restorable_apps(tmp.path()).unwrap();
+        assert_eq!(apps, vec!["actual", "baikal", "navidrome"]);
+    }
+
+    #[test]
+    fn list_restorable_apps_is_empty_for_empty_backup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let apps = list_restorable_apps(tmp.path()).unwrap();
+        assert!(apps.is_empty());
+    }
+
+    #[test]
+    fn select_restore_apps_errors_when_backup_holds_no_apps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = select_restore_apps(tmp.path()).unwrap_err().to_string();
+        assert!(err.contains("No app backups found"), "{err}");
+    }
+
+    #[test]
+    fn select_restore_apps_errors_in_non_interactive_mode() {
+        // Tests run without a TTY; a destructive restore must never fall back
+        // to an implicit app subset, so the guard demands -a instead.
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("navidrome")).unwrap();
+
+        let err = select_restore_apps(tmp.path()).unwrap_err().to_string();
+        assert!(err.contains("non-interactive mode"), "{err}");
+        assert!(err.contains("-a"), "{err}");
     }
 
     #[test]

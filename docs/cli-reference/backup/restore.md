@@ -16,20 +16,20 @@ auberge backup restore [OPTIONS] [BACKUP_ID]
 
 ## Options
 
-| Option                   | Description                             | Default                           |
-| ------------------------ | --------------------------------------- | --------------------------------- |
-| `-H, --host HOST`        | Target host                             | Interactive                       |
-| `-F, --from-host HOST`   | Source host (cross-host migration)      | Same as target                    |
-| `-a, --apps APPS`        | Apps to restore (comma-separated)       | All in backup                     |
-| `-k, --ssh-key PATH`     | SSH private key                         | `~/.ssh/identities/{host}/{user}` |
-| `-n, --dry-run`          | Preview without restoring               | false                             |
-| `-y, --yes`              | Skip confirmation prompt                | false                             |
-| `--skip-playbook-unsafe` | Skip Ansible playbook run after restore | false                             |
+| Option                   | Description                             | Default                                                              |
+| ------------------------ | --------------------------------------- | -------------------------------------------------------------------- |
+| `-H, --host HOST`        | Target host                             | Interactive                                                          |
+| `-F, --from-host HOST`   | Source host (cross-host migration)      | Same as target                                                       |
+| `-a, --apps APPS`        | Apps to restore (comma-separated)       | Prompt (pick from apps in the backup); required when non-interactive |
+| `-k, --ssh-key PATH`     | SSH private key                         | `~/.ssh/identities/{host}/{user}`                                    |
+| `-n, --dry-run`          | Preview without restoring               | false                                                                |
+| `-y, --yes`              | Skip confirmation prompt                | false                                                                |
+| `--skip-playbook-unsafe` | Skip Ansible playbook run after restore | false                                                                |
 
 ## Examples
 
 ```bash
-auberge backup restore latest --host myserver              # restore all apps
+auberge backup restore latest --host myserver              # prompts to pick apps
 auberge backup restore latest --host myserver --apps baikal,freshrss
 auberge backup restore 2024-01-27_14-30-00 --host myserver
 auberge backup restore latest --host newserver --from-host oldserver  # migration
