@@ -128,24 +128,24 @@
         state: absent
       register: baikal_fpm_default_pool
 
-    - name: Check whether the baikal PHP-FPM pool is listening
+    - name: Check for the Baikal PHP-FPM socket
       ansible.builtin.stat:
         path: "{{ baikal_fpm_socket }}"
       register: baikal_fpm_socket_probe
 
-    - name: Restart PHP-FPM to load the baikal pool
+    - name: Restart PHP-FPM to load the Baikal pool
       when: >-
         baikal_fpm_pool is changed
         or baikal_fpm_default_pool is changed
-        or not baikal_fpm_socket_probe.stat.exists
+        or not (baikal_fpm_socket_probe.stat.issock | default(false))
       ansible.builtin.systemd_service:
         name: php{{ baikal_php_version }}-fpm
         state: restarted
 
-    - name: Wait for the baikal PHP-FPM socket
+    - name: Wait for the Baikal PHP-FPM socket
       ansible.builtin.wait_for:
         path: "{{ baikal_fpm_socket }}"
-        timeout: 30
+        timeout: 10
 
     - name: Copy Baikal Caddyfile to sites directory
       ansible.builtin.template:

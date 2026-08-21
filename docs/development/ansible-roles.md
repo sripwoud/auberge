@@ -98,7 +98,8 @@ See [ADR-0017](https://github.com/sripwoud/auberge/blob/master/meta/adr/0017-app
 
 - Use `ansible.builtin.*` modules (idempotent)
 - Avoid raw commands unless necessary
-- Use handlers for service restarts
+- Use handlers for service restarts; restart inline when the app cannot serve until the unit reloads, and assert the result in the same play
+- Name handlers per role (`Restart baikal php-fpm`): handler names share one namespace per play, so a duplicate is silently shadowed by the last role loaded
 - Template config files with variables
 - Tag roles appropriately
 - Include `dns_record` role for web-accessible apps with a public subdomain
