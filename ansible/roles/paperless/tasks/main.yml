@@ -216,6 +216,7 @@
               - --strip-components=1
             owner: "{{ paperless_sys_user }}"
             group: "{{ paperless_sys_group }}"
+          notify: Restart all paperless services
 
         - name: Remove tarball
           ansible.builtin.file:
@@ -348,7 +349,6 @@
         owner: "{{ paperless_sys_user }}"
         group: "{{ paperless_sys_group }}"
         mode: "0644"
-      notify: Restart all paperless services
 
     - name: Display deployment summary
       ansible.builtin.debug:
