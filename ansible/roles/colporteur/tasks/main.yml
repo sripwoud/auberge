@@ -53,6 +53,11 @@
         path: "{{ colporteur_install_path }}/version"
       register: colporteur_version_file
 
+    - name: Check if Colporteur binary exists
+      ansible.builtin.stat:
+        path: "{{ colporteur_binary_path }}"
+      register: colporteur_binary_stat
+
     - name: Read installed Colporteur version
       when: colporteur_version_file.stat.exists
       ansible.builtin.slurp:
@@ -63,7 +68,8 @@
       ansible.builtin.set_fact:
         colporteur_installed_version: >-
           {{ colporteur_installed_version_raw.content | b64decode | trim
-             if colporteur_version_file.stat.exists else '' }}
+             if colporteur_version_file.stat.exists and colporteur_binary_stat.stat.exists
+             else '' }}
 
     - name: Fetch Colporteur binary checksum
       when: colporteur_installed_version != colporteur_version

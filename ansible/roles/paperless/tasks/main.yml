@@ -153,6 +153,11 @@
         path: "{{ paperless_install_path }}/version"
       register: paperless_version_file
 
+    - name: Check installed source tree
+      ansible.builtin.stat:
+        path: "{{ paperless_src_dir }}/manage.py"
+      register: paperless_source_stat
+
     - name: Read installed version
       when: paperless_version_file.stat.exists
       ansible.builtin.slurp:
@@ -163,7 +168,8 @@
       ansible.builtin.set_fact:
         paperless_installed_version: >-
           {{ paperless_installed_version_raw.content | b64decode | trim
-             if paperless_version_file.stat.exists else '' }}
+             if paperless_version_file.stat.exists and paperless_source_stat.stat.exists
+             else '' }}
 
     - name: Create directories
       ansible.builtin.file:
