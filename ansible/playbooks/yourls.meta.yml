@@ -7,3 +7,7 @@ version:
 backup:
   paths: [/var/www/yourls]
   owner: [www-data, www-data]
+  db:
+    name: yourls
+    engine: mariadb
+    dump_path: /tmp/yourls_db.dump

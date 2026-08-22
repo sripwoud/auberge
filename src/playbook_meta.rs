@@ -474,6 +474,27 @@ mod tests {
             backup.owner,
             Some(("www-data".to_string(), "www-data".to_string()))
         );
+        let db = backup.db.expect("yourls declares db");
+        assert_eq!(db.name, "yourls");
+        assert_eq!(db.engine, DbEngine::Mariadb);
+        assert_eq!(db.dump_path, "/tmp/yourls_db.dump");
+    }
+
+    #[test]
+    fn test_grimmory_meta_backup_recipe() {
+        let backup = load_meta("grimmory")
+            .backup
+            .expect("grimmory.meta.yml should declare backup");
+        assert_eq!(backup.systemd_services, vec!["grimmory"]);
+        assert_eq!(backup.paths, vec!["/srv/grimmory"]);
+        assert_eq!(
+            backup.owner,
+            Some(("grimmory".to_string(), "grimmory".to_string()))
+        );
+        let db = backup.db.expect("grimmory declares db");
+        assert_eq!(db.name, "grimmory");
+        assert_eq!(db.engine, DbEngine::Mariadb);
+        assert_eq!(db.dump_path, "/tmp/grimmory_db.dump");
     }
 
     #[test]
