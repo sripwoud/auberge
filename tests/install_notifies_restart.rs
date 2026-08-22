@@ -529,12 +529,14 @@ fn test_a_version_bump_restarts_everything_that_runs_the_artifact() {
 /// is what subjects it to the fence, and a role dropping off the list is a
 /// coverage regression rather than a passing suite.
 ///
-/// `baikal` is the one role in this shape the model cannot reach, and it is a
-/// property of the App rather than a hole in the scan: Baikal is served by the
-/// system's php-fpm, installed by apt, so the role templates no unit for what
-/// runs its release -- only its two sync timers, which are `oneshot`. Its
-/// `Install Baikal release` notifies `Restart baikal php-fpm` today and nothing
-/// here would notice if it stopped.
+/// Two roles in this shape the model cannot reach, both by a property of the
+/// App rather than a hole in the scan. `baikal` is served by the system's
+/// php-fpm, installed by apt, so the role templates no unit for what runs its
+/// release -- only its two sync timers, which are `oneshot`. `hermes` is
+/// doubly out: what its unit execs is a venv built by a `command`, which names
+/// no dest to follow, and the unit itself is a systemd *user* unit under
+/// `~/.config/systemd/user`. Both notify their restart today; nothing here
+/// would notice if either stopped.
 const REPLACING_ROLES: &[&str] = &[
     "bichon",
     "blocky",
