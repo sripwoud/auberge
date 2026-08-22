@@ -481,11 +481,17 @@ mod tests {
         assert!(cmd.contains("manage.py migrate"));
 
         let install_path = role_default("paperless", "paperless_install_path");
-        assert!(cmd.contains(&format!("cd {install_path}/src")));
-        assert!(cmd.contains(&format!(
+        let boundary = "sudo -u paperless bash -c '";
+        assert!(
+            cmd.starts_with(boundary) && cmd.ends_with('\''),
+            "the whole command must sit inside the sudo boundary (#608): {cmd}"
+        );
+        let inside = &cmd[boundary.len()..cmd.len() - 1];
+        assert!(inside.contains(&format!("cd {install_path}/src")));
+        assert!(inside.contains(&format!(
             "PAPERLESS_CONFIGURATION_PATH={install_path}/paperless.conf"
         )));
-        assert!(cmd.contains(&format!("{install_path}/venv/bin/python3")));
+        assert!(inside.contains(&format!("{install_path}/venv/bin/python3")));
     }
 
     #[test]
@@ -758,7 +764,7 @@ backup:
   db:
     name: paperless
     dump_path: /tmp/paperless_db.dump
-  post_restore_command: "cd /opt/paperless/src && sudo -u paperless ./manage.py migrate"
+  post_restore_command: "sudo -u paperless bash -c 'cd /opt/paperless/src && ./manage.py migrate'"
 "#;
         let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
         let backup = meta.backup.unwrap();
@@ -998,6 +1004,57 @@ memory:
                     "{app}: {unit} declares high {} above max {}",
                     budget.high,
                     budget.max
+                );
+            }
+        }
+    }
+
+    /// The shell name a token assigns to, if the token is a `NAME=value`
+    /// environment prefix.
+    fn env_assignment(token: &str) -> Option<&str> {
+        let (name, _) = token.split_once('=')?;
+        let mut chars = name.chars();
+        let first = chars.next()?;
+        if !first.is_ascii_alphabetic() && first != '_' {
+            return None;
+        }
+        chars
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            .then_some(name)
+    }
+
+    /// Everything a `post_restore_command` places to the left of its `sudo`
+    /// runs as the ssh user, before the privilege boundary exists: a `cd` into
+    /// an App's `0750` tree is denied on directory traversal, and an `ENV=value`
+    /// prefix is wiped by sudo's `env_reset` before the App ever reads it. Both
+    /// fired on the first real cross-host paperless restore (#608), where the
+    /// data landed and only `manage.py migrate` never ran. Recipes are pure
+    /// data, so the fence is this lint: put the whole command inside the sudo
+    /// boundary — `sudo -u <app> bash -c '<cd && ENV=… cmd>'`. A Recipe naming
+    /// no `sudo` at all is unprivileged end to end, so the whole command is
+    /// read as the left side and the same two rules apply.
+    #[test]
+    fn test_post_restore_commands_keep_privileged_work_inside_the_sudo_boundary() {
+        for (app, meta) in load_all_metas(&playbooks_dir()).unwrap() {
+            let Some(cmd) = meta.backup.and_then(|backup| backup.post_restore_command) else {
+                continue;
+            };
+            let unprivileged = cmd
+                .split_whitespace()
+                .take_while(|token| *token != "sudo" && !token.ends_with("/sudo"));
+            for token in unprivileged {
+                assert_ne!(
+                    token, "cd",
+                    "{app}: post_restore_command runs `cd` as the ssh user before sudo — \
+                     traversing a 0750 App directory is denied. Wrap the whole command: \
+                     sudo -u <app> bash -c '<cd … && …>'. Got: {cmd}"
+                );
+                assert_eq!(
+                    env_assignment(token),
+                    None,
+                    "{app}: post_restore_command sets {token} outside sudo — env_reset \
+                     strips it before the App reads it. Wrap the whole command: \
+                     sudo -u <app> bash -c '<… ENV=value …>'. Got: {cmd}"
                 );
             }
         }

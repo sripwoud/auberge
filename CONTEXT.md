@@ -92,7 +92,7 @@ The declarative `memory:` section of a Playbook Meta, keyed by systemd unit name
 _Avoid_: Memory limit (systemd's vocabulary distinguishes high from max), quota, resource cap (unqualified).
 
 **Backup Recipe**:
-The declarative `backup:` section of a Playbook Meta describing how to back up the App: services to stop, paths to rsync, optional database dump, optional `post_restore_command`. Pure data — no imperative branching; the one late-bound value is the `{admin_user}` placeholder, substituted with the Host's user at load time so a Recipe can name per-user units and home paths (syncthing, ADR-0023). Most Recipes capture an App's on-disk state directly; for Bichon the Recipe rsyncs an **Email Archive** instead, see ADR-0006.
+The declarative `backup:` section of a Playbook Meta describing how to back up the App: services to stop, paths to rsync, optional database dump, optional `post_restore_command`. Pure data — no imperative branching; the one late-bound value is the `{admin_user}` placeholder, substituted with the Host's user at load time so a Recipe can name per-user units and home paths (syncthing, ADR-0023). A `post_restore_command` reaches the Host through the ssh user's shell, so everything it needs privilege for — a `cd` into the App's `0750` tree, an env var the App reads past sudo's `env_reset` — belongs inside the sudo boundary, `sudo -u <app> bash -c '…'`: the first real cross-host paperless restore landed every byte and skipped only the migration for want of it (#608). Most Recipes capture an App's on-disk state directly; for Bichon the Recipe rsyncs an **Email Archive** instead, see ADR-0006.
 _Avoid_: Backup config, backup plan, strategy
 
 **Recipe Executor**:
