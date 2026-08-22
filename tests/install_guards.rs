@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -527,4 +527,173 @@ fn test_the_artifact_path_has_one_definition() {
             spec.artifact_var
         );
     }
+}
+
+fn all_roles() -> Vec<String> {
+    let mut roles: Vec<String> =
+        fs::read_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible/roles"))
+            .expect("ansible/roles must exist")
+            .flatten()
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .collect();
+    roles.sort();
+    roles
+}
+
+/// Every task in the role, across all of its task files. Order is meaningless
+/// here, so this is for membership questions only.
+fn every_task(role: &str) -> Vec<Task> {
+    let mut files: Vec<PathBuf> = fs::read_dir(role_dir(role).join("tasks"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| path.extension().is_some_and(|ext| ext == "yml"))
+                .collect()
+        })
+        .unwrap_or_default();
+    files.sort();
+    let mut tasks = Vec::new();
+    for file in files {
+        let raw = fs::read_to_string(&file).expect("a listed task file must be readable");
+        let parsed: Sequence = serde_yaml::from_str(&raw)
+            .unwrap_or_else(|e| panic!("{} must parse: {e}", file.display()));
+        flatten(&parsed, &[], &mut tasks);
+    }
+    tasks
+}
+
+/// Paths whose contents the role authors: a `copy` rendering inline `content:`,
+/// or a `template`. A `copy` from a `src:` carries bytes from somewhere else, so
+/// its destination is an artifact, not a note -- which is what separates
+/// headscale's binary (copied from /tmp) from its version marker.
+fn authored_paths(tasks: &[Task]) -> BTreeSet<String> {
+    let mut paths = BTreeSet::new();
+    for task in tasks {
+        let copy_note = task
+            .body
+            .get(Value::from("ansible.builtin.copy"))
+            .filter(|copy| copy.get("content").is_some())
+            .and_then(|copy| copy.get("dest"));
+        let templated = task
+            .body
+            .get(Value::from("ansible.builtin.template"))
+            .and_then(|template| template.get("dest"));
+        for dest in [copy_note, templated].into_iter().flatten() {
+            if let Some(dest) = dest.as_str() {
+                paths.insert(dest.to_string());
+            }
+        }
+    }
+    paths
+}
+
+/// A role reading an installed version out of a file it wrote itself, and
+/// whether that reading also consults something the role did not write.
+struct MarkerFact {
+    role: String,
+    key: String,
+    marker: String,
+    grounded_in: Option<String>,
+}
+
+fn marker_facts() -> Vec<MarkerFact> {
+    let mut facts = Vec::new();
+    for role in all_roles() {
+        let tasks = every_task(&role);
+        let authored = authored_paths(&tasks);
+
+        let notes: BTreeMap<String, String> = tasks
+            .iter()
+            .filter_map(|task| {
+                let src = string_at(&task.body, &["ansible.builtin.slurp", "src"])?;
+                let register = register(&task.body)?;
+                authored.contains(&src).then_some((register, src))
+            })
+            .collect();
+        if notes.is_empty() {
+            continue;
+        }
+
+        let unauthored_stats: Vec<(String, String)> = tasks
+            .iter()
+            .filter_map(|task| {
+                let path = string_at(&task.body, &["ansible.builtin.stat", "path"])?;
+                let register = register(&task.body)?;
+                (!authored.contains(&path)).then_some((register, path))
+            })
+            .collect();
+
+        for task in &tasks {
+            let Some(Value::Mapping(assignments)) =
+                task.body.get(Value::from("ansible.builtin.set_fact"))
+            else {
+                continue;
+            };
+            for (key, expression) in assignments {
+                let (Some(key), Some(expression)) = (key.as_str(), expression.as_str()) else {
+                    continue;
+                };
+                if !key.ends_with("_installed_version") {
+                    continue;
+                }
+                let Some(marker) = notes
+                    .iter()
+                    .find(|(register, _)| expression.contains(*register))
+                    .map(|(_, src)| src.clone())
+                else {
+                    continue;
+                };
+                facts.push(MarkerFact {
+                    role: role.clone(),
+                    key: key.to_string(),
+                    marker,
+                    grounded_in: unauthored_stats
+                        .iter()
+                        .find(|(register, _)| expression.contains(register))
+                        .map(|(_, path)| path.clone()),
+                });
+            }
+        }
+    }
+    facts
+}
+
+/// The fence. A role that reads its installed version out of a file it wrote
+/// itself has recorded intent, not reality; it must also consult something it
+/// did not write. Fails the build when a new role reintroduces the marker-only
+/// guard, so this cannot be filed a fourth time.
+#[test]
+fn test_no_installed_version_trusts_only_a_note_the_role_wrote() {
+    let ungrounded: Vec<String> = marker_facts()
+        .iter()
+        .filter(|fact| fact.grounded_in.is_none())
+        .map(|fact| format!("{}: {} trusts only {}", fact.role, fact.key, fact.marker))
+        .collect();
+    assert!(
+        ungrounded.is_empty(),
+        "a version marker records what the role once installed, not what is installed now. \
+         Stat the artifact and fold it into the fact:\n  {}",
+        ungrounded.join("\n  ")
+    );
+}
+
+/// Keeps MARKER_ROLES honest. A new role on the marker regime has to be
+/// declared here, which is what subjects it to the assertions above -- the
+/// sentinel, the unit grounding, the single defaults definition and the four
+/// install scenarios.
+#[test]
+fn test_every_marker_role_is_covered_by_this_test() {
+    let detected: BTreeSet<String> = marker_facts()
+        .iter()
+        .map(|fact| fact.role.clone())
+        .collect();
+    let declared: BTreeSet<String> = MARKER_ROLES
+        .iter()
+        .map(|spec| spec.role.to_string())
+        .collect();
+    assert_eq!(
+        detected, declared,
+        "roles reading an installed version from their own marker must be declared in MARKER_ROLES"
+    );
 }
