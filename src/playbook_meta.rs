@@ -481,11 +481,17 @@ mod tests {
         assert!(cmd.contains("manage.py migrate"));
 
         let install_path = role_default("paperless", "paperless_install_path");
-        assert!(cmd.contains(&format!("cd {install_path}/src")));
-        assert!(cmd.contains(&format!(
+        let inside = cmd
+            .strip_prefix("sudo -u paperless bash -c '")
+            .and_then(|rest| rest.strip_suffix('\''))
+            .unwrap_or_else(|| {
+                panic!("the whole command must sit inside the sudo boundary (#608): {cmd}")
+            });
+        assert!(inside.contains(&format!("cd {install_path}/src")));
+        assert!(inside.contains(&format!(
             "PAPERLESS_CONFIGURATION_PATH={install_path}/paperless.conf"
         )));
-        assert!(cmd.contains(&format!("{install_path}/venv/bin/python3")));
+        assert!(inside.contains(&format!("{install_path}/venv/bin/python3")));
     }
 
     #[test]
@@ -758,7 +764,7 @@ backup:
   db:
     name: paperless
     dump_path: /tmp/paperless_db.dump
-  post_restore_command: "cd /opt/paperless/src && sudo -u paperless ./manage.py migrate"
+  post_restore_command: "sudo -u paperless bash -c 'cd /opt/paperless/src && ./manage.py migrate'"
 "#;
         let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
         let backup = meta.backup.unwrap();
@@ -1001,6 +1007,147 @@ memory:
                 );
             }
         }
+    }
+
+    /// The shell name a token assigns to, if the token is a `NAME=value`
+    /// environment prefix.
+    fn env_assignment(token: &str) -> Option<&str> {
+        let (name, _) = token.split_once('=')?;
+        let mut chars = name.chars();
+        let first = chars.next()?;
+        if !first.is_ascii_alphabetic() && first != '_' {
+            return None;
+        }
+        chars
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            .then_some(name)
+    }
+
+    /// The command as the ssh user's own shell sees it: the `&&`/`||`/`;`/`|`
+    /// separated segments it runs in sequence, each split into tokens. Quoted
+    /// spans stay inside their token, because a `bash -c '…'` body is one
+    /// argument to sudo — opaque to the outer shell, and already inside
+    /// whatever boundary precedes it.
+    fn shell_segments(cmd: &str) -> Vec<Vec<String>> {
+        let chars: Vec<char> = cmd.chars().collect();
+        let mut segments = vec![Vec::new()];
+        let mut token = String::new();
+        let mut quote: Option<char> = None;
+        let mut i = 0;
+
+        while i < chars.len() {
+            let c = chars[i];
+            i += 1;
+            match quote {
+                Some(open) if c == open => quote = None,
+                Some(_) => token.push(c),
+                None if c == '\'' || c == '"' => quote = Some(c),
+                None if c.is_whitespace() || matches!(c, ';' | '&' | '|') => {
+                    if !token.is_empty() {
+                        segments
+                            .last_mut()
+                            .unwrap()
+                            .push(std::mem::take(&mut token));
+                    }
+                    if matches!(c, ';' | '&' | '|') {
+                        while i < chars.len() && matches!(chars[i], ';' | '&' | '|') {
+                            i += 1;
+                        }
+                        segments.push(Vec::new());
+                    }
+                }
+                None => token.push(c),
+            }
+        }
+        if !token.is_empty() {
+            segments.last_mut().unwrap().push(token);
+        }
+        segments
+    }
+
+    /// Every token the ssh user runs itself: per segment, the tokens up to that
+    /// segment's `sudo`. A segment naming no `sudo` is unprivileged end to end,
+    /// so all of its tokens count.
+    fn tokens_run_as_ssh_user(cmd: &str) -> Vec<String> {
+        shell_segments(cmd)
+            .into_iter()
+            .flat_map(|segment| {
+                segment
+                    .into_iter()
+                    .take_while(|token| token != "sudo" && !token.ends_with("/sudo"))
+            })
+            .collect()
+    }
+
+    /// Everything a `post_restore_command` leaves to the left of a `sudo` runs
+    /// as the ssh user, before the privilege boundary exists: a `cd` into an
+    /// App's `0750` tree is denied on directory traversal, and an `ENV=value`
+    /// prefix is wiped by sudo's `env_reset` before the App ever reads it. Both
+    /// fired on the first real cross-host paperless restore (#608), where every
+    /// byte landed and only `manage.py migrate` never ran. Recipes are pure
+    /// data, so the fence is this lint: put the whole command inside the sudo
+    /// boundary — `sudo -u <app> bash -c '<cd && ENV=… cmd>'`, where the quoted
+    /// body is one argument and out of the outer shell's reach.
+    #[test]
+    fn test_post_restore_commands_keep_privileged_work_inside_the_sudo_boundary() {
+        for (app, meta) in load_all_metas(&playbooks_dir()).unwrap() {
+            let Some(cmd) = meta.backup.and_then(|backup| backup.post_restore_command) else {
+                continue;
+            };
+            for token in tokens_run_as_ssh_user(&cmd) {
+                assert_ne!(
+                    token, "cd",
+                    "{app}: post_restore_command runs `cd` as the ssh user — traversing a \
+                     0750 App directory is denied. Wrap the whole command: \
+                     sudo -u <app> bash -c '<cd … && …>'. Got: {cmd}"
+                );
+                assert_eq!(
+                    env_assignment(&token),
+                    None,
+                    "{app}: post_restore_command sets {token} as the ssh user — env_reset \
+                     strips it before the App reads it. Wrap the whole command: \
+                     sudo -u <app> bash -c '<… ENV=value …>'. Got: {cmd}"
+                );
+            }
+        }
+    }
+
+    /// A fence that silently stops fencing is worse than none, and this one
+    /// carries real parsing: it must read the quoted `bash -c` body as one
+    /// opaque argument while still seeing past a `sudo` that only covers the
+    /// first segment.
+    #[test]
+    fn test_sudo_boundary_lint_reads_each_shell_segment_on_its_own() {
+        let fixed = "sudo -u paperless bash -c 'cd /opt/paperless/src && PAPERLESS_CONF=/x \
+                     /opt/paperless/venv/bin/python3 manage.py migrate --no-input'";
+        assert_eq!(
+            tokens_run_as_ssh_user(fixed),
+            Vec::<String>::new(),
+            "the quoted body is one argument to sudo, not the outer shell's work"
+        );
+
+        let incident = "cd /opt/paperless/src && PAPERLESS_CONF=/x sudo -u paperless python3 \
+                        manage.py migrate";
+        let unprivileged = tokens_run_as_ssh_user(incident);
+        assert!(unprivileged.contains(&"cd".to_string()));
+        assert!(unprivileged.iter().any(|t| env_assignment(t).is_some()));
+
+        let escapes_a_first_segment_sudo = "sudo -u app true && cd /opt/app && FOO=1 ./x";
+        let unprivileged = tokens_run_as_ssh_user(escapes_a_first_segment_sudo);
+        assert!(
+            unprivileged.contains(&"cd".to_string()),
+            "a sudo covering only the first segment leaves the rest unprivileged"
+        );
+        assert_eq!(
+            unprivileged.iter().filter_map(|t| env_assignment(t)).next(),
+            Some("FOO")
+        );
+
+        assert_eq!(
+            tokens_run_as_ssh_user("chown -R paperless /opt/paperless/media"),
+            vec!["chown", "-R", "paperless", "/opt/paperless/media"],
+            "a Recipe naming no sudo is unprivileged end to end"
+        );
     }
 
     fn role_template_bodies() -> Vec<(std::path::PathBuf, String)> {
