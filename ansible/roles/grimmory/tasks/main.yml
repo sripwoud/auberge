@@ -183,7 +183,7 @@
         method: GET
       register: grimmory_setup_status
       until: grimmory_setup_status.status == 200
-      retries: 30
+      retries: 90
       delay: 2
 
     - name: Provision admin user
