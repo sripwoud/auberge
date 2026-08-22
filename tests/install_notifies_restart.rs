@@ -529,14 +529,10 @@ fn test_a_version_bump_restarts_everything_that_runs_the_artifact() {
 /// is what subjects it to the fence, and a role dropping off the list is a
 /// coverage regression rather than a passing suite.
 ///
-/// Two roles in this shape the model cannot reach, both by a property of the
-/// App rather than a hole in the scan. `baikal` is served by the system's
-/// php-fpm, installed by apt, so the role templates no unit for what runs its
-/// release -- only its two sync timers, which are `oneshot`. `hermes` is
-/// doubly out: what its unit execs is a venv built by a `command`, which names
-/// no dest to follow, and the unit itself is a systemd *user* unit under
-/// `~/.config/systemd/user`. Both notify their restart today; nothing here
-/// would notice if either stopped.
+/// The roles that install by App Version and are *not* on this list are the
+/// ones the model cannot prove anything about; those carry declared notify
+/// edges in `DECLARED_ROLES` below, and the split between the two lists is
+/// itself asserted.
 const REPLACING_ROLES: &[&str] = &[
     "bichon",
     "blocky",
@@ -560,6 +556,157 @@ fn test_the_scan_sees_every_role_that_replaces_what_it_runs() {
         "a role that installs, under an App Version, the artifact its own unit runs \
          must be declared here -- that is what puts it under the fence"
     );
+}
+
+/// Every role with an install on the version-bump path, whether or not the
+/// model could follow its dest into a unit. No `/tmp` skip here: for baikal the
+/// one `INSTALL_MODULES` task on that path is the download its shell install
+/// unpacks, and the download is what marks the role as installing by version.
+fn version_bump_installers() -> BTreeSet<String> {
+    let mut installers = BTreeSet::new();
+    for role in all_roles() {
+        let vars = defaults(&role);
+        for task in every_task(&role) {
+            for module in INSTALL_MODULES {
+                let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
+                    continue;
+                };
+                if field(args, "content").is_some() {
+                    continue;
+                }
+                let Some(dest) = field(args, "dest").and_then(Value::as_str) else {
+                    continue;
+                };
+                let dest = resolve(dest, &vars);
+                if on_the_version_bump_path(&role, &task.guards, args, dest.trim_end_matches('/')) {
+                    installers.insert(role.clone());
+                }
+            }
+        }
+    }
+    installers
+}
+
+/// A version-bump installer the dest→unit model does not fence, with the notify
+/// edges a human vouches for in its place.
+///
+/// The model's verdict on these roles cannot be trusted on its own, because
+/// clearing a role correctly and clearing it wrongly look identical from
+/// inside the repo: what runs baikal's release is apt's php-fpm, whose unit no
+/// role templates, so the model finds nothing running across the install --
+/// exactly what it finds for colporteur, where nothing genuinely does. So the
+/// verdict is declared per role and fenced two ways: the set of roles needing
+/// a declaration is computed and matched exactly, and every declared edge is
+/// asserted to exist and to reach a handler that actually restarts.
+struct DeclaredRole {
+    role: &'static str,
+    /// Why the model cannot follow this role's install into what runs it.
+    why: &'static str,
+    /// The `(task, handler)` notify edges that must exist. Empty declares the
+    /// model's clearance correct: nothing runs across the install.
+    notifies: &'static [(&'static str, &'static str)],
+}
+
+const DECLARED_ROLES: &[DeclaredRole] = &[
+    DeclaredRole {
+        role: "baikal",
+        why: "its release is served by the system's php-fpm, installed by apt; the role \
+              templates only its two oneshot sync timers, so there is no unit to follow \
+              the install into",
+        notifies: &[(
+            "Install Baikal release (replaces Core, html, vendor; keeps Specific and config)",
+            "Restart baikal php-fpm",
+        )],
+    },
+    // Cleared, not covered: the model's finding that nothing runs across the
+    // install is the correct one here, and
+    // `test_a_timer_driven_oneshot_is_not_left_running_anything` asserts it.
+    DeclaredRole {
+        role: "colporteur",
+        why: "a timer-driven oneshot execs the artifact afresh at every activation, so \
+              the replacement is live on the next firing with nothing to restart",
+        notifies: &[],
+    },
+    DeclaredRole {
+        role: "hermes",
+        why: "what its unit execs is a venv built by a `command`, which names no dest to \
+              follow, and the unit is a systemd user unit under ~/.config/systemd/user",
+        notifies: &[("Install hermes-agent into venv", "Restart hermes gateway")],
+    },
+    DeclaredRole {
+        role: "navidrome",
+        why: "the deb lands what a unit owned by apt runs -- the role templates only a \
+              memory drop-in, which the model excludes as refining a unit rather than \
+              being one, and the installing module is `apt`, which it does not follow",
+        notifies: &[("Install Navidrome from .deb package", "Restart navidrome")],
+    },
+    DeclaredRole {
+        role: "yourls",
+        why: "served by the system's php-fpm, installed by apt; the role templates no \
+              unit at all",
+        notifies: &[
+            ("Clone YOURLS repository", "Restart yourls php-fpm"),
+            ("Update YOURLS repository", "Restart yourls php-fpm"),
+        ],
+    },
+];
+
+/// The declared complement of the fence. Exact equality in both directions:
+/// a new role installing by App Version out of the model's reach fails until
+/// a human classifies it here, and a declaration the model has since learned
+/// to reach -- or whose role is gone -- fails until it is removed, so the list
+/// can neither silently grow nor silently rot.
+#[test]
+fn test_an_install_the_model_cannot_prove_is_declared_and_wired() {
+    let seen: BTreeSet<String> = replacements()
+        .iter()
+        .map(|replacement| replacement.role.clone())
+        .collect();
+    let unproven: BTreeSet<String> = version_bump_installers()
+        .difference(&seen)
+        .cloned()
+        .collect();
+    let declared: BTreeSet<String> = DECLARED_ROLES
+        .iter()
+        .map(|declaration| declaration.role.to_string())
+        .collect();
+    assert_eq!(
+        unproven, declared,
+        "every version-bump installer the dest→unit model does not fence must be \
+         declared in DECLARED_ROLES, either with the notify edges that cover it or \
+         with an explicit empty clearance"
+    );
+
+    for declaration in DECLARED_ROLES {
+        let tasks = every_task(declaration.role);
+        let handlers = restart_handlers(declaration.role, &defaults(declaration.role));
+        for (task, handler) in declaration.notifies {
+            let carrying = tasks
+                .iter()
+                .find(|candidate| task_name(&candidate.body) == *task)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{}: `{task}` is declared to notify `{handler}` but no task of \
+                         that name exists",
+                        declaration.role
+                    )
+                });
+            assert!(
+                strings(field(&carrying.body, "notify"))
+                    .iter()
+                    .any(|notified| notified == handler),
+                "{}: `{task}` must notify `{handler}` -- {}",
+                declaration.role,
+                declaration.why
+            );
+            assert!(
+                handlers.contains_key(*handler),
+                "{}: `{handler}` must be a handler that restarts (`state: restarted`); \
+                 anything less is the no-op this family of bugs is made of",
+                declaration.role
+            );
+        }
+    }
 }
 
 /// A `oneshot` run by a timer is not something to restart: it execs the artifact
