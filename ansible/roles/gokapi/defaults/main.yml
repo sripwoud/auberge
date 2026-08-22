@@ -1,4 +1,5 @@
 gokapi_install_path: /opt/gokapi
+gokapi_binary_path: "{{ gokapi_install_path }}/gokapi"
 gokapi_data_dir: /var/lib/gokapi
 gokapi_config_dir: /var/lib/gokapi/config
 gokapi_sys_user: gokapi

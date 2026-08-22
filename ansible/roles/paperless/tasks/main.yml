@@ -190,11 +190,11 @@
 
         - name: Remove stale source and static trees from previous release
           ansible.builtin.file:
-            path: "{{ paperless_install_path }}/{{ item }}"
+            path: "{{ item }}"
             state: absent
           loop:
-            - src
-            - static
+            - "{{ paperless_src_dir }}"
+            - "{{ paperless_install_path }}/static"
 
         - name: Remove virtual environment from previous release
           ansible.builtin.file:
@@ -282,7 +282,7 @@
     - name: Run database migrations
       ansible.builtin.command:
         cmd: "{{ paperless_install_path }}/venv/bin/python3 manage.py migrate --no-input"
-        chdir: "{{ paperless_install_path }}/src"
+        chdir: "{{ paperless_src_dir }}"
       become: true
       become_user: "{{ paperless_sys_user }}"
       environment:
@@ -293,7 +293,7 @@
     - name: Create admin superuser
       ansible.builtin.command:
         cmd: "{{ paperless_install_path }}/venv/bin/python3 manage.py createsuperuser --noinput"
-        chdir: "{{ paperless_install_path }}/src"
+        chdir: "{{ paperless_src_dir }}"
       become: true
       become_user: "{{ paperless_sys_user }}"
       environment:

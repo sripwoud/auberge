@@ -101,7 +101,7 @@
     - name: Ensure Colporteur binary permissions
       when: colporteur_installed_version != colporteur_version
       ansible.builtin.file:
-        path: "{{ colporteur_install_path }}/colporteur"
+        path: "{{ colporteur_binary_path }}"
         owner: "{{ colporteur_sys_user }}"
         group: "{{ colporteur_sys_group }}"
         mode: "0755"
@@ -259,7 +259,7 @@
           when: colporteur_freshrss_cli_check.stat.exists
           ansible.builtin.command:
             argv:
-              - "{{ colporteur_install_path }}/colporteur"
+              - "{{ colporteur_binary_path }}"
               - export-opml
               - --base-url
               - "http://localhost:{{ colporteur_internal_port }}"

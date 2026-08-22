@@ -59,7 +59,7 @@
     - name: Install headscale binary
       ansible.builtin.copy:
         src: /tmp/headscale
-        dest: /usr/local/bin/headscale
+        dest: "{{ headscale_binary_path }}"
         owner: root
         group: root
         mode: "0755"

@@ -6,6 +6,7 @@ headscale_sys_user: headscale
 headscale_sys_group: headscale
 headscale_config_dir: /etc/headscale
 headscale_data_dir: /var/lib/headscale
+headscale_binary_path: /usr/local/bin/headscale
 headscale_db_path: /var/lib/headscale/db.sqlite
 headscale_subdomain: hs
 headscale_domain: "{{ headscale_subdomain }}.{{ domain }}"

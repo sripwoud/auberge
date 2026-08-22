@@ -3,6 +3,7 @@ bichon_port: 15630
 bichon_sys_user: bichon
 bichon_sys_group: bichon
 bichon_install_dir: /opt/bichon
+bichon_binary_path: "{{ bichon_install_dir }}/bichon-server"
 bichon_root_dir: /opt/bichon/data
 bichon_index_dir: /opt/bichon/data/index
 bichon_data_dir: /opt/bichon/data/store

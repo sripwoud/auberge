@@ -99,7 +99,7 @@
     - name: Ensure Gokapi binary is executable
       when: gokapi_installed_version != gokapi_version
       ansible.builtin.file:
-        path: "{{ gokapi_install_path }}/gokapi"
+        path: "{{ gokapi_binary_path }}"
         owner: root
         group: root
         mode: "0755"
@@ -281,7 +281,7 @@
         - not gokapi_preexisting_config.stat.exists
       ansible.builtin.command:
         argv:
-          - "{{ gokapi_install_path }}/gokapi"
+          - "{{ gokapi_binary_path }}"
           - "--deployment-password"
           - "{{ gokapi_admin_password }}"
       environment:
