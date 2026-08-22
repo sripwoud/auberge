@@ -113,6 +113,7 @@
   environment:
     HOME: "{{ hermes_home }}"
     VIRTUAL_ENV: "{{ hermes_venv_dir }}"
+  notify: Restart hermes gateway
 
 - name: Symlink hermes binary
   become: true
