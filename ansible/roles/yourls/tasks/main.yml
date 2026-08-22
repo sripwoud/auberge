@@ -72,6 +72,7 @@
         dest: "{{ yourls_install_path }}"
         version: "{{ yourls_version }}"
         depth: 1
+      notify: Restart yourls php-fpm
 
     - name: Check for local modifications in YOURLS directory # noqa: command-instead-of-module
       when: yourls_git_check.stat.exists
@@ -96,6 +97,7 @@
         update: true
       register: yourls_update
       changed_when: yourls_update.before != yourls_update.after
+      notify: Restart yourls php-fpm
 
     - name: Deploy YOURLS config.php
       ansible.builtin.template:
