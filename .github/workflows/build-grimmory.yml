@@ -24,11 +24,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
 
       - run: curl -fsSL "https://github.com/grimmory-tools/grimmory/archive/refs/tags/v${{ inputs.version }}.tar.gz" | tar -xz
 
-      - run: npm ci --force
+      - run: npm ci --no-audit --no-fund
         working-directory: grimmory-${{ inputs.version }}/booklore-ui
 
       - run: npm run build -- --configuration=production
