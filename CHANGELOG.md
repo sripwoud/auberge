@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.12](https://github.com/sripwoud/auberge/compare/v0.15.11...v0.15.12) - 2026-08-22
+
+### Fixed
+
+- *(ansible)* ground every installed-version marker in its artifact ([#600](https://github.com/sripwoud/auberge/pull/600))
+- *(ansible)* flush handlers before a readiness probe reads the service ([#598](https://github.com/sripwoud/auberge/pull/598))
+- *(grimmory)* version the jar filename so a bump lands on a new dest ([#597](https://github.com/sripwoud/auberge/pull/597))
+- *(grimmory)* re-download app.jar when it is missing ([#592](https://github.com/sripwoud/auberge/pull/592))
+
 ## [0.15.11](https://github.com/sripwoud/auberge/compare/v0.15.10...v0.15.11) - 2026-08-22
 
 ### Fixed
