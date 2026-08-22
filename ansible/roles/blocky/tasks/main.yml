@@ -143,6 +143,7 @@
     owner: blocky
     mode: "0755"
     copy: false
+  notify: Restart blocky
 
 - name: Ensure owner and mode of blocky binary
   ansible.builtin.file:

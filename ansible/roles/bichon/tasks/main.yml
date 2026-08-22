@@ -112,6 +112,7 @@
             owner: root
             group: root
             mode: "0755"
+          notify: Restart bichon
 
         - name: Remove tarball
           ansible.builtin.file:
