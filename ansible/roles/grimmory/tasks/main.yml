@@ -15,23 +15,6 @@
           - domain | length > 0
         fail_msg: "grimmory_db_password, grimmory_admin_password, grimmory_admin_user, grimmory_subdomain, and domain must be defined and non-empty"
 
-    - name: Check if Grimmory version file exists
-      ansible.builtin.stat:
-        path: "{{ grimmory_install_path }}/version"
-      register: grimmory_version_file
-
-    - name: Read installed Grimmory version
-      when: grimmory_version_file.stat.exists
-      ansible.builtin.slurp:
-        src: "{{ grimmory_install_path }}/version"
-      register: grimmory_installed_version_raw
-
-    - name: Set installed Grimmory version fact
-      ansible.builtin.set_fact:
-        grimmory_installed_version: >-
-          {{ grimmory_installed_version_raw.content | b64decode | trim
-             if grimmory_version_file.stat.exists else '' }}
-
     - name: Create Java installation directory
       ansible.builtin.file:
         path: "{{ grimmory_java_home }}"
@@ -131,7 +114,7 @@
       register: grimmory_jar_stat
 
     - name: Download Grimmory JAR
-      when: grimmory_installed_version != grimmory_version or not grimmory_jar_stat.stat.exists
+      when: not grimmory_jar_stat.stat.exists
       ansible.builtin.get_url:
         url: "{{ grimmory_jar_url }}"
         dest: "{{ grimmory_jar_path }}"
@@ -139,15 +122,6 @@
         group: "{{ grimmory_sys_group }}"
         mode: "0644"
       notify: Restart grimmory
-
-    - name: Write installed version file
-      when: grimmory_installed_version != grimmory_version
-      ansible.builtin.copy:
-        content: "{{ grimmory_version }}"
-        dest: "{{ grimmory_install_path }}/version"
-        owner: "{{ grimmory_sys_user }}"
-        group: "{{ grimmory_sys_group }}"
-        mode: "0644"
 
     - name: Deploy Grimmory environment file
       ansible.builtin.template:
@@ -166,6 +140,27 @@
         group: root
         mode: "0644"
       notify: Restart grimmory
+
+    - name: Find superseded Grimmory JARs
+      ansible.builtin.find:
+        paths: "{{ grimmory_install_path }}"
+        patterns: "*.jar"
+        excludes:
+          - "{{ grimmory_jar_path | basename }}"
+      register: grimmory_superseded_jars
+
+    - name: Remove superseded Grimmory JARs
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ grimmory_superseded_jars.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Remove the Grimmory version marker superseded by the versioned JAR name
+      ansible.builtin.file:
+        path: "{{ grimmory_install_path }}/version"
+        state: absent
 
     - name: Enable and start Grimmory service
       ansible.builtin.systemd_service:
