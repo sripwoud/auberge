@@ -1,5 +1,5 @@
 grimmory_install_path: /opt/grimmory
-grimmory_jar_path: "{{ grimmory_install_path }}/app.jar"
+grimmory_jar_path: "{{ grimmory_install_path }}/grimmory-{{ grimmory_version }}.jar"
 grimmory_data_path: /srv/grimmory
 grimmory_bookdrop_path: /srv/bookdrop
 grimmory_sys_user: grimmory
