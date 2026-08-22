@@ -142,6 +142,9 @@
         name: php{{ baikal_php_version }}-fpm
         state: restarted
 
+    - name: Flush handlers so a pending php-fpm restart lands before the probe
+      ansible.builtin.meta: flush_handlers
+
     - name: Wait for the Baikal PHP-FPM socket
       ansible.builtin.wait_for:
         path: "{{ baikal_fpm_socket }}"
