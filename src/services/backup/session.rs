@@ -321,7 +321,7 @@ fn calculate_dir_size(path: &Path) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::playbook_meta::DbRecipe;
+    use crate::playbook_meta::{DbEngine, DbRecipe};
     use crate::services::ssh::{MockSshSession, SshOp};
 
     fn baikal_recipe() -> BackupRecipe {
@@ -354,6 +354,7 @@ mod tests {
             db: Some(DbRecipe {
                 name: "paperless".to_string(),
                 dump_path: "/tmp/paperless_db.dump".to_string(),
+                engine: DbEngine::Postgres,
             }),
             post_restore_command: None,
             parameters: HashMap::new(),
