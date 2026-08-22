@@ -144,7 +144,9 @@
     - name: Find superseded Grimmory JARs
       ansible.builtin.find:
         paths: "{{ grimmory_install_path }}"
-        patterns: "*.jar"
+        patterns:
+          - "grimmory-*.jar"
+          - app.jar
         excludes:
           - "{{ grimmory_jar_path | basename }}"
       register: grimmory_superseded_jars

@@ -72,22 +72,32 @@ fn strict_env() -> minijinja::Environment<'static> {
     env
 }
 
-/// Resolve a role default the way ansible would for a given pinned version.
-fn render_default(key: &str, version: &str) -> String {
+/// Render a role expression against the role's own defaults, the way ansible
+/// would for a given pinned version. `grimmory_version` is an extra var the
+/// deploy injects from the playbook meta, so the caller supplies it.
+fn render(expr: &str, version: &str) -> String {
     let defaults = role_defaults();
-    let template = defaults[key]
-        .as_str()
-        .unwrap_or_else(|| panic!("the role must define {key}"))
-        .to_string();
-    let context = minijinja::context! {
+    let env = strict_env();
+    let base = minijinja::context! {
         grimmory_install_path => defaults["grimmory_install_path"]
             .as_str()
             .expect("the role must define grimmory_install_path"),
         grimmory_version => version,
     };
-    strict_env()
-        .render_str(&template, context)
-        .unwrap_or_else(|e| panic!("{key} must render: {e}"))
+    let jar_path = env
+        .render_str(
+            defaults["grimmory_jar_path"]
+                .as_str()
+                .expect("the role must define grimmory_jar_path"),
+            &base,
+        )
+        .unwrap_or_else(|e| panic!("grimmory_jar_path must render: {e}"));
+
+    env.render_str(
+        expr,
+        minijinja::context! { grimmory_jar_path => &jar_path, ..base },
+    )
+    .unwrap_or_else(|e| panic!("`{expr}` must render: {e}"))
 }
 
 /// Index and body of the role's only task invoking `module`.
@@ -176,7 +186,7 @@ fn guard_fires(guard: &JarGuard, jar_exists: bool) -> bool {
 struct JarPrune {
     remove_index: usize,
     paths: String,
-    patterns: String,
+    patterns: Vec<String>,
     excludes: Vec<String>,
 }
 
@@ -201,32 +211,80 @@ fn jar_prune() -> JarPrune {
         "the find must run before the removal that loops over it"
     );
 
-    let excludes = Value::Mapping(find.clone())["ansible.builtin.find"]["excludes"]
-        .as_sequence()
-        .unwrap_or_else(|| panic!("the find must exclude the pinned jar from `{register}`"))
-        .iter()
-        .map(|entry| {
-            entry
-                .as_str()
-                .expect("excludes must be strings")
-                .to_string()
-        })
-        .collect();
-
     JarPrune {
         remove_index,
         paths: string_at(&find, &["ansible.builtin.find", "paths"])
             .expect("the find must name a path to sweep"),
-        patterns: string_at(&find, &["ansible.builtin.find", "patterns"])
-            .expect("the find must name a pattern"),
-        excludes,
+        patterns: string_list_at(&find, "patterns").expect("the find must name the jars it sweeps"),
+        excludes: string_list_at(&find, "excludes")
+            .unwrap_or_else(|| panic!("the find must exclude the pinned jar from `{register}`")),
     }
+}
+
+/// `find`'s `patterns` and `excludes` are list-typed; ansible accepts a bare
+/// scalar for a single entry, so both spellings have to read the same here.
+fn string_list_at(task: &Mapping, key: &str) -> Option<Vec<String>> {
+    match Value::Mapping(task.clone())["ansible.builtin.find"][key].clone() {
+        Value::String(single) => Some(vec![single]),
+        Value::Sequence(entries) => Some(
+            entries
+                .iter()
+                .map(|entry| {
+                    entry
+                        .as_str()
+                        .unwrap_or_else(|| panic!("{key} entries must be strings"))
+                        .to_string()
+                })
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+/// `find` culls with `fnmatch` against the basename. The role's patterns use no
+/// metacharacter but `*`, which this models; anything richer would make the
+/// model a lie, so it is rejected rather than approximated.
+fn fnmatches(pattern: &str, name: &str) -> bool {
+    assert!(
+        !pattern.contains(['?', '[', ']']),
+        "`{pattern}` uses a glob metacharacter this test does not model"
+    );
+    let mut segments = pattern.split('*');
+    let first = segments.next().expect("split yields at least one segment");
+    let Some(mut rest) = name.strip_prefix(first) else {
+        return false;
+    };
+    let mut tail = None;
+    for segment in segments {
+        tail = Some(segment);
+        match rest.find(segment) {
+            Some(at) => rest = &rest[at + segment.len()..],
+            None => return false,
+        }
+    }
+    match tail {
+        None => rest.is_empty(),
+        Some(suffix) => name.ends_with(suffix),
+    }
+}
+
+/// Whether the prune would delete a file of this name from the swept directory.
+fn sweeps(prune: &JarPrune, version: &str, name: &str) -> bool {
+    let matched = prune
+        .patterns
+        .iter()
+        .any(|pattern| fnmatches(&render(pattern, version), name));
+    let spared = prune
+        .excludes
+        .iter()
+        .any(|exclude| fnmatches(&render(exclude, version), name));
+    matched && !spared
 }
 
 #[test]
 fn test_a_version_bump_lands_on_a_path_that_cannot_already_exist() {
-    let pinned = render_default("grimmory_jar_path", "2.3.0");
-    let bumped = render_default("grimmory_jar_path", "2.4.0");
+    let pinned = render("{{ grimmory_jar_path }}", "2.3.0");
+    let bumped = render("{{ grimmory_jar_path }}", "2.4.0");
     assert_ne!(
         pinned, bumped,
         "`get_url` with the default `force: false` and no `checksum:` issues a conditional GET \
@@ -273,11 +331,11 @@ fn test_systemd_execs_the_jar_the_download_writes() {
 }
 
 #[test]
-fn test_the_jar_path_has_one_definition() {
+fn test_the_download_resolves_the_jar_through_the_shared_default() {
     let guard = jar_guard();
     assert_eq!(
         guard.download_dest, "{{ grimmory_jar_path }}",
-        "the stat, the download and the unit all resolve the jar through this default"
+        "hardcoding a path here would let the download, the stat and the unit drift apart"
     );
 }
 
@@ -291,51 +349,74 @@ fn test_a_redownloaded_jar_is_flagged_for_a_restart() {
     );
 }
 
+/// `fnmatches` models python's `fnmatch`, so it is pinned to that implementation's
+/// answers rather than to intuition — an untested model would quietly bless
+/// whatever the role's patterns happen to say.
 #[test]
-fn test_the_prune_sweeps_the_directory_the_jar_lands_in() {
+fn test_the_fnmatch_model_agrees_with_python() {
+    for (pattern, name, expected) in [
+        ("grimmory-*.jar", "grimmory-2.3.0.jar", true),
+        ("grimmory-*.jar", "grimmory-.jar", true),
+        ("grimmory-*.jar", "grimmory.jar", false),
+        ("grimmory-*.jar", "app.jar", false),
+        ("app.jar", "app.jar", true),
+        ("app.jar", "app.jar.bak", false),
+        ("*.jar", "plugin.jar", true),
+        ("*.jar", "app.jar.bak", false),
+        ("grimmory-2.3.0.jar", "grimmory-2.4.0.jar", false),
+    ] {
+        assert_eq!(
+            fnmatches(pattern, name),
+            expected,
+            "`{pattern}` vs `{name}`"
+        );
+    }
+}
+
+/// The pinned jar's filename, proven along the way to sit in the swept directory.
+fn pinned_jar_in_swept_dir(prune: &JarPrune, version: &str) -> String {
+    let pinned = render("{{ grimmory_jar_path }}", version);
+    let swept = render(&prune.paths, version);
+    pinned
+        .strip_prefix(&format!("{swept}/"))
+        .unwrap_or_else(|| panic!("the prune sweeps {swept} but the download writes {pinned}"))
+        .to_string()
+}
+
+#[test]
+fn test_the_prune_spares_the_pinned_jar_and_takes_the_one_it_replaced() {
     let prune = jar_prune();
-    let install_path = render_default("grimmory_install_path", "2.3.0");
-    let swept = strict_env()
-        .render_str(
-            &prune.paths,
-            minijinja::context! { grimmory_install_path => &install_path },
-        )
-        .expect("the find's paths must render");
-    assert_eq!(
-        swept, install_path,
-        "superseded jars accumulate where the download writes them"
-    );
-    assert_eq!(
-        prune.patterns, "*.jar",
-        "the pattern must also catch the pre-#595 `app.jar` left on hosts that already deployed"
+    for [installed, superseded] in [["2.4.0", "2.3.0"], ["2.3.0", "2.2.0"]] {
+        let pinned = pinned_jar_in_swept_dir(&prune, installed);
+        assert!(
+            !sweeps(&prune, installed, &pinned),
+            "at {installed} the prune deletes {pinned} — the jar the unit execs"
+        );
+        let stale = pinned_jar_in_swept_dir(&prune, superseded);
+        assert!(
+            sweeps(&prune, installed, &stale),
+            "at {installed} the prune leaves {stale} behind; superseded jars are ~100 MB each"
+        );
+    }
+}
+
+#[test]
+fn test_the_prune_reaches_the_pre_595_app_jar() {
+    assert!(
+        sweeps(&jar_prune(), "2.3.0", "app.jar"),
+        "hosts deployed before the filename carried the version still have `app.jar` sitting \
+         next to the versioned one"
     );
 }
 
 #[test]
-fn test_the_prune_spares_the_pinned_jar_at_every_version() {
+fn test_the_prune_leaves_jars_it_did_not_install_alone() {
     let prune = jar_prune();
-    for version in ["2.3.0", "2.4.0"] {
-        let pinned = render_default("grimmory_jar_path", version);
-        let spared: Vec<String> = prune
-            .excludes
-            .iter()
-            .map(|exclude| {
-                strict_env()
-                    .render_str(
-                        exclude,
-                        minijinja::context! {
-                            grimmory_jar_path => &pinned,
-                            grimmory_version => version,
-                        },
-                    )
-                    .expect("each exclude must render")
-            })
-            .collect();
-        let basename = pinned.rsplit('/').next().expect("the jar path has a name");
+    for foreign in ["plugin.jar", "cache.jar", "grimmory.jar"] {
         assert!(
-            spared.iter().any(|exclude| exclude == basename),
-            "at {version} the prune deletes the jar the unit execs: \
-             sweeping *.jar while sparing {spared:?}"
+            !sweeps(&prune, "2.3.0", foreign),
+            "the swept directory is the unit's WorkingDirectory and one of its ReadWritePaths, \
+             so a deploy must not delete {foreign} — only jars this role installed"
         );
     }
 }
