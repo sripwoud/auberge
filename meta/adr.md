@@ -34,6 +34,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0024 | [Host rename recovers by rerun, never by rollback or history rewrite](./adr/0024-host-rename-recovers-by-rerun.md)                                             |
 | 0025 | [Containers are per-app exceptions, granted only when the App is required and upstream supports nothing else](./adr/0025-containers-are-per-app-exceptions.md) |
 | 0026 | [A restore restores what the staged backup holds](./adr/0026-restore-restores-what-the-staged-backup-holds.md)                                                 |
+| 0027 | [An installed version is read from the artifact, never from a note the role wrote](./adr/0027-installed-version-is-read-from-the-artifact.md)                  |
 
 ## Native systemd by default
 
