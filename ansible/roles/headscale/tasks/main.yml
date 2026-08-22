@@ -38,6 +38,11 @@
         path: "{{ headscale_data_dir }}/version"
       register: headscale_version_file
 
+    - name: Check installed headscale binary
+      ansible.builtin.stat:
+        path: "{{ headscale_binary_path }}"
+      register: headscale_binary_stat
+
     - name: Read installed headscale version
       ansible.builtin.slurp:
         src: "{{ headscale_data_dir }}/version"
@@ -46,7 +51,10 @@
 
     - name: Set installed version fact
       ansible.builtin.set_fact:
-        headscale_installed_version: "{{ (headscale_version_content.content | b64decode | trim) if headscale_version_file.stat.exists else '' }}"
+        headscale_installed_version: >-
+          {{ (headscale_version_content.content | b64decode | trim)
+             if headscale_version_file.stat.exists and headscale_binary_stat.stat.exists
+             else '' }}
 
     - name: Download headscale binary
       ansible.builtin.get_url:
@@ -59,7 +67,7 @@
     - name: Install headscale binary
       ansible.builtin.copy:
         src: /tmp/headscale
-        dest: /usr/local/bin/headscale
+        dest: "{{ headscale_binary_path }}"
         owner: root
         group: root
         mode: "0755"

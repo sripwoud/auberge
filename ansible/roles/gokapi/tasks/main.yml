@@ -59,6 +59,11 @@
         path: "{{ gokapi_install_path }}/version"
       register: gokapi_version_file
 
+    - name: Check if Gokapi binary exists
+      ansible.builtin.stat:
+        path: "{{ gokapi_binary_path }}"
+      register: gokapi_binary_stat
+
     - name: Read installed Gokapi version
       when: gokapi_version_file.stat.exists
       ansible.builtin.slurp:
@@ -69,7 +74,8 @@
       ansible.builtin.set_fact:
         gokapi_installed_version: >-
           {{ gokapi_installed_version_raw.content | b64decode | trim
-             if gokapi_version_file.stat.exists else '' }}
+             if gokapi_version_file.stat.exists and gokapi_binary_stat.stat.exists
+             else '' }}
 
     - name: Download Gokapi release archive
       when: gokapi_installed_version != gokapi_version
@@ -99,7 +105,7 @@
     - name: Ensure Gokapi binary is executable
       when: gokapi_installed_version != gokapi_version
       ansible.builtin.file:
-        path: "{{ gokapi_install_path }}/gokapi"
+        path: "{{ gokapi_binary_path }}"
         owner: root
         group: root
         mode: "0755"
@@ -281,7 +287,7 @@
         - not gokapi_preexisting_config.stat.exists
       ansible.builtin.command:
         argv:
-          - "{{ gokapi_install_path }}/gokapi"
+          - "{{ gokapi_binary_path }}"
           - "--deployment-password"
           - "{{ gokapi_admin_password }}"
       environment:

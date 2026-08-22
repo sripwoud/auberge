@@ -77,6 +77,11 @@
         path: "{{ bichon_install_dir }}/version"
       register: bichon_version_file
 
+    - name: Check installed binary
+      ansible.builtin.stat:
+        path: "{{ bichon_binary_path }}"
+      register: bichon_binary_stat
+
     - name: Read installed version
       when: bichon_version_file.stat.exists
       ansible.builtin.slurp:
@@ -87,7 +92,8 @@
       ansible.builtin.set_fact:
         bichon_installed_version: >-
           {{ bichon_installed_version_raw.content | b64decode | trim
-             if bichon_version_file.stat.exists else '' }}
+             if bichon_version_file.stat.exists and bichon_binary_stat.stat.exists
+             else '' }}
 
     - name: Download and install binary
       when: bichon_installed_version != bichon_version

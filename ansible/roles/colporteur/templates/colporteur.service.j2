@@ -9,7 +9,7 @@ User={{ colporteur_sys_user }}
 Group={{ colporteur_sys_group }}
 Environment=XDG_CONFIG_HOME=/etc
 Environment=XDG_DATA_HOME=/var/lib
-ExecStart={{ colporteur_install_path }}/colporteur fetch
+ExecStart={{ colporteur_binary_path }} fetch
 StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=true

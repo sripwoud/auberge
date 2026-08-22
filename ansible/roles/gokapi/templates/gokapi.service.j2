@@ -13,7 +13,7 @@ Environment=GOKAPI_DATA_DIR={{ gokapi_data_dir }}/data
 Environment=GOKAPI_PORT={{ gokapi_port }}
 Environment=GOKAPI_USE_CLOUDFLARE=true
 Environment=GOKAPI_TRUSTED_PROXIES=127.0.0.1
-ExecStart={{ gokapi_install_path }}/gokapi
+ExecStart={{ gokapi_binary_path }}
 Restart=on-failure
 RestartSec=10s
 NoNewPrivileges=true
