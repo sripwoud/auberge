@@ -129,7 +129,7 @@
       when: grimmory_installed_version != grimmory_version
       ansible.builtin.get_url:
         url: "{{ grimmory_jar_url }}"
-        dest: "{{ grimmory_install_path }}/app.jar"
+        dest: "{{ grimmory_jar_path }}"
         owner: "{{ grimmory_sys_user }}"
         group: "{{ grimmory_sys_group }}"
         mode: "0644"
