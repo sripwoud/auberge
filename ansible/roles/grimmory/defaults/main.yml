@@ -18,6 +18,9 @@ grimmory_github_repo: grimmory-tools/grimmory
 grimmory_jar_url: "https://github.com/sripwoud/auberge/releases/download/grimmory/v{{ grimmory_version }}/grimmory-api.jar"
 grimmory_jvm_opts: "-Xmx768m -XX:+UseShenandoahGC -XX:+ExitOnOutOfMemoryError"
 
-grimmory_java_major: "25"
-grimmory_java_home: "/opt/java/temurin-{{ grimmory_java_major }}-jre"
-grimmory_java_url: "https://api.adoptium.net/v3/binary/latest/{{ grimmory_java_major }}/ga/linux/x64/jre/hotspot/normal/eclipse"
+# renovate: datasource=github-releases depName=adoptium/temurin25-binaries extractVersion=^jdk-(?<version>[\d.+]+)$
+grimmory_java_version: "25.0.4.1+1"
+grimmory_java_home: "/opt/java/temurin-{{ grimmory_java_version }}-jre"
+grimmory_java_release: "jdk-{{ grimmory_java_version }}"
+grimmory_java_archive: "OpenJDK25U-jre_x64_linux_hotspot_{{ grimmory_java_version | replace('+', '_') }}.tar.gz"
+grimmory_java_url: "https://github.com/adoptium/temurin25-binaries/releases/download/{{ grimmory_java_release }}/{{ grimmory_java_archive }}"
