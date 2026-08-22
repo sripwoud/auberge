@@ -185,7 +185,21 @@
         - "{{ paperless_consumption_dir }}"
         - "{{ paperless_scratch_dir }}"
 
-    - name: Download and extract Paperless-ngx release
+    - name: Deploy systemd services
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - paperless-webserver.service
+        - paperless-consumer.service
+        - paperless-task-queue.service
+        - paperless-scheduler.service
+      notify: Restart all paperless services
+
+    - name: Stop the services and replace the Paperless-ngx release
       when: paperless_installed_version != paperless_version
       block:
         - name: Download release tarball
@@ -193,6 +207,17 @@
             url: "{{ paperless_release_url }}"
             dest: /tmp/paperless-ngx.tar.xz
             mode: "0644"
+
+        - name: Stop everything that runs out of the source tree
+          ansible.builtin.systemd_service:
+            name: "{{ item }}"
+            state: stopped
+            daemon_reload: true
+          loop:
+            - paperless-webserver
+            - paperless-consumer
+            - paperless-task-queue
+            - paperless-scheduler
 
         - name: Remove stale source and static trees from previous release
           ansible.builtin.file:
@@ -216,7 +241,6 @@
               - --strip-components=1
             owner: "{{ paperless_sys_user }}"
             group: "{{ paperless_sys_group }}"
-          notify: Restart all paperless services
 
         - name: Remove tarball
           ansible.builtin.file:
@@ -314,20 +338,6 @@
         - paperless_createsuperuser_result.rc != 0
         - "'already taken' not in paperless_createsuperuser_result.stderr"
       no_log: true
-
-    - name: Deploy systemd services
-      ansible.builtin.template:
-        src: "{{ item }}.j2"
-        dest: "/etc/systemd/system/{{ item }}"
-        owner: root
-        group: root
-        mode: "0644"
-      loop:
-        - paperless-webserver.service
-        - paperless-consumer.service
-        - paperless-task-queue.service
-        - paperless-scheduler.service
-      notify: Restart all paperless services
 
     - name: Enable and start all Paperless services
       ansible.builtin.systemd_service:

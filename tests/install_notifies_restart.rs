@@ -19,6 +19,15 @@ use serde_yaml::{Mapping, Sequence, Value};
 /// comparing the Installed Version, the `version:` ref of a `git` checkout, or
 /// the dest itself where the artifact's path carries the version.
 ///
+/// A restart is one of two ways to satisfy this. The other is to stop what runs
+/// out of the artifact for the length of the install, which is what a role has
+/// to do when the install is destructive enough that no restart can bridge it:
+/// paperless deletes the venv its four units exec before unpacking the new tree,
+/// and migrates the database in between, so a handler flushed at end of play
+/// bounds the stale window without closing it (#604). A unit stopped under
+/// guards no stricter than the replacement's is not left running anything, and
+/// needs no notify.
+///
 /// What is out of scope is the *missing*-artifact path, guarded on a bare `stat`
 /// with no version anywhere: an absent `ExecStart` target means the unit is
 /// already dead, so the `state: started` further down revives it and no handler
@@ -373,6 +382,58 @@ fn restart_handlers(role: &str, vars: &BTreeMap<String, String>) -> BTreeMap<Str
     handlers
 }
 
+/// The units the role stops, each with the guards its stop runs under and its
+/// position in the role's task order. Position matters: a stop that runs *after*
+/// the replacement leaves the old artifact serving for exactly as long as one
+/// that never runs, and a stop in a block's `always:` flattens after the block
+/// it follows.
+fn stopped_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<(String, Vec<String>, usize)> {
+    let mut stopped = Vec::new();
+    for (at, task) in every_task(role).into_iter().enumerate() {
+        for module in SERVICE_MODULES {
+            let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
+                continue;
+            };
+            if field(args, "state").and_then(Value::as_str) != Some("stopped") {
+                continue;
+            }
+            let Some(target) = field(args, "name").and_then(Value::as_str) else {
+                continue;
+            };
+            let items = strings(field(&task.body, "loop"));
+            let names: Vec<String> = if items.is_empty() {
+                vec![unit_name(&resolve(target, vars))]
+            } else {
+                items
+                    .iter()
+                    .map(|item| unit_name(&resolve(&target.replace("{{ item }}", item), vars)))
+                    .collect()
+            };
+            for name in names {
+                stopped.push((name, task.guards.clone(), at));
+            }
+        }
+    }
+    stopped
+}
+
+/// Whether `unit` is stopped ahead of the replacement at `before`, under guards
+/// the replacement's guards already imply -- so no run that replaces the artifact
+/// leaves that unit on the old one. Three ways to fail this, all checked: a stop
+/// carrying a guard the replacement does not can be skipped on a run that still
+/// replaces; a stop positioned after the replacement quiesces nothing; and a
+/// stop naming another unit says nothing about this one.
+fn quiesced(
+    stops: &[(String, Vec<String>, usize)],
+    unit: &str,
+    guards: &[String],
+    before: usize,
+) -> bool {
+    stops.iter().any(|(stopped, under, at)| {
+        stopped == unit && *at < before && under.iter().all(|guard| guards.contains(guard))
+    })
+}
+
 /// An install that replaces, under an App Version guard, something a unit of the
 /// same role is running.
 struct Replacement {
@@ -444,8 +505,9 @@ fn replacements() -> Vec<Replacement> {
             continue;
         }
         let handlers = restart_handlers(&role, &vars);
+        let stops = stopped_units(&role, &vars);
 
-        for task in every_task(&role) {
+        for (at, task) in every_task(&role).into_iter().enumerate() {
             for module in INSTALL_MODULES {
                 let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
                     continue;
@@ -469,6 +531,7 @@ fn replacements() -> Vec<Replacement> {
                 let holds: Vec<String> = units
                     .iter()
                     .filter(|unit| unit.holds_the_artifact)
+                    .filter(|unit| !quiesced(&stops, &unit.name, &task.guards, at))
                     .filter(|unit| {
                         unit.runs
                             .iter()
@@ -540,7 +603,6 @@ const REPLACING_ROLES: &[&str] = &[
     "gokapi",
     "grimmory",
     "headscale",
-    "paperless",
     "tgtg",
 ];
 
@@ -640,6 +702,16 @@ const DECLARED_ROLES: &[DeclaredRole] = &[
               being one, and the installing module is `apt`, which it does not follow",
         notifies: &[("Install Navidrome from .deb package", "Restart navidrome")],
     },
+    // Cleared, not covered: nothing runs across paperless's install because the
+    // role stops what does for its length, and `tests/paperless_quiesce.rs`
+    // asserts that window spans every destructive task in it (#604).
+    DeclaredRole {
+        role: "paperless",
+        why: "it stops the four units that run out of the source tree before deleting it, \
+              and starts them after the migration, so the model's finding that nothing is \
+              left on the old tree is the correct one -- there is no restart to demand",
+        notifies: &[],
+    },
     DeclaredRole {
         role: "yourls",
         why: "served by the system's php-fpm, installed by apt; the role templates no \
@@ -733,7 +805,9 @@ fn test_a_timer_driven_oneshot_is_not_left_running_anything() {
 }
 
 /// The one place a single notify has to cover four units, so the loop expansion
-/// the fence depends on is asserted rather than assumed.
+/// the fence depends on is asserted rather than assumed. paperless no longer
+/// reaches it from its extract, but its two config templates still do, and both
+/// have to land on all four.
 #[test]
 fn test_a_looped_handler_restarts_every_unit_it_names() {
     let handlers = restart_handlers("paperless", &defaults("paperless"));
@@ -745,6 +819,39 @@ fn test_a_looped_handler_restarts_every_unit_it_names() {
             "paperless-task-queue.service".to_string(),
             "paperless-scheduler.service".to_string(),
         ]),
-        "paperless replaces one source tree that all four units run out of"
+        "paperless renders one config that all four units read"
+    );
+}
+
+/// The quiesced case. paperless deletes the venv its four units exec and
+/// migrates the database before anything could be restarted into the new tree,
+/// so the stop is what satisfies the fence and the notify would be a second
+/// mechanism claiming the same job (#604).
+#[test]
+fn test_a_quiesced_install_leaves_nothing_running_the_old_artifact() {
+    let vars = defaults("paperless");
+    let stops = stopped_units("paperless", &vars);
+    let bump = vec!["paperless_installed_version != paperless_version".to_string()];
+    let extract = every_task("paperless")
+        .iter()
+        .position(|task| task_name(&task.body) == "Extract release tarball")
+        .expect("paperless unpacks a release tarball");
+    for unit in [
+        "paperless-webserver.service",
+        "paperless-consumer.service",
+        "paperless-task-queue.service",
+        "paperless-scheduler.service",
+    ] {
+        assert!(
+            quiesced(&stops, unit, &bump, extract),
+            "{unit} must be stopped ahead of the extract, under the version-bump guard \
+             and nothing stricter"
+        );
+    }
+    assert!(
+        !replacements()
+            .iter()
+            .any(|replacement| replacement.role == "paperless"),
+        "nothing runs across paperless's install, so nothing has to be restarted for it"
     );
 }
