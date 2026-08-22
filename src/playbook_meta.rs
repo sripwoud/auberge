@@ -65,6 +65,25 @@ pub struct BackupRecipe {
 pub struct DbRecipe {
     pub name: String,
     pub dump_path: String,
+    #[serde(default, skip_serializing_if = "DbEngine::is_postgres")]
+    pub engine: DbEngine,
+}
+
+/// The database server a Recipe's `db:` block dumps from and restores into.
+/// Defaults to postgres, the only engine the executor spoke before MariaDB
+/// apps (grimmory, yourls) needed dumps too (#611).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DbEngine {
+    #[default]
+    Postgres,
+    Mariadb,
+}
+
+impl DbEngine {
+    fn is_postgres(&self) -> bool {
+        *self == Self::Postgres
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -90,6 +109,7 @@ impl BackupRecipe {
             db: self.db.map(|db| DbRecipe {
                 name: sub(db.name),
                 dump_path: sub(db.dump_path),
+                engine: db.engine,
             }),
             post_restore_command: self.post_restore_command.map(sub),
             parameters: self
@@ -454,6 +474,27 @@ mod tests {
             backup.owner,
             Some(("www-data".to_string(), "www-data".to_string()))
         );
+        let db = backup.db.expect("yourls declares db");
+        assert_eq!(db.name, "yourls");
+        assert_eq!(db.engine, DbEngine::Mariadb);
+        assert_eq!(db.dump_path, "/tmp/yourls_db.dump");
+    }
+
+    #[test]
+    fn test_grimmory_meta_backup_recipe() {
+        let backup = load_meta("grimmory")
+            .backup
+            .expect("grimmory.meta.yml should declare backup");
+        assert_eq!(backup.systemd_services, vec!["grimmory"]);
+        assert_eq!(backup.paths, vec!["/srv/grimmory"]);
+        assert_eq!(
+            backup.owner,
+            Some(("grimmory".to_string(), "grimmory".to_string()))
+        );
+        let db = backup.db.expect("grimmory declares db");
+        assert_eq!(db.name, "grimmory");
+        assert_eq!(db.engine, DbEngine::Mariadb);
+        assert_eq!(db.dump_path, "/tmp/grimmory_db.dump");
     }
 
     #[test]
@@ -474,6 +515,7 @@ mod tests {
         );
         let db = backup.db.expect("paperless declares db");
         assert_eq!(db.name, "paperless");
+        assert_eq!(db.engine, DbEngine::Postgres);
         assert_eq!(db.dump_path, "/tmp/paperless_db.dump");
         let cmd = backup
             .post_restore_command
@@ -779,6 +821,11 @@ backup:
         let db = backup.db.unwrap();
         assert_eq!(db.name, "paperless");
         assert_eq!(db.dump_path, "/tmp/paperless_db.dump");
+        assert_eq!(
+            db.engine,
+            DbEngine::Postgres,
+            "a db block without engine must keep dumping via pg_dump"
+        );
         assert!(
             backup
                 .post_restore_command
@@ -786,6 +833,57 @@ backup:
                 .unwrap()
                 .contains("manage.py migrate")
         );
+    }
+
+    #[test]
+    fn test_db_recipe_with_mariadb_engine_parses() {
+        let yaml = r#"
+required_keys: []
+backup:
+  systemd_services: [grimmory]
+  paths: [/srv/grimmory]
+  db: { name: grimmory, engine: mariadb, dump_path: /tmp/grimmory_db.dump }
+"#;
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        let db = meta.backup.unwrap().db.unwrap();
+        assert_eq!(db.engine, DbEngine::Mariadb);
+    }
+
+    #[test]
+    fn test_db_recipe_rejects_unknown_engine() {
+        let yaml = r#"
+required_keys: []
+backup:
+  db: { name: app, engine: sqlite, dump_path: /tmp/app.dump }
+"#;
+        let result: Result<PlaybookMeta, _> = serde_yaml::from_str(yaml);
+        assert!(
+            result.is_err(),
+            "unknown engines must fail parse, not fall back"
+        );
+    }
+
+    #[test]
+    fn test_db_recipe_default_engine_round_trips_without_engine_key() {
+        let recipe = BackupRecipe {
+            systemd_services: vec![],
+            paths: vec![],
+            owner: None,
+            db: Some(DbRecipe {
+                name: "paperless".to_string(),
+                dump_path: "/tmp/paperless_db.dump".to_string(),
+                engine: DbEngine::Postgres,
+            }),
+            post_restore_command: None,
+            parameters: HashMap::new(),
+        };
+        let yaml = serde_yaml::to_string(&recipe).unwrap();
+        assert!(
+            !yaml.contains("engine"),
+            "default engine must not clutter serialized recipes: {yaml}"
+        );
+        let reparsed: BackupRecipe = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(reparsed, recipe);
     }
 
     #[test]
@@ -912,12 +1010,13 @@ backup:
     #[test]
     fn test_resolve_leaves_recipe_without_placeholders_unchanged() {
         let recipe = BackupRecipe {
-            systemd_services: vec!["navidrome".to_string()],
-            paths: vec!["/var/lib/navidrome".to_string()],
-            owner: Some(("navidrome".to_string(), "navidrome".to_string())),
+            systemd_services: vec!["grimmory".to_string()],
+            paths: vec!["/srv/grimmory".to_string()],
+            owner: Some(("grimmory".to_string(), "grimmory".to_string())),
             db: Some(DbRecipe {
-                name: "navidrome".to_string(),
-                dump_path: "/tmp/navidrome.dump".to_string(),
+                name: "grimmory".to_string(),
+                dump_path: "/tmp/grimmory_db.dump".to_string(),
+                engine: DbEngine::Mariadb,
             }),
             post_restore_command: None,
             parameters: HashMap::new(),

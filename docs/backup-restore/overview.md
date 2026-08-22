@@ -7,11 +7,11 @@ Auberge provides built-in backup and restore functionality for all self-hosted a
 ```mermaid
 graph TD
     Local["Local Machine<br/>auberge CLI + SSH keys"]
-    Remote["Remote VPS<br/>App Services + PostgreSQL"]
+    Remote["Remote VPS<br/>App Services + PostgreSQL/MariaDB"]
     Offsite["Backup Server<br/>Restic Repository"]
 
     Local -- "backup create: rsync + scp over SSH" --> Remote
-    Remote -- "app data + pg_dump -Fc" --> Local
+    Remote -- "app data + database dumps" --> Local
     Local -- "backup push: restic + rclone" --> Offsite
 
     style Local fill:#d4e6f1,stroke:#2471a3
@@ -32,8 +32,9 @@ graph TD
 - **Navidrome**: Database and configuration (music files only with `--include-music`; a backup that holds them restores them)
 - **Calibre**: Book library, metadata database, user database (login credentials)
 - **Gokapi**: SQLite database and uploaded shared files
+- **Grimmory**: Book library files and MariaDB metadata database
 - **Paperless-ngx**: Documents, media, PostgreSQL database (tags, correspondents, document types, users)
-- **YOURLS**: URL shortener data and configuration
+- **YOURLS**: Installation files and MariaDB database (short links, click stats)
 
 ## Backup Storage
 
@@ -58,7 +59,7 @@ One directory per run, holding one directory per app backed up in that run. `aub
 ### Backup Process
 
 1. Services are stopped via `systemctl stop {service}`
-2. For apps with databases (Paperless-ngx): `pg_dump -Fc` creates a compressed database dump on the remote host
+2. For apps with databases: a dump is created on the remote host — `pg_dump -Fc` for PostgreSQL (Paperless-ngx), `mariadb-dump --single-transaction` for MariaDB (Grimmory, YOURLS)
 3. Data is synced from remote using `rsync` with SSH
 4. Database dumps are downloaded via `scp` and cleaned up on remote
 5. Services are restarted via `systemctl start {service}`
@@ -70,7 +71,7 @@ One directory per run, holding one directory per app backed up in that run. `aub
 3. User confirmation (hostname typing for cross-host, Y/N for same-host)
 4. Services are stopped on target
 5. Data is synced to remote using `rsync` with SSH — every path the backup holds, including optional ones like Navidrome's `/srv/music`
-6. For apps with databases: dump is uploaded via `scp`, restored with `pg_restore --clean --if-exists`, then Django migrations are run
+6. For apps with databases: dump is uploaded via `scp` and restored — `pg_restore --clean --if-exists` for PostgreSQL, piping the dump into `mariadb` for MariaDB — then any `post_restore_command` (e.g. Paperless-ngx's Django migrations) is run
 7. File ownership is set to service user (e.g., `chown -R calibre:calibre /home/calibre`)
 8. Services are restarted on target
 9. Post-restore guidance displayed (cross-host only)

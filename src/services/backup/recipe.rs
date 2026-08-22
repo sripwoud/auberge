@@ -101,6 +101,7 @@ mod tests {
             "calibre",
             "freshrss",
             "gokapi",
+            "grimmory",
             "headscale",
             "navidrome",
             "paperless",

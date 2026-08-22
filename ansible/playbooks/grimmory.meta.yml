@@ -7,3 +7,11 @@ version:
   datasource: github-releases
   depName: "sripwoud/auberge"
   extractVersion: "^grimmory/v(?<version>.+)$"
+backup:
+  systemd_services: [grimmory]
+  paths: [/srv/grimmory]
+  owner: [grimmory, grimmory]
+  db:
+    name: grimmory
+    engine: mariadb
+    dump_path: /tmp/grimmory_db.dump

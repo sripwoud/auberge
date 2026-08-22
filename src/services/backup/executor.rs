@@ -1,4 +1,4 @@
-use crate::playbook_meta::BackupRecipe;
+use crate::playbook_meta::{BackupRecipe, DbEngine};
 use crate::services::progress::Progress;
 use crate::services::ssh::SshSession;
 use eyre::Result;
@@ -33,16 +33,28 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
 
         let result = (|| -> Result<()> {
             if let Some(db) = &recipe.db {
-                progress.task_started(&format!("pg_dump {}", db.name));
-                let cmd = format!(
-                    "sudo -u postgres pg_dump -Fc -Z0 {} > {}",
-                    db.name, db.dump_path
-                );
+                let (tool, cmd) = match db.engine {
+                    DbEngine::Postgres => (
+                        "pg_dump",
+                        format!(
+                            "sudo -u postgres pg_dump -Fc -Z0 {} > {}",
+                            db.name, db.dump_path
+                        ),
+                    ),
+                    DbEngine::Mariadb => (
+                        "mariadb-dump",
+                        format!(
+                            "sudo mariadb-dump --single-transaction {} > {}",
+                            db.name, db.dump_path
+                        ),
+                    ),
+                };
+                progress.task_started(&format!("{tool} {}", db.name));
                 let dump = self.session.run(&cmd)?;
                 if !dump.success {
                     let _ = self.session.run(&format!("rm -f {}", db.dump_path));
                     eyre::bail!(
-                        "pg_dump failed for {}: {}",
+                        "{tool} failed for {}: {}",
                         db.name,
                         dump.stderr_str().trim()
                     );
@@ -121,17 +133,28 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
             if let Some(db) = &recipe.db {
                 let local_dump = source_dir.join("db.dump");
                 if local_dump.exists() {
-                    progress.task_started(&format!("pg_restore {}", db.name));
+                    let (tool, cmd) = match db.engine {
+                        DbEngine::Postgres => (
+                            "pg_restore",
+                            format!(
+                                "sudo -u postgres pg_restore --clean --if-exists -d {} {} 2>&1",
+                                db.name, db.dump_path
+                            ),
+                        ),
+                        DbEngine::Mariadb => (
+                            "mariadb",
+                            format!("sudo mariadb {} < {} 2>&1", db.name, db.dump_path),
+                        ),
+                    };
+                    progress.task_started(&format!("{tool} {}", db.name));
                     self.session.scp_to(&local_dump, &db.dump_path)?;
                     self.session.run(&format!("chmod 644 {}", db.dump_path))?;
-                    let cmd = format!(
-                        "sudo -u postgres pg_restore --clean --if-exists -d {} {} 2>&1",
-                        db.name, db.dump_path
-                    );
                     let restore = self.session.run(&cmd)?;
                     let _ = self.session.run(&format!("rm -f {}", db.dump_path));
-                    if !restore.success && !is_warnings_only(&restore.stdout_str()) {
-                        eyre::bail!("pg_restore failed: {}", restore.stdout_str().trim());
+                    let warnings_only = db.engine == DbEngine::Postgres
+                        && pg_restore_warnings_only(&restore.stdout_str());
+                    if !restore.success && !warnings_only {
+                        eyre::bail!("{tool} failed: {}", restore.stdout_str().trim());
                     }
                 }
             }
@@ -233,7 +256,7 @@ fn staged_copy(source_dir: &Path, path: &str) -> PathBuf {
     source_dir.join(path.trim_start_matches('/'))
 }
 
-fn is_warnings_only(text: &str) -> bool {
+fn pg_restore_warnings_only(text: &str) -> bool {
     text.lines().all(|line| {
         let trimmed = line.trim().to_lowercase();
         trimmed.is_empty()
@@ -245,7 +268,7 @@ fn is_warnings_only(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::playbook_meta::{BackupParameter, DbRecipe};
+    use crate::playbook_meta::{BackupParameter, DbEngine, DbRecipe};
     use crate::services::ssh::{MockSshSession, SshOp};
 
     fn baikal_recipe() -> BackupRecipe {
@@ -267,8 +290,24 @@ mod tests {
             db: Some(DbRecipe {
                 name: "paperless".to_string(),
                 dump_path: "/tmp/paperless_db.dump".to_string(),
+                engine: DbEngine::Postgres,
             }),
             post_restore_command: Some("sudo -u paperless ./manage.py migrate".to_string()),
+            parameters: HashMap::new(),
+        }
+    }
+
+    fn grimmory_recipe() -> BackupRecipe {
+        BackupRecipe {
+            systemd_services: vec!["grimmory".to_string()],
+            paths: vec!["/srv/grimmory".to_string()],
+            owner: Some(("grimmory".to_string(), "grimmory".to_string())),
+            db: Some(DbRecipe {
+                name: "grimmory".to_string(),
+                dump_path: "/tmp/grimmory_db.dump".to_string(),
+                engine: DbEngine::Mariadb,
+            }),
+            post_restore_command: None,
             parameters: HashMap::new(),
         }
     }
@@ -483,6 +522,92 @@ mod tests {
                 action: "start".to_string(),
                 service: "paperless-webserver".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn test_backup_with_mariadb_db_runs_mariadb_dump() {
+        use crate::services::progress::ProgressEvent;
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .backup(
+                &grimmory_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
+            .unwrap();
+
+        let calls = mock.calls();
+        match &calls[1] {
+            SshOp::Run(cmd) => assert_eq!(
+                cmd,
+                "sudo mariadb-dump --single-transaction grimmory > /tmp/grimmory_db.dump"
+            ),
+            other => panic!("expected mariadb-dump Run, got {other:?}"),
+        }
+        assert!(matches!(
+            &calls[3],
+            SshOp::ScpFrom { remote, .. } if remote == "/tmp/grimmory_db.dump"
+        ));
+        assert!(progress.events().iter().any(|e| matches!(
+            e,
+            ProgressEvent::TaskStarted(s) if s == "mariadb-dump grimmory"
+        )));
+    }
+
+    #[test]
+    fn test_restore_with_mariadb_db_pipes_dump_into_mariadb() {
+        use crate::services::progress::ProgressEvent;
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("db.dump"), b"-- dump").unwrap();
+
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .restore(&grimmory_recipe(), tmp.path(), &mut progress)
+            .unwrap();
+
+        let calls = mock.calls();
+        assert!(calls.iter().any(|c| matches!(
+            c,
+            SshOp::Run(cmd) if cmd == "sudo mariadb grimmory < /tmp/grimmory_db.dump 2>&1"
+        )));
+        assert!(
+            !calls
+                .iter()
+                .any(|c| matches!(c, SshOp::Run(cmd) if cmd.contains("pg_restore"))),
+            "mariadb recipe must not fall through to pg_restore"
+        );
+        assert!(progress.events().iter().any(|e| matches!(
+            e,
+            ProgressEvent::TaskStarted(s) if s == "mariadb grimmory"
+        )));
+    }
+
+    #[test]
+    fn test_mariadb_restore_failure_is_not_excused_as_warnings_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("db.dump"), b"-- dump").unwrap();
+
+        let mock = MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult::ok());
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: b"Warning: something looked warning-shaped but the exit was fatal".to_vec(),
+            stderr: Vec::new(),
+        });
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        let result = executor.restore(&grimmory_recipe(), tmp.path(), &mut progress);
+
+        assert!(
+            result.is_err(),
+            "warnings-only leniency is pg_restore-specific; mariadb exit 1 must fail"
         );
     }
 
