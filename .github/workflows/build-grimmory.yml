@@ -37,12 +37,17 @@ jobs:
       - run: rm -rf src/main/resources/static
         working-directory: grimmory-${{ inputs.version }}/booklore-api
 
-      - run: ./gradlew clean build -x test --no-daemon
+      - run: >-
+          ./gradlew clean build -x test --no-daemon
+          -PfrontendDistDir=${{ github.workspace }}/grimmory-${{ inputs.version }}/booklore-ui/dist/grimmory/browser
         working-directory: grimmory-${{ inputs.version }}/booklore-api
 
       - run: |
           JAR=$(find grimmory-${{ inputs.version }}/booklore-api/build/libs/ -name '*.jar' ! -name '*-plain.jar')
           cp "$JAR" grimmory-api.jar
+
+      - name: Assert frontend assets are inside the jar
+        run: unzip -l grimmory-api.jar | grep -q 'static/images/icons/svg'
 
       - uses: softprops/action-gh-release@v2
         with:
