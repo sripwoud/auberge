@@ -151,8 +151,8 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
                     self.session.run(&format!("chmod 644 {}", db.dump_path))?;
                     let restore = self.session.run(&cmd)?;
                     let _ = self.session.run(&format!("rm -f {}", db.dump_path));
-                    let warnings_only =
-                        db.engine == DbEngine::Postgres && is_warnings_only(&restore.stdout_str());
+                    let warnings_only = db.engine == DbEngine::Postgres
+                        && pg_restore_warnings_only(&restore.stdout_str());
                     if !restore.success && !warnings_only {
                         eyre::bail!("{tool} failed: {}", restore.stdout_str().trim());
                     }
@@ -256,7 +256,7 @@ fn staged_copy(source_dir: &Path, path: &str) -> PathBuf {
     source_dir.join(path.trim_start_matches('/'))
 }
 
-fn is_warnings_only(text: &str) -> bool {
+fn pg_restore_warnings_only(text: &str) -> bool {
     text.lines().all(|line| {
         let trimmed = line.trim().to_lowercase();
         trimmed.is_empty()

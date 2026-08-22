@@ -1004,12 +1004,12 @@ backup:
     #[test]
     fn test_resolve_leaves_recipe_without_placeholders_unchanged() {
         let recipe = BackupRecipe {
-            systemd_services: vec!["navidrome".to_string()],
-            paths: vec!["/var/lib/navidrome".to_string()],
-            owner: Some(("navidrome".to_string(), "navidrome".to_string())),
+            systemd_services: vec!["grimmory".to_string()],
+            paths: vec!["/srv/grimmory".to_string()],
+            owner: Some(("grimmory".to_string(), "grimmory".to_string())),
             db: Some(DbRecipe {
-                name: "navidrome".to_string(),
-                dump_path: "/tmp/navidrome.dump".to_string(),
+                name: "grimmory".to_string(),
+                dump_path: "/tmp/grimmory_db.dump".to_string(),
                 engine: DbEngine::Mariadb,
             }),
             post_restore_command: None,
