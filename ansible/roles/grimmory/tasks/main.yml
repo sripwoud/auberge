@@ -171,13 +171,16 @@
         state: started
         daemon_reload: true
 
+    - name: Flush handlers so a pending grimmory restart lands before the probe
+      ansible.builtin.meta: flush_handlers
+
     - name: Wait for Grimmory to be ready
       ansible.builtin.uri:
         url: "http://127.0.0.1:{{ grimmory_port }}/api/v1/setup/status"
         method: GET
       register: grimmory_setup_status
       until: grimmory_setup_status.status == 200
-      retries: 30
+      retries: 90
       delay: 2
 
     - name: Provision admin user
