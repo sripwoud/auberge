@@ -125,11 +125,16 @@
         group: "{{ grimmory_sys_group }}"
         mode: "0755"
 
+    - name: Check if Grimmory JAR exists
+      ansible.builtin.stat:
+        path: "{{ grimmory_jar_path }}"
+      register: grimmory_jar_stat
+
     - name: Download Grimmory JAR
-      when: grimmory_installed_version != grimmory_version
+      when: grimmory_installed_version != grimmory_version or not grimmory_jar_stat.stat.exists
       ansible.builtin.get_url:
         url: "{{ grimmory_jar_url }}"
-        dest: "{{ grimmory_install_path }}/app.jar"
+        dest: "{{ grimmory_jar_path }}"
         owner: "{{ grimmory_sys_user }}"
         group: "{{ grimmory_sys_group }}"
         mode: "0644"
