@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.11](https://github.com/sripwoud/auberge/compare/v0.15.10...v0.15.11) - 2026-08-22
+
+### Fixed
+
+- *(grimmory)* stop deleting the api's own static resources ([#590](https://github.com/sripwoud/auberge/pull/590))
+- *(grimmory)* build the frontend on node 24 like upstream ([#588](https://github.com/sripwoud/auberge/pull/588))
+- *(grimmory)* bundle frontend dist into the jar and assert it shipped ([#587](https://github.com/sripwoud/auberge/pull/587))
+- *(fail2ban)* never ban operator, tailnet, or inventory host ips ([#583](https://github.com/sripwoud/auberge/pull/583))
+
+### Other
+
+- *(blocky)* bump to 5.4.0 ([#585](https://github.com/sripwoud/auberge/pull/585))
+
 ## [0.15.10](https://github.com/sripwoud/auberge/compare/v0.15.9...v0.15.10) - 2026-08-21
 
 ### Fixed
