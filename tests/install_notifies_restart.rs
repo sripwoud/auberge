@@ -12,12 +12,19 @@ use serde_yaml::{Mapping, Sequence, Value};
 /// task that knows the artifact changed is the task that changed it, so that is
 /// where the restart has to be notified from (#599).
 ///
-/// Scope is the version-bump path, recognised by the guard naming the App
-/// Version -- `<role>_version`, the convention `version_annotations.rs` already
-/// enforces (ADR-0017). The missing-artifact path is deliberately out: an absent
-/// `ExecStart` target means the unit is dead, so the `state: started` further
-/// down revives it. That is why grimmory's jar download, guarded on a bare
-/// `stat` of a versioned dest, is not examined here even though it notifies.
+/// Scope is the version-bump path: the install decides what lands by naming the
+/// App Version, `<role>_version` (ADR-0017, the convention
+/// `version_annotations.rs` enforces). A role says that in one of three places,
+/// one per install regime, and all three are read here -- a `when` guard
+/// comparing the Installed Version, the `version:` ref of a `git` checkout, or
+/// the dest itself where the artifact's path carries the version.
+///
+/// What is out of scope is the *missing*-artifact path, guarded on a bare `stat`
+/// with no version anywhere: an absent `ExecStart` target means the unit is
+/// already dead, so the `state: started` further down revives it and no handler
+/// is needed. A versioned dest is not that case, however much it looks like it —
+/// the path that does not exist yet is the *new* one, and the unit is alive on
+/// the old one, which is why grimmory is in scope here.
 ///
 /// Modules that carry bytes from elsewhere onto the Host. A `copy` rendering
 /// inline `content:` is excluded: that is a note the role authored, not an
@@ -173,9 +180,13 @@ fn substitute(input: &str, vars: &BTreeMap<String, String>) -> String {
 }
 
 /// `{{ var }}` replaced by the default it names, until the string stops
-/// changing. Anything else -- a filter, a register's field, a name defined
-/// somewhere other than defaults -- is left standing, and every caller
-/// comparing paths rejects what still holds a `{{`.
+/// changing. Anything else -- a filter, a register's field, an App Version
+/// injected as an extra_var -- is left standing verbatim, which is the point:
+/// a dest and an `ExecStart` that resolve through the same default arrive here
+/// as the same text, so grimmory's `…/grimmory-{{ grimmory_version }}.jar`
+/// compares equal on both sides without the version's value being knowable
+/// from the repo at all. Rendering with minijinja instead would substitute an
+/// undefined name with the empty string and silently compare a wrong path.
 fn resolve(raw: &str, vars: &BTreeMap<String, String>) -> String {
     let mut current = raw.to_string();
     for _ in 0..10 {
@@ -203,11 +214,48 @@ struct Unit {
     /// The absolute paths its `ExecStart` and `WorkingDirectory` name -- what it
     /// is running, and therefore what replacing means for it.
     runs: Vec<String>,
-    /// A `oneshot` without `RemainAfterExit`: it execs its artifact afresh at
-    /// every activation, so a replacement is picked up by the next timer firing
-    /// with nothing to restart. `immich` is the counter-case -- oneshot, but
+    /// Whether the process keeps running whatever it started with, which is
+    /// what makes a replacement on disk something to restart. False for a
+    /// `oneshot` without `RemainAfterExit`: it execs its artifact afresh at
+    /// every activation, so the next timer firing picks the replacement up on
+    /// its own. `immich` is why `Type=oneshot` alone is not the test --
     /// `RemainAfterExit` keeps the containers it started alive.
-    transient: bool,
+    holds_the_artifact: bool,
+}
+
+/// A command line split into arguments, on whitespace *outside* `{{ }}` only.
+/// Splitting on every space would tear a path holding an unresolved variable in
+/// half at `grimmory-{{ grimmory_version }}.jar`, and the half left over
+/// matches no dest.
+fn arguments(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0usize;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '{' if chars.peek() == Some(&'{') => {
+                depth += 1;
+                current.push(c);
+                current.push(chars.next().expect("peeked"));
+            }
+            '}' if chars.peek() == Some(&'}') => {
+                depth = depth.saturating_sub(1);
+                current.push(c);
+                current.push(chars.next().expect("peeked"));
+            }
+            c if c.is_whitespace() && depth == 0 => {
+                if !current.is_empty() {
+                    out.push(std::mem::take(&mut current));
+                }
+            }
+            c => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
 }
 
 fn directive_paths(body: &str, vars: &BTreeMap<String, String>) -> Vec<String> {
@@ -218,10 +266,9 @@ fn directive_paths(body: &str, vars: &BTreeMap<String, String>) -> Vec<String> {
                 .find_map(|directive| line.strip_prefix(directive))
         })
         .flat_map(|value| {
-            resolve(value.trim(), vars)
-                .split_whitespace()
+            arguments(&resolve(value.trim(), vars))
+                .into_iter()
                 .filter(|token| token.starts_with('/'))
-                .map(str::to_string)
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -242,7 +289,14 @@ fn units(role: &str, vars: &BTreeMap<String, String>) -> Vec<Unit> {
             ) else {
                 continue;
             };
-            if !dest.starts_with("/etc/systemd/system") {
+            // A drop-in refines a unit rather than being one, and the units
+            // these refine (navidrome's, icecast's, caddy's) are installed by
+            // apt, not templated by the role that budgets their memory.
+            if !dest.starts_with("/etc/systemd/system")
+                || dest
+                    .trim_start_matches("/etc/systemd/system/")
+                    .contains('/')
+            {
                 continue;
             }
             let items = strings(field(&task.body, "loop"));
@@ -270,7 +324,8 @@ fn units(role: &str, vars: &BTreeMap<String, String>) -> Vec<Unit> {
                 units.push(Unit {
                     name: unit_name(dest.rsplit('/').next().expect("a dest names a file")),
                     runs: directive_paths(&body, vars),
-                    transient: body.contains("Type=oneshot") && !body.contains("RemainAfterExit"),
+                    holds_the_artifact: !body.contains("Type=oneshot")
+                        || body.contains("RemainAfterExit"),
                 });
             }
         }
@@ -347,16 +402,37 @@ fn task_name(task: &Mapping) -> String {
         .to_string()
 }
 
-/// A guard is on the version-bump path when it names the role's App Version.
-fn guards_a_version_bump(role: &str, guards: &[String]) -> bool {
+/// Whether a string names the role's App Version, as a whole word rather than a
+/// substring -- `blocky_lego_version` is a Tool Version and must not read as
+/// `blocky_version`.
+fn names_the_app_version(role: &str, text: &str) -> bool {
     let token = format!("{role}_version");
     let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    guards.iter().any(|guard| {
-        guard.match_indices(&token).any(|(at, _)| {
-            !guard[..at].chars().next_back().is_some_and(word)
-                && !guard[at + token.len()..].chars().next().is_some_and(word)
-        })
+    text.match_indices(&token).any(|(at, _)| {
+        !text[..at].chars().next_back().is_some_and(word)
+            && !text[at + token.len()..].chars().next().is_some_and(word)
     })
+}
+
+/// Whether an install decides what lands by naming the App Version -- the
+/// version-bump path, in whichever of the three regimes the role installs by:
+///
+/// - a `when` guard comparing the Installed Version to the pinned one, which is
+///   marker-plus-stat and artifact-read (bichon, blocky, gokapi, headscale,
+///   paperless);
+/// - the `version:` ref of a `git` checkout, where the module's own parameter is
+///   the guard: git moves the tree to that ref and reports changed exactly when
+///   it moved something (freshrss, tgtg);
+/// - the dest, where the artifact's path carries the version, so the bump lands
+///   on a path that cannot already exist (grimmory, #597).
+fn on_the_version_bump_path(role: &str, guards: &[String], args: &Mapping, dest: &str) -> bool {
+    guards
+        .iter()
+        .any(|guard| names_the_app_version(role, guard))
+        || field(args, "version")
+            .and_then(Value::as_str)
+            .is_some_and(|reference| names_the_app_version(role, reference))
+        || names_the_app_version(role, dest)
 }
 
 fn replacements() -> Vec<Replacement> {
@@ -370,9 +446,6 @@ fn replacements() -> Vec<Replacement> {
         let handlers = restart_handlers(&role, &vars);
 
         for task in every_task(&role) {
-            if !guards_a_version_bump(&role, &task.guards) {
-                continue;
-            }
             for module in INSTALL_MODULES {
                 let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
                     continue;
@@ -387,12 +460,15 @@ fn replacements() -> Vec<Replacement> {
                 let dest = dest.trim_end_matches('/');
                 // The download lands here, the unit runs what was unpacked out
                 // of it; a /tmp path is never an artifact (ADR-0027).
-                if dest.starts_with("/tmp") || dest.contains("{{") {
+                if dest.starts_with("/tmp") {
+                    continue;
+                }
+                if !on_the_version_bump_path(&role, &task.guards, args, dest) {
                     continue;
                 }
                 let holds: Vec<String> = units
                     .iter()
-                    .filter(|unit| !unit.transient)
+                    .filter(|unit| unit.holds_the_artifact)
                     .filter(|unit| {
                         unit.runs
                             .iter()
@@ -447,21 +523,41 @@ fn test_a_version_bump_restarts_everything_that_runs_the_artifact() {
     );
 }
 
-/// Keeps the scan honest. Every one of these roles pins an App Version and
-/// installs the artifact its own unit runs, so a change to the model that stops
-/// seeing one fails here rather than quietly passing the fence.
+/// Every role the scan reaches. Asserted as equality, not membership: the fence
+/// above is only as good as what it looks at, and a role that installs what its
+/// own unit runs while going unseen would pass it for free. Adding a role here
+/// is what subjects it to the fence, and a role dropping off the list is a
+/// coverage regression rather than a passing suite.
+///
+/// `baikal` is the one role in this shape the model cannot reach, and it is a
+/// property of the App rather than a hole in the scan: Baikal is served by the
+/// system's php-fpm, installed by apt, so the role templates no unit for what
+/// runs its release -- only its two sync timers, which are `oneshot`. Its
+/// `Install Baikal release` notifies `Restart baikal php-fpm` today and nothing
+/// here would notice if it stopped.
+const REPLACING_ROLES: &[&str] = &[
+    "bichon",
+    "blocky",
+    "freshrss",
+    "gokapi",
+    "grimmory",
+    "headscale",
+    "paperless",
+    "tgtg",
+];
+
 #[test]
 fn test_the_scan_sees_every_role_that_replaces_what_it_runs() {
     let seen: BTreeSet<String> = replacements()
         .iter()
         .map(|replacement| replacement.role.clone())
         .collect();
-    for role in ["bichon", "blocky", "gokapi", "headscale", "paperless"] {
-        assert!(
-            seen.contains(role),
-            "{role} installs the artifact its unit runs and must be scanned; found {seen:?}"
-        );
-    }
+    let declared: BTreeSet<String> = REPLACING_ROLES.iter().map(|r| r.to_string()).collect();
+    assert_eq!(
+        seen, declared,
+        "a role that installs, under an App Version, the artifact its own unit runs \
+         must be declared here -- that is what puts it under the fence"
+    );
 }
 
 /// A `oneshot` run by a timer is not something to restart: it execs the artifact
@@ -476,7 +572,7 @@ fn test_a_timer_driven_oneshot_is_not_left_running_anything() {
         .find(|unit| unit.name == "colporteur.service")
         .expect("colporteur deploys colporteur.service");
     assert!(
-        unit.transient,
+        !unit.holds_the_artifact,
         "colporteur.service is a oneshot; if it stops being one it needs the restart the fence asks for"
     );
     assert!(

@@ -82,6 +82,7 @@
     version: "{{ tgtg_version }}"
     force: false
   register: tgtg_git_result
+  notify: Restart tgtg
 
 - name: Set install directory ownership
   ansible.builtin.file:

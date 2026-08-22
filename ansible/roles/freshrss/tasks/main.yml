@@ -61,6 +61,7 @@
         dest: "{{ freshrss_install_path }}"
         version: "{{ freshrss_version }}"
         depth: 1
+      notify: Restart freshrss
 
     - name: Check for local modifications in FreshRSS directory # noqa: command-instead-of-module
       when: freshrss_git_check.stat.exists
@@ -94,6 +95,7 @@
         update: true
       register: freshrss_update
       changed_when: freshrss_update.before != freshrss_update.after
+      notify: Restart freshrss
 
     - name: Link data directory to persistent location
       ansible.builtin.file:
