@@ -186,6 +186,7 @@ mod tests {
                 "blocky_lego_version",
                 "caddy_cloudflare_plugin_version",
                 "caddy_l4_version",
+                "grimmory_java_version",
                 "hermes_uv_version",
                 "radio_liquidsoap_version",
                 "tgtg_uv_version",

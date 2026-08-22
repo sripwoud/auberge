@@ -51,6 +51,11 @@
       "description": "grimmory is auberge's own build output (build-grimmory.yml), not a dependency",
       "matchDepNames": ["sripwoud/auberge"],
       "enabled": false
+    },
+    {
+      "description": "Temurin GA respins bump a 4th digit (25.0.4+7 then 25.0.4.1+1) and default semver-coerced discards everything past the patch, so the respins — the security releases — would never be offered. This regex ranks the 4th digit as build and the +suffix as revision (compared only when build exists, which GA ordering never needs). Blind by design: same-x.y.z +build-only re-releases (GA never ships those) and the initial `25+36` GA shape (a new major is a manual depName edit — the per-major repo is what makes LTS-only structural, ADR-0030). Lives here, not in the `# renovate:` annotation, because the pattern breaches yaml line-length.",
+      "matchDepNames": ["adoptium/temurin25-binaries"],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:\\.(?<build>\\d+))?(?:\\+(?<revision>\\d+))?$"
     }
   ]
 }

@@ -37,6 +37,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0027 | [An installed version is read from the artifact, never from a note the role wrote](./adr/0027-installed-version-is-read-from-the-artifact.md)                  |
 | 0028 | [A restart the fence cannot prove is declared, not documented](./adr/0028-unproven-restarts-are-declared-not-documented.md)                                    |
 | 0029 | [An install that destroys what a unit is executing stops it first](./adr/0029-a-destructive-install-stops-what-runs-across-it.md)                              |
+| 0030 | [The JRE pin tracks Temurin's per-major release repo](./adr/0030-jre-pin-tracks-temurins-per-major-release-repo.md)                                            |
 
 ## Native systemd by default
 
