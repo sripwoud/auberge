@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.14](https://github.com/sripwoud/auberge/compare/v0.15.13...v0.15.14) - 2026-08-23
+
+### Fixed
+
+- *(bichon)* quiesce the archive timer across the backup window ([#623](https://github.com/sripwoud/auberge/pull/623))
+- *(baikal)* decode blob calendar and card data in the birthday sync ([#622](https://github.com/sripwoud/auberge/pull/622))
+- *(bichon)* back up the internal store alongside the eml archive ([#617](https://github.com/sripwoud/auberge/pull/617))
+
 ## [0.15.13](https://github.com/sripwoud/auberge/compare/v0.15.12...v0.15.13) - 2026-08-22
 
 ### Added
