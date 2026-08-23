@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.13](https://github.com/sripwoud/auberge/compare/v0.15.12...v0.15.13) - 2026-08-22
+
+### Added
+
+- *(backup)* dump mariadb databases for grimmory and yourls ([#614](https://github.com/sripwoud/auberge/pull/614))
+
+### Fixed
+
+- *(grimmory)* pin the jre to a full version so bumps reach it ([#613](https://github.com/sripwoud/auberge/pull/613))
+- *(paperless)* stop the four workers across the release swap ([#610](https://github.com/sripwoud/auberge/pull/610))
+- *(paperless)* run the post-restore migration inside the sudo boundary ([#612](https://github.com/sripwoud/auberge/pull/612))
+- *(ansible)* restart php-fpm when a yourls checkout lands new code ([#609](https://github.com/sripwoud/auberge/pull/609))
+- *(hermes)* restart the gateway when the venv it execs is rebuilt ([#606](https://github.com/sripwoud/auberge/pull/606))
+- *(ansible)* restart what runs an artifact the deploy just replaced ([#601](https://github.com/sripwoud/auberge/pull/601))
+
 ## [0.15.12](https://github.com/sripwoud/auberge/compare/v0.15.11...v0.15.12) - 2026-08-22
 
 ### Fixed
