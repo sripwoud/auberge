@@ -101,6 +101,14 @@
         group: "{{ grimmory_sys_group }}"
         mode: "0755"
 
+    - name: Create Grimmory library directory
+      ansible.builtin.file:
+        path: "{{ grimmory_library_path }}"
+        state: directory
+        owner: "{{ grimmory_sys_user }}"
+        group: "{{ grimmory_sys_group }}"
+        mode: "0755"
+
     - name: Create Grimmory bookdrop directory
       ansible.builtin.file:
         path: "{{ grimmory_bookdrop_path }}"

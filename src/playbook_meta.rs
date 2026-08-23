@@ -51,6 +51,16 @@ pub struct BackupRecipe {
     pub systemd_services: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
+    /// The App's Path Attestation: a command whose stdout lines are the paths
+    /// the App itself reports its data lives at, checked against `paths`
+    /// before `backup create` touches anything (ADR-0033).
+    ///
+    /// For an App that owns its data location in its own store — grimmory
+    /// keeps the library root in a MariaDB row its UI writes — the role's
+    /// declaration is a note that can quietly stop matching. Every line the
+    /// command returns must sit within a declared path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attests: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<(String, String)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -105,6 +115,7 @@ impl BackupRecipe {
         Self {
             systemd_services: self.systemd_services.into_iter().map(sub).collect(),
             paths: self.paths.into_iter().map(sub).collect(),
+            attests: self.attests.map(sub),
             owner: self.owner.map(|(user, group)| (sub(user), sub(group))),
             db: self.db.map(|db| DbRecipe {
                 name: sub(db.name),
@@ -492,7 +503,13 @@ mod tests {
             .backup
             .expect("grimmory.meta.yml should declare backup");
         assert_eq!(backup.systemd_services, vec!["grimmory"]);
-        assert_eq!(backup.paths, vec!["/srv/grimmory"]);
+        assert_eq!(backup.paths, vec!["/srv/grimmory", "/srv/books"]);
+        assert_eq!(
+            backup.attests.as_deref(),
+            Some("sudo mariadb -N -B -e 'select path from library_path' grimmory"),
+            "grimmory owns its library root in its own database, so the Recipe verifies the \
+             declaration instead of trusting it (ADR-0033)"
+        );
         assert_eq!(
             backup.owner,
             Some(("grimmory".to_string(), "grimmory".to_string()))
@@ -882,6 +899,7 @@ backup:
             }),
             post_restore_command: None,
             parameters: HashMap::new(),
+            attests: None,
         };
         let yaml = serde_yaml::to_string(&recipe).unwrap();
         assert!(
@@ -921,6 +939,7 @@ backup:
             db: None,
             post_restore_command: None,
             parameters: HashMap::new(),
+            attests: None,
         };
         let effective = recipe.effective_paths(&HashMap::new());
         assert_eq!(effective, vec!["/var/lib/app".to_string()]);
@@ -943,6 +962,7 @@ backup:
             db: None,
             post_restore_command: None,
             parameters,
+            attests: None,
         };
         let mut values = HashMap::new();
         values.insert("include_music".to_string(), true);
@@ -968,6 +988,7 @@ backup:
             db: None,
             post_restore_command: None,
             parameters,
+            attests: None,
         };
         let effective = recipe.effective_paths(&HashMap::new());
         assert!(!effective.contains(&"/srv/music".to_string()));
@@ -986,6 +1007,7 @@ backup:
         let recipe = BackupRecipe {
             systemd_services: vec!["syncthing@{admin_user}".to_string()],
             paths: vec!["/home/{admin_user}/.local/state/syncthing/config.xml".to_string()],
+            attests: Some("echo /home/{admin_user}/Sync".to_string()),
             owner: Some(("{admin_user}".to_string(), "{admin_user}".to_string())),
             db: None,
             post_restore_command: Some("chown {admin_user} /tmp/x".to_string()),
@@ -1007,6 +1029,7 @@ backup:
             resolved.post_restore_command.as_deref(),
             Some("chown alice /tmp/x")
         );
+        assert_eq!(resolved.attests.as_deref(), Some("echo /home/alice/Sync"));
         assert_eq!(
             resolved.parameters.get("include_extra").unwrap().adds_paths,
             vec!["/home/alice/extra"]
@@ -1026,6 +1049,7 @@ backup:
             }),
             post_restore_command: None,
             parameters: HashMap::new(),
+            attests: None,
         };
 
         let resolved = recipe.clone().resolve("alice");

@@ -21,6 +21,8 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
         parameters: &HashMap<String, bool>,
         progress: &mut dyn Progress,
     ) -> Result<()> {
+        self.verify_path_attestation(recipe, parameters, progress)?;
+
         let mut stopped: Vec<&str> = Vec::new();
         for service in &recipe.systemd_services {
             progress.task_started(&format!("Stopping {}", service));
@@ -95,6 +97,63 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
                 restart_failures.join("\n  ")
             ),
         }
+    }
+
+    /// Check the Recipe's declared paths against the App's Path Attestation,
+    /// before anything is stopped or staged (ADR-0033).
+    ///
+    /// Runs first for two reasons: a mismatch then costs no service bounce,
+    /// and no snapshot exists to be restored from later by someone for whom
+    /// only the exit code has been forgotten.
+    ///
+    /// A query that reports nothing is not a failure. Every way of failing to
+    /// *ask* — a table an upstream release renamed, a mistyped invocation, the
+    /// wrong database — exits non-zero and is caught above; reaching here with
+    /// no rows means the App genuinely holds no data yet. That is the normal
+    /// state of a freshly deployed App, including the restore target of a
+    /// cross-host migration, whose emergency backup runs through here first.
+    fn verify_path_attestation(
+        &self,
+        recipe: &BackupRecipe,
+        parameters: &HashMap<String, bool>,
+        progress: &mut dyn Progress,
+    ) -> Result<()> {
+        let Some(query) = &recipe.attests else {
+            return Ok(());
+        };
+        progress.task_started("Verifying declared paths");
+
+        let answer = self.session.run(query)?;
+        if !answer.success {
+            eyre::bail!(
+                "the coverage query failed, so the declared paths are unverified: {}",
+                answer.stderr_str().trim()
+            );
+        }
+
+        let reported: Vec<String> = answer
+            .stdout_str()
+            .lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+            .collect();
+
+        let declared = recipe.effective_paths(parameters);
+        let uncovered: Vec<&str> = reported
+            .iter()
+            .map(String::as_str)
+            .filter(|path| !is_within(path, &declared))
+            .collect();
+        if !uncovered.is_empty() {
+            eyre::bail!(
+                "the App holds data no declared path covers, so a snapshot taken now would \
+                 restore metadata pointing at nothing.\n  uncovered: {}\n  declared:  {}\n\
+                 Add the path to `paths:` in the Playbook Meta, or point the App back.",
+                uncovered.join(", "),
+                declared.join(", ")
+            );
+        }
+        Ok(())
     }
 
     /// Restore whatever the staged backup holds — see [`staged_paths`] for
@@ -209,6 +268,18 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
     }
 }
 
+/// Whether a declared path carries `path` into the backup.
+///
+/// `rsync` of a directory carries everything beneath it, so containment counts
+/// — but only at a path boundary: `/srv/books` does not hold
+/// `/srv/books-archive`.
+fn is_within(path: &str, declared: &[String]) -> bool {
+    declared.iter().any(|root| {
+        let root = root.trim_end_matches('/');
+        root == path || path.starts_with(&format!("{root}/"))
+    })
+}
+
 /// The paths a staged backup holds: the Recipe's declared paths, plus every
 /// parameter-gated path present on disk. A Recipe's `parameters` are a
 /// create-time input — the choice is recorded nowhere a later restore can
@@ -279,6 +350,7 @@ mod tests {
             db: None,
             post_restore_command: None,
             parameters: HashMap::new(),
+            attests: None,
         }
     }
 
@@ -364,6 +436,7 @@ mod tests {
             }),
             post_restore_command: Some("sudo -u paperless ./manage.py migrate".to_string()),
             parameters: HashMap::new(),
+            attests: None,
         }
     }
 
@@ -379,7 +452,42 @@ mod tests {
             }),
             post_restore_command: None,
             parameters: HashMap::new(),
+            attests: None,
         }
+    }
+
+    /// What grimmory's Playbook Meta asks: the library roots the App itself
+    /// records, one per line.
+    const LIBRARY_QUERY: &str = "sudo mariadb -N -B -e 'select path from library_path' grimmory";
+
+    /// A Recipe whose declared paths are checked against what the App attests.
+    fn attesting_recipe(paths: &[&str]) -> BackupRecipe {
+        BackupRecipe {
+            systemd_services: vec!["grimmory".to_string()],
+            paths: paths.iter().map(|path| path.to_string()).collect(),
+            owner: None,
+            db: None,
+            post_restore_command: None,
+            parameters: HashMap::new(),
+            attests: Some(LIBRARY_QUERY.to_string()),
+        }
+    }
+
+    /// Stage the App's attestation.
+    fn reports(mock: &MockSshSession, stdout: &str) {
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: true,
+            exit_code: Some(0),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        });
+    }
+
+    fn backup_with(recipe: &BackupRecipe, mock: &MockSshSession) -> Result<()> {
+        let executor = RecipeExecutor::new(mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        let tmp = tempfile::tempdir().unwrap();
+        executor.backup(recipe, tmp.path(), &HashMap::new(), &mut progress)
     }
 
     fn navidrome_recipe() -> BackupRecipe {
@@ -398,6 +506,7 @@ mod tests {
             db: None,
             post_restore_command: None,
             parameters: params,
+            attests: None,
         }
     }
 
@@ -413,6 +522,7 @@ mod tests {
             db: None,
             post_restore_command: None,
             parameters: HashMap::new(),
+            attests: None,
         }
     }
 
@@ -517,6 +627,7 @@ mod tests {
             db: None,
             post_restore_command: None,
             parameters: HashMap::new(),
+            attests: None,
         };
         let executor = RecipeExecutor::new(&mock);
         let mut progress = crate::services::progress::MockProgress::new();
@@ -746,6 +857,7 @@ mod tests {
             db: None,
             post_restore_command: None,
             parameters: HashMap::new(),
+            attests: None,
         };
         let mut progress = crate::services::progress::MockProgress::new();
         executor
@@ -947,6 +1059,7 @@ mod tests {
         );
         let recipe = BackupRecipe {
             parameters: params,
+            attests: None,
             ..navidrome_recipe()
         };
         let backup = staged_backup(&["/srv/music", "/srv/artwork"]);
@@ -969,6 +1082,7 @@ mod tests {
         );
         let recipe = BackupRecipe {
             parameters: params,
+            attests: None,
             ..navidrome_recipe()
         };
         let backup = staged_backup(&["/var/lib/navidrome"]);
@@ -1040,6 +1154,105 @@ mod tests {
         assert!(
             !starts.is_empty(),
             "services must be restarted even when pg_dump fails"
+        );
+    }
+
+    #[test]
+    fn test_the_attestation_is_checked_before_anything_is_stopped() {
+        let mock = MockSshSession::new();
+        reports(&mock, "/srv/books\n");
+
+        let result = backup_with(&attesting_recipe(&["/srv/grimmory"]), &mock);
+
+        assert!(result.is_err(), "an uncovered library must fail the backup");
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run(LIBRARY_QUERY.to_string())],
+            "the check runs before the quiesce, so a mismatch costs no service bounce and \
+             stages no snapshot anyone could later restore from"
+        );
+    }
+
+    #[test]
+    fn test_the_failure_names_the_path_that_is_not_covered() {
+        let mock = MockSshSession::new();
+        reports(&mock, "/srv/grimmory\n/srv/books\n");
+
+        let error = backup_with(&attesting_recipe(&["/srv/grimmory"]), &mock)
+            .expect_err("an uncovered path must fail");
+
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("/srv/books"),
+            "the operator has to know which path to declare: {message}"
+        );
+    }
+
+    #[test]
+    fn test_a_reported_path_nested_under_a_declared_one_is_covered() {
+        let mock = MockSshSession::new();
+        reports(&mock, "/srv/books\n");
+
+        backup_with(&attesting_recipe(&["/srv"]), &mock)
+            .expect("rsync of a parent carries everything under it");
+    }
+
+    #[test]
+    fn test_a_shared_prefix_that_is_not_a_parent_does_not_hold_the_path() {
+        let mock = MockSshSession::new();
+        reports(&mock, "/srv/books-archive\n");
+
+        assert!(
+            backup_with(&attesting_recipe(&["/srv/books"]), &mock).is_err(),
+            "/srv/books does not contain /srv/books-archive; a textual prefix is not a path \
+             boundary"
+        );
+    }
+
+    #[test]
+    fn test_an_app_holding_no_data_yet_attests_nothing_and_still_backs_up() {
+        let mock = MockSshSession::new();
+        reports(&mock, "\n  \n");
+
+        backup_with(&attesting_recipe(&["/srv/books"]), &mock).expect(
+            "a freshly deployed App reports no data locations, and the emergency backup a \
+             cross-host restore takes of its target runs through here before the migration \
+             that fills it",
+        );
+    }
+
+    #[test]
+    fn test_an_attestation_that_fails_fails_the_backup() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: b"ERROR 1146: Table 'grimmory.library_path' doesn't exist".to_vec(),
+        });
+
+        let error = backup_with(&attesting_recipe(&["/srv/books"]), &mock)
+            .expect_err("an attestation that errored proves nothing");
+
+        assert!(
+            format!("{error:#}").contains("library_path"),
+            "the exit code is what separates failing to ask from having nothing to say, so \
+             the query's own stderr is the only clue to why it could not answer"
+        );
+    }
+
+    #[test]
+    fn test_a_recipe_without_an_attestation_is_asked_nothing() {
+        let mock = MockSshSession::new();
+
+        backup_with(&baikal_recipe(), &mock).expect("baikal declares no coverage query");
+
+        assert!(
+            !mock
+                .calls()
+                .iter()
+                .any(|call| matches!(call, SshOp::Run(cmd) if cmd.contains("select"))),
+            "the check is opt-in per Recipe; every App without `attests:` is untouched"
         );
     }
 }
