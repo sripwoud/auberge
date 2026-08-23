@@ -38,6 +38,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0028 | [A restart the fence cannot prove is declared, not documented](./adr/0028-unproven-restarts-are-declared-not-documented.md)                                    |
 | 0029 | [An install that destroys what a unit is executing stops it first](./adr/0029-a-destructive-install-stops-what-runs-across-it.md)                              |
 | 0030 | [The JRE pin tracks Temurin's per-major release repo](./adr/0030-jre-pin-tracks-temurins-per-major-release-repo.md)                                            |
+| 0031 | [Bichon's internal store joins the Backup Recipe](./adr/0031-bichon-internal-store-joins-the-backup-recipe.md)                                                 |
 
 ## Native systemd by default
 

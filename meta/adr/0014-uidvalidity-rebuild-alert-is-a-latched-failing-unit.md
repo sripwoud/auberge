@@ -76,7 +76,7 @@ The signal is worth building on because it is stable and it precedes the damage:
 
 - ADR-0012 — Email Archive splits immutable bodies from mutable metadata. Its Consequences name this follow-up; its restore script is what a latched rebuild sends the operator to.
 - ADR-0007 §1 — the silent-vs-loud asymmetry. It decides the `--grep` question and the "no baseline seeding" question the same way.
-- ADR-0006 — the Internal Store is deliberately not backed up, which is why a purge costs searchability rather than mail.
+- ADR-0006 — the Internal Store is deliberately not backed up, which is why a purge costs searchability rather than mail. (ADR-0031 backs the store up since #615, but a restored copy would be re-purged by the same sync — the searchability cost stands.)
 - `meta/roadmap.md` — "Alerting (via email or webhook)" under Infrastructure, still unbuilt; the reason this alert ships without a delivery channel.
 - CONTEXT.md — defines **Rebuild Latch**, **Internal Store**, **Email Archive**, **Upstream Mailbox**, **Backup Verdict**.
 - Bichon trigger chain: `flow.rs` UIDVALIDITY comparison → `info!` → `rebuild_mailbox_cache` deletes envelopes and blobs → refetch.
