@@ -6,6 +6,6 @@ version:
   datasource: github-releases
   depName: "rustmailer/bichon"
 backup:
-  systemd_services: [bichon]
+  systemd_services: [bichon-archive.timer, bichon]
   paths: [/var/lib/bichon-archive, /opt/bichon/data]
   owner: [bichon, bichon]

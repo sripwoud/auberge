@@ -1448,17 +1448,43 @@ fn default_backup_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
 
+/// systemd's own closed set of unit types. A Recipe entry carrying one of
+/// these is already a unit name; anything else is a bare service name.
+const UNIT_TYPE_SUFFIXES: &[&str] = &[
+    ".automount",
+    ".device",
+    ".mount",
+    ".path",
+    ".scope",
+    ".service",
+    ".slice",
+    ".socket",
+    ".swap",
+    ".target",
+    ".timer",
+];
+
+/// The unit *file* a Recipe entry resolves to, which is what
+/// `systemctl list-unit-files` answers for. Mirrors systemd's rule: an
+/// explicit unit type is kept, a bare name is a `.service`. Appending
+/// `.service` unconditionally instead read `bichon-archive.timer` as
+/// `bichon-archive.timer.service` and failed the restore preflight (#619).
+///
 /// Template instances (`syncthing@alice`) have no unit file of their own —
 /// `list-unit-files` only knows the template (`syncthing@.service`).
-fn unit_file_name(service: &str) -> String {
-    match service.split_once('@') {
-        Some((template, _)) => format!("{template}@.service"),
-        None => format!("{service}.service"),
+fn unit_file_name(unit: &str) -> String {
+    let (name, suffix) = UNIT_TYPE_SUFFIXES
+        .iter()
+        .find_map(|suffix| unit.strip_suffix(suffix).map(|name| (name, *suffix)))
+        .unwrap_or((unit, ".service"));
+    match name.split_once('@') {
+        Some((template, _)) => format!("{template}@{suffix}"),
+        None => format!("{name}{suffix}"),
     }
 }
 
-fn check_remote_service_exists(host: &Host, ssh_key: &Path, service: &str) -> Result<bool> {
-    let unit_file = unit_file_name(service);
+fn check_remote_unit_exists(host: &Host, ssh_key: &Path, unit: &str) -> Result<bool> {
+    let unit_file = unit_file_name(unit);
     let output =
         SshSession::new(host, ssh_key).run_raw(&["systemctl", "list-unit-files", &unit_file])?;
     Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).contains(&unit_file))
@@ -1530,7 +1556,7 @@ fn validate_cross_host_restore(
             None => continue,
         };
         for service in &recipe.systemd_services {
-            match check_remote_service_exists(host, ssh_key, service) {
+            match check_remote_unit_exists(host, ssh_key, service) {
                 Ok(true) => {
                     eprintln!("    ✓ {} service exists", service);
                 }
@@ -1590,6 +1616,25 @@ mod tests {
     #[test]
     fn unit_file_name_maps_template_instance_to_template_file() {
         assert_eq!(unit_file_name("syncthing@alice"), "syncthing@.service");
+    }
+
+    #[test]
+    fn unit_file_name_keeps_an_explicit_unit_type_suffix() {
+        assert_eq!(
+            unit_file_name("bichon-archive.timer"),
+            "bichon-archive.timer"
+        );
+        assert_eq!(unit_file_name("bichon.service"), "bichon.service");
+    }
+
+    #[test]
+    fn unit_file_name_appends_service_to_a_dotted_name_that_is_not_a_unit_type() {
+        assert_eq!(unit_file_name("foo.bar"), "foo.bar.service");
+    }
+
+    #[test]
+    fn unit_file_name_maps_a_suffixed_template_instance_to_its_template_file() {
+        assert_eq!(unit_file_name("backup@daily.timer"), "backup@.timer");
     }
 
     #[test]
