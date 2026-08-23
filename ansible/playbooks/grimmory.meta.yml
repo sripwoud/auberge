@@ -9,7 +9,8 @@ version:
   extractVersion: "^grimmory/v(?<version>.+)$"
 backup:
   systemd_services: [grimmory]
-  paths: [/srv/grimmory]
+  paths: [/srv/grimmory, /srv/books]
+  attests: sudo mariadb -N -B -e 'select path from library_path' grimmory
   owner: [grimmory, grimmory]
   db:
     name: grimmory

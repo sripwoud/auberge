@@ -40,6 +40,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0030 | [The JRE pin tracks Temurin's per-major release repo](./adr/0030-jre-pin-tracks-temurins-per-major-release-repo.md)                                            |
 | 0031 | [Bichon's internal store joins the Backup Recipe](./adr/0031-bichon-internal-store-joins-the-backup-recipe.md)                                                 |
 | 0032 | [A Backup Recipe quiesces triggers, not just servers](./adr/0032-a-recipe-quiesces-triggers-not-just-servers.md)                                               |
+| 0033 | [A Recipe path the App owns is verified against the App, not trusted from the role](./adr/0033-app-owned-paths-are-verified-not-trusted.md)                    |
 
 ## Native systemd by default
 

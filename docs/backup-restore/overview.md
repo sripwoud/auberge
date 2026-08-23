@@ -32,7 +32,7 @@ graph TD
 - **Navidrome**: Database and configuration (music files only with `--include-music`; a backup that holds them restores them)
 - **Calibre**: Book library, metadata database, user database (login credentials)
 - **Gokapi**: SQLite database and uploaded shared files
-- **Grimmory**: Book library files and MariaDB metadata database
+- **Grimmory**: Book library files (`/srv/books`), app data (`/srv/grimmory`), and MariaDB metadata database
 - **Paperless-ngx**: Documents, media, PostgreSQL database (tags, correspondents, document types, users)
 - **YOURLS**: Installation files and MariaDB database (short links, click stats)
 
@@ -58,11 +58,12 @@ One directory per run, holding one directory per app backed up in that run. `aub
 
 ### Backup Process
 
-1. Services are stopped via `systemctl stop {service}`
-2. For apps with databases: a dump is created on the remote host — `pg_dump -Fc` for PostgreSQL (Paperless-ngx), `mariadb-dump --single-transaction` for MariaDB (Grimmory, YOURLS)
-3. Data is synced from remote using `rsync` with SSH
-4. Database dumps are downloaded via `scp` and cleaned up on remote
-5. Services are restarted via `systemctl start {service}`
+1. For apps declaring `attests:`, the app is asked where its data actually lives and the answer is checked against the recipe's declared paths. A path the app reports that no declared path contains fails that app's backup before anything is stopped, as does an attestation that exits non-zero. Reporting nothing does not fail — every way of failing to ask exits non-zero, so an empty answer just means the app holds no data yet. Grimmory is the only such app today: its library root is a row in its own database, so the role's declaration is a note that can silently stop matching
+2. Services are stopped via `systemctl stop {service}`
+3. For apps with databases: a dump is created on the remote host — `pg_dump -Fc` for PostgreSQL (Paperless-ngx), `mariadb-dump --single-transaction` for MariaDB (Grimmory, YOURLS)
+4. Data is synced from remote using `rsync` with SSH
+5. Database dumps are downloaded via `scp` and cleaned up on remote
+6. Services are restarted via `systemctl start {service}`
 
 ### Restore Process
 

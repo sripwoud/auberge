@@ -1,4 +1,8 @@
-use std::collections::BTreeMap;
+//! Structural guards on the grimmory role: that the artifacts ansible installs
+//! are the ones the unit execs and the prune leaves alone, and that the
+//! directories it creates are reachable by the unit and by the Backup Recipe.
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -662,5 +666,176 @@ fn test_the_jre_prune_runs_after_the_pinned_jre_is_in_place() {
         unit_index < prune.remove_index,
         "the unit on disk must already point at the pinned java before the old trees go, \
          or an aborted play leaves systemd execing a deleted path"
+    );
+}
+
+/// The role's scalar defaults, flattened for [`resolve_defaults`].
+fn scalar_defaults() -> BTreeMap<String, String> {
+    role_defaults()
+        .as_mapping()
+        .expect("grimmory defaults must be a mapping")
+        .iter()
+        .filter_map(|(key, value)| Some((key.as_str()?.to_string(), value.as_str()?.to_string())))
+        .collect()
+}
+
+/// Render an expression against the role's own defaults, chasing defaults that
+/// are themselves expressions to a fixpoint.
+///
+/// Unlike [`render`], which threads the deploy-injected App Version, this
+/// resolves only what `defaults/main.yml` states — every path below is one of
+/// those, and a variable the role does not define must fail rather than
+/// resolve to empty.
+fn resolve_defaults(expr: &str) -> String {
+    let vars = scalar_defaults();
+    let env = strict_env();
+    let context = minijinja::Value::from_serialize(&vars);
+    let mut current = expr.to_string();
+    for _ in 0..8 {
+        if !current.contains("{{") {
+            return current;
+        }
+        current = env
+            .render_str(&current, &context)
+            .unwrap_or_else(|e| panic!("`{expr}` must render against the role defaults: {e}"));
+    }
+    panic!("`{expr}` never settled — a default referring to itself?")
+}
+
+fn unit_body() -> String {
+    fs::read_to_string(role_dir().join("templates/grimmory.service.j2")).expect("grimmory unit")
+}
+
+fn sole_directive(body: &str, directive: &str) -> String {
+    let mut matches = body.lines().filter_map(|line| line.strip_prefix(directive));
+    let value = matches
+        .next()
+        .unwrap_or_else(|| panic!("the unit must set {directive}"))
+        .trim()
+        .to_string();
+    assert!(
+        matches.next().is_none(),
+        "the unit sets {directive} more than once; systemd merges those and this model does not"
+    );
+    value
+}
+
+/// The paths the unit can write to.
+///
+/// Meaningful only because the unit confines the service to them: without
+/// `ProtectSystem=strict` the whole filesystem is writable and every assertion
+/// built on this set is vacuously true, so an unconfined unit is a hard stop
+/// rather than a silent pass.
+fn writable_paths() -> Vec<String> {
+    let body = unit_body();
+    assert_eq!(
+        sole_directive(&body, "ProtectSystem="),
+        "strict",
+        "this guard reads ReadWritePaths as the service's whole writable world; \
+         relax the confinement and it stops asserting anything"
+    );
+    resolve_defaults(&sole_directive(&body, "ReadWritePaths="))
+        .split_whitespace()
+        .map(str::to_string)
+        .collect()
+}
+
+/// Whether the unit can write at `path` — systemd grants a `ReadWritePaths`
+/// entry recursively, so a nested path counts, but only at a directory
+/// boundary.
+fn is_writable(path: &str, granted: &[String]) -> bool {
+    granted.iter().any(|grant| {
+        let grant = grant.trim_end_matches('/');
+        grant == path || path.starts_with(&format!("{grant}/"))
+    })
+}
+
+/// Every directory the role creates and hands to the service user.
+fn service_directories() -> BTreeSet<String> {
+    let vars = scalar_defaults();
+    let user = vars
+        .get("grimmory_sys_user")
+        .expect("the role must define grimmory_sys_user");
+    role_tasks()
+        .iter()
+        .filter_map(|task| {
+            let args = task
+                .get(Value::from("ansible.builtin.file"))?
+                .as_mapping()?;
+            (args.get(Value::from("state")).and_then(Value::as_str) == Some("directory"))
+                .then_some(())?;
+            let owner = args.get(Value::from("owner")).and_then(Value::as_str)?;
+            (resolve_defaults(owner) == *user).then_some(())?;
+            let path = args.get(Value::from("path")).and_then(Value::as_str)?;
+            Some(resolve_defaults(path))
+        })
+        .collect()
+}
+
+/// Drop one directory from `dirs`, proving the role still creates it — an
+/// exemption that has stopped applying is asserting nothing.
+fn except(dirs: &mut BTreeSet<String>, var: &str, why: &str) -> String {
+    let path = resolve_defaults(&format!("{{{{ {var} }}}}"));
+    assert!(
+        dirs.remove(&path),
+        "{path} ({var}) is exempt because it {why}, but the role no longer creates it"
+    );
+    path
+}
+
+fn recipe_paths() -> BTreeSet<String> {
+    let raw = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible/playbooks/grimmory.meta.yml"),
+    )
+    .expect("grimmory meta");
+    let meta: Value = serde_yaml::from_str(&raw).expect("grimmory meta must parse");
+    meta["backup"]["paths"]
+        .as_sequence()
+        .expect("the Backup Recipe must declare paths")
+        .iter()
+        .map(|path| {
+            path.as_str()
+                .expect("a Recipe path is a string")
+                .to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn test_every_directory_the_service_writes_is_one_the_unit_can_write() {
+    let granted = writable_paths();
+    let mut dirs = service_directories();
+    except(
+        &mut dirs,
+        "grimmory_install_path",
+        "holds the jar and the rendered .env, which ansible writes and the service only reads —          colporteur, freshrss and tgtg all deny their service write access to its own install          tree, so requiring it here would fence in the opposite direction",
+    );
+
+    for dir in dirs {
+        assert!(
+            is_writable(&dir, &granted),
+            "the role creates {dir} for the service user but the unit cannot write there;              under ProtectSystem=strict that is one EROFS away from a failed import (#621)"
+        );
+    }
+}
+
+#[test]
+fn test_the_backup_recipe_covers_every_data_directory_the_role_creates() {
+    let mut data = service_directories();
+    except(
+        &mut data,
+        "grimmory_install_path",
+        "holds the jar and the rendered .env, both of which a deploy puts back",
+    );
+    except(
+        &mut data,
+        "grimmory_bookdrop_path",
+        "is a staging folder grimmory drains into the library; its contents are in flight, not          the store of record",
+    );
+
+    assert_eq!(
+        recipe_paths(),
+        data,
+        "the Backup Recipe is the sole record of what a restore puts back, and the role is the          only declaration of where the data is; a directory in one and not the other restores          to metadata pointing at nothing (#621)"
     );
 }
