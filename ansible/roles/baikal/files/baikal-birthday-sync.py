@@ -17,6 +17,15 @@ def _stable_ical(ical_data):
     return "\n".join(line for line in lines if not line.startswith(DYNAMIC_PREFIXES))
 
 
+def _as_text(value):
+    if not isinstance(value, bytes):
+        return value
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return value.decode("latin-1")
+
+
 class BaikalBirthdaySync:
     def __init__(self, db_path):
         self.db_path = db_path
@@ -160,28 +169,29 @@ class BaikalBirthdaySync:
         principal_uri = principals[0]["uri"]
         self._get_or_create_calendar(principal_uri)
 
-        cursor.execute("SELECT carddata, uri FROM cards WHERE carddata LIKE '%BDAY%'")
+        cursor.execute("SELECT carddata, uri FROM cards")
         contacts = cursor.fetchall()
         if not contacts:
-            print("No contacts with birthdays found")
+            print("No contacts found")
             return True
 
         cursor.execute(
             "SELECT uri, calendardata FROM calendarobjects WHERE calendarid = ?",
             (self.calendar_id,),
         )
-        existing = {row["uri"]: row["calendardata"] for row in cursor.fetchall()}
+        existing = {row["uri"]: _as_text(row["calendardata"]) for row in cursor.fetchall()}
 
         count = 0
         processed_uris = set()
 
         for contact in contacts:
-            bday = self._parse_bday(contact["carddata"])
+            carddata = _as_text(contact["carddata"])
+            bday = self._parse_bday(carddata)
             if not bday:
                 continue
 
             month, day, year = bday
-            name = self._extract_name(contact["carddata"])
+            name = self._extract_name(carddata)
             uid = self._make_uid(contact["uri"])
             event_uri = uid + ".ics"
             processed_uris.add(event_uri)
