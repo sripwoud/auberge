@@ -437,14 +437,18 @@ keys:
     #[test]
     fn test_get_value_resolved_failing_command_errors() {
         let err = get_value(&ref_config(), "broken", true).unwrap_err();
-        assert!(err.to_string().contains("broken"));
+        let chain = format!("{err:#}");
+        assert!(chain.contains("Failed to resolve config key 'broken'"));
+        assert!(chain.contains("Shell command failed"));
     }
 
     #[cfg(unix)]
     #[test]
     fn test_get_value_resolved_empty_output_errors() {
         let err = get_value(&ref_config(), "silent", true).unwrap_err();
-        assert!(err.to_string().contains("silent"));
+        let chain = format!("{err:#}");
+        assert!(chain.contains("Failed to resolve config key 'silent'"));
+        assert!(chain.contains("empty output"));
     }
 
     #[test]
