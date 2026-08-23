@@ -358,7 +358,7 @@ async fn main() -> Result<()> {
         Commands::Config(cmd) => match cmd {
             ConfigCommands::Init(args) => run_config_init(args),
             ConfigCommands::Set { key, value } => run_config_set(key, value),
-            ConfigCommands::Get { key } => run_config_get(key),
+            ConfigCommands::Get { key, resolved } => run_config_get(key, resolved),
             ConfigCommands::List => run_config_list(),
             ConfigCommands::Remove { key } => run_config_remove(key),
             ConfigCommands::Edit => run_config_edit(),

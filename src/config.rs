@@ -407,11 +407,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     fn make_config(toml_str: &str) -> Config {
-        let values: toml::Table = toml::from_str(toml_str).unwrap();
-        Config {
-            path: PathBuf::from("/tmp/fake"),
-            values,
-        }
+        Config::from_toml_str(toml_str).unwrap()
     }
 
     // ── Ergonomic accessors ───────────────────────────────────────────────────

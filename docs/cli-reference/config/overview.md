@@ -29,6 +29,14 @@ auberge config <COMMAND>
 | `--output, -o <path>` | Write the scaffold to a file (refuses to overwrite without `--force`)    |
 | `--force, -f`         | Overwrite the output file if it exists                                   |
 
+### `get` flags
+
+| Flag         | Description                                                                              |
+| ------------ | ---------------------------------------------------------------------------------------- |
+| `--resolved` | Execute `!`-prefixed command references and print the resolved value (may print secrets) |
+
+By default `get` prints the raw stored value — a key stored as `!pa show foo` prints that literal string. With `--resolved`, the reference is executed exactly as deploy resolves it (`!!` escapes to a literal `!`, output is whitespace-trimmed, and a failing or empty command exits non-zero without printing the raw value).
+
 ## Interactive Selection
 
 When `key` is omitted from `set`, `get`, or `remove`, an interactive fuzzy-search selector appears (requires a TTY). For `set`, the value is also prompted interactively if omitted.
@@ -61,6 +69,9 @@ auberge c l
 
 # Get a specific value
 auberge c g domain
+
+# Resolve a !-command reference (prints the secret, not the ref)
+auberge c g restic_password --resolved
 
 # Get interactively (select key from list)
 auberge c g
