@@ -30,6 +30,11 @@ pub enum ConfigCommands {
     Get {
         #[arg(help = "Key name")]
         key: Option<String>,
+        #[arg(
+            long,
+            help = "Execute !-prefixed command references and print the resolved value (may print secrets)"
+        )]
+        resolved: bool,
     },
     #[command(
         visible_alias = "l",
@@ -182,14 +187,20 @@ pub fn run_config_set(key: Option<String>, value: Option<String>) -> Result<()> 
     Ok(())
 }
 
-pub fn run_config_get(key: Option<String>) -> Result<()> {
+pub fn run_config_get(key: Option<String>, resolved: bool) -> Result<()> {
     let config = Config::load()?;
     let key = resolve_key(key, &config, "Select key to get")?;
-    match config.get(&key) {
-        Some(value) => println!("{}", value),
-        None => eyre::bail!("Key '{}' not found", key),
-    }
+    println!("{}", get_value(&config, &key, resolved)?);
     Ok(())
+}
+
+fn get_value(config: &Config, key: &str, resolved: bool) -> Result<String> {
+    let value = if resolved {
+        config.get_resolved(key)?
+    } else {
+        config.get(key)
+    };
+    value.ok_or_else(|| eyre::eyre!("Key '{}' not found", key))
 }
 
 pub fn run_config_list() -> Result<()> {
@@ -358,6 +369,90 @@ keys:
                 "tailscale_authkey",
             ]
         );
+    }
+
+    fn ref_config() -> Config {
+        Config::from_toml_str(
+            r#"
+            domain = "example.com"
+            restic_password = "!echo resolved_secret"
+            padded = "!printf '  trimmed  '"
+            escaped = "!!pa foo"
+            broken = "!false"
+            silent = "!true"
+        "#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_get_value_raw_literal() {
+        assert_eq!(
+            get_value(&ref_config(), "domain", false).unwrap(),
+            "example.com"
+        );
+    }
+
+    #[test]
+    fn test_get_value_raw_ref_stays_raw() {
+        assert_eq!(
+            get_value(&ref_config(), "restic_password", false).unwrap(),
+            "!echo resolved_secret"
+        );
+    }
+
+    #[test]
+    fn test_get_value_resolved_literal_is_identity() {
+        assert_eq!(
+            get_value(&ref_config(), "domain", true).unwrap(),
+            "example.com"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_value_resolved_ref_runs_command() {
+        assert_eq!(
+            get_value(&ref_config(), "restic_password", true).unwrap(),
+            "resolved_secret"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_value_resolved_trims_whitespace() {
+        assert_eq!(get_value(&ref_config(), "padded", true).unwrap(), "trimmed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_value_resolved_escaped_bang_is_literal() {
+        assert_eq!(
+            get_value(&ref_config(), "escaped", true).unwrap(),
+            "!pa foo"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_value_resolved_failing_command_errors() {
+        let err = get_value(&ref_config(), "broken", true).unwrap_err();
+        assert!(err.to_string().contains("broken"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_get_value_resolved_empty_output_errors() {
+        let err = get_value(&ref_config(), "silent", true).unwrap_err();
+        assert!(err.to_string().contains("silent"));
+    }
+
+    #[test]
+    fn test_get_value_missing_key_errors_in_both_modes() {
+        for resolved in [false, true] {
+            let err = get_value(&ref_config(), "nope", resolved).unwrap_err();
+            assert!(err.to_string().contains("Key 'nope' not found"));
+        }
     }
 
     #[test]
