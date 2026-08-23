@@ -282,6 +282,76 @@ mod tests {
         }
     }
 
+    /// The bichon Recipe as shipped, not a hand-built stand-in: what #619 is
+    /// about is the order of the units the repo actually declares.
+    fn shipped_bichon_recipe() -> BackupRecipe {
+        let playbooks_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("ansible")
+            .join("playbooks");
+        crate::services::backup::recipe::load_app_recipe(&playbooks_dir, "bichon", "alice").unwrap()
+    }
+
+    fn systemctl_sequence(calls: &[SshOp]) -> Vec<(String, String)> {
+        calls
+            .iter()
+            .filter_map(|c| match c {
+                SshOp::Systemctl { action, service } => Some((action.clone(), service.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The archive timer is quiesced ahead of the server it triggers, so an
+    /// hourly tick landing mid-rsync cannot pull bichon back up through
+    /// `Requires=bichon.service` while its store is being copied (#619).
+    #[test]
+    fn test_backup_bichon_stops_the_archive_timer_before_the_server() {
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .backup(
+                &shipped_bichon_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
+            .unwrap();
+
+        assert_eq!(
+            systemctl_sequence(&mock.calls()),
+            vec![
+                ("stop".to_string(), "bichon-archive.timer".to_string()),
+                ("stop".to_string(), "bichon".to_string()),
+                ("start".to_string(), "bichon-archive.timer".to_string()),
+                ("start".to_string(), "bichon".to_string()),
+            ]
+        );
+    }
+
+    /// Restore quiesces the same pair: a tick mid-rsync would let the server
+    /// write into a half-restored store.
+    #[test]
+    fn test_restore_bichon_stops_the_archive_timer_before_the_server() {
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        let source = tempfile::tempdir().unwrap();
+        executor
+            .restore(&shipped_bichon_recipe(), source.path(), &mut progress)
+            .unwrap();
+
+        assert_eq!(
+            systemctl_sequence(&mock.calls()),
+            vec![
+                ("stop".to_string(), "bichon-archive.timer".to_string()),
+                ("stop".to_string(), "bichon".to_string()),
+                ("start".to_string(), "bichon-archive.timer".to_string()),
+                ("start".to_string(), "bichon".to_string()),
+            ]
+        );
+    }
+
     fn paperless_recipe() -> BackupRecipe {
         BackupRecipe {
             systemd_services: vec!["paperless-webserver".to_string()],
