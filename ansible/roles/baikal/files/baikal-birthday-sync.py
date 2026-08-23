@@ -18,7 +18,12 @@ def _stable_ical(ical_data):
 
 
 def _as_text(value):
-    return value.decode("utf-8") if isinstance(value, bytes) else value
+    if not isinstance(value, bytes):
+        return value
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return value.decode("latin-1")
 
 
 class BaikalBirthdaySync:

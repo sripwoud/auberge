@@ -163,6 +163,17 @@ def test_blob_carddata_without_bday_is_ignored(db_path):
     assert set(calendar_objects(db_path)) == {event_uri("frank.vcf")}
 
 
+def test_latin1_carddata_does_not_abort_the_run(db_path):
+    latin1 = make_vcard("Renée", "1988-04-17").encode("latin-1")
+    build_db(db_path, [("hank.vcf", make_vcard("Hank", "1975-06-11")), ("renee.vcf", latin1)])
+
+    run(db_path)
+
+    objects = calendar_objects(db_path)
+    assert set(objects) == {event_uri("hank.vcf"), event_uri("renee.vcf")}
+    assert "SUMMARY:Renée's Birthday" in objects[event_uri("renee.vcf")]["calendardata"]
+
+
 def test_orphan_event_is_deleted(db_path):
     build_db(db_path, [("frank.vcf", make_vcard("Frank", "1980-02-29"))])
     run(db_path)
