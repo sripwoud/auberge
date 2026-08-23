@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, 2026-05-06.
+Accepted, 2026-05-06. Amended by ADR-0031 (2026-08-23): the Internal Store is backed up after all — its account registry (`meta.db`) proved original state, not derived cache, when the #615 cutover restore left the App account-less. The Archive design below stands unchanged.
 
 ## Decision
 

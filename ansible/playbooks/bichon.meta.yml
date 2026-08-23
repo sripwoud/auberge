@@ -7,5 +7,5 @@ version:
   depName: "rustmailer/bichon"
 backup:
   systemd_services: [bichon]
-  paths: [/var/lib/bichon-archive]
+  paths: [/var/lib/bichon-archive, /opt/bichon/data]
   owner: [bichon, bichon]

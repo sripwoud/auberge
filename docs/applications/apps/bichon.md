@@ -4,7 +4,7 @@ Email archiving service with continuous IMAP sync and full-text search. Docs: [g
 
 - **URL**: tailnet only — see [Tailnet-only apps](cli-reference/dns/set-all.md#tailnet-only-apps)
 - **Port**: internal (Caddy proxy)
-- **Data**: `/opt/bichon/data` (internal store), `/var/lib/bichon-archive` (EML mirror, backed up)
+- **Data**: `/opt/bichon/data` (internal store), `/var/lib/bichon-archive` (EML mirror) — both backed up
 - **Timers**: `bichon-archive.timer` (hourly archive), `bichon-uidvalidity-watch.timer` (hourly [rebuild alert](#uidvalidity-rebuild-alert))
 
 ## Deploy
@@ -43,7 +43,7 @@ Default credentials: `admin` / `admin@bichon`. Change after first login.
    sudo systemctl start bichon-archive.service
    ```
 
-**Backup**: `auberge backup create --apps bichon` rsyncs `/var/lib/bichon-archive` (not the internal store). The timer must have run at least once before the first backup. See [ADR-0006](https://github.com/sripwoud/auberge/blob/master/meta/adr/0006-bichon-archive-feeds-backup-recipe.md).
+**Backup**: `auberge backup create --apps bichon` rsyncs `/var/lib/bichon-archive` and `/opt/bichon/data`. The timer must have run at least once before the first backup. A restored store brings accounts, the API-token registry, tags, and search back with it; the archive replay below remains the path for purge recovery. See [ADR-0006](https://github.com/sripwoud/auberge/blob/master/meta/adr/0006-bichon-archive-feeds-backup-recipe.md) and [ADR-0031](https://github.com/sripwoud/auberge/blob/master/meta/adr/0031-bichon-internal-store-joins-the-backup-recipe.md).
 
 The archive holds one `.eml` per message (byte-exact), a `.meta.json` sidecar recording its folder and its `message_id`, and one `tags.json` per account mapping RFC 5322 `Message-ID` to tags. `tags.json` is rewritten in full on every archive run — tags are mutable, so they are snapshotted rather than captured once.
 
