@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.15](https://github.com/sripwoud/auberge/compare/v0.15.14...v0.15.15) - 2026-08-23
+
+### Added
+
+- *(config)* add --resolved flag to config get ([#626](https://github.com/sripwoud/auberge/pull/626))
+- *(backup)* verify a Recipe's paths against the App that owns them ([#625](https://github.com/sripwoud/auberge/pull/625))
+
 ## [0.15.14](https://github.com/sripwoud/auberge/compare/v0.15.13...v0.15.14) - 2026-08-23
 
 ### Fixed
