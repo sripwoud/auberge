@@ -35,7 +35,7 @@ So the expensive thing both guards need is the same thing: a per-directory class
 
 **Positive:**
 
-- The build now fails on: a service-owned directory nobody classified, a classification for a directory no role creates, a `ReadWritePaths` grant appearing or disappearing anywhere in the fleet, a `Data` directory the Recipe misses, a Recipe entry nothing accounts for, and a `paths:` entry removed from any meta file. Each failure names the declaration and its why.
+- The build now fails on: a service-owned directory nobody classified, a classification for a directory no role creates, a `ReadWritePaths` grant appearing over or vanishing from any classified directory, a grant the role's defaults cannot resolve to a path (the fence fails loud rather than open), a `Data` directory the Recipe misses, a Recipe entry nothing accounts for, and a `paths:` entry removed from any meta file. Each failure names the declaration and its why. A grant over a path no role creates for a service user — freshrss's `/var/lib/php/sessions` — stays out of the model, deliberately: the fence classifies what roles create, not everything units may touch.
 - The 13 denials stop being a scan result in an issue and become 13 declarations with reasons, each one a build failure away from being noticed when it stops being true.
 - grimmory's service can no longer rewrite its own artifact — the fleet's install trees are now uniformly denied.
 
