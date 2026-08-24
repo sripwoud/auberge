@@ -42,6 +42,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0032 | [A Backup Recipe quiesces triggers, not just servers](./adr/0032-a-recipe-quiesces-triggers-not-just-servers.md)                                               |
 | 0033 | [A Recipe path the App owns is verified against the App, not trusted from the role](./adr/0033-app-owned-paths-are-verified-not-trusted.md)                    |
 | 0034 | [The extracted assets tree is addressed by its fingerprint, never rewritten in place](./adr/0034-assets-tree-is-fingerprint-addressed.md)                      |
+| 0035 | [A service-owned directory carries a declared classification](./adr/0035-service-owned-directories-carry-a-declared-classification.md)                         |
 
 ## Native systemd by default
 
