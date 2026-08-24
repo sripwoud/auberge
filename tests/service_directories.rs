@@ -1,7 +1,7 @@
-//! Fleet-wide guards on the directories roles create for their service users:
-//! that each unit's write access is exactly what a human declared it to be, and
-//! that the Backup Recipe captures a directory precisely when its declared kind
-//! says it is data (#624).
+//! Fleet-wide guards on the directories roles create for their service users —
+//! guard (i), that each unit's write access is exactly what a human declared it
+//! to be, and guard (ii), that the Backup Recipe captures a directory precisely
+//! when its declared kind says it is data (#621's numbering, kept below; #624).
 //!
 //! Both guards started life role-scoped in `tests/grimmory_role.rs` (#621), and
 //! the scan that tried to generalize them found why they cannot generalize on
@@ -233,19 +233,29 @@ fn strict_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<StrictUnit> 
                 if directive("ProtectSystem=").as_deref() != Some("strict") {
                     continue;
                 }
+                let name = unit_name(dest.rsplit('/').next().expect("a dest names a file"));
+                let grants: Vec<String> = body
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("ReadWritePaths="))
+                    .flat_map(|value| {
+                        resolve(value.trim(), vars)
+                            .split_whitespace()
+                            .map(str::to_string)
+                            .collect::<Vec<_>>()
+                    })
+                    .collect();
+                for grant in &grants {
+                    assert!(
+                        grant.starts_with('/'),
+                        "{role}: `{name}` grants `{grant}`, which the role's defaults \
+                         cannot resolve to a path; a grant this fence cannot see would \
+                         fail open, so it fails loud instead"
+                    );
+                }
                 units.push(StrictUnit {
-                    name: unit_name(dest.rsplit('/').next().expect("a dest names a file")),
+                    name,
                     user: directive("User=").unwrap_or_else(|| "root".to_string()),
-                    grants: body
-                        .lines()
-                        .filter_map(|line| line.strip_prefix("ReadWritePaths="))
-                        .flat_map(|value| {
-                            resolve(value.trim(), vars)
-                                .split_whitespace()
-                                .map(str::to_string)
-                                .collect::<Vec<_>>()
-                        })
-                        .collect(),
+                    grants,
                 });
             }
         }
@@ -778,7 +788,7 @@ const RECIPE_ONLY_PATHS: &[RecipeOnlyPath] = &[
 /// there). Computed, not listed -- a new strict unit or a new Recipe pulls its
 /// role in on its own (ADR-0028's lesson: enumerating a blind spot undercounts
 /// by exactly what you cannot see).
-fn domain() -> Vec<(String, Vec<StrictUnit>, BTreeSet<String>)> {
+fn scanned_roles() -> Vec<(String, Vec<StrictUnit>, BTreeSet<String>)> {
     let recipes = recipes();
     let mut domain = Vec::new();
     for role in all_roles() {
@@ -800,7 +810,7 @@ fn domain() -> Vec<(String, Vec<StrictUnit>, BTreeSet<String>)> {
 /// creates fails until it is removed.
 #[test]
 fn test_every_service_owned_directory_is_classified() {
-    let computed: BTreeSet<(String, String)> = domain()
+    let computed: BTreeSet<(String, String)> = scanned_roles()
         .into_iter()
         .flat_map(|(role, _, dirs)| dirs.into_iter().map(move |dir| (role.clone(), dir)))
         .collect();
@@ -835,7 +845,7 @@ fn test_every_service_owned_directory_is_classified() {
 /// with it.
 #[test]
 fn test_write_access_matches_the_declared_writers() {
-    for (role, units, _) in domain() {
+    for (role, units, _) in scanned_roles() {
         let unit_names: BTreeSet<&str> = units.iter().map(|unit| unit.name.as_str()).collect();
         for declaration in DECLARED_DIRECTORIES
             .iter()
