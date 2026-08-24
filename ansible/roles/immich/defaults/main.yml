@@ -1,5 +1,7 @@
 immich_install_dir: /opt/immich
 immich_data_dir: /var/lib/immich
+# Bind-mounted into containers whose entrypoints own the interior, so ansible
+# creates these two and then never re-asserts ownership or mode on them.
 immich_upload_dir: /var/lib/immich/upload
 immich_db_data_dir: /var/lib/immich/postgres
 # Must match the host port published in files/docker-compose.yml.

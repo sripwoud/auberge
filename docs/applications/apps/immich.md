@@ -4,6 +4,7 @@ Self-hosted photo and video management. The repo's one containerized App: upstre
 
 - **URL**: `https://{subdomain}.{domain}`
 - **Data**: originals under `/var/lib/immich/upload`, postgres cluster under `/var/lib/immich/postgres`
+- **Ownership**: both are bind-mounted into containers that own their interior, so ansible creates them once and never re-asserts ownership or mode ([ADR-0036](https://github.com/sripwoud/auberge/blob/master/meta/adr/0036-container-owned-directories-are-created-not-maintained.md)). Postgres runs as its image's uid 999 and re-establishes that on every container start, so a directory left at `root:root 0700` by an older deploy is repaired by `systemctl restart immich` — or by `chown 999:999 /var/lib/immich/postgres` to avoid the bounce. The role will not repair it: a create-only task is a no-op on a directory that exists. A redeploy that reset the postgres directory to `root:root 0700` 500'd the web UI for 13h ([#630](https://github.com/sripwoud/auberge/issues/630)).
 
 ## Deploy
 
