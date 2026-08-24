@@ -11,6 +11,7 @@ const INSTALLED_COLLECTIONS: &str = "ansible_collections";
 const REQUIREMENTS: &str = "requirements.yml";
 const STAGING_PREFIX: &str = ".staging";
 const WORKING_TREE_CACHE: &str = ".ansible";
+const LEGACY_CACHE: &str = ".ansible";
 const LEGACY_STAMP: &str = ".auberge-version";
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -179,7 +180,7 @@ fn open_tree(root: &Path, fingerprint: &str) -> Result<AnsibleAssets> {
         .lock_shared()
         .wrap_err_with(|| format!("Failed to lock ansible assets: {}", ansible_dir.display()))?;
 
-    sweep_unused(root, fingerprint)?;
+    sweep_unused(root, fingerprint);
 
     Ok(AnsibleAssets {
         ansible_dir,
@@ -216,30 +217,49 @@ fn extract_tree(root: &Path, ansible_dir: &Path, collections_dir: &Path) -> Resu
     })
 }
 
-fn sweep_unused(root: &Path, fingerprint: &str) -> Result<()> {
-    for entry in std::fs::read_dir(root).wrap_err("Failed to read ansible assets dir")? {
-        let entry = entry.wrap_err("Failed to read ansible assets dir entry")?;
+fn sweep_unused(root: &Path, fingerprint: &str) {
+    if let Err(err) = collect_unused(root, fingerprint) {
+        output::warn(&format!("Left unused ansible assets in place: {:#}", err));
+    }
+}
+
+fn collect_unused(root: &Path, fingerprint: &str) -> Result<()> {
+    let listing = std::fs::read_dir(root)
+        .wrap_err("Failed to read ansible assets dir")?
+        .collect::<std::io::Result<Vec<_>>>()
+        .wrap_err("Failed to read ansible assets dir entry")?;
+
+    for entry in listing {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name == fingerprint || name == LOCK || name == COLLECTIONS {
             continue;
         }
 
+        let kind = entry
+            .file_type()
+            .wrap_err_with(|| format!("Failed to inspect: {}", entry.path().display()))?;
         let path = entry.path();
-        if is_tree(&name) {
-            if !tree_is_idle(&path) {
+
+        if is_tree(&name) && kind.is_dir() {
+            if !tree_is_idle(&path)? {
                 continue;
             }
         } else if !(is_staging(&name) || is_legacy(&name)) {
             continue;
         }
 
-        remove(&path)?;
+        discard(root, &path)?;
     }
     Ok(())
 }
 
 fn is_tree(name: &str) -> bool {
-    name.contains('+')
+    match name.rsplit_once('+') {
+        Some((version, hash)) => {
+            !version.is_empty() && hash.len() == 16 && hash.chars().all(|c| c.is_ascii_hexdigit())
+        }
+        None => false,
+    }
 }
 
 fn is_staging(name: &str) -> bool {
@@ -248,25 +268,48 @@ fn is_staging(name: &str) -> bool {
 
 fn is_legacy(name: &str) -> bool {
     name == LEGACY_STAMP
-        || name == WORKING_TREE_CACHE
+        || name == LEGACY_CACHE
         || EMBEDDED_ANSIBLE.get_dir(name).is_some()
         || EMBEDDED_ANSIBLE.get_file(name).is_some()
 }
 
-fn tree_is_idle(tree: &Path) -> bool {
-    match File::open(tree.join(LOCK)) {
-        Ok(lock) => lock.try_lock().is_ok(),
-        Err(_) => true,
+fn tree_is_idle(tree: &Path) -> Result<bool> {
+    let path = tree.join(LOCK);
+    let lock = match File::open(&path) {
+        Ok(lock) => lock,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(err) => {
+            return Err(err)
+                .wrap_err_with(|| format!("Failed to open lock file: {}", path.display()));
+        }
+    };
+
+    match lock.try_lock() {
+        Ok(()) => Ok(true),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(false),
+        Err(std::fs::TryLockError::Error(err)) => {
+            Err(err).wrap_err_with(|| format!("Failed to test lock file: {}", path.display()))
+        }
     }
 }
 
-fn remove(path: &Path) -> Result<()> {
-    let removed = if path.is_dir() {
-        std::fs::remove_dir_all(path)
-    } else {
-        std::fs::remove_file(path)
-    };
-    removed.wrap_err_with(|| format!("Failed to remove unused ansible assets: {}", path.display()))
+fn discard(root: &Path, path: &Path) -> Result<()> {
+    let entry = std::fs::symlink_metadata(path)
+        .wrap_err_with(|| format!("Failed to inspect: {}", path.display()))?;
+    if !entry.is_dir() {
+        return std::fs::remove_file(path)
+            .wrap_err_with(|| format!("Failed to remove: {}", path.display()));
+    }
+
+    let grave = tempfile::Builder::new()
+        .prefix(STAGING_PREFIX)
+        .tempdir_in(root)
+        .wrap_err("Failed to stage unused ansible assets for removal")?;
+    let doomed = grave.path().join("assets");
+    std::fs::rename(path, &doomed)
+        .wrap_err_with(|| format!("Failed to retire: {}", path.display()))?;
+    std::fs::remove_dir_all(&doomed)
+        .wrap_err_with(|| format!("Failed to remove: {}", path.display()))
 }
 
 fn extract_dir(dir: &Dir, base: &Path) -> Result<()> {
@@ -298,17 +341,17 @@ fn extract_entry(entry: &include_dir::DirEntry, base: &Path) -> Result<()> {
     Ok(())
 }
 
-fn write_ansible_cfg(dest: &Path, ansible_dir: &Path, collections_dir: &Path) -> Result<()> {
+fn write_ansible_cfg(staging: &Path, published: &Path, collections_dir: &Path) -> Result<()> {
     let cfg = format!(
         "[defaults]\n\
          inventory = inventory.yml\n\
          roles_path = {roles}\n\
          remote_tmp = /tmp\n\
          collections_path = {collections}\n",
-        roles = ansible_dir.join("roles").display(),
+        roles = published.join("roles").display(),
         collections = collections_dir.display(),
     );
-    std::fs::write(dest.join("ansible.cfg"), cfg).wrap_err("Failed to write ansible.cfg")?;
+    std::fs::write(staging.join("ansible.cfg"), cfg).wrap_err("Failed to write ansible.cfg")?;
     Ok(())
 }
 
@@ -485,6 +528,48 @@ mod tests {
     }
 
     #[test]
+    fn test_sweep_keeps_an_entry_that_only_looks_like_a_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let named_dir = root.join("notes+draft");
+        let named_file = root.join(tree_b());
+        std::fs::create_dir_all(&named_dir).unwrap();
+        std::fs::write(&named_file, "not a tree").unwrap();
+
+        open_tree(root, &tree_a()).unwrap();
+
+        assert!(named_dir.is_dir());
+        assert!(named_file.is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_a_sweep_that_cannot_finish_neither_fails_nor_leaves_the_name() {
+        use std::os::unix::fs::PermissionsExt;
+
+        fn set_mode(path: &Path, mode: u32) {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let undeletable = root.join(tree_b());
+        std::fs::create_dir_all(undeletable.join("sub")).unwrap();
+        std::fs::write(undeletable.join("sub/file"), "pinned").unwrap();
+        File::create(undeletable.join(LOCK)).unwrap();
+        set_mode(&undeletable.join("sub"), 0o500);
+
+        let assets = open_tree(root, &tree_a()).unwrap();
+
+        assert!(assets.ansible_dir().join("playbooks/apps.yml").is_file());
+        assert!(!undeletable.exists());
+
+        for name in staging_dirs(root) {
+            set_mode(&root.join(name).join("assets/sub"), 0o700);
+        }
+    }
+
+    #[test]
     fn test_sweep_keeps_what_it_does_not_recognise() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
@@ -536,10 +621,15 @@ mod tests {
     }
 
     #[test]
-    fn test_a_fingerprint_is_recognisable_as_a_tree() {
+    fn test_only_a_fingerprint_is_recognisable_as_a_tree() {
         assert!(is_tree(&embedded_fingerprint()));
+        assert!(is_tree(&fingerprint(1)));
         assert!(!is_tree("playbooks"));
         assert!(!is_tree(COLLECTIONS));
+        assert!(!is_tree("notes+draft"));
+        assert!(!is_tree("+c372d5766de336fa"));
+        assert!(!is_tree("0.15.15+c372d5766de336f"));
+        assert!(!is_tree("0.15.15+zzzzzzzzzzzzzzzz"));
     }
 
     #[test]

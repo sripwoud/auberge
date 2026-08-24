@@ -20,9 +20,9 @@ Three rules make that layout safe under concurrency:
 
 - **A tree appears atomically.** Extraction writes a `.staging*` directory beside the trees and `rename`s it into place, its `.lock` file already inside. A concurrent process sees the tree complete or not at all — never mid-write.
 - **A tree in use cannot be swept.** Every `AnsibleAssets` value holds a shared `flock` on its tree's `.lock` for its whole lifetime, which spans the `ansible-playbook` child it was created for. The sweep removes a sibling only when it can take that lock _exclusively_, so liveness is measured, not estimated from an mtime.
-- **Extraction and sweeping are serialized** by an exclusive lock on the container. Without it a tree could be swept in the window between its `rename` and its creator's first lock.
+- **Extraction and sweeping are serialized** by an exclusive lock on the container. Without it a tree could be swept in the window between its `rename` and its creator's first lock. The wait is unbounded but the hold is not — one 1.2 MB extraction and one sweep, no network and no user interaction — which is why it takes no timeout.
 
-The sweep is opportunistic — it runs on every open, removes what it recognises as unused (an unlocked sibling tree, a crashed run's staging directory, the pre-#628 flat layout), and leaves anything else in the directory alone.
+The sweep is opportunistic in both directions. It runs on every open and removes what it recognises as unused — an unlocked sibling tree, a crashed run's staging directory, the pre-#628 flat layout — leaving anything else alone; and when it cannot finish, it warns and returns, because failing to collect garbage is not a reason to fail the command that found it. A directory is retired by `rename` into a staging directory and deleted from there, so a delete that dies halfway leaves debris under a name nothing reads instead of a half-emptied tree under a name that reads as complete. **A fingerprint directory exists if and only if it was fully extracted** — names only ever appear by `rename` in, and disappear by `rename` out.
 
 The galaxy cache stays shared, and is keyed on `requirements.yml` content for the same reason the trees are keyed on theirs: a changed requirement now lands in a sibling directory instead of deleting the cache a concurrent run is installing from.
 
@@ -51,18 +51,19 @@ Naming a tree after its content removes the shared mutable path that made the sw
 - A process reads one tree for its whole life. The mixed-version write is not merely unlikely; there is no path that expresses it.
 - The forensic trail improves: the banner, the directory name and the `ansible.cfg` inside it all name the same fingerprint, and an old tree survives on disk instead of being overwritten by the run that failed.
 - `.auberge-version` and the clear-then-extract path are gone. The stamp existed to answer "is this tree current"; the directory name answers it without a file to read, and without a window where the answer is wrong.
-- An operator can pin an old auberge and a new one alternately with no re-extraction cost either way — both trees exist.
+- Two post-#628 versions can be run alternately with no re-extraction cost either way — both trees exist, and each is swept only once nothing holds it.
 
 **Negative:**
 
 - The galaxy cache moves from `ansible/.ansible/collections` to `ansible/collections/<hash>`, so the first run after this change re-installs collections once.
-- A pre-#628 binary run after this change re-creates the flat layout beside the trees, and the next current-binary run sweeps it again. The transition converges but is not idempotent while both binaries are in play — the same shape as the incident, and unfixable from this side: the old binary takes no lock.
+- **A pre-#628 binary run after this change deletes every tree.** Its `clear_extracted` walks the container — which is now the parent of the trees — and removes each entry, live or not; `flock` cannot block an unlink taken by a process that never asks for the lock, and the container's stamp is gone so it always decides to clear. So the incident's exact scenario, two versions racing, still costs a failed run during the transition. What it no longer costs is a _silent_ one: the loser's next lazy read is a missing file, not another version's template. Unfixable from this side, and it ends when the older binary does.
 - Disk grows by one 1.2 MB tree per fingerprint that is live when a sweep runs. Bounded by how many auberge processes overlap, in practice one.
-- A call site that discards its `AnsibleAssets` and keeps only a path — `dependency_resolver`, `inventory`, `recipe`, all of which read a file immediately — is unprotected for that window. The worst outcome there is a missing file and a hard error, not a crossed tree; a long-lived reader (`ansible-playbook`) always holds its guard for the duration.
+- A call site that discards its `AnsibleAssets` and keeps only a path — `dependency_resolver`, `inventory`, `recipe`, `deploy`, all of which read a file immediately — is unprotected for that window. The worst outcome there is a missing file and a hard error, not a crossed tree. Declared rather than documented, per ADR-0028: `tests/assets_guard.rs` enumerates the ten of them and fails the build on an eleventh, and separately asserts that the one site that spawns `ansible-playbook` keeps its guard.
 - Two concurrent first-time galaxy installs into the same keyed directory can still interleave. Pre-existing, unchanged by this decision, and out of scope for #628.
 
 ## References
 
 - Issue #628 — the incident, with the fingerprint reconstruction that proved two trees were involved.
 - ADR-0027 — an installed version is read from the artifact, never from a note the role wrote. The stamp file this decision deletes was exactly such a note.
+- ADR-0028 — a blind spot the fence cannot prove is declared in a test, not documented in prose. The guard-lifetime exceptions follow that rule.
 - ADR-0024 — a host rename recovers by rerun. Same remedy for the 10 mixed-version changes: re-run `auberge deploy` with the current binary.

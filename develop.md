@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Rust toolchain (1.70+)
+- Rust toolchain (1.89+, for `File::lock_shared` — see ADR-0034)
 - Ansible (for playbook development)
 - mise (for environment management)
 - age (for encrypting secrets)
