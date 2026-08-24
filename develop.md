@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Rust toolchain (1.70+)
+- Rust toolchain (1.89+, for `File::lock_shared` — see ADR-0034)
 - Ansible (for playbook development)
 - mise (for environment management)
 - age (for encrypting secrets)
@@ -162,21 +162,36 @@ resolves in this order:
 
 1. `AUBERGE_DEV` set, and `./ansible/{playbooks,roles}` exist — run straight
    from the working tree, no extraction.
-2. Otherwise — extract the embedded copy to `~/.local/share/auberge/ansible`.
+2. Otherwise — extract the embedded copy to
+   `~/.local/share/auberge/ansible/<version>+<content-hash>`, where the hash
+   covers the path and bytes of every embedded file.
 
-The extracted copy carries a `.auberge-version` stamp of
-`<version>+<content-hash>`, where the hash covers the path and bytes of every
-embedded file. Editing a playbook, role or template changes the hash, so the
-next run re-extracts. `build.rs` declares `ansible/` a build input, so adding
-or deleting a file rebuilds too.
+The fingerprint is the directory name, so a tree is immutable: editing a
+playbook, role or template changes the hash and the next run extracts a
+_sibling_, never over the tree a concurrent run is still reading from (#628,
+ADR-0034). `build.rs` declares `ansible/` a build input, so adding or deleting a
+file rebuilds too.
 
 Deploying an unreleased ansible change therefore needs no env var — `cargo
 build` is enough. `AUBERGE_DEV=1` still helps when iterating without
 recompiling, since it reads the working tree on every run; it only works from
 the repository root, as the path is relative.
 
-Re-extraction preserves the `ansible-galaxy` cache in `.ansible/collections`
-unless `requirements.yml` itself changed.
+Two locks keep concurrent invocations off each other:
+
+| lock                          | mode      | held for                                  |
+| ----------------------------- | --------- | ----------------------------------------- |
+| `ansible/.lock`               | exclusive | one process's extract-then-sweep window   |
+| `ansible/<fingerprint>/.lock` | shared    | the lifetime of one `AnsibleAssets` value |
+
+Extraction writes a `.staging*` directory and `rename`s it into place, so a
+half-written tree is never visible. The sweep then removes siblings it can lock
+exclusively — an abandoned tree, a crashed run's staging directory, the pre-#628
+flat layout — and leaves alone anything still locked or unrecognised.
+
+The `ansible-galaxy` cache is shared across trees at
+`ansible/collections/<requirements-hash>`, keyed on `requirements.yml` so a
+changed requirement lands beside the old cache instead of replacing it.
 
 ## Testing
 
