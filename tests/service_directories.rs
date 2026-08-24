@@ -595,10 +595,10 @@ const DECLARED_DIRECTORIES: &[DeclaredDirectory] = &[
         role: "grimmory",
         dir: "/opt/grimmory",
         kind: Kind::Install,
-        writers: &["grimmory.service"],
+        writers: &[],
         why: "holds the jar and the rendered .env, which ansible writes and the service \
-              only reads; still granted today -- the fleet-consistency decision #624 \
-              tracks",
+              only reads; denied like colporteur's, freshrss's and tgtg's install trees \
+              -- the fleet-consistency decision #624 settled",
     },
     DeclaredDirectory {
         role: "grimmory",
