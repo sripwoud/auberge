@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.16](https://github.com/sripwoud/auberge/compare/v0.15.15...v0.15.16) - 2026-08-24
+
+### Fixed
+
+- *(immich)* never re-own a directory the containers own ([#633](https://github.com/sripwoud/auberge/pull/633))
+- *(grimmory)* deny the service write access to its install tree ([#632](https://github.com/sripwoud/auberge/pull/632))
+- *(ansible)* address the extracted assets tree by its fingerprint ([#629](https://github.com/sripwoud/auberge/pull/629))
+
 ## [0.15.15](https://github.com/sripwoud/auberge/compare/v0.15.14...v0.15.15) - 2026-08-23
 
 ### Added
