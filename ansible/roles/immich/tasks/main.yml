@@ -20,15 +20,23 @@
       loop:
         - "{{ immich_install_dir }}"
         - "{{ immich_data_dir }}"
-        - "{{ immich_upload_dir }}"
 
-    - name: Create Immich database directory
+    - name: Check whether the Immich container-owned directories exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ immich_upload_dir }}"
+        - "{{ immich_db_data_dir }}"
+      register: immich_container_owned_dirs
+
+    - name: Create the Immich container-owned directories # noqa: risky-file-permissions
       ansible.builtin.file:
-        path: "{{ immich_db_data_dir }}"
+        path: "{{ item.item }}"
         state: directory
-        owner: root
-        group: root
-        mode: "0700"
+      loop: "{{ immich_container_owned_dirs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: not item.stat.exists
 
     - name: Deploy Immich docker compose file
       ansible.builtin.copy:
