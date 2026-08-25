@@ -46,6 +46,39 @@
         owner: root
         group: root
         mode: "0644"
+    - name: Pin apache2 out of reach so php cannot pull it in
+      # `php8.4` depends on `libapache2-mod-php8.4 | php8.4-fpm | php8.4-cgi`,
+      # and apt takes the first alternative, so installing `php` drags in
+      # apache2 — whose postinst starts it against a port caddy already holds.
+      # It fails, latches, and the removal below then takes the unit file away
+      # and leaves the failure behind (#636).
+      #
+      # Removal alone cannot close that: this role runs in infrastructure.yml,
+      # which every deploy walks *before* the app playbooks, so the roles that
+      # install php (baikal, yourls) create the latch after the cleanup has
+      # already run and it survives until the next deploy. The same ordering is
+      # what makes prevention land in time.
+      #
+      # Priority -1 makes a package uninstallable rather than merely
+      # unattractive, so the alternative resolves to php8.4-fpm. `apache2-utils`
+      # is a separate package with no dependency on apache2 and stays
+      # installable. Measured against an empty package DB on auberge: a fresh
+      # `php php-fpm` install pulls apache2, apache2-bin, apache2-data and
+      # libapache2-mod-php without this file, and none of them with it.
+      when: ansible_facts['distribution'] == "Debian"
+      ansible.builtin.copy:
+        content: |
+          Package: apache2 apache2-bin apache2-data
+          Pin: release *
+          Pin-Priority: -1
+
+          Package: libapache2-mod-php*
+          Pin: release *
+          Pin-Priority: -1
+        dest: /etc/apt/preferences.d/no-apache2.pref
+        owner: root
+        group: root
+        mode: "0644"
     - name: Update apt package cache
       ansible.builtin.apt:
         update_cache: true
@@ -160,11 +193,10 @@
       register: apt_apache2_remove
 
     - name: Clear Apache2's residual failed state
-      # php pulls apache2 in as a dependency, and its postinst starts it
-      # against a port caddy already holds, so the unit latches `failed`.
-      # Purging the packages takes the unit file away and leaves the latch
-      # behind, and `systemctl --failed` reports a not-found apache2.service
-      # forever on a host that has no apache2 (#635).
+      # The pin above stops a fresh box ever reaching this state. This is for
+      # the boxes that already did: a latched `failed` on a unit whose file the
+      # purge removed, which `systemctl --failed` reports forever on a host
+      # that has no apache2 (#635, #636). auberge carried one from 2026-08-21.
       #
       # There is no module for reset-failed, and ansible-lint rejects reading
       # the state with `systemctl is-failed`, so idempotence rests on rc: past
