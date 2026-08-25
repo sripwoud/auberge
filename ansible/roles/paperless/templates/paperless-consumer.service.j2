@@ -2,6 +2,8 @@
 Description=Paperless-ngx document consumer
 After=network.target redis-server.service postgresql.service
 Requires=redis-server.service postgresql.service
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=simple

@@ -2,6 +2,8 @@
 Description=Bichon email archiving service
 After=network.target tailscaled.service
 Requires=tailscaled.service
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=simple

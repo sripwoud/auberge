@@ -2,6 +2,8 @@
 Description=Grimmory - Self-hosted book library
 After=network.target mysql.service
 Requires=mysql.service
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=simple

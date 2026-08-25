@@ -4,6 +4,8 @@ Documentation=https://caddyserver.com/docs/
 After=network.target network-online.target tailscaled.service
 Wants=tailscaled.service
 Requires=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=notify

@@ -2,6 +2,8 @@
 Description=FreshRSS RSS Reader
 After=network.target
 Requires=network.target
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=simple

@@ -2,6 +2,8 @@
 Description=Paperless-ngx celery workers
 After=network.target redis-server.service postgresql.service
 Requires=redis-server.service postgresql.service
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=simple

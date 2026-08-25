@@ -1,6 +1,8 @@
 [Unit]
 Description=TooGoodToGo Telegram Bot
 After=network.target
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=simple

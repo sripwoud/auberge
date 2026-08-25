@@ -1,6 +1,8 @@
 [Unit]
 Description=Hermes Agent Gateway - Personal AI Assistant
 After=network.target
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=simple
