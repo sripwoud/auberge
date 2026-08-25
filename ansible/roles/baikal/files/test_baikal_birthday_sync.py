@@ -235,3 +235,18 @@ def test_leap_day_without_a_year_is_synced(db_path):
     data = calendar_objects(db_path)[event_uri("jade.vcf")]["calendardata"]
     assert f"DTSTART;VALUE=DATE:{birthday.ANCHOR_YEAR}0229" in data
 
+
+def test_unparsable_bday_is_reported_and_does_not_abort_the_run(db_path, capsys):
+    build_db(
+        db_path,
+        [
+            ("kai.vcf", make_vcard("Kai", "1990-03-14")),
+            ("lee.vcf", make_vcard("Lee", "--9999")),
+            ("mia.vcf", make_vcard_without_bday("Mia")),
+        ],
+    )
+
+    run(db_path)
+
+    assert set(calendar_objects(db_path)) == {event_uri("kai.vcf")}
+    assert "Unparsable BDAY values: 1" in capsys.readouterr().err

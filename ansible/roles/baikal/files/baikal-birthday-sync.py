@@ -188,12 +188,15 @@ class BaikalBirthdaySync:
         existing = {row["uri"]: _as_text(row["calendardata"]) for row in cursor.fetchall()}
 
         count = 0
+        unparsable = 0
         processed_uris = set()
 
         for contact in contacts:
             carddata = _as_text(contact["carddata"])
             bday = self._parse_bday(carddata)
             if not bday:
+                if carddata and BDAY_LINE.search(carddata):
+                    unparsable += 1
                 continue
 
             month, day, year = bday
@@ -236,6 +239,8 @@ class BaikalBirthdaySync:
             self._bump_synctoken(cursor, stale_uri, 3)
 
         self.conn.commit()
+        if unparsable:
+            print(f"Unparsable BDAY values: {unparsable}", file=sys.stderr)
         print(f"Synced {count} birthdays")
         return True
 
