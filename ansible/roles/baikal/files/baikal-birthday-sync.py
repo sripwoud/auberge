@@ -7,9 +7,11 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 CRLF = "\r\n"
-EPOCH_YEAR = 1970
+ANCHOR_YEAR = 1972
 MAX_INT32 = 2147483647
 DYNAMIC_PREFIXES = ("DTSTAMP:", "CREATED:", "LAST-MODIFIED:")
+BDAY_LINE = re.compile(r"BDAY(?:;[^:]*)?:([^\r\n]+)")
+YEAR_OMITTED = re.compile(r"--(\d{2})-?(\d{2})")
 
 
 def _stable_ical(ical_data):
@@ -45,17 +47,21 @@ class BaikalBirthdaySync:
     def _parse_bday(self, vcard_data):
         if not vcard_data:
             return None
-        match = re.search(r"BDAY(?:;[^:]*)?:([^\r\n]+)", vcard_data)
+        match = BDAY_LINE.search(vcard_data)
         if not match:
             return None
         value = match.group(1).strip()
 
         if value.startswith("--"):
-            try:
-                month, day = value[2:].split("-")
-                return int(month), int(day), None
-            except (ValueError, IndexError):
+            reduced = YEAR_OMITTED.fullmatch(value)
+            if not reduced:
                 return None
+            month, day = int(reduced.group(1)), int(reduced.group(2))
+            try:
+                datetime(ANCHOR_YEAR, month, day)
+            except ValueError:
+                return None
+            return month, day, None
 
         if "-" in value:
             try:
@@ -121,7 +127,7 @@ class BaikalBirthdaySync:
         )
 
     def _build_vevent(self, uid, name, month, day, year):
-        start_year = year or EPOCH_YEAR
+        start_year = year or ANCHOR_YEAR
         start = f"{start_year:04d}{month:02d}{day:02d}"
         end_dt = datetime(start_year, month, day) + timedelta(days=1)
         end = end_dt.strftime("%Y%m%d")
@@ -154,7 +160,7 @@ class BaikalBirthdaySync:
         return CRLF.join(lines) + CRLF
 
     def _first_occurrence_ts(self, month, day, year):
-        return int(datetime(year or EPOCH_YEAR, month, day, tzinfo=timezone.utc).timestamp())
+        return int(datetime(year or ANCHOR_YEAR, month, day, tzinfo=timezone.utc).timestamp())
 
     def sync_birthdays(self):
         self.connect()
