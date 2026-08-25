@@ -93,7 +93,7 @@ jobs:
       # path: ~50s against `_test`'s ~2min.
       #
       # Byte-identical to mise.toml's `test-python`, asserted by
-      # tests/python_test_pipeline.rs: mise-action overwrites mise.toml in the
+      # tests/test_pipeline.rs: mise-action overwrites mise.toml in the
       # workspace, so the task is unreachable and the command has to repeat.
       # `mise.toml` is in the changed-files gate above so that assertion runs on
       # the PR that would break it.

@@ -210,7 +210,7 @@ mise run test
 `test-python` runs under `uv`, pinned to the Host's Python minor and
 provisioning the same unpinned packages the baikal role installs into the busy
 feed venv, so the tests resolve what the Host resolves.
-`tests/python_test_pipeline.rs` fails the build if that list stops matching the
+`tests/test_pipeline.rs` fails the build if that list stops matching the
 role's, if a `test_*.py` lands somewhere the task does not collect from, or if
 `.github/workflows/master.yml` stops running the identical command — mise-action
 overwrites `mise.toml` in CI, so the workflow repeats the command rather than
