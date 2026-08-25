@@ -56,6 +56,11 @@ Required from the Key Registry: `radio_subdomain`, `radio_listener_password`,
 - The unit sets `OCAMLRUNPARAM=o=40`: OCaml's default GC keeps ~120% heap slack, which
   measured 448M anonymous for two stations; bounding slack at 40% cut that to 164M with
   both mounts still serving (#481). The budgets are sized from the tuned figure.
+- The unit points both liquidsoap cache dirs (`LIQ_CACHE_USER_DIR`,
+  `LIQ_CACHE_SYSTEM_DIR`) at its `CacheDirectory` (`/var/cache/liquidsoap`). The
+  defaults — `$HOME/.cache/liquidsoap` and `/usr/share/liquidsoap-lang/cache` — are
+  both unwritable under `ProtectHome` + `ProtectSystem=strict`, which cost a full
+  script recompile and a read-only-filesystem error log on every start.
 - The encoder is plain `%mp3(bitrate=)`. The `pcm_s16` frame request (16-bit buffered
   audio, 4x less memory per buffered second) is a 2.4 parameter: 2.3.2 rejects it at
   encoder instantiation — at runtime, only once a station exists, and invisibly to
