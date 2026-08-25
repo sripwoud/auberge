@@ -6,12 +6,15 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+fn read(path: &PathBuf) -> String {
+    fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
 /// The `run` string of a `mise.toml` task.
 fn mise_task(name: &str) -> String {
     let path = repo_root().join("mise.toml");
-    let content = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let manifest: toml::Value =
-        toml::from_str(&content).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        toml::from_str(&read(&path)).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     manifest
         .get("tasks")
         .and_then(|tasks| tasks.get(name))
@@ -21,11 +24,12 @@ fn mise_task(name: &str) -> String {
         .to_string()
 }
 
-/// The directories a pytest invocation collects from: its trailing positional
-/// arguments. Read from the executable rightwards rather than by testing which
-/// tokens happen to name a path — a flag value that resolved to a directory
-/// would otherwise widen the reach the suites are asserted against, and a
-/// mistyped target would narrow it to nothing without failing.
+/// The directories a pytest invocation collects from: the positional arguments
+/// after the executable. A token following a flag is that flag's value, not a
+/// target — `-p no:cacheprovider` names no directory. Every remaining token has
+/// to be one, so a mistyped target fails here rather than narrowing the reach
+/// the suites are checked against, and a command with no target at all fails
+/// too.
 fn pytest_targets(run: &str) -> Vec<PathBuf> {
     let tokens: Vec<&str> = run.split_whitespace().collect();
     let executable = tokens
@@ -34,17 +38,20 @@ fn pytest_targets(run: &str) -> Vec<PathBuf> {
         .position(|(i, token)| *token == "pytest" && (i == 0 || tokens[i - 1] != "--with"))
         .unwrap_or_else(|| panic!("`{run}` does not invoke pytest"));
 
-    tokens[executable + 1..]
-        .iter()
-        .filter(|token| !token.starts_with('-'))
-        .map(|token| {
+    let targets: Vec<PathBuf> = (executable + 1..tokens.len())
+        .filter(|i| !tokens[*i].starts_with('-') && !tokens[i - 1].starts_with('-'))
+        .map(|i| {
             assert!(
-                repo_root().join(token).is_dir(),
-                "`{run}` collects from {token}, which is not a directory in this repo"
+                repo_root().join(tokens[i]).is_dir(),
+                "`{run}` collects from {}, which is not a directory in this repo",
+                tokens[i]
             );
-            PathBuf::from(token)
+            PathBuf::from(tokens[i])
         })
-        .collect()
+        .collect();
+
+    assert!(!targets.is_empty(), "`{run}` names no directory to collect");
+    targets
 }
 
 /// The packages a `uv run` command provisions with `--with`.
@@ -80,17 +87,27 @@ fn python_test_files() -> Vec<PathBuf> {
     found
 }
 
-/// Every package name listed by an `ansible.builtin.pip` task in a role,
-/// wherever it sits in the task tree.
+/// Every package an `ansible.builtin.pip` task in a role installs, across every
+/// file under `tasks/` and at any depth of block nesting, in both the sequence
+/// and the scalar `name:` forms. Asserted non-empty: a role whose pip task
+/// moved to an included file, or whose list shrank to one scalar, would
+/// otherwise report nothing to provision and pass every caller vacuously.
 fn role_pip_packages(role: &str) -> BTreeSet<String> {
     fn collect(value: &serde_yaml::Value, found: &mut BTreeSet<String>) {
         match value {
             serde_yaml::Value::Mapping(map) => {
                 for (key, child) in map {
                     if key.as_str() == Some("ansible.builtin.pip")
-                        && let Some(names) = child.get("name").and_then(|n| n.as_sequence())
+                        && let Some(name) = child.get("name")
                     {
-                        found.extend(names.iter().filter_map(|n| n.as_str()).map(String::from));
+                        match name {
+                            serde_yaml::Value::Sequence(names) => found
+                                .extend(names.iter().filter_map(|n| n.as_str()).map(String::from)),
+                            serde_yaml::Value::String(name) => {
+                                found.insert(name.clone());
+                            }
+                            _ => {}
+                        }
                     }
                     collect(child, found);
                 }
@@ -100,17 +117,46 @@ fn role_pip_packages(role: &str) -> BTreeSet<String> {
         }
     }
 
-    let path = repo_root()
-        .join("ansible/roles")
-        .join(role)
-        .join("tasks/main.yml");
-    let content = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    let tasks: serde_yaml::Value =
-        serde_yaml::from_str(&content).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-
+    let tasks = repo_root().join("ansible/roles").join(role).join("tasks");
     let mut found = BTreeSet::new();
-    collect(&tasks, &mut found);
+    for entry in fs::read_dir(&tasks)
+        .unwrap_or_else(|e| panic!("{}: {e}", tasks.display()))
+        .filter_map(Result::ok)
+    {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("yml") {
+            continue;
+        }
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&read(&path))
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        collect(&parsed, &mut found);
+    }
+
+    assert!(
+        !found.is_empty(),
+        "no `ansible.builtin.pip` package found under {} — the scan stopped matching \
+         what the role writes, so anything comparing against it passes vacuously",
+        tasks.display()
+    );
     found
+}
+
+/// The `run` commands of a workflow job's steps that execute unconditionally.
+fn unconditional_step_commands(workflow: &PathBuf, job: &str) -> Vec<String> {
+    let parsed: serde_yaml::Value = serde_yaml::from_str(&read(workflow))
+        .unwrap_or_else(|e| panic!("{}: {e}", workflow.display()));
+
+    parsed
+        .get("jobs")
+        .and_then(|jobs| jobs.get(job))
+        .and_then(|job| job.get("steps"))
+        .and_then(|steps| steps.as_sequence())
+        .unwrap_or_else(|| panic!("{}: job `{job}` has no steps", workflow.display()))
+        .iter()
+        .filter(|step| step.get("if").is_none())
+        .filter_map(|step| step.get("run").and_then(|run| run.as_str()))
+        .map(|run| run.trim().to_string())
+        .collect()
 }
 
 /// A suite nothing invokes proves nothing. The two baikal suites sat outside
@@ -138,11 +184,11 @@ fn test_every_python_suite_is_collected_by_the_task() {
     );
 }
 
-/// The `--with` list exists to reproduce the interpreter the Host runs the
+/// The `--with` list exists to reproduce the environment the Host runs the
 /// script under: `baikal-busy-sync.py` imports from the venv the role
-/// provisions, so a package added there and not here turns a real import
-/// error into a test-time `ModuleNotFoundError` at best, and a green suite
-/// covering an unimportable script at worst.
+/// provisions, so a package added there and not here turns a real import error
+/// into a test-time `ModuleNotFoundError` at best, and a green suite covering
+/// an unimportable script at worst.
 #[test]
 fn test_the_task_provisions_what_the_role_installs() {
     let provisioned = with_packages(&mise_task("test-python"));
@@ -164,19 +210,52 @@ fn test_the_task_provisions_what_the_role_installs() {
 /// `jdx/mise-action`'s `mise_toml:` input overwrites the repo's `mise.toml` in
 /// the workspace, so the `check` job cannot call a task this repo defines — it
 /// has to repeat the command. The copies then drift silently, which is how
-/// `test-shell` came to list five scripts locally and run three in CI. Pin
-/// them together instead of trusting them to stay equal.
+/// `test-shell` came to list five scripts locally and run three in CI (#649).
+/// Matched against the parsed step rather than the file's text, so a command
+/// that survives only inside a comment, or behind an `if:`, does not count as
+/// CI running it.
 #[test]
 fn test_ci_runs_the_same_command_as_the_task() {
     let run = mise_task("test-python");
     let workflow = repo_root().join(".github/workflows/master.yml");
-    let content =
-        fs::read_to_string(&workflow).unwrap_or_else(|e| panic!("{}: {e}", workflow.display()));
 
     assert!(
-        content.contains(&run),
-        "{} does not run the command mise.toml [tasks.test-python] declares, so the \
-         python suites pass locally and are absent from CI. Expected to find:\n    {run}",
+        unconditional_step_commands(&workflow, "check").contains(&run),
+        "no unconditional step of the `check` job in {} runs the command \
+         mise.toml [tasks.test-python] declares, so the python suites pass locally \
+         and are absent from CI. Expected a step whose `run` is:\n    {run}",
         workflow.display()
     );
+}
+
+/// The guards above only run in the `_test` job, which is gated on a
+/// changed-files list. `mise.toml` has to be in that list or the one PR shape
+/// that breaks the wiring — an edit to the task and nothing else — skips the
+/// job asserting it, and merges green against CI's now-stale hard-coded copy.
+#[test]
+fn test_the_gate_covers_the_file_the_task_lives_in() {
+    let workflow = repo_root().join(".github/workflows/master.yml");
+    let parsed: serde_yaml::Value = serde_yaml::from_str(&read(&workflow))
+        .unwrap_or_else(|e| panic!("{}: {e}", workflow.display()));
+
+    let patterns = parsed
+        .get("jobs")
+        .and_then(|jobs| jobs.get("changed-files"))
+        .and_then(|job| job.get("steps"))
+        .and_then(|steps| steps.as_sequence())
+        .unwrap_or_else(|| panic!("{}: no changed-files job", workflow.display()))
+        .iter()
+        .find_map(|step| step.get("with").and_then(|with| with.get("files")))
+        .and_then(|files| files.as_str())
+        .unwrap_or_else(|| panic!("{}: changed-files declares no `files`", workflow.display()));
+
+    let covered: BTreeSet<&str> = patterns.split_whitespace().collect();
+    for path in ["mise.toml", "tests/**/*.rs"] {
+        assert!(
+            covered.contains(path),
+            "{} gates the job that runs this file's assertions on {covered:?}, which omits \
+             `{path}` — a PR touching only that path would skip them",
+            workflow.display()
+        );
+    }
 }

@@ -10,7 +10,9 @@ Accepted, 2026-08-25. Closes #643.
 
 `.github/workflows/master.yml`'s `check` job runs that command byte-for-byte, ungated.
 
-`tests/python_test_pipeline.rs` fails the build when any of three stop holding: a `test_*.py` exists in a directory the task does not collect from; a package the role installs into the venv is not provisioned by the task; the workflow does not contain the command the task declares.
+The command sets `PYTHONDONTWRITEBYTECODE=1`, inline rather than in a `env:` block, so it is part of the string both copies are held to.
+
+`tests/python_test_pipeline.rs` fails the build when any of four stop holding: a `test_*.py` exists in a directory the task does not collect from; a package the role installs into the venv is not provisioned by the task; no unconditional step of the `check` job runs the command the task declares; or `mise.toml` leaves the changed-files gate that decides whether those assertions run at all.
 
 ## Why
 
@@ -24,7 +26,11 @@ CodeQL's `analyze (python)` job (ADR-0011) runs on every PR and its green check 
 
 **uv, because uv is already here.** `hermes_uv_version` and `tgtg_uv_version` pin uv 0.12.5 as **Tool Versions** (ADR-0017), so this adds no dependency in kind, only a `[tools]` entry. `--with` builds an ephemeral environment with no lockfile and no venv to maintain. Measured, against the 61 tests' own 0.5s: 0.9s warm; 6.8s with a cold package cache; 16.3s with a cold cache _and_ no 3.13 interpreter present, which is a runner's state on every run — uv's `python-preference` defaults to `managed`, so it downloads its own CPython rather than adopting a system one.
 
-**The CI copy is asserted, not trusted.** `jdx/mise-action`'s `mise_toml:` input writes its content to `mise.toml` in the workspace — `##[group]Writing mise.toml` in the job log — replacing the repo's. The `check` job therefore cannot call a task this repo declares; it has to repeat the command. Left to convention that repetition drifts, and it already has: `test-shell` lists five scripts and the workflow runs three, so `tests/immich-b2-prune.test.sh` and `tests/immich-backup.test.sh` execute in no pipeline at all today — #643 one layer down, undetected for the same reason.
+**Bytecode cannot be written into `ansible/`.** That tree is what `include_dir!` embeds into the binary, and pytest's default is to drop a `__pycache__` beside the suites it imports. Measured before the flag went in: four `.pyc` files, `grep -ac __pycache__ target/debug/auberge` returning 4. Three consequences, in ascending order of nastiness — compiled test bytecode ships to the Host inside the binary; `embedded_fingerprint()` hashes it, so running the tests before a build moves the fingerprint and forces a re-extract of an otherwise identical tree (ADR-0034); and `test`'s `depends = "test-*"` fans `test-python` out concurrently with `test-rust`, so a `.pyc` written between `include_dir!`'s directory read and its `include_bytes!` is a hard build failure that reproduces at random. `.gitignore` is no defence — `include_dir!` reads the filesystem, not the index. This is the trap MEMORY already records for `ansible/.ansible`; the same tree, a second writer.
+
+**The guards run only where the gate lets them.** They live in `tests/python_test_pipeline.rs`, which executes in `_test`, gated on a changed-files list that did not include `mise.toml`. So the single PR shape that breaks this wiring — an edit to the task and nothing else — skipped the job asserting it, while `check` went on running its own stale copy, and the whole thing merged green. `mise.toml` joins the gate, and a fourth assertion keeps it there.
+
+**The CI copy is asserted, not trusted.** `jdx/mise-action`'s `mise_toml:` input writes its content to `mise.toml` in the workspace — `##[group]Writing mise.toml` in the job log — replacing the repo's. The `check` job therefore cannot call a task this repo declares; it has to repeat the command. Left to convention that repetition drifts, and it already has: `test-shell` lists five scripts and the workflow runs three, so `tests/immich-b2-prune.test.sh` and `tests/immich-backup.test.sh` execute in no pipeline at all today — #643 one layer down, undetected for the same reason, and filed as #649.
 
 **Ungated, in `check`.** The suites live under `ansible/`, so `_test`'s changed-files gate would have covered them, but `_test` is the Rust job — a Rust toolchain and nextest. `check` finishes in ~50s against `_test`'s ~2min, so on any PR that also touches Rust or ansible the ~16s is absorbed by a job that is not the critical path; only a docs-only PR, where `_test` is skipped, pays it in wall-clock.
 
@@ -52,12 +58,15 @@ CodeQL's `analyze (python)` job (ADR-0011) runs on every PR and its green check 
 - Every PR pays the uv resolve and the interpreter download, including doc-only ones: ~16s measured, uncached by choice.
 - Renovate tracks none of the three packages. Same posture as the role, deliberately.
 - `uv` joins `[tools]` at `latest` while the roles pin 0.12.5. A dev tool and a deployed artifact are held to different regimes; ADR-0017 governs only the latter.
+- The guard is `test-python`-only, so the `test-shell` drift it documents stays broken until #649 generalises it. Fixing that here would have meant reworking a second task's CI wiring in a PR about the first.
 - The dependency guard is baikal-specific — the only role today with both a Python suite and a venv. A second one extends the test, which is the point at which someone decides whether the two venvs share a list.
 - No Python linter or formatter is configured anywhere, and this adds none (#643, out of scope).
 
 ## References
 
 - Issue #643 — the gap, and the acceptance criteria this meets.
+- Issue #649 — the same drift in `test-shell`, found while writing this and left for its own change.
+- ADR-0034 — the assets fingerprint a stray `__pycache__` would have moved.
 - Issues #616, #637, #484 — the three exit-0 bugs these suites cover.
 - PR #638 — the suite that tripled in size with no runner behind it.
 - ADR-0010 — the **Busy Feed**, whose venv the `--with` list mirrors.

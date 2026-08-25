@@ -23,6 +23,7 @@ jobs:
             tests/**/*.rs
             Cargo.toml
             Cargo.lock
+            mise.toml
             ansible/**
   check:
     runs-on: ubuntu-latest
@@ -92,9 +93,16 @@ jobs:
       # Byte-identical to mise.toml's `test-python`, asserted by
       # tests/python_test_pipeline.rs: mise-action overwrites mise.toml in the
       # workspace, so the task is unreachable and the command has to repeat.
+      # `mise.toml` is in the changed-files gate above so that assertion runs on
+      # the PR that would break it.
+      #
+      # PYTHONDONTWRITEBYTECODE, because ansible/ is what `include_dir!` embeds:
+      # a __pycache__ beside the suites ships .pyc into the binary and moves the
+      # assets fingerprint (ADR-0034), and `test-*` fans out concurrently, so a
+      # .pyc written mid-embed is a flaky build failure.
       - name: Python unit tests
         shell: bash
-        run: uv run --python 3.13 --with pytest --with icalendar --with recurring-ical-events --with caldav pytest ansible/roles/baikal/files
+        run: PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --with pytest --with icalendar --with recurring-ical-events --with caldav pytest ansible/roles/baikal/files
 
   _test:
     needs: changed-files

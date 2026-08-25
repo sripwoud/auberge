@@ -40,7 +40,7 @@ depends = "lint-*"
 quiet = true
 
 [tasks.test-python]
-run = "uv run --python 3.13 --with pytest --with icalendar --with recurring-ical-events --with caldav pytest ansible/roles/baikal/files"
+run = "PYTHONDONTWRITEBYTECODE=1 uv run --python 3.13 --with pytest --with icalendar --with recurring-ical-events --with caldav pytest ansible/roles/baikal/files"
 quiet = true
 
 [tasks.test-rust]
