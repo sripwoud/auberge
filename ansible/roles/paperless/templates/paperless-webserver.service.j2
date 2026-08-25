@@ -2,6 +2,8 @@
 Description=Paperless-ngx webserver
 After=network.target tailscaled.service redis-server.service postgresql.service
 Requires=redis-server.service postgresql.service tailscaled.service
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=simple

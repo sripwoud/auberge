@@ -2,8 +2,8 @@
 Description=Radio station encoder (Liquidsoap)
 After=network.target icecast2.service
 Requires=icecast2.service
-StartLimitIntervalSec=600
-StartLimitBurst=5
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=simple

@@ -2,6 +2,8 @@
 Description=Headscale - Tailscale control server
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 User={{ headscale_sys_user }}

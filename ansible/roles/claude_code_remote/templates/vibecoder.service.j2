@@ -1,6 +1,8 @@
 [Unit]
 Description=Vibecoder Claude with Telegram Integration
 After=network.target
+StartLimitIntervalSec=3600
+StartLimitBurst=30
 
 [Service]
 Type=simple
