@@ -24,7 +24,6 @@ const TOOL_VERSIONS: &[&str] = &[
     "caddy_l4_version",
     "grimmory_java_version",
     "hermes_uv_version",
-    "radio_liquidsoap_version",
     "tgtg_uv_version",
 ];
 

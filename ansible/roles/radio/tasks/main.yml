@@ -1,35 +1,12 @@
 - name: Install and configure Radio
   block:
-    - name: Install Icecast2
+    - name: Install Icecast2 and Liquidsoap
       ansible.builtin.apt:
         name:
           - icecast2
+          - liquidsoap
         state: present
         update_cache: true
-
-    - name: Gather package facts
-      ansible.builtin.package_facts:
-        manager: apt
-
-    - name: Set installed Liquidsoap version fact
-      ansible.builtin.set_fact:
-        radio_liquidsoap_installed_version: >-
-          {{ ansible_facts.packages.liquidsoap[0].version | regex_replace('^\d+:', '')
-             if 'liquidsoap' in ansible_facts.packages else '' }}
-
-    - name: Download Liquidsoap release .deb
-      when: not radio_liquidsoap_installed_version.startswith(radio_liquidsoap_version ~ '-')
-      ansible.builtin.get_url:
-        url: "{{ radio_liquidsoap_deb_url }}"
-        dest: "/tmp/{{ radio_liquidsoap_deb }}"
-        mode: "0644"
-
-    - name: Install Liquidsoap from release .deb
-      when: not radio_liquidsoap_installed_version.startswith(radio_liquidsoap_version ~ '-')
-      ansible.builtin.apt:
-        deb: "/tmp/{{ radio_liquidsoap_deb }}"
-        state: present
-      notify: Restart liquidsoap
 
     - name: Ensure stations directory exists
       ansible.builtin.file:

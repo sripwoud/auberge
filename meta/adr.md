@@ -44,6 +44,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0034 | [The extracted assets tree is addressed by its fingerprint, never rewritten in place](./adr/0034-assets-tree-is-fingerprint-addressed.md)                      |
 | 0035 | [A service-owned directory carries a declared classification](./adr/0035-service-owned-directories-carry-a-declared-classification.md)                         |
 | 0036 | [A directory a container owns is created by ansible, never maintained by it](./adr/0036-container-owned-directories-are-created-not-maintained.md)             |
+| 0037 | [Liquidsoap installs from the Debian archive](./adr/0037-liquidsoap-installs-from-the-debian-archive.md)                                                       |
 
 ## Native systemd by default
 

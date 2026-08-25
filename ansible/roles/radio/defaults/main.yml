@@ -8,10 +8,6 @@ radio_config_dir: /etc/liquidsoap
 radio_stations_dir: /srv/music/Stations
 radio_music_group: navidrome
 radio_source_password_file: /etc/icecast2/source_password
-# renovate: datasource=github-releases depName=savonet/liquidsoap extractVersion=^v(?<version>.+)$
-radio_liquidsoap_version: "2.4.5"
-radio_liquidsoap_deb: "liquidsoap_{{ radio_liquidsoap_version }}-debian-trixie-ocaml4.14.2-2_amd64.deb"
-radio_liquidsoap_deb_url: "https://github.com/savonet/liquidsoap/releases/download/v{{ radio_liquidsoap_version }}/{{ radio_liquidsoap_deb }}"
 radio_bitrate: 128
 radio_max_clients: 32
 radio_max_sources: 8
