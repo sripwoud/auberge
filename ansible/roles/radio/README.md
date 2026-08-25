@@ -1,6 +1,6 @@
 # Radio Ansible Role
 
-Installs and configures the Radio: Icecast2 (apt) and Liquidsoap (upstream release deb)
+Installs and configures the Radio: Icecast2 and Liquidsoap, both from apt,
 broadcasting each `.m3u` file under the stations directory as one continuous,
 password-gated stream (ADR-0020).
 
@@ -33,12 +33,12 @@ Required from the Key Registry: `radio_subdomain`, `radio_listener_password`,
 
 ## Behaviour
 
-- Liquidsoap installs from savonet's release deb, pinned as the `radio/liquidsoap` Tool
-  Version (ADR-0017) — Debian trixie ships 2.3.2, and 2.4.5 allocates far less transient
-  memory. The asset name embeds an OCaml build and package revision (`ocaml4.14.2-2`)
-  that upstream changes between releases: when Renovate bumps the version, a stale
-  suffix 404s the download task — fix `radio_liquidsoap_deb` against the release page.
-  Icecast2 stays on apt: Debian tracks its security fixes and its footprint is tiny.
+- Liquidsoap and Icecast2 both install from the Debian archive; there is no version
+  pin and no upstream download (ADR-0037). Savonet's trixie release debs declare their
+  ffmpeg dependencies at deb-multimedia's epoch 10, which Debian's epoch-7 ffmpeg can
+  never satisfy — the asset is uninstallable on a stock trixie, whatever the version.
+  Trade-off: trixie's 2.3.2 over upstream's newer releases, with security fixes
+  arriving through `trixie-security` like every other apt package.
 - A Station is one `.m3u` under `radio_stations_dir`, served at
   `https://{{ radio_domain }}/<filename-without-extension>`.
 - Liquidsoap globs `*.m3u` at startup: adding or removing a station file needs
