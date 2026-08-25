@@ -24,7 +24,6 @@ use std::path::PathBuf;
 use serde_yaml::{Mapping, Sequence, Value};
 
 /// What systemd does with a unit that cannot start.
-#[derive(PartialEq, Debug)]
 enum Limiter {
     /// The limiter is reachable: `burst` starts inside `interval_sec` end the
     /// retries and leave the unit `failed`.
@@ -105,6 +104,20 @@ static START_LIMIT_REGIMES: &[(&str, &Regime)] = &[
     ("radio/liquidsoap.service", &RESTARTING_APP),
     ("tgtg/tgtg.service", &RESTARTING_APP),
 ];
+
+/// Every regime this fence defines. A regime defined and left out of here is
+/// caught by `dead_code`; one listed and held by no unit is caught below.
+static ALL_REGIMES: &[&Regime] = &[&RESTARTING_APP, &RESOLVER];
+
+/// A unit the repo drops in over without templating it, and that needs no regime
+/// because nothing restarts it. The repo holds no `Restart=` for such a unit, so
+/// membership is this list's own claim and each entry carries what backs it.
+static UNRESTARTED_ADOPTED_UNITS: &[(&str, &str)] = &[(
+    "radio/icecast2.service",
+    "Debian's icecast2 unit sets `Restart=no` — measured on auberge — so it \
+     cannot crash-loop however it exits; the role drops in a Memory Budget and \
+     nothing that would restart it",
+)];
 
 /// `Restart=`'s values, as systemd defines them. An unknown one is a hard stop
 /// rather than a unit that quietly leaves the domain: systemd rejects a typo at
@@ -299,6 +312,12 @@ fn unit_configured_at(dest: &str) -> Option<(String, Option<String>)> {
 /// (`1min 30s`). An unrecognised suffix is a hard stop: reading `5min` as 5
 /// would make an unreachable limiter look reachable.
 fn timespan_ms(unit: &str, key: &str, raw: &str) -> u64 {
+    assert!(
+        !raw.trim().is_empty(),
+        "{unit} writes a bare `{key}=`, which resets the setting to systemd's \
+         own default rather than to zero; this scan would read it as a \
+         deliberate zero"
+    );
     let mut total = 0u64;
     for component in raw.split_whitespace() {
         let digits = component
@@ -455,10 +474,22 @@ fn installed_by(role: &str, vars: &BTreeMap<String, String>) -> Vec<InstalledFil
             let Some(args) = field(&task, module).and_then(Value::as_mapping) else {
                 continue;
             };
-            let (Some(dest), Some(src)) = (
-                field(args, "dest").and_then(Value::as_str),
-                field(args, "src").and_then(Value::as_str),
-            ) else {
+            let dest = field(args, "dest").and_then(Value::as_str);
+            let Some(src) = field(args, "src").and_then(Value::as_str) else {
+                // A task with no `src` writes inline `content:`. Harmless for
+                // anything but a unit, and a silent domain hole for a unit.
+                if let Some(dest) = dest {
+                    assert!(
+                        unit_configured_at(&resolve(dest, vars)).is_none(),
+                        "{role}: `{dest}` configures a systemd unit from inline \
+                         `content:` rather than from a file; this scan reads \
+                         `src` only, so teach it about the task before relying \
+                         on it"
+                    );
+                }
+                continue;
+            };
+            let Some(dest) = dest else {
                 continue;
             };
             let items = strings(field(&task, "loop"));
@@ -641,6 +672,49 @@ fn test_every_unit_carries_the_limiter_its_regime_declares() {
     }
 }
 
+/// A unit the repo only drops in over has no `Restart=` in the repo to read, so
+/// it cannot enter the domain by computation the way a templated unit does. Each
+/// one is classified by hand instead, and a new drop-in over a packaged unit
+/// fails the build until it lands on one of the two lists. Without this the
+/// navidrome class is unfenced — which is why the fleet's most unreachable
+/// limiter was found by reading a unit on the Host rather than by this test.
+#[test]
+fn test_every_unit_the_repo_only_drops_in_over_is_classified() {
+    let declared = declared();
+    let unrestarted: BTreeSet<&str> = UNRESTARTED_ADOPTED_UNITS
+        .iter()
+        .map(|(id, _)| *id)
+        .collect();
+    let adopted: BTreeSet<String> = fleet_units()
+        .iter()
+        .filter(|unit| !unit.templated)
+        .map(Unit::id)
+        .collect();
+
+    for id in &adopted {
+        let regime = declared.contains_key(id.as_str());
+        let unrestarting = unrestarted.contains(id.as_str());
+        assert!(
+            regime || unrestarting,
+            "{id} is a unit this repo drops in over but does not template, so \
+             nothing here says whether it restarts; give it a Start Limit Regime \
+             or list it in UNRESTARTED_ADOPTED_UNITS with what backs that"
+        );
+        assert!(
+            !(regime && unrestarting),
+            "{id} is declared both as holding a regime and as never restarting; \
+             one of the two is wrong and neither says which"
+        );
+    }
+    for (id, _) in UNRESTARTED_ADOPTED_UNITS {
+        assert!(
+            adopted.contains(*id),
+            "UNRESTARTED_ADOPTED_UNITS vouches for `{id}`, which this repo no \
+             longer drops in over; drop the entry with the last task that did"
+        );
+    }
+}
+
 /// A unit the repo does not template has its `RestartSec` set by whoever
 /// packaged it, and the arithmetic below is measured against that value. The
 /// drop-in has to pin it, or the fence would be vouching for a number that can
@@ -704,14 +778,27 @@ fn test_a_limiter_that_gives_up_can_admit_its_burst_before_its_window_closes() {
 /// Measured on auberge under systemd 257, with a transient unit per case:
 /// `StartLimitBurst` is honoured from `[Service]`, and `StartLimitIntervalSec`
 /// is not — it is read only from `[Unit]`, and only the legacy spelling
-/// `StartLimitInterval` survives in `[Service]`. So the pair splits: the burst
-/// takes effect, the window silently stays systemd's 10s default, and the result
-/// is the unreachable limiter this whole fence exists to remove, written by
-/// somebody who believed they had configured it.
+/// `StartLimitInterval` survives in `[Service]`. So the pair splits, and each
+/// half fails differently; the consequence is stated per key rather than once.
+const OUTSIDE_UNIT_SECTION: &[(&str, &str)] = &[
+    (
+        "StartLimitIntervalSec",
+        "systemd does not read it outside `[Unit]` at all, so the window would \
+         silently stay its 10s default while the file claims otherwise",
+    ),
+    (
+        "StartLimitBurst",
+        "systemd does honour it there, which is the worse half: the burst takes \
+         effect beside a window that stayed at the default, and that split pair \
+         is exactly what an unreachable limiter looks like when someone believes \
+         they configured it",
+    ),
+];
+
 #[test]
 fn test_no_start_limit_setting_sits_outside_the_unit_section() {
     for unit in fleet_units() {
-        for key in ["StartLimitIntervalSec", "StartLimitBurst"] {
+        for (key, consequence) in OUTSIDE_UNIT_SECTION {
             let stray: Vec<(&str, &str)> = unit
                 .assignments_of(key)
                 .into_iter()
@@ -719,9 +806,7 @@ fn test_no_start_limit_setting_sits_outside_the_unit_section() {
                 .collect();
             assert!(
                 stray.is_empty(),
-                "{}: `{}` assigns `{key}` at {stray:?}; systemd reads \
-                 `StartLimitIntervalSec` only under `[Unit]`, so the window would \
-                 fall back to its 10s default while the file claims otherwise",
+                "{}: `{}` assigns `{key}` at {stray:?}; {consequence}",
                 unit.role,
                 unit.name
             );
@@ -774,7 +859,7 @@ fn test_no_undeclared_unit_limits_its_starts() {
 #[test]
 fn test_every_declared_regime_is_still_held_by_a_unit() {
     let held: BTreeSet<&str> = declared().values().map(|regime| regime.name).collect();
-    for regime in [&RESTARTING_APP, &RESOLVER] {
+    for regime in ALL_REGIMES {
         assert!(
             held.contains(regime.name),
             "the {} regime is declared but no unit is in it; drop it with the \

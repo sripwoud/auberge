@@ -24,9 +24,11 @@ The pairing is asserted in both directions:
 - a unit with no declared regime must carry no limiter from this repo;
 - a regime no unit holds any more fails, so the table cannot outlive the last unit that needed it.
 
-**A unit the repo does not template joins through its drop-in**, and its drop-in must pin `RestartSec` — the arithmetic is measured against that number, and one left to the packaging is one the fence would be vouching for without being able to read it.
+**A unit the repo does not template joins through its drop-in.** Such a unit's `Restart=` is not in the repo, so it cannot enter the domain by computation; it is classified by hand instead, into one of two lists — a Start Limit Regime, or `UNRESTARTED_ADOPTED_UNITS` with what backs the claim that nothing restarts it (`icecast2`, whose Debian unit sets `Restart=no`, measured). A drop-in over a packaged unit that is on neither list fails the build, and an entry the repo no longer drops in over fails too. Without that pair of lists the navidrome class is unfenced, which is exactly how the fleet's most unreachable limiter came to be found by reading a unit on the Host rather than by this test.
 
-Four reads are hard stops rather than silent misreads: a unit name that does not resolve (ADR-0038's reason — a `loop:` the scan cannot expand would drop out of the domain unseen), a `Restart=` value systemd does not define (a typo would read as "never restarts"), a time-span suffix the parser does not know (`5min` read as 5 makes an unreachable window look reachable), and a `StartLimitBurst` of 0 or 1 — 0 turns the limiter off under another name and 1 gives up before a single retry.
+Its drop-in must also pin `RestartSec`, because the arithmetic is measured against that number and one left to the packaging is one the fence would vouch for without being able to read it. navidrome's is pinned at 10s rather than at upstream's 120s, which is a choice and not a consequence: at 120s a burst of 30 spans 58 minutes, so the unit would be down and unreported for most of an hour — a blind spot only slightly smaller than the one being removed. 10s puts it on the fleet's own cadence and its verdict at 290s.
+
+Six reads are hard stops rather than silent misreads: a unit name that does not resolve (ADR-0038's reason — a `loop:` the scan cannot expand would drop out of the domain unseen), a `Restart=` value systemd does not define (a typo would read as "never restarts"), a time-span suffix the parser does not know (`5min` read as 5 makes an unreachable window look reachable), a bare `Key=` (systemd resets the setting to its default; this scan would read the empty value as a deliberate zero, which is the Resolver regime), a `StartLimitBurst` of 0 or 1 (0 turns the limiter off under another name, 1 gives up before a single retry), and a unit written from a task's inline `content:` rather than from a file — the scan reads `src`, so such a unit would leave the domain unseen.
 
 ## Why
 
@@ -90,14 +92,15 @@ The control blew nine times past its burst of five and never appeared in `system
 - **Leave the limiter alone and watch `NRestarts` instead**, or alert on `activating (auto-restart)`. Rejected: it builds a second health signal beside the one systemd already has and leaves `systemctl --failed` still lying. #644 reads the state this ADR makes reachable; it does not replace it.
 - **Turn the limiter off fleet-wide**, blocky's answer for everyone. Rejected: that is today's behaviour made explicit. The endless loop is the defect, not the reporting of it.
 - **`Restart=no` for units that should not self-heal.** Rejected: they should self-heal. The question was only when to stop.
+- **Pin navidrome at upstream's `RestartSec=120`** instead of 10s, since 29 gaps of 120s still fit inside the hour and the fence would pass. Rejected: it would take 58 minutes to reach the verdict, which keeps most of the blind spot this ADR exists to close.
 - **A `why` per unit** rather than per regime. Rejected: it would be 17 restatements of one sentence, and the sizing follows from what depends on a unit, not from the App behind it.
-- **Read only unit files, as ADR-0038 does.** Rejected once navidrome was found: the fleet's most unreachable limiter is on the one restarting unit the repo does not template, and a fence that cannot see it would have reported the fleet clean.
+- **Read only unit files, as ADR-0038 does.** Rejected once navidrome was found: the fleet's most unreachable limiter is on the one restarting unit the repo drops in over rather than templates, and a fence that cannot see it would have reported the fleet clean.
 
 ## Consequences
 
 **Positive:**
 
-- The build now fails on: a new restarting unit with no regime, a table entry naming a unit the repo does not configure or does not restart, a limiter that does not match its regime, an unreachable `(burst - 1) × RestartSec`, a limiter outside `[Unit]`, the legacy spelling, a limiter on a unit with no regime, a regime nobody holds, and each of the four hard stops.
+- The build now fails on: a new restarting unit with no regime, a drop-in over a packaged unit that is classified neither way, a table entry naming a unit the repo does not configure or does not restart, a limiter that does not match its regime, an unreachable `(burst - 1) × RestartSec`, a limiter outside `[Unit]`, the legacy spelling, a limiter on a unit with no regime, a regime nobody holds, and each of the six hard stops. Ten tests.
 - A hard-down App reaches `failed` in 145s to 290s and appears in `systemctl --failed`, demonstrated above. The grimmory shape is capped at 30 attempts instead of 4628.
 - navidrome's limiter becomes reachable for the first time, and its `RestartSec` drops from upstream's 120s to the fleet's 10s.
 - Iterative deploys of the radio no longer risk `start request repeated too quickly`.
