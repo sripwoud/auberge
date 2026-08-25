@@ -34,8 +34,8 @@ def db_path(tmp_path):
     return str(tmp_path / "db.sqlite")
 
 
-def make_vcard(name, bday):
-    return "\r\n".join(["BEGIN:VCARD", "VERSION:3.0", f"FN:{name}", f"BDAY:{bday}", "END:VCARD"]) + "\r\n"
+def make_vcard(name, bday, params=""):
+    return "\r\n".join(["BEGIN:VCARD", "VERSION:3.0", f"FN:{name}", f"BDAY{params}:{bday}", "END:VCARD"]) + "\r\n"
 
 
 def make_vcard_without_bday(name):
@@ -44,6 +44,10 @@ def make_vcard_without_bday(name):
 
 def event_uri(card_uri):
     return birthday.BaikalBirthdaySync("")._make_uid(card_uri) + ".ics"
+
+
+def parse_bday(value, params=""):
+    return birthday.BaikalBirthdaySync("")._parse_bday(make_vcard("X", value, params))
 
 
 def build_db(db_path, cards):
@@ -79,6 +83,13 @@ def store_as_blob(db_path, table, column, uri, text):
     kind = conn.execute(f"SELECT typeof({column}) FROM {table} WHERE uri = ?", (uri,)).fetchone()[0]
     conn.close()
     assert kind == "blob"
+
+
+def store_event(db_path, uri, calendardata):
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE calendarobjects SET calendardata = ? WHERE uri = ?", (calendardata, uri))
+    conn.commit()
+    conn.close()
 
 
 def insert_orphan_event(db_path, uri):
@@ -182,3 +193,78 @@ def test_orphan_event_is_deleted(db_path):
     run(db_path)
 
     assert set(calendar_objects(db_path)) == {event_uri("frank.vcf")}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("1991-01-05", (1, 5, 1991)),
+        ("19910105", (1, 5, 1991)),
+        ("--01-05", (1, 5, None)),
+        ("--0105", (1, 5, None)),
+        ("--12-31", (12, 31, None)),
+        ("--1231", (12, 31, None)),
+        ("--02-29", (2, 29, None)),
+        ("--0229", (2, 29, None)),
+    ],
+)
+def test_parse_bday_accepts_both_year_omitted_forms(value, expected):
+    assert parse_bday(value) == expected
+
+
+def test_parse_bday_reads_the_value_date_parameter():
+    assert parse_bday("--0105", params=";VALUE=DATE") == (1, 5, None)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["--13-01", "--1301", "--00-00", "--0000", "--02-30", "--0230", "--xxyy", "--01", "--010", "--"],
+)
+def test_parse_bday_rejects_malformed_year_omitted_values(value):
+    assert parse_bday(value) is None
+
+
+def test_year_omitted_bday_becomes_a_yearly_event(db_path):
+    build_db(db_path, [("ivy.vcf", make_vcard("Ivy", "--0105", params=";VALUE=DATE"))])
+
+    run(db_path)
+
+    data = calendar_objects(db_path)[event_uri("ivy.vcf")]["calendardata"]
+    assert f"DTSTART;VALUE=DATE:{birthday.ANCHOR_YEAR}0105" in data
+    assert "RRULE:FREQ=YEARLY" in data
+
+
+def test_leap_day_without_a_year_is_synced(db_path):
+    build_db(db_path, [("jade.vcf", make_vcard("Jade", "--0229"))])
+
+    run(db_path)
+
+    data = calendar_objects(db_path)[event_uri("jade.vcf")]["calendardata"]
+    assert f"DTSTART;VALUE=DATE:{birthday.ANCHOR_YEAR}0229" in data
+
+
+def test_unparsable_bday_is_reported_and_does_not_abort_the_run(db_path, capsys):
+    build_db(
+        db_path,
+        [
+            ("kai.vcf", make_vcard("Kai", "1990-03-14")),
+            ("lee.vcf", make_vcard("Lee", "--9999")),
+            ("mia.vcf", make_vcard_without_bday("Mia")),
+        ],
+    )
+
+    run(db_path)
+
+    assert set(calendar_objects(db_path)) == {event_uri("kai.vcf")}
+    assert "Unparsable BDAY values: 1" in capsys.readouterr().err
+
+
+def test_event_anchored_on_the_superseded_year_is_rewritten(db_path):
+    build_db(db_path, [("nils.vcf", make_vcard("Nils", "--01-05"))])
+    run(db_path)
+    uri = event_uri("nils.vcf")
+    store_event(db_path, uri, calendar_objects(db_path)[uri]["calendardata"].replace(str(birthday.ANCHOR_YEAR), "1970"))
+
+    run(db_path)
+
+    assert f"DTSTART;VALUE=DATE:{birthday.ANCHOR_YEAR}0105" in calendar_objects(db_path)[uri]["calendardata"]
