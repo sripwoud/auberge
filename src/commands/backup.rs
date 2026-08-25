@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg as hosts_select_or_arg};
 use crate::output;
-use crate::playbook_meta::BackupRecipe;
+use crate::playbook_meta::{BackupRecipe, UNIT_TYPE_SUFFIXES};
 use crate::prompt::confirm;
 use crate::services::backup::executor::{RecipeExecutor, staged_parameters, staged_paths};
 use crate::services::backup::recipe::{
@@ -1447,22 +1447,6 @@ fn default_backup_dir() -> PathBuf {
         .map(|d| d.join("auberge").join("backups"))
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
-
-/// systemd's own closed set of unit types. A Recipe entry carrying one of
-/// these is already a unit name; anything else is a bare service name.
-const UNIT_TYPE_SUFFIXES: &[&str] = &[
-    ".automount",
-    ".device",
-    ".mount",
-    ".path",
-    ".scope",
-    ".service",
-    ".slice",
-    ".socket",
-    ".swap",
-    ".target",
-    ".timer",
-];
 
 /// The unit *file* a Recipe entry resolves to, which is what
 /// `systemctl list-unit-files` answers for. Mirrors systemd's rule: an

@@ -17,6 +17,66 @@ pub struct PlaybookMeta {
     pub subdomain: Option<String>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub memory: HashMap<String, MemoryBudget>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub units: Vec<UnitDecl>,
+}
+
+/// A Unit Ownership entry: one systemd unit the App answers for, which is
+/// what a failed deploy reads the state of (#644). A bare string is a system
+/// unit; a unit that lives in a user manager says so, because `systemctl`
+/// cannot see it without `--user`. Bare names mean `.service` (ADR-0032) and
+/// `{admin_user}` resolves like a Recipe's (ADR-0023).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum UnitDecl {
+    Name(String),
+    Scoped { name: String, scope: UnitScope },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UnitScope {
+    System,
+    User,
+}
+
+/// A declared unit, resolved to what `systemctl` addresses: name qualified,
+/// placeholder substituted, scope explicit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnedUnit {
+    pub name: String,
+    pub scope: UnitScope,
+}
+
+/// systemd's own closed set of unit types. An entry carrying one of these is
+/// already a unit name; anything else is a bare service name.
+pub const UNIT_TYPE_SUFFIXES: &[&str] = &[
+    ".automount",
+    ".device",
+    ".mount",
+    ".path",
+    ".scope",
+    ".service",
+    ".slice",
+    ".socket",
+    ".swap",
+    ".target",
+    ".timer",
+];
+
+/// The loaded unit a declared name addresses: an explicit unit type is kept,
+/// a bare name is a `.service`. Instances stay instances — `syncthing@alice`
+/// becomes `syncthing@alice.service`, the unit whose state `systemctl show`
+/// answers for, not the `syncthing@.service` file behind it.
+pub fn qualified_unit_name(unit: &str) -> String {
+    if UNIT_TYPE_SUFFIXES
+        .iter()
+        .any(|suffix| unit.ends_with(suffix))
+    {
+        unit.to_string()
+    } else {
+        format!("{unit}.service")
+    }
 }
 
 /// A Memory Budget: one systemd unit's `MemoryHigh=` (throttle-and-reclaim
@@ -155,6 +215,24 @@ impl BackupRecipe {
 }
 
 impl PlaybookMeta {
+    /// The units this App owns, as `systemctl` addresses them: names
+    /// qualified, `{admin_user}` substituted, scope made explicit.
+    pub fn owned_units(&self, admin_user: &str) -> Vec<OwnedUnit> {
+        self.units
+            .iter()
+            .map(|decl| {
+                let (name, scope) = match decl {
+                    UnitDecl::Name(name) => (name.as_str(), UnitScope::System),
+                    UnitDecl::Scoped { name, scope } => (name.as_str(), *scope),
+                };
+                OwnedUnit {
+                    name: qualified_unit_name(&name.replace(ADMIN_USER_PLACEHOLDER, admin_user)),
+                    scope,
+                }
+            })
+            .collect()
+    }
+
     pub fn load(path: &Path) -> Result<Self> {
         let contents = std::fs::read_to_string(path)
             .wrap_err_with(|| format!("Failed to read Playbook Meta from {}", path.display()))?;
@@ -668,6 +746,7 @@ version:
             tailnet_only: false,
             subdomain: None,
             memory: HashMap::new(),
+            units: Vec::new(),
         };
         let yaml = serde_yaml::to_string(&meta).unwrap();
         let reparsed: PlaybookMeta = serde_yaml::from_str(&yaml).unwrap();
@@ -1077,6 +1156,113 @@ memory:
         let yaml = "required_keys: []\n";
         let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
         assert!(meta.memory.is_empty());
+    }
+
+    #[test]
+    fn test_meta_units_parse_bare_and_scoped_forms() {
+        let yaml = r#"
+required_keys: []
+units:
+  - liquidsoap
+  - bichon-archive.timer
+  - { name: hermes-gateway, scope: user }
+"#;
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            meta.units,
+            vec![
+                UnitDecl::Name("liquidsoap".to_string()),
+                UnitDecl::Name("bichon-archive.timer".to_string()),
+                UnitDecl::Scoped {
+                    name: "hermes-gateway".to_string(),
+                    scope: UnitScope::User,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_meta_without_units_parses_to_empty() {
+        let yaml = "required_keys: []\n";
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        assert!(meta.units.is_empty());
+    }
+
+    #[test]
+    fn test_owned_units_qualifies_resolves_and_scopes() {
+        let yaml = r#"
+required_keys: []
+units:
+  - "syncthing@{admin_user}"
+  - colporteur.timer
+  - { name: hermes-gateway, scope: user }
+"#;
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            meta.owned_units("alice"),
+            vec![
+                OwnedUnit {
+                    name: "syncthing@alice.service".to_string(),
+                    scope: UnitScope::System,
+                },
+                OwnedUnit {
+                    name: "colporteur.timer".to_string(),
+                    scope: UnitScope::System,
+                },
+                OwnedUnit {
+                    name: "hermes-gateway.service".to_string(),
+                    scope: UnitScope::User,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_qualified_unit_name_keeps_explicit_types_and_appends_service() {
+        assert_eq!(qualified_unit_name("gokapi"), "gokapi.service");
+        assert_eq!(
+            qualified_unit_name("bichon-archive.timer"),
+            "bichon-archive.timer"
+        );
+        assert_eq!(qualified_unit_name("cockpit.socket"), "cockpit.socket");
+        assert_eq!(
+            qualified_unit_name("syncthing@alice"),
+            "syncthing@alice.service"
+        );
+    }
+
+    #[test]
+    fn test_radio_meta_declares_its_packaged_unit_too() {
+        let meta = load_meta("radio");
+        assert_eq!(
+            meta.owned_units("alice"),
+            vec![
+                OwnedUnit {
+                    name: "liquidsoap.service".to_string(),
+                    scope: UnitScope::System,
+                },
+                OwnedUnit {
+                    name: "icecast2.service".to_string(),
+                    scope: UnitScope::System,
+                },
+            ],
+            "icecast2 is apt-packaged — the role only drops in over it — and \
+             still the App's to answer for (#644)"
+        );
+    }
+
+    #[test]
+    fn test_hermes_meta_declares_its_gateway_as_a_user_unit() {
+        let meta = load_meta("hermes");
+        assert_eq!(
+            meta.owned_units("alice"),
+            vec![OwnedUnit {
+                name: "hermes-gateway.service".to_string(),
+                scope: UnitScope::User,
+            }],
+            "a user unit is invisible to `systemctl show` without --user, so \
+             the declaration must carry the scope"
+        );
     }
 
     #[test]

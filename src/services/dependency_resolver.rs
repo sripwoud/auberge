@@ -113,7 +113,7 @@ pub fn find_standalone_playbook(name: &str) -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-fn playbook_role_names(filename: &str) -> Result<Vec<String>> {
+pub fn playbook_role_names(filename: &str) -> Result<Vec<String>> {
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
     let path = playbooks_dir.join(filename);
     if !path.exists() {

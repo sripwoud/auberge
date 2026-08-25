@@ -319,6 +319,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         ));
 
         let mut progress = crate::services::progress::TerminalProgress::new("");
+        let run_started = std::time::Instant::now();
         let result = run_playbook(
             preflight,
             &run.path,
@@ -333,20 +334,31 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         )?;
 
         if !result.success {
-            if result.last_output.is_empty() {
-                eyre::bail!(
+            let mut failure = if result.last_output.is_empty() {
+                format!(
                     "{} failed with exit code {}",
-                    playbook_name,
-                    result.exit_code
-                );
+                    playbook_name, result.exit_code
+                )
             } else {
-                eyre::bail!(
+                format!(
                     "{} failed with exit code {}:\n{}",
                     playbook_name,
                     result.exit_code,
                     result.last_output.trim()
-                );
+                )
+            };
+            // Check mode changes no unit, so there is no state to read out.
+            if !cmd.check
+                && let Some(report) = crate::services::unit_state::deploy_failure_unit_report(
+                    run,
+                    &host.name,
+                    run_started.elapsed(),
+                )
+            {
+                failure.push_str("\n\n");
+                failure.push_str(&report);
             }
+            eyre::bail!(failure);
         }
 
         output::success(&format!("{} completed successfully", playbook_name));
