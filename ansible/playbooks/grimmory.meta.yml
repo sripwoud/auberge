@@ -16,3 +16,4 @@ backup:
     name: grimmory
     engine: mariadb
     dump_path: /tmp/grimmory_db.dump
+units: [grimmory]

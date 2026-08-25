@@ -3,3 +3,4 @@ subdomain: radio
 memory:
   liquidsoap: { high: 320M, max: 384M }
   icecast2: { high: 32M, max: 64M }
+units: [liquidsoap, icecast2]

@@ -400,6 +400,7 @@ mod tests {
     const NON_APP_PLAYBOOK_METAS: &[&str] = &[
         "apps",
         "bootstrap",
+        "caddy",
         "calibre",
         "hardening",
         "hermes",

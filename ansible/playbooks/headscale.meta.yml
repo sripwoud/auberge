@@ -9,3 +9,4 @@ backup:
   systemd_services: [headscale]
   paths: [/var/lib/headscale]
   owner: [headscale, headscale]
+units: [headscale]

@@ -6,3 +6,4 @@ backup:
     - "/home/{admin_user}/.local/state/syncthing/cert.pem"
     - "/home/{admin_user}/.local/state/syncthing/key.pem"
   owner: ["{admin_user}", "{admin_user}"]
+units: ["syncthing@{admin_user}"]

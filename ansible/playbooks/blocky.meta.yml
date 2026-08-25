@@ -5,3 +5,4 @@ version:
   datasource: github-releases
   depName: "0xERR0R/blocky"
   extractVersion: "^v(?<version>.+)$"
+units: [blocky, lego-renew, lego-renew.timer]

@@ -8,3 +8,4 @@ backup:
   systemd_services: [freshrss]
   paths: [/var/lib/freshrss, /opt/freshrss/data]
   owner: [freshrss, freshrss]
+units: [freshrss, freshrss-update, freshrss-update.timer]
