@@ -19,7 +19,7 @@ impl PlaybookRun {
     }
 }
 
-fn parse_playbook_roles(playbook_path: &PathBuf) -> Result<Vec<(String, Vec<String>)>> {
+pub fn parse_playbook_roles(playbook_path: &PathBuf) -> Result<Vec<(String, Vec<String>)>> {
     let content = std::fs::read_to_string(playbook_path)
         .wrap_err_with(|| format!("Failed to read playbook: {}", playbook_path.display()))?;
 

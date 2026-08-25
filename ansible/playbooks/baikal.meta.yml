@@ -7,3 +7,8 @@ version:
 backup:
   paths: [/opt/baikal/Specific]
   owner: [baikal, baikal]
+units:
+  - baikal-birthday-sync
+  - baikal-birthday-sync.timer
+  - baikal-busy-sync
+  - baikal-busy-sync.timer

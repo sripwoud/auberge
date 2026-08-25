@@ -10,3 +10,4 @@ version:
   datasource: github-releases
   depName: "NousResearch/hermes-agent"
   versioning: loose
+units: [{ name: hermes-gateway, scope: user }]

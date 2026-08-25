@@ -1,3 +1,4 @@
 required_keys: []
 tailnet_only: true
 subdomain: cockpit
+units: [cockpit.socket]

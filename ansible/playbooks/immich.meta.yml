@@ -13,3 +13,4 @@ version:
   datasource: github-releases
   depName: "immich-app/immich"
   extractVersion: "^v(?<version>.+)$"
+units: [immich, immich-backup, immich-backup.timer]

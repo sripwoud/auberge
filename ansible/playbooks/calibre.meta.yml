@@ -3,3 +3,4 @@ backup:
   systemd_services: [calibre]
   paths: [/srv/calibre, /opt/calibre, /home/calibre]
   owner: [calibre, calibre]
+units: [calibre]

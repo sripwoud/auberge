@@ -11,3 +11,4 @@ backup:
   systemd_services: [gokapi]
   paths: [/var/lib/gokapi]
   owner: [gokapi, gokapi]
+units: [gokapi]

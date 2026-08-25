@@ -8,3 +8,4 @@ backup:
   systemd_services: [tgtg]
   paths: [/var/lib/tgtg]
   owner: [tgtg, tgtg]
+units: [tgtg]

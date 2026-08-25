@@ -9,3 +9,9 @@ backup:
   systemd_services: [bichon-archive.timer, bichon]
   paths: [/var/lib/bichon-archive, /opt/bichon/data]
   owner: [bichon, bichon]
+units:
+  - bichon
+  - bichon-archive
+  - bichon-archive.timer
+  - bichon-uidvalidity-watch
+  - bichon-uidvalidity-watch.timer

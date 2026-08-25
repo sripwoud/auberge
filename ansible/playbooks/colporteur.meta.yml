@@ -5,3 +5,4 @@ version:
   datasource: github-releases
   depName: "sripwoud/colporteur"
   extractVersion: "^v(?<version>.+)$"
+units: [colporteur, colporteur.timer]
