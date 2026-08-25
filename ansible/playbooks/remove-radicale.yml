@@ -105,6 +105,19 @@
         purge: true
         autoremove: true
 
+    - name: Clear the failed state Radicale's unit latches
+      # The same latch the apt role clears for apache2 (#636): stopping a unit
+      # leaves ActiveState=failed, and removing its unit file strands that
+      # state as a not-found entry nothing clears on its own. This playbook
+      # takes both copies of the unit away - the hand-installed one under
+      # /etc/systemd/system and the packaged one under /usr/lib - so the reset
+      # belongs after the purge, once nothing can load it again. radicale ships
+      # exactly one unit. rc 1 (`not loaded`) is the steady state; ADR-0041.
+      ansible.builtin.command: systemctl reset-failed radicale.service
+      register: radicale_reset
+      changed_when: radicale_reset.rc == 0
+      failed_when: false
+
     - name: Remove Radicale system user
       ansible.builtin.user:
         name: "{{ radicale_sys_user }}"
