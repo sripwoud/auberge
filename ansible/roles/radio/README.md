@@ -56,9 +56,10 @@ Required from the Key Registry: `radio_subdomain`, `radio_listener_password`,
 - The unit sets `OCAMLRUNPARAM=o=40`: OCaml's default GC keeps ~120% heap slack, which
   measured 448M anonymous for two stations; bounding slack at 40% cut that to 164M with
   both mounts still serving (#481). The budgets are sized from the tuned figure.
-- The encoder requests `pcm_s16` frames, so buffered audio is held as 16-bit integers
-  instead of OCaml's native 64-bit floats — 4x less memory per buffered second. Operators
-  without s16 support (e.g. `crossfade`) convert at their boundary, trading a little CPU.
+- The encoder is plain `%mp3(bitrate=)`. The `pcm_s16` frame request (16-bit buffered
+  audio, 4x less memory per buffered second) is a 2.4 parameter: 2.3.2 rejects it at
+  encoder instantiation — at runtime, only once a station exists, and invisibly to
+  `liquidsoap --check` (ADR-0037). Re-add it when the archive ships 2.4.
 
 ## Dependencies
 

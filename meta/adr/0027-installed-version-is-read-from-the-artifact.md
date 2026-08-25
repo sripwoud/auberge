@@ -4,6 +4,8 @@
 
 Accepted, 2026-08-22. **Complements ADR-0017** — that ADR decided _which_ version a Playbook installs. This one decides how a role answers whether that version is already installed.
 
+Amended 2026-08-25 (ADR-0037, #634): radio retired its version pin and its `package_facts` read with it — apt's `state: present` owns the idempotence — and leaves the Artifact-read examples below.
+
 ## Decision
 
 A role decides whether to install by reading what is on the Host, not what it once recorded about the Host.
@@ -11,7 +13,7 @@ A role decides whether to install by reading what is on the Host, not what it on
 Three regimes, in order of preference:
 
 - **Versioned dest.** The artifact's own path carries the version, so a bump is a dest that cannot already exist and the guard is a bare `stat` of it — no marker to reconcile, and the download always notifies its restart handler. Grimmory (#597). Requires the install to be a single file the role names.
-- **Artifact-read.** Interrogate the installed thing: `package_facts` where apt owns it (`navidrome`, `radio`), the binary's own `--version` (`blocky`, `hermes`, `tgtg`), or a file the release itself ships (`baikal` slurps `BAIKAL_VERSION` out of `Core/Distrib.php`). A deleted, downgraded or hand-swapped artifact is visible.
+- **Artifact-read.** Interrogate the installed thing: `package_facts` where apt owns it (`navidrome`), the binary's own `--version` (`blocky`, `hermes`, `tgtg`), or a file the release itself ships (`baikal` slurps `BAIKAL_VERSION` out of `Core/Distrib.php`). A deleted, downgraded or hand-swapped artifact is visible.
 - **Marker-plus-stat.** Where neither is available, a sidecar `version` file the role writes is permitted — **and-ed with a `stat` of the artifact**, so an absent artifact reads as nothing installed. Five roles: `bichon`, `colporteur`, `gokapi`, `headscale`, `paperless`.
 
 The grounding goes into the `<role>_installed_version` fact, not into the guards that read it. `colporteur` gates six tasks on that fact and `gokapi` five; a compound condition repeated at each site is six chances to diverge, and the fact is the one place every guard already passes through.
