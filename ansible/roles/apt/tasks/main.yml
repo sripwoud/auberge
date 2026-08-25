@@ -159,6 +159,19 @@
         purge: true
       register: apt_apache2_remove
 
+    - name: Clear Apache2's residual failed state
+      # php pulls apache2 in as a dependency, and its postinst starts it
+      # against a port caddy already holds, so the unit latches `failed`.
+      # Purging the packages takes the unit file away and leaves the latch
+      # behind, and `systemctl --failed` reports a not-found apache2.service
+      # forever on a host that has no apache2 (#635). Past the purge the unit
+      # is either loaded-and-latched or not loaded at all, so rc 0 means a
+      # latch was cleared and rc 1 is the idempotent steady state.
+      ansible.builtin.command: systemctl reset-failed apache2.service
+      register: apt_apache2_reset
+      changed_when: apt_apache2_reset.rc == 0
+      failed_when: false
+
     - name: Ensure apache2-utils is still installed
       ansible.builtin.apt:
         name: apache2-utils
