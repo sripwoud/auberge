@@ -81,6 +81,15 @@
         mode: "0644"
       notify: Restart navidrome
 
+    - name: Deploy Navidrome start limit drop-in
+      ansible.builtin.copy:
+        src: files/start-limit.conf
+        dest: /etc/systemd/system/navidrome.service.d/start-limit.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart navidrome
+
     - name: Enable and start Navidrome service
       ansible.builtin.systemd_service:
         name: navidrome
