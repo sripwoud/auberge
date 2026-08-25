@@ -39,6 +39,10 @@ alias = "l"
 depends = "lint-*"
 quiet = true
 
+[tasks.test-python]
+run = "uv run --python 3.13 --with pytest --with icalendar --with recurring-ical-events --with caldav pytest ansible/roles/baikal/files"
+quiet = true
+
 [tasks.test-rust]
 run = "cargo nextest run"
 quiet = true
@@ -72,6 +76,7 @@ ansible = "latest"
 rust = "latest"
 shellcheck = "latest"
 shfmt = "latest"
+uv = "latest"
 "cargo:cargo-nextest" = "latest"
 "npm:docsify-cli" = "latest"
 
