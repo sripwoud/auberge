@@ -20,7 +20,7 @@ jobs:
           files: |
             .github/workflows/master.yml
             src/**/*.rs
-            tests/**/*.rs
+            tests/**
             Cargo.toml
             Cargo.lock
             mise.toml

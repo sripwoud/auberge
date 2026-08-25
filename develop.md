@@ -214,7 +214,9 @@ feed venv, so the tests resolve what the Host resolves.
 role's, if a `test_*.py` lands somewhere the task does not collect from, or if
 `.github/workflows/master.yml` stops running the identical command — mise-action
 overwrites `mise.toml` in CI, so the workflow repeats the command rather than
-calling the task (ADR-0039).
+calling the task (ADR-0039). The same file pins `test-shell`: every `*.test.sh`
+in the repository must appear in the task, and the workflow's `check` job must
+run exactly that set (#649).
 
 ## Linting
 

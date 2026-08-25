@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 fn repo_root() -> PathBuf {
@@ -10,8 +11,8 @@ fn read(path: &PathBuf) -> String {
     fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-/// The `run` string of a `mise.toml` task.
-fn mise_task(name: &str) -> String {
+/// The `run` value of a `mise.toml` task.
+fn mise_task_run(name: &str) -> toml::Value {
     let path = repo_root().join("mise.toml");
     let manifest: toml::Value =
         toml::from_str(&read(&path)).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -19,9 +20,33 @@ fn mise_task(name: &str) -> String {
         .get("tasks")
         .and_then(|tasks| tasks.get(name))
         .and_then(|task| task.get("run"))
-        .and_then(|run| run.as_str())
+        .unwrap_or_else(|| panic!("mise.toml: [tasks.{name}] must declare `run`"))
+        .clone()
+}
+
+/// The single `run` command of a `mise.toml` task.
+fn mise_task(name: &str) -> String {
+    mise_task_run(name)
+        .as_str()
         .unwrap_or_else(|| panic!("mise.toml: [tasks.{name}] must declare a string `run`"))
         .to_string()
+}
+
+/// The `run` commands of a `mise.toml` task declaring a list.
+fn mise_task_list(name: &str) -> Vec<String> {
+    mise_task_run(name)
+        .as_array()
+        .unwrap_or_else(|| panic!("mise.toml: [tasks.{name}] must declare a list `run`"))
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .unwrap_or_else(|| {
+                    panic!("mise.toml: [tasks.{name}] `run` entries must be strings")
+                })
+                .to_string()
+        })
+        .collect()
 }
 
 /// The directories a pytest invocation collects from: the positional arguments
@@ -54,6 +79,33 @@ fn pytest_targets(run: &str) -> Vec<PathBuf> {
     targets
 }
 
+/// The harnesses a set of shell commands invokes: every whitespace token
+/// ending in `.test.sh`, repo-relative. Each is asserted to exist and be
+/// executable, so a typo'd entry fails here rather than shrinking both sides
+/// of a comparison in tandem.
+fn shell_harnesses<'a>(commands: impl IntoIterator<Item = &'a str>) -> BTreeSet<PathBuf> {
+    let harnesses: BTreeSet<PathBuf> = commands
+        .into_iter()
+        .flat_map(str::split_whitespace)
+        .filter(|token| token.ends_with(".test.sh"))
+        .map(|token| PathBuf::from(token.trim_start_matches("./")))
+        .collect();
+
+    for harness in &harnesses {
+        let path = repo_root().join(harness);
+        let mode = fs::metadata(&path)
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+            .permissions()
+            .mode();
+        assert!(
+            mode & 0o111 != 0,
+            "{} is invoked as a harness and is not executable",
+            harness.display()
+        );
+    }
+    harnesses
+}
+
 /// The packages a `uv run` command provisions with `--with`.
 fn with_packages(run: &str) -> BTreeSet<String> {
     run.split_whitespace()
@@ -64,9 +116,9 @@ fn with_packages(run: &str) -> BTreeSet<String> {
         .collect()
 }
 
-/// Every `test_*.py` in the repository, repo-relative.
-fn python_test_files() -> Vec<PathBuf> {
-    fn walk(dir: &PathBuf, found: &mut Vec<PathBuf>) {
+/// Every file in the repository whose name `matches`, repo-relative.
+fn repo_files(matches: fn(&str) -> bool) -> Vec<PathBuf> {
+    fn walk(dir: &PathBuf, matches: fn(&str) -> bool, found: &mut Vec<PathBuf>) {
         let entries = fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
@@ -75,16 +127,26 @@ fn python_test_files() -> Vec<PathBuf> {
                 continue;
             }
             if path.is_dir() {
-                walk(&path, found);
-            } else if name.starts_with("test_") && name.ends_with(".py") {
+                walk(&path, matches, found);
+            } else if matches(&name) {
                 found.push(path.strip_prefix(repo_root()).unwrap().to_path_buf());
             }
         }
     }
 
     let mut found = Vec::new();
-    walk(&repo_root(), &mut found);
+    walk(&repo_root(), matches, &mut found);
     found
+}
+
+/// Every `test_*.py` in the repository, repo-relative.
+fn python_test_files() -> Vec<PathBuf> {
+    repo_files(|name| name.starts_with("test_") && name.ends_with(".py"))
+}
+
+/// Every `*.test.sh` in the repository, repo-relative.
+fn shell_test_files() -> Vec<PathBuf> {
+    repo_files(|name| name.ends_with(".test.sh"))
 }
 
 /// Every package an `ansible.builtin.pip` task in a role installs, across every
@@ -228,10 +290,80 @@ fn test_ci_runs_the_same_command_as_the_task() {
     );
 }
 
+/// A harness nothing invokes proves nothing — #643's hole, one layer down. The
+/// repo side of closing it: a `*.test.sh` landing anywhere in the repository
+/// fails the build until `test-shell` declares it, so a new harness cannot
+/// exist outside `mise r test` the way the two immich harnesses' 29 assertions
+/// did (#649).
+#[test]
+fn test_every_shell_harness_is_declared_by_the_task() {
+    let commands = mise_task_list("test-shell");
+    let declared = shell_harnesses(commands.iter().map(String::as_str));
+
+    let undeclared: Vec<String> = shell_test_files()
+        .into_iter()
+        .filter(|harness| !declared.contains(harness))
+        .map(|harness| format!("\n    {}", harness.display()))
+        .collect();
+
+    assert!(
+        undeclared.is_empty(),
+        "mise.toml [tasks.test-shell] does not run these harnesses, so `mise r test` \
+         skips them — add them to the task:{}",
+        undeclared.concat()
+    );
+}
+
+/// The CI side: the workflow cannot call `test-shell` for the reason
+/// `test_ci_runs_the_same_command_as_the_task` documents, so its step repeats
+/// the list, and the two copies are asserted equal rather than trusted — a
+/// harness in CI and not in the task is the same bug mirrored. Compared as the
+/// sets of `.test.sh` paths across every unconditional step of `check`, so a
+/// renamed step still counts, a prefixed line still counts, and a harness
+/// behind an `if:` does not.
+#[test]
+fn test_ci_runs_the_same_harnesses_as_the_task() {
+    let commands = mise_task_list("test-shell");
+    let task = shell_harnesses(commands.iter().map(String::as_str));
+    let workflow = repo_root().join(".github/workflows/master.yml");
+    let steps = unconditional_step_commands(&workflow, "check");
+    let ci = shell_harnesses(steps.iter().map(String::as_str));
+
+    let bullets = |paths: Vec<&PathBuf>| -> String {
+        paths
+            .into_iter()
+            .map(|path| format!("\n    {}", path.display()))
+            .collect()
+    };
+    let missing_from_ci = bullets(task.difference(&ci).collect());
+    let missing_from_task = bullets(ci.difference(&task).collect());
+
+    assert!(
+        missing_from_ci.is_empty() && missing_from_task.is_empty(),
+        "mise.toml [tasks.test-shell] and the `check` job in {} run different harnesses.\
+         \nIn the task and absent from CI — add to the workflow's step:{}\
+         \nIn CI and absent from the task — add to [tasks.test-shell]:{}",
+        workflow.display(),
+        if missing_from_ci.is_empty() {
+            "\n    (none)".to_string()
+        } else {
+            missing_from_ci
+        },
+        if missing_from_task.is_empty() {
+            "\n    (none)".to_string()
+        } else {
+            missing_from_task
+        },
+    );
+}
+
 /// The guards above only run in the `_test` job, which is gated on a
 /// changed-files list. `mise.toml` has to be in that list or the one PR shape
-/// that breaks the wiring — an edit to the task and nothing else — skips the
-/// job asserting it, and merges green against CI's now-stale hard-coded copy.
+/// that breaks the wiring — an edit to a task and nothing else — skips the job
+/// asserting it, and merges green against CI's now-stale hard-coded copy.
+/// `tests/**` rather than just the `.rs` files, because a PR adding only a new
+/// `*.test.sh` is exactly the shape the shell completeness guard exists to
+/// catch, and must not skip the job running it.
 #[test]
 fn test_the_gate_covers_the_file_the_task_lives_in() {
     let workflow = repo_root().join(".github/workflows/master.yml");
@@ -250,7 +382,7 @@ fn test_the_gate_covers_the_file_the_task_lives_in() {
         .unwrap_or_else(|| panic!("{}: changed-files declares no `files`", workflow.display()));
 
     let covered: BTreeSet<&str> = patterns.split_whitespace().collect();
-    for path in ["mise.toml", "tests/**/*.rs"] {
+    for path in ["mise.toml", "tests/**"] {
         assert!(
             covered.contains(path),
             "{} gates the job that runs this file's assertions on {covered:?}, which omits \
