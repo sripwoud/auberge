@@ -192,19 +192,24 @@
         purge: true
       register: apt_apache2_remove
 
-    - name: Clear Apache2's residual failed state
+    - name: Clear the failed state Apache2's units latch
       # The pin above stops a fresh box ever reaching this state. This is for
       # the boxes that already did: a latched `failed` on a unit whose file the
       # purge removed, which `systemctl --failed` reports forever on a host
       # that has no apache2 (#635, #636). auberge carried one from 2026-08-21.
+      # Stopping a unit does not clear that latch and removing its unit file
+      # does not either, which is why the purge above leaves one behind.
       #
-      # There is no module for reset-failed, and ansible-lint rejects reading
-      # the state with `systemctl is-failed`, so idempotence rests on rc: past
-      # the purge the unit file is gone, so apache2.service is loaded only if
-      # residual state holds it there. rc 0 therefore means a latch was
-      # cleared, and rc 1 (`not loaded`) is the steady state. Measured on
-      # auberge against the live latch: rc 0, then rc 1 on the second run.
-      ansible.builtin.command: systemctl reset-failed apache2.service
+      # apache2 ships two plain units; the `@` template of each is never itself
+      # instantiated, so neither can latch. One unit per invocation, because
+      # once the unit file is gone rc is the only signal left and both shorter
+      # forms destroy it. Measured on auberge against the live apache2.service
+      # latch: rc 0 cleared it, and a second run returned rc 1 (`not loaded`),
+      # which is the steady state. Reasoning in full: ADR-0041.
+      ansible.builtin.command: systemctl reset-failed {{ item }}
+      loop:
+        - apache2.service
+        - apache-htcacheclean.service
       register: apt_apache2_reset
       changed_when: apt_apache2_reset.rc == 0
       failed_when: false
