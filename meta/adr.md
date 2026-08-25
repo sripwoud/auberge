@@ -46,6 +46,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0036 | [A directory a container owns is created by ansible, never maintained by it](./adr/0036-container-owned-directories-are-created-not-maintained.md)             |
 | 0037 | [Liquidsoap installs from the Debian archive](./adr/0037-liquidsoap-installs-from-the-debian-archive.md)                                                       |
 | 0038 | [A clean shutdown's exit status is declared per runtime](./adr/0038-clean-shutdown-exit-status-is-declared-per-runtime.md)                                     |
+| 0039 | [A Python suite runs under the Host's interpreter, from the role's dependency list](./adr/0039-python-suites-run-under-the-hosts-interpreter.md)               |
 
 ## Native systemd by default
 
