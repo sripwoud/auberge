@@ -186,14 +186,33 @@ struct ServiceUnit {
     /// Every `SuccessExitStatus=` token, resolved; systemd merges repeated
     /// lines, so this does too.
     declared: BTreeSet<String>,
+    /// `Restart=`, or `no` where the unit leaves it out, as systemd defaults it.
+    restart: String,
 }
 
-fn unit_directory(dest: &str) -> Option<&str> {
+/// The unit name a `dest` installs, if that dest is a `.service` in a systemd
+/// unit directory this model reads — the system directory or a user's. A
+/// drop-in's dest lands under `<unit>.service.d/`, so it is excluded by the
+/// same test that admits a unit.
+///
+/// A file name that still carries an unresolved jinja expression is a hard
+/// stop: a var-driven `loop:` this scan cannot expand would otherwise fail the
+/// `.service` test and vanish from the domain silently, which is the one way a
+/// new unit could enter the fleet without entering the fence. An unresolved
+/// expression in the *directory* is not that case — hermes installs a user
+/// unit under an admin home the role's defaults do not name, and the unit it
+/// installs there is still named in full.
+fn service_installed_at(dest: &str) -> Option<&str> {
     let (dir, file) = dest.rsplit_once('/')?;
-    if !file.ends_with(".service") {
+    if dir != "/etc/systemd/system" && !dir.ends_with("/.config/systemd/user") {
         return None;
     }
-    (dir == "/etc/systemd/system" || dir.ends_with("/.config/systemd/user")).then_some(file)
+    assert!(
+        !file.contains("{{"),
+        "`{dest}` installs into a systemd unit directory under a name that does \
+         not resolve; teach this test how to expand it before relying on it"
+    );
+    file.ends_with(".service").then_some(file)
 }
 
 /// argv[0]'s basename from an `ExecStart=` value. systemd's special prefixes
@@ -210,7 +229,11 @@ fn runtime_of(role: &str, unit: &str, exec_start: &str) -> String {
          prefixes change what argv[0] is, so teach this test about it before \
          relying on it"
     );
-    argv0.rsplit('/').next().unwrap_or(argv0).to_string()
+    argv0
+        .rsplit('/')
+        .next()
+        .expect("splitting a nonempty string yields a segment")
+        .to_string()
 }
 
 fn service_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<ServiceUnit> {
@@ -242,7 +265,7 @@ fn service_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<ServiceUnit
             };
             for (dest, src) in expansions {
                 let dest = resolve(&dest, vars);
-                let Some(name) = unit_directory(&dest) else {
+                let Some(name) = service_installed_at(&dest) else {
                     continue;
                 };
                 let name = name.to_string();
@@ -253,13 +276,27 @@ fn service_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<ServiceUnit
                     .find(|path| path.is_file())
                     .unwrap_or_else(|| panic!("{role}: {file} is deployed but does not exist"));
                 let body = fs::read_to_string(template).expect("a found template must be readable");
-                let exec_start = body
+                let execs: Vec<&str> = body
                     .lines()
                     .filter_map(|line| line.strip_prefix("ExecStart="))
-                    .next_back()
-                    .unwrap_or_else(|| panic!("{role}: `{name}` declares no ExecStart"));
+                    .collect();
+                let [exec_start] = execs[..] else {
+                    panic!(
+                        "{role}: `{name}` declares {} ExecStart lines; one runtime \
+                         per unit is what this model reads, so teach it about the \
+                         rest before relying on it",
+                        execs.len()
+                    )
+                };
                 units.push(ServiceUnit {
                     runtime: runtime_of(role, &name, &resolve(exec_start.trim(), vars)),
+                    restart: body
+                        .lines()
+                        .filter_map(|line| line.strip_prefix("Restart="))
+                        .next_back()
+                        .unwrap_or("no")
+                        .trim()
+                        .to_string(),
                     declared: body
                         .lines()
                         .filter_map(|line| line.strip_prefix("SuccessExitStatus="))
@@ -295,29 +332,61 @@ fn declared_for(runtime: &str) -> Option<&'static CleanShutdownExit> {
         .find(|entry| entry.runtime == runtime)
 }
 
-/// The scan has to see units at all, or every assertion below passes vacuously.
+/// Every service the fleet installs, `<role>/<unit>` so a rename shows on
+/// both sides. The scan's own reach, pinned as a set rather than a count: a
+/// unit added while another is dropped keeps a count green, and a count cannot
+/// name which unit moved.
+const FLEET_SERVICES: &[&str] = &[
+    "actual/actual.service",
+    "baikal/baikal-birthday-sync.service",
+    "baikal/baikal-busy-sync.service",
+    "bichon/bichon-archive.service",
+    "bichon/bichon-uidvalidity-watch.service",
+    "bichon/bichon.service",
+    "blocky/blocky.service",
+    "blocky/lego-renew.service",
+    "caddy/caddy.service",
+    "calibre/calibre.service",
+    "claude_code_remote/vibecoder.service",
+    "colporteur/colporteur.service",
+    "freshrss/freshrss-update.service",
+    "freshrss/freshrss.service",
+    "gokapi/gokapi.service",
+    "grimmory/grimmory.service",
+    "headscale/headscale.service",
+    "hermes/hermes-gateway.service",
+    "immich/immich-backup.service",
+    "immich/immich.service",
+    "paperless/paperless-consumer.service",
+    "paperless/paperless-scheduler.service",
+    "paperless/paperless-task-queue.service",
+    "paperless/paperless-webserver.service",
+    "radio/liquidsoap.service",
+    "tgtg/tgtg.service",
+];
+
+/// The scan's reach, by equality in both directions: a new service fails until
+/// it is listed, and a listing the fleet no longer installs fails until it is
+/// removed. Without it every assertion below can pass by seeing nothing.
 #[test]
-fn test_the_scan_sees_every_service_the_fleet_installs() {
-    let units = fleet_units();
-    let names: BTreeSet<&str> = units.iter().map(|unit| unit.name.as_str()).collect();
+fn test_the_scan_sees_exactly_the_services_the_fleet_installs() {
+    let seen: BTreeSet<String> = fleet_units()
+        .iter()
+        .map(|unit| format!("{}/{}", unit.role, unit.name))
+        .collect();
+    let listed: BTreeSet<String> = FLEET_SERVICES.iter().map(|s| s.to_string()).collect();
     assert_eq!(
-        units.len(),
-        26,
-        "the fleet's service count moved; confirm the new unit is in {names:?} \
-         before updating this number"
+        seen.difference(&listed).collect::<Vec<_>>(),
+        Vec::<&String>::new(),
+        "the scan found services FLEET_SERVICES does not list; every unit has a \
+         shutdown systemd scores, so add them"
     );
-    for expected in [
-        "grimmory.service",
-        "caddy.service",
-        "hermes-gateway.service",
-        "paperless-webserver.service",
-    ] {
-        assert!(
-            names.contains(expected),
-            "the scan lost `{expected}`: templated, copied, looped and user \
-             units all have shutdowns systemd scores"
-        );
-    }
+    assert_eq!(
+        listed.difference(&seen).collect::<Vec<_>>(),
+        Vec::<&String>::new(),
+        "FLEET_SERVICES lists services the scan no longer finds; either the unit \
+         is gone or the scan stopped seeing it — the second is the dangerous one"
+    );
 }
 
 /// Computed -> declared. A unit whose runtime exits nonzero on a clean
@@ -355,24 +424,15 @@ fn test_no_unit_forgives_a_status_its_runtime_does_not_produce() {
         if unit.declared.is_empty() {
             continue;
         }
-        let exit = declared_for(&unit.runtime).unwrap_or_else(|| {
-            panic!(
-                "{}: `{}` forgives {:?} but execs `{}`, which no entry in \
-                 CLEAN_SHUTDOWN_EXITS says exits nonzero on a clean shutdown; \
-                 a status forgiven for no stated reason is a crash nobody sees",
-                unit.role, unit.name, unit.declared, unit.runtime
-            )
-        });
-        assert_eq!(
-            unit.declared,
-            BTreeSet::from([exit.status.to_string()]),
-            "{}: `{}` forgives {:?}, wider than the status={} its runtime's \
-             clean shutdown produces; every other nonzero exit is a real \
-             failure and must stay one",
+        assert!(
+            declared_for(&unit.runtime).is_some(),
+            "{}: `{}` forgives {:?} but execs `{}`, which no entry in \
+             CLEAN_SHUTDOWN_EXITS says exits nonzero on a clean shutdown; a \
+             status forgiven for no stated reason is a crash nobody sees",
             unit.role,
             unit.name,
             unit.declared,
-            exit.status
+            unit.runtime
         );
     }
 }
@@ -388,6 +448,28 @@ fn test_every_declared_runtime_is_still_exec_ed_by_a_unit() {
             "CLEAN_SHUTDOWN_EXITS declares `{}` but no fleet unit execs it; \
              drop the entry with the last App that did",
             entry.runtime
+        );
+    }
+}
+
+/// Forgiving a status takes it out of `Restart=on-failure`'s trigger set, so
+/// the two cannot be combined: a SIGTERM from anywhere but systemd would leave
+/// the unit stopped and clean, invisible to `systemctl --failed` as well as to
+/// the restart that used to recover it. `always` restores that recovery while
+/// still honouring a deliberate stop, and leaving `Restart` out is the honest
+/// answer for a unit nothing should revive.
+#[test]
+fn test_forgiving_a_status_does_not_leave_on_failure_watching_for_it() {
+    for unit in fleet_units() {
+        if unit.declared.is_empty() {
+            continue;
+        }
+        assert_ne!(
+            unit.restart, "on-failure",
+            "{}: `{}` forgives {:?} and asks `Restart=on-failure` to recover \
+             from it — the two cancel out. An external SIGTERM would leave the \
+             unit dead, clean, and unreported; use `Restart=always`",
+            unit.role, unit.name, unit.declared
         );
     }
 }
