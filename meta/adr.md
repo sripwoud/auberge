@@ -49,6 +49,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0039 | [A Python suite runs under the Host's interpreter, from the role's dependency list](./adr/0039-python-suites-run-under-the-hosts-interpreter.md)               |
 | 0040 | [A restarting unit declares whether it gives up](./adr/0040-a-restarting-unit-declares-whether-it-gives-up.md)                                                 |
 | 0041 | [A removed unit clears its own failed state](./adr/0041-a-removed-unit-clears-its-failed-state.md)                                                             |
+| 0042 | [Unit Ownership is declared in Playbook Meta](./adr/0042-unit-ownership-is-declared-in-playbook-meta.md)                                                       |
 
 ## Native systemd by default
 
