@@ -10,6 +10,7 @@ Group={{ grimmory_sys_group }}
 WorkingDirectory={{ grimmory_install_path }}
 EnvironmentFile={{ grimmory_install_path }}/.env
 ExecStart={{ grimmory_java_home }}/bin/java {{ grimmory_jvm_opts }} -jar {{ grimmory_jar_path }}
+SuccessExitStatus=143
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
