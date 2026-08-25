@@ -7,16 +7,17 @@
 //! (`units:` in Playbook Meta) for the Apps a failed run targeted, probes
 //! the Host once over ssh, and renders the verdicts an operator acts on.
 //!
-//! Verdicts are derived, never asserted: "still on the pre-deploy artifact"
-//! and "restarted mid-deploy" come from comparing the unit's monotonic start
-//! timestamp against the Host's own uptime and the locally measured deploy
-//! window — one clock, no skew — and the raw systemd fields stay visible so
-//! a wrong classification is auditable.
+//! Verdicts are derived, never asserted: "active since before this deploy"
+//! and "restarted during the deploy window" come from comparing the unit's
+//! monotonic start timestamp against the Host's own uptime and the locally
+//! measured deploy window — one clock, no skew — and say nothing about which
+//! artifact runs, because a timestamp cannot know that. The raw systemd
+//! fields stay visible so a wrong classification is auditable.
 
 use crate::ansible_assets::AnsibleAssets;
 use crate::hosts::HostManager;
 use crate::playbook_meta::{OwnedUnit, UnitScope, load_all_metas};
-use crate::services::dependency_resolver::{PlaybookRun, playbook_role_names};
+use crate::services::dependency_resolver::{PlaybookRun, parse_playbook_roles};
 use crate::services::ssh::{LiveSshSession, SshSession, resolve_ssh_key_path};
 use eyre::{Result, WrapErr};
 use std::collections::BTreeMap;
@@ -49,6 +50,9 @@ struct ProbedUnit {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Verdict {
     ActivePreDeploy,
+    /// A timer-fired oneshot between ticks — `inactive (dead)` is its healthy
+    /// steady state, not an anomaly.
+    IdleBetweenTimerRuns,
     RestartedMidDeploy,
     Looping,
     Failed,
@@ -64,14 +68,14 @@ pub fn units_for_run(
     playbooks_dir: &Path,
     admin_user: &str,
 ) -> Result<Vec<AppUnit>> {
-    let filename = run
-        .path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or_default();
     let mut apps: Vec<String> = if run.tags.is_empty() {
-        let mut apps = playbook_role_names(filename)?;
-        if let Some(stem) = filename.strip_suffix(".yml") {
+        // The run's own playbook file, not a fresh assets lookup: roles and
+        // metas must come from one tree.
+        let mut apps: Vec<String> = parse_playbook_roles(&run.path)?
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        if let Some(stem) = run.path.file_stem().and_then(|s| s.to_str()) {
             apps.push(stem.to_string());
         }
         apps
@@ -172,7 +176,7 @@ fn probe_scope<S: SshSession + ?Sized>(
 fn host_uptime_usec<S: SshSession + ?Sized>(session: &S) -> Result<u64> {
     let result = session.run("cat /proc/uptime")?;
     if !result.success {
-        eyre::bail!("`cat /proc/uptime` failed");
+        eyre::bail!("`cat /proc/uptime` failed: {}", result.stderr_str().trim());
     }
     let stdout = result.stdout_str();
     let seconds: f64 = stdout
@@ -184,13 +188,14 @@ fn host_uptime_usec<S: SshSession + ?Sized>(session: &S) -> Result<u64> {
     Ok((seconds * 1_000_000.0) as u64)
 }
 
-fn verdict(unit: &ProbedUnit, uptime_usec: u64, elapsed: Duration) -> Verdict {
+fn verdict(unit: &ProbedUnit, timer_fired: bool, uptime_usec: u64, elapsed: Duration) -> Verdict {
     if unit.load_state != "loaded" {
         return Verdict::NotFound;
     }
     match unit.active_state.as_str() {
         "activating" if unit.sub_state == "auto-restart" => Verdict::Looping,
         "failed" => Verdict::Failed,
+        "inactive" | "deactivating" if timer_fired => Verdict::IdleBetweenTimerRuns,
         "inactive" | "deactivating" => Verdict::Stopped,
         _ => match unit.started_usec {
             Some(started) if uptime_usec.saturating_sub(started) <= elapsed.as_micros() as u64 => {
@@ -199,6 +204,17 @@ fn verdict(unit: &ProbedUnit, uptime_usec: u64, elapsed: Duration) -> Verdict {
             _ => Verdict::ActivePreDeploy,
         },
     }
+}
+
+/// Whether a probed `.service` has a declared `.timer` sibling in the same
+/// probe set — baikal-busy-sync.service is fired by baikal-busy-sync.timer,
+/// so its state between ticks is `inactive (dead)` by design.
+fn has_timer_sibling(unit: &ProbedUnit, probed: &[ProbedUnit]) -> bool {
+    let Some(stem) = unit.name.strip_suffix(".service") else {
+        return false;
+    };
+    let timer = format!("{stem}.timer");
+    probed.iter().any(|other| other.name == timer)
 }
 
 fn age(unit: &ProbedUnit, uptime_usec: u64) -> String {
@@ -222,17 +238,23 @@ fn restarts(unit: &ProbedUnit) -> String {
     }
 }
 
-/// The report: one line per unit an operator acts on, the untouched rolled
+/// The report: one line per unit an operator acts on, the healthy rolled
 /// up. Raw `ActiveState (SubState)` stays on every detailed line so a wrong
 /// verdict is auditable.
 fn render(host_name: &str, probed: &[ProbedUnit], uptime_usec: u64, elapsed: Duration) -> String {
     let mut lines = vec![format!("Unit state on {host_name}:")];
     let mut untouched = Vec::new();
+    let mut idle = Vec::new();
     for unit in probed {
         let raw = format!("{} ({})", unit.active_state, unit.sub_state);
-        let line = match verdict(unit, uptime_usec, elapsed) {
+        let timer_fired = has_timer_sibling(unit, probed);
+        let line = match verdict(unit, timer_fired, uptime_usec, elapsed) {
             Verdict::ActivePreDeploy => {
                 untouched.push(unit.name.clone());
+                continue;
+            }
+            Verdict::IdleBetweenTimerRuns => {
+                idle.push(unit.name.clone());
                 continue;
             }
             Verdict::Looping => format!(
@@ -243,7 +265,7 @@ fn render(host_name: &str, probed: &[ProbedUnit], uptime_usec: u64, elapsed: Dur
             Verdict::Failed => format!("failed and gave up — {raw}{}", restarts(unit)),
             Verdict::Stopped => format!("stopped — {raw}"),
             Verdict::RestartedMidDeploy => format!(
-                "restarted mid-deploy, running the new artifact — {raw}, started {}",
+                "restarted during the deploy window — {raw}, started {}",
                 age(unit, uptime_usec)
             ),
             Verdict::NotFound => format!("not found — LoadState={}", unit.load_state),
@@ -257,25 +279,45 @@ fn render(host_name: &str, probed: &[ProbedUnit], uptime_usec: u64, elapsed: Dur
             untouched.join(", ")
         ));
     }
+    if !idle.is_empty() {
+        lines.push(format!(
+            "  {} timer-fired unit(s) idle between runs: {}",
+            idle.len(),
+            idle.join(", ")
+        ));
+    }
     lines.join("\n")
 }
 
-/// Probe every owned unit in one pass per scope and render the report.
+/// Probe every owned unit in one pass per scope and render the report. The
+/// uptime read comes first — nothing classifies without it — but a scope
+/// whose probe fails costs one note line, not the verdicts the other scope
+/// already collected: a dead user bus must not swallow a system unit's
+/// crash-loop, the very signal this report exists to surface.
 pub fn failure_report<S: SshSession + ?Sized>(
     session: &S,
     host_name: &str,
     units: &[AppUnit],
     elapsed: Duration,
 ) -> Result<String> {
+    let uptime_usec = host_uptime_usec(session)?;
     let mut probed = Vec::new();
-    for scope in [UnitScope::System, UnitScope::User] {
+    let mut notes = Vec::new();
+    for (scope, label) in [(UnitScope::System, "system"), (UnitScope::User, "user")] {
         let of_scope: Vec<&AppUnit> = units.iter().filter(|u| u.unit.scope == scope).collect();
-        if !of_scope.is_empty() {
-            probe_scope(session, &of_scope, scope, &mut probed)?;
+        if of_scope.is_empty() {
+            continue;
+        }
+        if let Err(err) = probe_scope(session, &of_scope, scope, &mut probed) {
+            notes.push(format!("  {label} unit probe failed: {err:#}"));
         }
     }
-    let uptime_usec = host_uptime_usec(session)?;
-    Ok(render(host_name, &probed, uptime_usec, elapsed))
+    let mut report = render(host_name, &probed, uptime_usec, elapsed);
+    for note in notes {
+        report.push('\n');
+        report.push_str(&note);
+    }
+    Ok(report)
 }
 
 /// The whole readout for a failed run, shaped for the deploy error path: the
@@ -301,8 +343,34 @@ fn try_report(run: &PlaybookRun, host_name: &str, elapsed: Duration) -> Result<O
         return Ok(None);
     }
     let ssh_key = resolve_ssh_key_path(&host, None)?;
+    assert_reachable(&host, &ssh_key)?;
     let session = LiveSshSession::new(&host, &ssh_key);
     failure_report(&session, host_name, &units, elapsed).map(Some)
+}
+
+/// One bounded connect before the probe. The probe runs against a host whose
+/// deploy just failed — possibly because the host went dark — and a bare ssh
+/// would then hang for the TCP timeout, or block on a prompt, in front of an
+/// error message that used to print instantly. Carries the mux options so a
+/// success leaves a warm control socket for the probe commands to reuse.
+fn assert_reachable(host: &crate::hosts::Host, ssh_key: &Path) -> Result<()> {
+    let mut command = std::process::Command::new("ssh");
+    command.args(crate::ssh_session::SshSession::mux_args());
+    for option in ["ConnectTimeout=10", "BatchMode=yes"] {
+        command.args(["-o", option]);
+    }
+    let output = command
+        .arg("-i")
+        .arg(ssh_key)
+        .args(["-p", &host.port.to_string()])
+        .arg(format!("{}@{}", host.user, host.address))
+        .arg("true")
+        .output()
+        .wrap_err("Failed to execute ssh")?;
+    if !output.status.success() {
+        eyre::bail!("host {} is unreachable over ssh", host.name);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -359,19 +427,50 @@ mod tests {
             Some(4),
             None,
         );
-        assert_eq!(verdict(&unit, UPTIME, ELAPSED), Verdict::Looping);
+        assert_eq!(verdict(&unit, false, UPTIME, ELAPSED), Verdict::Looping);
     }
 
     #[test]
     fn test_verdict_failed_when_the_limiter_gave_up() {
         let unit = probed("liquidsoap.service", "failed", "failed", Some(30), None);
-        assert_eq!(verdict(&unit, UPTIME, ELAPSED), Verdict::Failed);
+        assert_eq!(verdict(&unit, false, UPTIME, ELAPSED), Verdict::Failed);
     }
 
     #[test]
     fn test_verdict_stopped() {
         let unit = probed("icecast2.service", "inactive", "dead", None, None);
-        assert_eq!(verdict(&unit, UPTIME, ELAPSED), Verdict::Stopped);
+        assert_eq!(verdict(&unit, false, UPTIME, ELAPSED), Verdict::Stopped);
+    }
+
+    #[test]
+    fn test_verdict_idle_for_an_inactive_timer_fired_service() {
+        let unit = probed("colporteur.service", "inactive", "dead", None, None);
+        assert_eq!(
+            verdict(&unit, true, UPTIME, ELAPSED),
+            Verdict::IdleBetweenTimerRuns,
+            "inactive (dead) is a timer-fired oneshot's healthy steady state, \
+             not an anomaly"
+        );
+    }
+
+    #[test]
+    fn test_render_rolls_up_idle_timer_fired_services_instead_of_crying_stopped() {
+        let units = [
+            probed("colporteur.service", "inactive", "dead", None, None),
+            probed(
+                "colporteur.timer",
+                "active",
+                "waiting",
+                None,
+                Some(1_000_000),
+            ),
+        ];
+        let report = render("auberge", &units, UPTIME, ELAPSED);
+        assert!(
+            report.contains("1 timer-fired unit(s) idle between runs: colporteur.service"),
+            "unexpected report: {report}"
+        );
+        assert!(!report.contains("stopped"), "unexpected report: {report}");
     }
 
     #[test]
@@ -383,7 +482,10 @@ mod tests {
             Some(0),
             Some(1_000_000),
         );
-        assert_eq!(verdict(&unit, UPTIME, ELAPSED), Verdict::ActivePreDeploy);
+        assert_eq!(
+            verdict(&unit, false, UPTIME, ELAPSED),
+            Verdict::ActivePreDeploy
+        );
     }
 
     #[test]
@@ -396,14 +498,17 @@ mod tests {
             Some(0),
             Some(started),
         );
-        assert_eq!(verdict(&unit, UPTIME, ELAPSED), Verdict::RestartedMidDeploy);
+        assert_eq!(
+            verdict(&unit, false, UPTIME, ELAPSED),
+            Verdict::RestartedMidDeploy
+        );
     }
 
     #[test]
     fn test_verdict_not_found_for_an_unloaded_unit() {
         let mut unit = probed("ghost.service", "inactive", "dead", None, None);
         unit.load_state = "not-found".to_string();
-        assert_eq!(verdict(&unit, UPTIME, ELAPSED), Verdict::NotFound);
+        assert_eq!(verdict(&unit, false, UPTIME, ELAPSED), Verdict::NotFound);
     }
 
     #[test]
@@ -436,13 +541,13 @@ mod tests {
     #[test]
     fn test_failure_report_details_anomalies_and_rolls_up_the_untouched() {
         let session = MockSshSession::new();
+        session.stage_run_result(stdout("1000.00 1800.00\n"));
         session.stage_run_result(stdout(
             "Id=liquidsoap.service\nLoadState=loaded\nActiveState=activating\n\
              SubState=auto-restart\nNRestarts=4\nExecMainStartTimestampMonotonic=999000000\n\n\
              Id=icecast2.service\nLoadState=loaded\nActiveState=active\nSubState=running\n\
              NRestarts=0\nExecMainStartTimestampMonotonic=1000000\n",
         ));
-        session.stage_run_result(stdout("1000.00 1800.00\n"));
 
         let units = [
             app_unit("radio", "liquidsoap.service", UnitScope::System),
@@ -531,5 +636,36 @@ mod tests {
         let units = [app_unit("radio", "liquidsoap.service", UnitScope::System)];
         let err = failure_report(&session, "auberge", &units, ELAPSED).unwrap_err();
         assert!(err.to_string().contains("Connection refused"));
+    }
+
+    #[test]
+    fn test_failure_report_keeps_system_verdicts_when_the_user_probe_fails() {
+        let session = MockSshSession::new();
+        session.stage_run_result(stdout("1000.00 1800.00\n"));
+        session.stage_run_result(stdout(
+            "Id=grimmory.service\nLoadState=loaded\nActiveState=activating\n\
+             SubState=auto-restart\nNRestarts=7\nExecMainStartTimestampMonotonic=999000000\n",
+        ));
+        session.stage_run_result(CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: b"Failed to connect to user scope bus".to_vec(),
+        });
+
+        let units = [
+            app_unit("grimmory", "grimmory.service", UnitScope::System),
+            app_unit("hermes", "hermes-gateway.service", UnitScope::User),
+        ];
+        let report = failure_report(&session, "auberge", &units, ELAPSED).unwrap();
+
+        assert!(
+            report.contains("grimmory.service (grimmory): restart-looping"),
+            "a dead user bus must not swallow the crash-loop verdict: {report}"
+        );
+        assert!(
+            report.contains("user unit probe failed:"),
+            "the failed scope earns its own note: {report}"
+        );
     }
 }

@@ -236,17 +236,20 @@ fn unit_configured_at(dest: &str) -> Option<(String, bool)> {
         (unit.to_string(), user_scope)
     };
 
+    // Asserted before the suffix test: an unresolved name would fail that
+    // test and drop out of the domain silently, the one way a new unit could
+    // enter the fleet without entering this fence.
+    assert!(
+        !unit.contains("{{"),
+        "`{dest}` configures a systemd unit whose name does not resolve; teach \
+         this test how to expand it before relying on it"
+    );
     if !UNIT_TYPE_SUFFIXES
         .iter()
         .any(|suffix| unit.ends_with(suffix))
     {
         return None;
     }
-    assert!(
-        !unit.contains("{{"),
-        "`{dest}` configures a systemd unit whose name does not resolve; teach \
-         this test how to expand it before relying on it"
-    );
     Some((unit, user_scope))
 }
 

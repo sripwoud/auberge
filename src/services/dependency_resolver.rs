@@ -19,7 +19,7 @@ impl PlaybookRun {
     }
 }
 
-fn parse_playbook_roles(playbook_path: &PathBuf) -> Result<Vec<(String, Vec<String>)>> {
+pub fn parse_playbook_roles(playbook_path: &PathBuf) -> Result<Vec<(String, Vec<String>)>> {
     let content = std::fs::read_to_string(playbook_path)
         .wrap_err_with(|| format!("Failed to read playbook: {}", playbook_path.display()))?;
 
@@ -113,7 +113,7 @@ pub fn find_standalone_playbook(name: &str) -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-pub fn playbook_role_names(filename: &str) -> Result<Vec<String>> {
+fn playbook_role_names(filename: &str) -> Result<Vec<String>> {
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
     let path = playbooks_dir.join(filename);
     if !path.exists() {
