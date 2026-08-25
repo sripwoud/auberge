@@ -46,7 +46,7 @@ def event_uri(card_uri):
     return birthday.BaikalBirthdaySync("")._make_uid(card_uri) + ".ics"
 
 
-def parse(value, params=""):
+def parse_bday(value, params=""):
     return birthday.BaikalBirthdaySync("")._parse_bday(make_vcard("X", value, params))
 
 
@@ -83,6 +83,13 @@ def store_as_blob(db_path, table, column, uri, text):
     kind = conn.execute(f"SELECT typeof({column}) FROM {table} WHERE uri = ?", (uri,)).fetchone()[0]
     conn.close()
     assert kind == "blob"
+
+
+def store_event(db_path, uri, calendardata):
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE calendarobjects SET calendardata = ? WHERE uri = ?", (calendardata, uri))
+    conn.commit()
+    conn.close()
 
 
 def insert_orphan_event(db_path, uri):
@@ -202,11 +209,11 @@ def test_orphan_event_is_deleted(db_path):
     ],
 )
 def test_parse_bday_accepts_both_year_omitted_forms(value, expected):
-    assert parse(value) == expected
+    assert parse_bday(value) == expected
 
 
 def test_parse_bday_reads_the_value_date_parameter():
-    assert parse("--0105", params=";VALUE=DATE") == (1, 5, None)
+    assert parse_bday("--0105", params=";VALUE=DATE") == (1, 5, None)
 
 
 @pytest.mark.parametrize(
@@ -214,7 +221,7 @@ def test_parse_bday_reads_the_value_date_parameter():
     ["--13-01", "--1301", "--00-00", "--0000", "--02-30", "--0230", "--xxyy", "--01", "--010", "--"],
 )
 def test_parse_bday_rejects_malformed_year_omitted_values(value):
-    assert parse(value) is None
+    assert parse_bday(value) is None
 
 
 def test_year_omitted_bday_becomes_a_yearly_event(db_path):
@@ -250,3 +257,14 @@ def test_unparsable_bday_is_reported_and_does_not_abort_the_run(db_path, capsys)
 
     assert set(calendar_objects(db_path)) == {event_uri("kai.vcf")}
     assert "Unparsable BDAY values: 1" in capsys.readouterr().err
+
+
+def test_event_anchored_on_the_superseded_year_is_rewritten(db_path):
+    build_db(db_path, [("nils.vcf", make_vcard("Nils", "--01-05"))])
+    run(db_path)
+    uri = event_uri("nils.vcf")
+    store_event(db_path, uri, calendar_objects(db_path)[uri]["calendardata"].replace(str(birthday.ANCHOR_YEAR), "1970"))
+
+    run(db_path)
+
+    assert f"DTSTART;VALUE=DATE:{birthday.ANCHOR_YEAR}0105" in calendar_objects(db_path)[uri]["calendardata"]

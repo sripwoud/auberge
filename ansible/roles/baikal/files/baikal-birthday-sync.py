@@ -11,7 +11,7 @@ ANCHOR_YEAR = 1972
 MAX_INT32 = 2147483647
 DYNAMIC_PREFIXES = ("DTSTAMP:", "CREATED:", "LAST-MODIFIED:")
 BDAY_LINE = re.compile(r"BDAY(?:;[^:]*)?:([^\r\n]+)")
-YEAR_OMITTED = re.compile(r"--(\d{2})-?(\d{2})")
+YEAR_OMITTED_DATE = re.compile(r"--(\d{2})-?(\d{2})")
 
 
 def _stable_ical(ical_data):
@@ -53,7 +53,7 @@ class BaikalBirthdaySync:
         value = match.group(1).strip()
 
         if value.startswith("--"):
-            reduced = YEAR_OMITTED.fullmatch(value)
+            reduced = YEAR_OMITTED_DATE.fullmatch(value)
             if not reduced:
                 return None
             month, day = int(reduced.group(1)), int(reduced.group(2))
