@@ -32,8 +32,7 @@
 //! A fence picks a domain deliberately and says so at the call site. Widening
 //! one is then a visible edit to a fence, which is the point.
 //!
-//! Not yet folded in: `paperless_quiesce.rs` still carries a guard-accumulating
-//! walk of its own (#658).
+//! Every fence that walks the tree now reads it through here (#654, #658).
 //! `grimmory_role.rs`, `immich_container_dirs.rs` and `probe_after_restart.rs`
 //! define a `flatten` too, but theirs are genuinely different walks — a
 //! hard-stop assert on a block-level `when:`, `include_tasks` resolution — and

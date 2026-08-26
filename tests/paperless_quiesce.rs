@@ -1,6 +1,8 @@
-use serde_yaml::{Sequence, Value};
-use std::fs;
-use std::path::PathBuf;
+use serde_yaml::Value;
+
+mod common;
+
+use common::{Plays, Task, field, role_dir, strings, tasks_in};
 
 /// paperless installs by deleting the tree its four units exec and unpacking
 /// another one over it, then migrating the database with the new code. Nothing a
@@ -62,67 +64,25 @@ const INSTALL_PATHS: &[&str] = &[
     "/opt/paperless",
 ];
 
-struct Task {
-    name: String,
-    body: serde_yaml::Mapping,
-    guards: Vec<String>,
-}
-
-fn field<'a>(task: &'a serde_yaml::Mapping, key: &str) -> Option<&'a Value> {
-    task.get(Value::from(key))
-}
-
-fn strings(value: Option<&Value>) -> Vec<String> {
-    match value {
-        Some(Value::String(one)) => vec![one.clone()],
-        Some(Value::Sequence(many)) => many
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_string)
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-/// The role's tasks in the order ansible runs them, blocks inlined and each
-/// task carrying the `when` of every block enclosing it. Order is the whole
-/// subject here, which is what separates this from the role-agnostic scans.
-fn flatten(tasks: &Sequence, inherited: &[String], out: &mut Vec<Task>) {
-    for task in tasks {
-        let Some(body) = task.as_mapping() else {
-            continue;
-        };
-        let mut scoped = inherited.to_vec();
-        scoped.extend(strings(field(body, "when")));
-        let mut nested = false;
-        for section in ["block", "rescue", "always"] {
-            if let Some(inner) = field(body, section).and_then(Value::as_sequence) {
-                flatten(inner, &scoped, out);
-                nested = true;
-            }
-        }
-        if !nested {
-            out.push(Task {
-                name: field(body, "name")
-                    .and_then(Value::as_str)
-                    .unwrap_or("<unnamed>")
-                    .to_string(),
-                body: body.clone(),
-                guards: scoped,
-            });
-        }
-    }
-}
-
+/// The role's `tasks/main.yml` in the order ansible runs it, blocks inlined and
+/// each task carrying the `when` of every block enclosing it.
+///
+/// The narrowest of the shared domains, deliberately: order is the whole subject
+/// here, and order *across* files is not a fact the tree states -- so this reads
+/// the one file rather than the whole `tasks/` directory that
+/// [`common::role_tasks`] would. `Plays::AsTasks` because a role's task file
+/// holds no play for the flag to descend into.
 fn tasks() -> Vec<Task> {
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible/roles/paperless/tasks/main.yml");
-    let raw = fs::read_to_string(&path).expect("paperless has a task file");
-    let parsed: Sequence =
-        serde_yaml::from_str(&raw).unwrap_or_else(|e| panic!("{} must parse: {e}", path.display()));
-    let mut out = Vec::new();
-    flatten(&parsed, &[], &mut out);
-    out
+    tasks_in(
+        &role_dir("paperless").join("tasks/main.yml"),
+        Plays::AsTasks,
+    )
+}
+
+fn name_of(task: &Task) -> &str {
+    field(&task.body, "name")
+        .and_then(Value::as_str)
+        .unwrap_or("<unnamed>")
 }
 
 /// The index of the one task driving all four units to `state`, and the guards
@@ -222,9 +182,9 @@ fn test_every_destructive_task_runs_inside_the_window() {
                  it must sit between the stop and the start. Ordered outside them, the four \
                  workers execute pre-bump code across it -- and a `manage.py migrate` outside \
                  them hands those workers a schema their code does not know (#604)",
-                task.name
+                name_of(task)
             );
-            task.name.as_str()
+            name_of(task)
         })
         .collect();
     assert_eq!(
