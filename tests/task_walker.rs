@@ -14,8 +14,7 @@
 
 mod common;
 
-use common::{Plays, all_roles, field, role_tasks, tasks_in};
-use serde_yaml::Value;
+use common::{Plays, all_roles, field, role_tasks, task_name, tasks_in};
 
 /// The bytes a role's `tasks/` files actually hold, so an empty file can be told
 /// apart from a walk that stopped reading.
@@ -36,13 +35,6 @@ fn written_tasks(role: &str) -> String {
         })
         .collect::<String>()
         .trim()
-        .to_string()
-}
-
-fn name_of(task: &common::Task) -> String {
-    field(&task.body, "name")
-        .and_then(Value::as_str)
-        .unwrap_or("<unnamed>")
         .to_string()
 }
 
@@ -136,7 +128,7 @@ fn test_a_task_carries_the_guards_of_every_block_enclosing_it() {
             assert!(
                 task.guards.contains(clause),
                 "`{}` carries `when: {clause}` that the walk dropped",
-                name_of(task)
+                task_name(&task.body)
             );
         }
         if task.guards.len() > own.len() {
@@ -237,7 +229,7 @@ fn test_the_flag_changes_nothing_for_a_file_that_holds_no_play() {
             as_task.guards,
             "{}: the two walks disagree on `{}`'s guards",
             path.display(),
-            name_of(descended)
+            task_name(&descended.body)
         );
     }
 }

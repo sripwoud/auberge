@@ -157,9 +157,10 @@ pub fn strings(value: Option<&Value>) -> Vec<String> {
 /// message needs to point a reader at the task that failed it.
 ///
 /// Borrowed rather than owned so the caller decides: `paperless_quiesce.rs`
-/// compares a list of names against a declared one and wants `&str`. Four
-/// fences still carry their own copy, already drifted across two names and two
-/// parameter types (#659).
+/// compares a list of names against a declared one and wants `&str`, while the
+/// fences that store a name in a struct call `.to_string()` at that one site.
+/// The five copies this replaced had already drifted across two names and two
+/// return types with nothing naming the difference (#659).
 pub fn task_name(task: &Mapping) -> &str {
     field(task, "name")
         .and_then(Value::as_str)

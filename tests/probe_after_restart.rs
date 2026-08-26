@@ -4,6 +4,10 @@ use std::path::{Path, PathBuf};
 
 use serde_yaml::{Mapping, Sequence, Value};
 
+mod common;
+
+use common::task_name;
+
 fn roles_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible/roles")
 }
@@ -102,13 +106,6 @@ fn roles() -> Vec<String> {
     names
 }
 
-fn task_name(task: &Mapping) -> String {
-    field(task, "name")
-        .and_then(Value::as_str)
-        .unwrap_or("<unnamed>")
-        .to_string()
-}
-
 /// Handlers a task notifies, minus the ones whose flush is deliberately deferred.
 fn notified_handlers(task: &Mapping) -> Vec<String> {
     let notified = match field(task, "notify") {
@@ -193,8 +190,8 @@ fn unflushed_notifies() -> Vec<UnflushedNotify> {
                 findings.push(UnflushedNotify {
                     role: role.clone(),
                     handler,
-                    notifier: task_name(task),
-                    probe: task_name(&tasks[*probe]),
+                    notifier: task_name(task).to_string(),
+                    probe: task_name(&tasks[*probe]).to_string(),
                 });
             }
         }
@@ -211,7 +208,7 @@ fn probes_by_role() -> BTreeMap<String, Vec<String>> {
         let names: Vec<String> = role_tasks(&role)
             .iter()
             .filter(|task| is_probe(task))
-            .map(task_name)
+            .map(|task| task_name(task).to_string())
             .collect();
         if !names.is_empty() {
             found.insert(role, names);
