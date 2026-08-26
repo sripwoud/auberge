@@ -17,18 +17,23 @@ mod common;
 use common::{Plays, all_roles, field, role_tasks, tasks_in};
 use serde_yaml::Value;
 
-/// The bytes a role's `tasks/` files actually hold, so an empty file can be
-/// told apart from a walk that stopped reading.
+/// The bytes a role's `tasks/` files actually hold, so an empty file can be told
+/// apart from a walk that stopped reading.
+///
+/// Nothing here is allowed to fail quietly. A swallowed `read_dir` or
+/// `read_to_string` would report every role as empty, which is precisely the
+/// answer that makes the caller's assertion vacuous.
 fn written_tasks(role: &str) -> String {
     let dir = common::role_dir(role).join("tasks");
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return String::new();
-    };
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("{} must be readable: {e}", dir.display()));
     entries
-        .flatten()
-        .map(|entry| entry.path())
+        .map(|entry| entry.expect("a directory entry must be readable").path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "yml"))
-        .filter_map(|path| std::fs::read_to_string(path).ok())
+        .map(|path| {
+            std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{} must be readable: {e}", path.display()))
+        })
         .collect::<String>()
         .trim()
         .to_string()
@@ -48,21 +53,36 @@ fn name_of(task: &common::Task) -> String {
 /// yield at least one task.
 ///
 /// The wireguard role is the reason this is phrased that way and not more
-/// simply: its `tasks/main.yml` is a zero-byte file, and has been since the
-/// role was added, so the role is a no-op that `apps.yml` still lists.
+/// simply: its `tasks/main.yml` holds one byte, a bare newline, and has since
+/// the role was added, so the role is a no-op that `apps.yml` still lists.
 #[test]
 fn test_a_role_whose_task_files_hold_anything_yields_a_task() {
-    let barren: Vec<String> = all_roles()
-        .into_iter()
+    let roles = all_roles();
+    let written: Vec<String> = roles
+        .iter()
         .filter(|role| !written_tasks(role).is_empty())
+        .cloned()
+        .collect();
+
+    // Without this the test passes by finding nothing to check: read every role
+    // as empty and `barren` is empty too.
+    assert!(
+        written.len() + 1 == roles.len(),
+        "{} of {} roles were read as having written tasks; every role but \
+         wireguard has them, so the read side of this test has broken",
+        written.len(),
+        roles.len()
+    );
+
+    let barren: Vec<&String> = written
+        .iter()
         .filter(|role| role_tasks(role).is_empty())
         .collect();
 
     assert!(
         barren.is_empty(),
         "these roles have task files with content in them and yielded no task at \
-         all, so every fence's question about them answers vacuously: {}",
-        barren.join(", ")
+         all, so every fence's question about them answers vacuously: {barren:?}"
     );
 }
 
@@ -92,69 +112,95 @@ fn test_a_task_inside_a_block_is_yielded_and_the_block_itself_is_not() {
 /// The `when:` standing over a task is what tells a fence whether the task runs
 /// on the path it is reasoning about. A guard on an enclosing block applies to
 /// everything inside it, so the walk carries it down.
+///
+/// Both halves are asserted, because either alone passes on a broken walk: a
+/// walk that dropped inherited guards still reports every task's own `when:`,
+/// and a walk that reported only inherited ones still returns something.
 #[test]
 fn test_a_task_carries_the_guards_of_every_block_enclosing_it() {
-    let guarded: Vec<&common::Task> = all_roles()
+    let guarded: Vec<common::Task> = all_roles()
         .iter()
         .flat_map(|role| role_tasks(role))
         .filter(|task| !task.guards.is_empty())
-        .collect::<Vec<_>>()
-        .leak()
-        .iter()
         .collect();
 
     assert!(
-        guarded.len() > 100,
-        "only {} tasks came back guarded; the `when:` accumulation stopped working",
-        guarded.len()
+        !guarded.is_empty(),
+        "no task came back guarded at all; the `when:` accumulation stopped working"
     );
 
+    let mut inherited = 0;
     for task in &guarded {
         let own = common::strings(field(&task.body, "when"));
-        for clause in own {
+        for clause in &own {
             assert!(
-                task.guards.contains(&clause),
+                task.guards.contains(clause),
                 "`{}` carries `when: {clause}` that the walk dropped",
                 name_of(task)
             );
         }
+        if task.guards.len() > own.len() {
+            inherited += 1;
+        }
     }
+
+    assert!(
+        inherited > 0,
+        "{} tasks are guarded and not one of them carries a guard from an \
+         enclosing block, so nothing proves the walk accumulates rather than \
+         just reading each task's own `when:`",
+        guarded.len()
+    );
 }
 
 /// A playbook is a sequence of plays. Its tasks live under `pre_tasks`,
 /// `tasks`, `post_tasks` and `handlers`, and are reachable only with
 /// `Plays::Descend` — the difference this walker exists to name.
+///
+/// Every playbook is checked rather than one named example. ADR-0041's
+/// `remove-radicale.yml` is the file that motivated the flag, with 19 tasks
+/// inside one play, but it is a transitional removal playbook: naming it here
+/// would make deleting it panic this fence.
 #[test]
 fn test_a_plays_tasks_are_reachable_only_by_descending_into_it() {
-    // The playbook whose tasks are the reason the flag exists: ADR-0041's
-    // radicale removal, 19 tasks deep inside one play.
-    let playbook = common::playbooks_dir().join("remove-radicale.yml");
+    let playbooks: Vec<std::path::PathBuf> = common::runnable_files()
+        .into_iter()
+        .filter(|path| path.starts_with(common::playbooks_dir()))
+        .collect();
+    assert!(
+        !playbooks.is_empty(),
+        "no playbook is in the runnable domain"
+    );
 
-    let descended = tasks_in(&playbook, Plays::Descend);
-    let skipped = tasks_in(&playbook, Plays::Skip);
+    let mut deeper = Vec::new();
+    for playbook in &playbooks {
+        let at = common::relative(playbook);
+        let descended = tasks_in(playbook, Plays::Descend);
+        let as_tasks = tasks_in(playbook, Plays::AsTasks);
+
+        assert!(
+            as_tasks
+                .iter()
+                .all(|task| field(&task.body, "hosts").is_some()),
+            "{at}: Plays::AsTasks yielded something that is not one of the plays"
+        );
+        assert!(
+            descended
+                .iter()
+                .all(|task| field(&task.body, "hosts").is_none()),
+            "{at}: Plays::Descend yielded a play as if it were a task"
+        );
+
+        if descended.len() > as_tasks.len() {
+            deeper.push(at);
+        }
+    }
 
     assert!(
-        !descended.is_empty(),
-        "{} yielded no task with Plays::Descend",
-        playbook.display()
-    );
-    assert!(
-        descended.len() > skipped.len(),
-        "descending into the plays of {} found no more than skipping them, so the \
-         flag names no difference",
-        playbook.display()
-    );
-    assert!(
-        skipped
-            .iter()
-            .all(|task| field(&task.body, "hosts").is_some()),
-        "Plays::Skip yielded something other than the plays themselves"
-    );
-    assert!(
-        descended
-            .iter()
-            .all(|task| field(&task.body, "hosts").is_none()),
-        "Plays::Descend yielded a play as if it were a task"
+        !deeper.is_empty(),
+        "not one of the {} playbooks yielded more with Plays::Descend than \
+         without it, so the flag names no difference anywhere",
+        playbooks.len()
     );
 }
 
@@ -166,13 +212,33 @@ fn test_the_flag_changes_nothing_for_a_file_that_holds_no_play() {
     let path = common::role_dir("immich").join("tasks/main.yml");
 
     let descended = tasks_in(&path, Plays::Descend);
-    let skipped = tasks_in(&path, Plays::Skip);
+    let as_tasks = tasks_in(&path, Plays::AsTasks);
 
-    assert_eq!(descended.len(), skipped.len());
-    assert!(!descended.is_empty());
-    for (a, b) in descended.iter().zip(skipped.iter()) {
-        assert_eq!(a.body, b.body);
-        assert_eq!(a.guards, b.guards);
+    assert!(
+        !descended.is_empty(),
+        "{} yielded no task at all, so the two walks agree on nothing",
+        path.display()
+    );
+    assert_eq!(
+        descended.len(),
+        as_tasks.len(),
+        "{} yielded a different number of tasks under each value of the flag",
+        path.display()
+    );
+    for (descended, as_task) in descended.iter().zip(as_tasks.iter()) {
+        assert_eq!(
+            descended.body,
+            as_task.body,
+            "{}: the two walks disagree on a task body",
+            path.display()
+        );
+        assert_eq!(
+            descended.guards,
+            as_task.guards,
+            "{}: the two walks disagree on `{}`'s guards",
+            path.display(),
+            name_of(descended)
+        );
     }
 }
 

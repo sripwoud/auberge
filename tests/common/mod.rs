@@ -8,10 +8,11 @@
 //! somewhere does not fail. It shrinks the domain, and every fence over it goes
 //! on passing, vacuously.
 //!
-//! Six fences carried their own verbatim copy of this walk, and the copies had
-//! already diverged: one descended into a playbook's own task sections and five
-//! did not, with nothing anywhere naming the difference. Measured at the point
-//! of extraction, that was 648 tasks visible to five of them against 731 to the
+//! Six fences kept their own copy of this walk, four of them byte-identical,
+//! and the copies had already diverged: one descended into a playbook's own
+//! task sections and read role handlers besides, the other five did neither,
+//! with nothing anywhere naming the difference. Measured at the point of
+//! extraction, that was 648 tasks visible to five of them against 731 to the
 //! sixth — 34 reachable only by descending into plays, 49 only by reading a
 //! role's handlers. Two fences asking the same question of the same tree got
 //! answers 83 tasks apart (#654).
@@ -26,7 +27,19 @@
 //!
 //! A fence picks a domain deliberately and says so at the call site. Widening
 //! one is then a visible edit to a fence, which is the point.
+//!
+//! Not yet folded in: `install_guards.rs` and `paperless_quiesce.rs` still
+//! carry a guard-accumulating walk of their own, and `install_guards.rs`'s
+//! `all_roles()` has already lost the `is_dir()` filter every copy here kept.
+//! `grimmory_role.rs`, `immich_container_dirs.rs` and `probe_after_restart.rs`
+//! define a `flatten` too, but theirs are genuinely different walks — a
+//! hard-stop assert on a block-level `when:`, `include_tasks` resolution — and
+//! belong where they are.
 
+// Each of the fences below imports a different subset, so every one of them
+// sees the rest as dead. The cost of the blanket allow: a helper that no fence
+// uses at all is never flagged either. `tests/task_walker.rs` is the mitigation
+// — anything load-bearing has an assertion over it there.
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
@@ -58,26 +71,31 @@ pub struct Task {
 /// assumed, since that is what lets a fence over roles pick either and be
 /// right. A playbook is a sequence of plays, and its tasks are reachable only
 /// through `pre_tasks`/`tasks`/`post_tasks`/`handlers`: walk one with
-/// [`Plays::Skip`] and you get the plays, none of their tasks, and a fence that
-/// passes because it looked at nothing.
+/// [`Plays::AsTasks`] and you get the plays, none of their tasks, and a fence
+/// that passes because it looked at nothing.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Plays {
-    /// Treat a play as an ordinary task body. What a role's task files want.
-    Skip,
+    /// Yield a play the way any other mapping is yielded, without looking
+    /// inside it. Named for what it does rather than for skipping the descent,
+    /// because a play walked this way is still handed to the caller as a task.
+    /// What a role's task files want.
+    AsTasks,
     /// Recurse into `pre_tasks`/`tasks`/`post_tasks`/`handlers` and yield what
     /// is inside, never the play itself. What a playbook wants.
     Descend,
 }
 
+/// The repository root. Read by `removed_unit_failed_state.rs` to reach
+/// `src/playbook_meta.rs`, whose unit-type declaration it mirrors (#656).
 pub fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-pub fn ansible_dir() -> PathBuf {
+fn ansible_dir() -> PathBuf {
     repo().join("ansible")
 }
 
-pub fn roles_dir() -> PathBuf {
+fn roles_dir() -> PathBuf {
     ansible_dir().join("roles")
 }
 
@@ -176,9 +194,13 @@ pub fn tasks_in(path: &Path, plays: Plays) -> Vec<Task> {
     tasks
 }
 
-/// Every task in one role's `tasks/` directory, in file order. A task under a
-/// guard is still a task the role runs, so guards narrow nothing here — they
-/// are carried on the [`Task`] for the fence to weigh.
+/// Every task in one role's `tasks/` directory, in file order.
+///
+/// Order across files is meaningless — this answers which tasks a role has, not
+/// what runs when — so an `include_tasks` needs no resolving to be seen: the
+/// file it would include is read on its own. A task under a guard is still a
+/// task the role runs, so guards narrow nothing here; they ride on the [`Task`]
+/// for the fence to weigh.
 pub fn role_tasks(role: &str) -> Vec<Task> {
     let mut files: Vec<PathBuf> = fs::read_dir(role_dir(role).join("tasks"))
         .map(|entries| {
@@ -192,7 +214,7 @@ pub fn role_tasks(role: &str) -> Vec<Task> {
     files.sort();
     files
         .iter()
-        .flat_map(|file| tasks_in(file, Plays::Skip))
+        .flat_map(|file| tasks_in(file, Plays::AsTasks))
         .collect()
 }
 
@@ -237,8 +259,11 @@ pub fn runnable_files() -> Vec<PathBuf> {
     files
 }
 
-/// A role's scalar defaults, as a substitution table. Structured values are
-/// left out: nothing that reads this resolves into a list or a mapping.
+/// A role's scalar defaults, as a substitution table — which is where every
+/// path a unit runs and every path an install writes is stated (ADR-0027).
+///
+/// Structured values are left out: nothing that reads this resolves into a list
+/// or a mapping.
 pub fn defaults(role: &str) -> BTreeMap<String, String> {
     let path = role_dir(role).join("defaults/main.yml");
     let Ok(raw) = fs::read_to_string(&path) else {
@@ -284,9 +309,18 @@ fn substitute(input: &str, vars: &BTreeMap<String, String>) -> String {
 }
 
 /// `{{ var }}` replaced by the default it names, until the string stops
-/// changing; anything the role's defaults do not state is left standing
-/// verbatim, so an unresolved expression can never compare equal to a real
-/// path or unit name.
+/// changing. Anything else — a filter, a register's field, an App Version
+/// injected as an extra_var — is left standing verbatim, which is the point: a
+/// `dest` and an `ExecStart` that resolve through the same default arrive here
+/// as the same text, so grimmory's `…/grimmory-{{ grimmory_version }}.jar`
+/// compares equal on both sides without the version's value being knowable from
+/// the repo at all. An expression nothing resolves therefore cannot compare
+/// equal to a real path or unit name either.
+///
+/// Rendering with minijinja instead would substitute an undefined name with the
+/// empty string and silently compare a wrong path. `immich_container_dirs.rs`
+/// does render, under a strict environment that errors on the undefined name
+/// rather than emptying it — the other half of the same argument.
 pub fn resolve(raw: &str, vars: &BTreeMap<String, String>) -> String {
     let mut current = raw.to_string();
     for _ in 0..10 {
