@@ -40,8 +40,9 @@ pub struct Task {
     pub body: Mapping,
     /// Every `when:` clause between the file's top level and this task,
     /// outermost first, the task's own included. A guard on an enclosing
-    /// `block:` applies to everything inside it, so a fence reasoning about
-    /// whether a task runs on some path has to see the block's guard too — and
+    /// `block:` applies to everything inside it — which is how the bichon and
+    /// paperless roles gate their installs — so a fence reasoning about whether
+    /// a task runs on some path has to see the block's guard too. And
     /// so does a play's own `when:`, under [`Plays::Descend`]. No play in the
     /// repo carries one today, so that half of the contract is inert; it is
     /// stated and implemented rather than left for the first one to discover.

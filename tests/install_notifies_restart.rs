@@ -1,8 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
 
 use serde_yaml::{Mapping, Sequence, Value};
+
+mod common;
+
+use common::{all_roles, defaults, field, resolve, role_dir, role_tasks, strings};
 
 /// A version bump replaces an artifact on a Host where the old one is already
 /// running, and nothing downstream in the play notices. `state: started` no-ops
@@ -51,162 +54,6 @@ const SERVICE_MODULES: &[&str] = &[
     "ansible.builtin.systemd",
     "ansible.builtin.service",
 ];
-
-fn roles_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible/roles")
-}
-
-fn role_dir(role: &str) -> PathBuf {
-    roles_dir().join(role)
-}
-
-fn all_roles() -> Vec<String> {
-    let mut roles: Vec<String> = fs::read_dir(roles_dir())
-        .expect("ansible/roles must exist")
-        .flatten()
-        .filter(|entry| entry.path().is_dir())
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect();
-    roles.sort();
-    roles
-}
-
-/// One task with the guards it actually runs under: a `when` on an enclosing
-/// block ANDs into every task inside it, which is how `bichon` and `paperless`
-/// gate their installs.
-struct Task {
-    body: Mapping,
-    guards: Vec<String>,
-}
-
-fn field<'a>(task: &'a Mapping, key: &str) -> Option<&'a Value> {
-    task.get(Value::from(key))
-}
-
-fn strings(value: Option<&Value>) -> Vec<String> {
-    match value {
-        Some(Value::String(one)) => vec![one.clone()],
-        Some(Value::Sequence(many)) => many
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_string)
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn flatten(tasks: &Sequence, inherited: &[String], out: &mut Vec<Task>) {
-    for task in tasks {
-        let Some(body) = task.as_mapping() else {
-            continue;
-        };
-        let mut scoped = inherited.to_vec();
-        scoped.extend(strings(field(body, "when")));
-        let mut nested = false;
-        for section in ["block", "rescue", "always"] {
-            if let Some(inner) = field(body, section).and_then(Value::as_sequence) {
-                flatten(inner, &scoped, out);
-                nested = true;
-            }
-        }
-        if !nested {
-            out.push(Task {
-                body: body.clone(),
-                guards: scoped,
-            });
-        }
-    }
-}
-
-/// Every task in the role, across all of its task files. Order is meaningless
-/// here -- this asks which tasks install and which units exist, not what runs
-/// when -- so an `include_tasks` needs no resolving to be seen.
-fn every_task(role: &str) -> Vec<Task> {
-    let mut files: Vec<PathBuf> = fs::read_dir(role_dir(role).join("tasks"))
-        .map(|entries| {
-            entries
-                .flatten()
-                .map(|entry| entry.path())
-                .filter(|path| path.extension().is_some_and(|ext| ext == "yml"))
-                .collect()
-        })
-        .unwrap_or_default();
-    files.sort();
-    let mut tasks = Vec::new();
-    for file in files {
-        let raw = fs::read_to_string(&file).expect("a listed task file must be readable");
-        let parsed: Sequence = serde_yaml::from_str(&raw)
-            .unwrap_or_else(|e| panic!("{} must parse: {e}", file.display()));
-        flatten(&parsed, &[], &mut tasks);
-    }
-    tasks
-}
-
-/// The role's scalar defaults, which is where every path a unit runs and every
-/// path an install writes is stated (ADR-0027).
-fn defaults(role: &str) -> BTreeMap<String, String> {
-    let path = role_dir(role).join("defaults/main.yml");
-    let Ok(raw) = fs::read_to_string(&path) else {
-        return BTreeMap::new();
-    };
-    let parsed: Mapping =
-        serde_yaml::from_str(&raw).unwrap_or_else(|e| panic!("{} must parse: {e}", path.display()));
-    parsed
-        .iter()
-        .filter_map(|(key, value)| {
-            let key = key.as_str()?.to_string();
-            match value {
-                Value::String(text) => Some((key, text.clone())),
-                Value::Number(number) => Some((key, number.to_string())),
-                _ => None,
-            }
-        })
-        .collect()
-}
-
-fn substitute(input: &str, vars: &BTreeMap<String, String>) -> String {
-    let mut out = String::new();
-    let mut rest = input;
-    loop {
-        let Some(open) = rest.find("{{") else {
-            out.push_str(rest);
-            return out;
-        };
-        let Some(offset) = rest[open..].find("}}") else {
-            out.push_str(rest);
-            return out;
-        };
-        let close = open + offset;
-        match vars.get(rest[open + 2..close].trim()) {
-            Some(value) => {
-                out.push_str(&rest[..open]);
-                out.push_str(value);
-            }
-            None => out.push_str(&rest[..close + 2]),
-        }
-        rest = &rest[close + 2..];
-    }
-}
-
-/// `{{ var }}` replaced by the default it names, until the string stops
-/// changing. Anything else -- a filter, a register's field, an App Version
-/// injected as an extra_var -- is left standing verbatim, which is the point:
-/// a dest and an `ExecStart` that resolve through the same default arrive here
-/// as the same text, so grimmory's `…/grimmory-{{ grimmory_version }}.jar`
-/// compares equal on both sides without the version's value being knowable
-/// from the repo at all. Rendering with minijinja instead would substitute an
-/// undefined name with the empty string and silently compare a wrong path.
-fn resolve(raw: &str, vars: &BTreeMap<String, String>) -> String {
-    let mut current = raw.to_string();
-    for _ in 0..10 {
-        let next = substitute(&current, vars);
-        if next == current {
-            return current;
-        }
-        current = next;
-    }
-    panic!("{raw} does not resolve to a fixed point");
-}
 
 /// A unit's name as systemd knows it: bare names are services, and a name that
 /// already carries a type keeps it.
@@ -287,7 +134,7 @@ fn directive_paths(body: &str, vars: &BTreeMap<String, String>) -> Vec<String> {
 /// `/etc/systemd/system`.
 fn units(role: &str, vars: &BTreeMap<String, String>) -> Vec<Unit> {
     let mut units = Vec::new();
-    for task in every_task(role) {
+    for task in role_tasks(role) {
         for module in ["ansible.builtin.template", "ansible.builtin.copy"] {
             let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
                 continue;
@@ -389,7 +236,7 @@ fn restart_handlers(role: &str, vars: &BTreeMap<String, String>) -> BTreeMap<Str
 /// it follows.
 fn stopped_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<(String, Vec<String>, usize)> {
     let mut stopped = Vec::new();
-    for (at, task) in every_task(role).into_iter().enumerate() {
+    for (at, task) in role_tasks(role).into_iter().enumerate() {
         for module in SERVICE_MODULES {
             let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
                 continue;
@@ -507,7 +354,7 @@ fn replacements() -> Vec<Replacement> {
         let handlers = restart_handlers(&role, &vars);
         let stops = stopped_units(&role, &vars);
 
-        for (at, task) in every_task(&role).into_iter().enumerate() {
+        for (at, task) in role_tasks(&role).into_iter().enumerate() {
             for module in INSTALL_MODULES {
                 let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
                     continue;
@@ -628,7 +475,7 @@ fn version_bump_installers() -> BTreeSet<String> {
     let mut installers = BTreeSet::new();
     for role in all_roles() {
         let vars = defaults(&role);
-        for task in every_task(&role) {
+        for task in role_tasks(&role) {
             for module in INSTALL_MODULES {
                 let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
                     continue;
@@ -750,7 +597,7 @@ fn test_an_install_the_model_cannot_prove_is_declared_and_wired() {
     );
 
     for declaration in DECLARED_ROLES {
-        let tasks = every_task(declaration.role);
+        let tasks = role_tasks(declaration.role);
         let handlers = restart_handlers(declaration.role, &defaults(declaration.role));
         for (task, handler) in declaration.notifies {
             let carrying = tasks
@@ -832,7 +679,7 @@ fn test_a_quiesced_install_leaves_nothing_running_the_old_artifact() {
     let vars = defaults("paperless");
     let stops = stopped_units("paperless", &vars);
     let bump = vec!["paperless_installed_version != paperless_version".to_string()];
-    let extract = every_task("paperless")
+    let extract = role_tasks("paperless")
         .iter()
         .position(|task| task_name(&task.body) == "Extract release tarball")
         .expect("paperless unpacks a release tarball");
