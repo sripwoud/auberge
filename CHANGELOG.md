@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.17](https://github.com/sripwoud/auberge/compare/v0.15.16...v0.15.17) - 2026-08-26
+
+### Fixed
+
+- *(deploy)* report the state a failed play left the app's units in ([#652](https://github.com/sripwoud/auberge/pull/652))
+- *(ansible)* clear the failed state a removed unit leaves behind ([#647](https://github.com/sripwoud/auberge/pull/647))
+- *(systemd)* let a unit that cannot start give up and be reported ([#650](https://github.com/sripwoud/auberge/pull/650))
+- *(apt)* pin apache2 out of reach so php cannot pull it in ([#646](https://github.com/sripwoud/auberge/pull/646))
+- *(radio)* point liquidsoap caches at the unit CacheDirectory ([#645](https://github.com/sripwoud/auberge/pull/645))
+- *(grimmory)* stop scoring a clean SIGTERM shutdown as a failure ([#641](https://github.com/sripwoud/auberge/pull/641))
+- *(radio)* install liquidsoap from the debian archive ([#639](https://github.com/sripwoud/auberge/pull/639))
+- *(baikal)* parse the birthdays whose BDAY omits the year ([#638](https://github.com/sripwoud/auberge/pull/638))
+
+### Other
+
+- extract the ansible task walker the fences share ([#657](https://github.com/sripwoud/auberge/pull/657))
+- admit every systemd unit type to the removed-unit fence ([#656](https://github.com/sripwoud/auberge/pull/656))
+- *(uv)* bump to 0.12.6 ([#655](https://github.com/sripwoud/auberge/pull/655))
+- run every declared shell harness and pin the list ([#651](https://github.com/sripwoud/auberge/pull/651))
+- run the baikal python suites in mise and on every pr ([#648](https://github.com/sripwoud/auberge/pull/648))
+
 ## [0.15.16](https://github.com/sripwoud/auberge/compare/v0.15.15...v0.15.16) - 2026-08-24
 
 ### Fixed
