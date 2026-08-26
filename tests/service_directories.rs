@@ -14,151 +14,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
 
-use serde_yaml::{Mapping, Sequence, Value};
+use serde_yaml::Value;
 
-fn roles_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible/roles")
-}
+mod common;
 
-fn playbooks_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible/playbooks")
-}
-
-fn role_dir(role: &str) -> PathBuf {
-    roles_dir().join(role)
-}
-
-fn all_roles() -> Vec<String> {
-    let mut roles: Vec<String> = fs::read_dir(roles_dir())
-        .expect("ansible/roles must exist")
-        .flatten()
-        .filter(|entry| entry.path().is_dir())
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect();
-    roles.sort();
-    roles
-}
-
-fn field<'a>(task: &'a Mapping, key: &str) -> Option<&'a Value> {
-    task.get(Value::from(key))
-}
-
-fn strings(value: Option<&Value>) -> Vec<String> {
-    match value {
-        Some(Value::String(one)) => vec![one.clone()],
-        Some(Value::Sequence(many)) => many
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_string)
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn flatten(tasks: &Sequence, out: &mut Vec<Mapping>) {
-    for task in tasks {
-        let Some(body) = task.as_mapping() else {
-            continue;
-        };
-        let mut nested = false;
-        for section in ["block", "rescue", "always"] {
-            if let Some(inner) = field(body, section).and_then(Value::as_sequence) {
-                flatten(inner, out);
-                nested = true;
-            }
-        }
-        if !nested {
-            out.push(body.clone());
-        }
-    }
-}
-
-/// Every task in the role, across all of its task files. Order and guards are
-/// meaningless here: a directory a role creates conditionally is still a
-/// directory it hands to the service user, and still needs a classification.
-fn every_task(role: &str) -> Vec<Mapping> {
-    let mut files: Vec<PathBuf> = fs::read_dir(role_dir(role).join("tasks"))
-        .map(|entries| {
-            entries
-                .flatten()
-                .map(|entry| entry.path())
-                .filter(|path| path.extension().is_some_and(|ext| ext == "yml"))
-                .collect()
-        })
-        .unwrap_or_default();
-    files.sort();
-    let mut tasks = Vec::new();
-    for file in files {
-        let raw = fs::read_to_string(&file).expect("a listed task file must be readable");
-        let parsed: Sequence = serde_yaml::from_str(&raw)
-            .unwrap_or_else(|e| panic!("{} must parse: {e}", file.display()));
-        flatten(&parsed, &mut tasks);
-    }
-    tasks
-}
-
-fn defaults(role: &str) -> BTreeMap<String, String> {
-    let path = role_dir(role).join("defaults/main.yml");
-    let Ok(raw) = fs::read_to_string(&path) else {
-        return BTreeMap::new();
-    };
-    let parsed: Mapping =
-        serde_yaml::from_str(&raw).unwrap_or_else(|e| panic!("{} must parse: {e}", path.display()));
-    parsed
-        .iter()
-        .filter_map(|(key, value)| {
-            let key = key.as_str()?.to_string();
-            match value {
-                Value::String(text) => Some((key, text.clone())),
-                Value::Number(number) => Some((key, number.to_string())),
-                _ => None,
-            }
-        })
-        .collect()
-}
-
-fn substitute(input: &str, vars: &BTreeMap<String, String>) -> String {
-    let mut out = String::new();
-    let mut rest = input;
-    loop {
-        let Some(open) = rest.find("{{") else {
-            out.push_str(rest);
-            return out;
-        };
-        let Some(offset) = rest[open..].find("}}") else {
-            out.push_str(rest);
-            return out;
-        };
-        let close = open + offset;
-        match vars.get(rest[open + 2..close].trim()) {
-            Some(value) => {
-                out.push_str(&rest[..open]);
-                out.push_str(value);
-            }
-            None => out.push_str(&rest[..close + 2]),
-        }
-        rest = &rest[close + 2..];
-    }
-}
-
-/// `{{ var }}` replaced by the default it names, until the string stops
-/// changing; anything the role's defaults do not state is left standing
-/// verbatim, so it can never silently compare equal to a real path or a real
-/// user (the same argument `install_notifies_restart.rs` makes against
-/// rendering with minijinja).
-fn resolve(raw: &str, vars: &BTreeMap<String, String>) -> String {
-    let mut current = raw.to_string();
-    for _ in 0..10 {
-        let next = substitute(&current, vars);
-        if next == current {
-            return current;
-        }
-        current = next;
-    }
-    panic!("{raw} does not resolve to a fixed point");
-}
+use common::{all_roles, defaults, field, playbooks_dir, resolve, role_dir, role_tasks, strings};
 
 fn unit_name(name: &str) -> String {
     if name.contains('.') {
@@ -182,9 +43,9 @@ struct StrictUnit {
 
 fn strict_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<StrictUnit> {
     let mut units = Vec::new();
-    for task in every_task(role) {
+    for task in role_tasks(role) {
         for module in ["ansible.builtin.template", "ansible.builtin.copy"] {
-            let Some(args) = field(&task, module).and_then(Value::as_mapping) else {
+            let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
                 continue;
             };
             let (Some(dest), Some(src)) = (
@@ -202,7 +63,7 @@ fn strict_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<StrictUnit> 
             {
                 continue;
             }
-            let items = strings(field(&task, "loop"));
+            let items = strings(field(&task.body, "loop"));
             let expansions: Vec<(String, String)> = if items.is_empty() {
                 vec![(dest.to_string(), src.to_string())]
             } else {
@@ -289,8 +150,9 @@ fn created_directories(
     users: &BTreeSet<String>,
 ) -> BTreeSet<String> {
     let mut dirs = BTreeSet::new();
-    for task in every_task(role) {
-        let Some(args) = field(&task, "ansible.builtin.file").and_then(Value::as_mapping) else {
+    for task in role_tasks(role) {
+        let Some(args) = field(&task.body, "ansible.builtin.file").and_then(Value::as_mapping)
+        else {
             continue;
         };
         if field(args, "state").and_then(Value::as_str) != Some("directory") {
@@ -305,8 +167,8 @@ fn created_directories(
         else {
             continue;
         };
-        let mut items = strings(field(&task, "loop"));
-        items.extend(strings(field(&task, "with_items")));
+        let mut items = strings(field(&task.body, "loop"));
+        items.extend(strings(field(&task.body, "with_items")));
         let expansions: Vec<String> = if items.is_empty() {
             vec![path.to_string()]
         } else {
