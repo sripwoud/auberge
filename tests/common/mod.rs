@@ -21,16 +21,19 @@
 //! copy you happen to be reading:
 //!
 //! - [`Plays`] says whether the walk descends into a play's task sections.
-//! - [`role_tasks`] is the narrow domain: one role's `tasks/` directory.
+//! - [`tasks_in`] is the narrowest domain: one file, in run order. What a fence
+//!   reasoning about ordering needs, since order *across* files is not a fact
+//!   the tree states — `install_guards.rs` reads `tasks/main.yml` this way.
+//! - [`role_tasks`] is the middle one: one role's whole `tasks/` directory,
+//!   for membership questions where order is meaningless.
 //! - [`runnable_files`] is the wide one: every file in the repo that can run a
 //!   task, role handlers and playbooks included.
 //!
 //! A fence picks a domain deliberately and says so at the call site. Widening
 //! one is then a visible edit to a fence, which is the point.
 //!
-//! Not yet folded in: `install_guards.rs` and `paperless_quiesce.rs` still
-//! carry a guard-accumulating walk of their own, and `install_guards.rs`'s
-//! `all_roles()` has already lost the `is_dir()` filter every copy here kept.
+//! Not yet folded in: `paperless_quiesce.rs` still carries a guard-accumulating
+//! walk of its own (#658).
 //! `grimmory_role.rs`, `immich_container_dirs.rs` and `probe_after_restart.rs`
 //! define a `flatten` too, but theirs are genuinely different walks — a
 //! hard-stop assert on a block-level `when:`, `include_tasks` resolution — and
