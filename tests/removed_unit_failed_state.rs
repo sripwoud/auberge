@@ -84,7 +84,21 @@ const UNIT_DIRS: &[&str] = &[
     "/lib/systemd/system",
 ];
 
-const UNIT_SUFFIXES: &[&str] = &[".service", ".timer", ".socket", ".path", ".mount"];
+/// systemd's own closed set of unit types, mirrored from
+/// `src/playbook_meta.rs`.
+const UNIT_TYPE_SUFFIXES: &[&str] = &[
+    ".automount",
+    ".device",
+    ".mount",
+    ".path",
+    ".scope",
+    ".service",
+    ".slice",
+    ".socket",
+    ".swap",
+    ".target",
+    ".timer",
+];
 
 fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -216,7 +230,7 @@ fn unit_at<'a>(path: &'a str, file: &str, task: &str) -> Option<&'a str> {
          name that does not resolve; teach this test how to expand it before \
          relying on it"
     );
-    UNIT_SUFFIXES
+    UNIT_TYPE_SUFFIXES
         .iter()
         .any(|suffix| name.ends_with(suffix))
         .then_some(name)
