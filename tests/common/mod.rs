@@ -39,13 +39,15 @@ use serde_yaml::{Mapping, Sequence, Value};
 pub struct Task {
     pub body: Mapping,
     /// Every `when:` clause between the file's top level and this task,
-    /// outermost first, the task's own included. A guard on an enclosing
-    /// `block:` applies to everything inside it — which is how the bichon and
-    /// paperless roles gate their installs — so a fence reasoning about whether
-    /// a task runs on some path has to see the block's guard too. And
-    /// so does a play's own `when:`, under [`Plays::Descend`]. No play in the
-    /// repo carries one today, so that half of the contract is inert; it is
-    /// stated and implemented rather than left for the first one to discover.
+    /// outermost first, the task's own included.
+    ///
+    /// A guard on an enclosing `block:` ANDs into everything inside it — which
+    /// is how the bichon and paperless roles gate their installs — so a fence
+    /// reasoning about whether a task runs on some path has to see the block's
+    /// guard, not just the task's. A play's own `when:` stands over its tasks
+    /// the same way under [`Plays::Descend`]. No play in the repo declares one,
+    /// so that half is inert today; it is implemented rather than left for the
+    /// first one to discover.
     pub guards: Vec<String>,
 }
 
