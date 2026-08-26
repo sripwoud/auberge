@@ -1,10 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
 
-fn ansible_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible")
-}
+mod common;
+
+use common::{playbook_files, role_dir, yml_files};
 
 /// Every key of a handler except `name`, sorted and YAML-serialized, so two
 /// definitions compare equal exactly when they declare the same thing —
@@ -27,10 +26,7 @@ fn definition(handler: &serde_yaml::Mapping) -> String {
 
 /// A role's handlers, as name -> definition.
 fn role_handlers(role: &str) -> BTreeMap<String, String> {
-    let path = ansible_dir()
-        .join("roles")
-        .join(role)
-        .join("handlers/main.yml");
+    let path = role_dir(role).join("handlers/main.yml");
     if !path.exists() {
         return BTreeMap::new();
     }
@@ -54,15 +50,10 @@ fn role_handlers(role: &str) -> BTreeMap<String, String> {
 
 /// Roles a role pulls in with `include_role` — their handlers join the play too.
 fn included_roles(role: &str) -> BTreeSet<String> {
-    let tasks = ansible_dir().join("roles").join(role).join("tasks");
     let mut included = BTreeSet::new();
 
-    for entry in fs::read_dir(&tasks)
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-    {
-        let Ok(content) = fs::read_to_string(entry.path()) else {
+    for file in yml_files(&role_dir(role).join("tasks")) {
+        let Ok(content) = fs::read_to_string(&file) else {
             continue;
         };
         let lines: Vec<&str> = content.lines().collect();
@@ -86,15 +77,8 @@ fn included_roles(role: &str) -> BTreeSet<String> {
 fn plays() -> Vec<(String, BTreeSet<String>)> {
     let mut plays = Vec::new();
 
-    for entry in fs::read_dir(ansible_dir().join("playbooks"))
-        .expect("ansible/playbooks must exist")
-        .filter_map(Result::ok)
-    {
-        let path = entry.path();
+    for path in playbook_files() {
         let name = path.file_name().unwrap().to_string_lossy().to_string();
-        if !name.ends_with(".yml") || name.ends_with(".meta.yml") {
-            continue;
-        }
         let parsed: Vec<serde_yaml::Value> =
             serde_yaml::from_str(&fs::read_to_string(&path).unwrap())
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
