@@ -8,7 +8,7 @@ Accepted, 2026-08-25. **Applies ADR-0028's declared regime to package contents**
 
 `tests/removed_unit_failed_state.rs` computes every site in `ansible/roles` and `ansible/playbooks` that makes a systemd unit disappear, by two routes:
 
-- an `ansible.builtin.file` with `state: absent` whose path is a plain unit file in a directory systemd loads units from — drop-ins excluded, since a `<unit>.service.d/` never matches a unit suffix;
+- an `ansible.builtin.file` with `state: absent` whose path is a plain unit file in a directory systemd loads units from — drop-ins excluded, since a `<unit>.service.d/` never matches a unit suffix. Plain means any of systemd's eleven unit types, not the five the first cut of the scan read: a `.target` or `.slice` removal failed the suffix test and left the domain unseen, with every assertion still green (#653). The set is mirrored from `src/playbook_meta.rs` and fenced against it, so it cannot narrow again in silence;
 - an `ansible.builtin.apt` with `state: absent`, whose packages are resolved to units through `PURGED_PACKAGES`.
 
 Both readers follow the modules' parameter aliases — `path`/`dest`/`name` and `name`/`package`/`pkg` — because ansible accepts all of them and the repo writes unit files under `dest:` everywhere it installs one. Reading only the canonical spelling made a removal written the way the rest of the tree writes it invisible to the scan; that was caught in review, by planting one.
@@ -60,14 +60,14 @@ One unit per invocation, which looks like verbosity and is not. There is no ansi
 
 **Positive:**
 
-- The build now fails on: a unit removed with nothing clearing its state, a purged package `PURGED_PACKAGES` does not classify, a declared package nothing purges, a reset naming more than one unit or a glob, a package name or reset target that does not resolve, and a removal site the reach set does not list or lists and no longer finds. Each failure names the file, the task, the unit, and what to add.
-- Every failure mode above was exercised by mutation before the fence was trusted: six planted defects, six catches, both detection routes among them.
+- The build now fails on: a unit removed with nothing clearing its state, a purged package `PURGED_PACKAGES` does not classify, a declared package nothing purges, a reset naming more than one unit or a glob, a package name or reset target that does not resolve, a removal site the reach set does not list or lists and no longer finds, and a mirrored unit-type set that has drifted from the declaration it copies. Each failure names the file, the task, the unit, and what to add.
+- Every failure mode above was exercised by mutation before the fence was trusted: six planted defects, six catches, both detection routes among them. The drift mode was added the same way — a twelfth type behind a const reference and a twelfth written as a literal, one hard stop and one named diff (#653).
 - `systemctl --failed` on auberge is empty and stays that way through a rebootstrap, rather than only until the next one.
 
 **Negative:**
 
 - Package contents are declared, not measured. `PURGED_PACKAGES` is right as of the versions read; a Debian revision that adds a unit to a package listed as shipping none would make the declaration wrong with nothing to catch it. The defining limit of the declared regime, the same one ADR-0038 records for runtimes.
-- The scan reads literal package names, literal unit file names, and literal `loop:` items. Each of those is a hard stop rather than a silent miss — but only where the model gets far enough to see it. A removal whose _directory_ is var-driven fails the directory test and leaves the domain unseen, the same blind spot ADR-0038 records for units installed somewhere its model does not look. The fleet writes every unit path literally today; the file-name hard stop closes the case that review proved could slip through, and this one is recorded rather than closed.
+- The scan reads literal package names, literal unit file names, and literal `loop:` items. Each of those is a hard stop rather than a silent miss — but only where the model gets far enough to see it. A removal whose _directory_ is var-driven fails the directory test and leaves the domain unseen, the same blind spot ADR-0038 records for units installed somewhere its model does not look. The fleet writes every unit path literally today; the file-name hard stop closes the case that review proved could slip through, and this one is recorded rather than closed. The unit-type suffix was a third instance of the same shape, and the one that had already gone wrong rather than merely being possible; it is closed by reading the whole closed set and fencing the copy against its declaration, leaving the var-driven directory as the open case.
 - The reach set binds to file and unit names, so adding, removing or renaming a removal site fails this test until the list moves with it. Loud and cheap, the trade ADR-0028 already accepted.
 - Nothing here proves the reset _runs_ — only that it is written next to the removal. The rc semantics it depends on were measured on a live latch and on a clean host; the ansible task's own behaviour is not exercised by any test in this repo.
 
@@ -76,4 +76,5 @@ One unit per invocation, which looks like verbosity and is not. There is no ansi
 - Issue #636 — the latched phantom, and the acceptance criterion asking for the same check on every other package the role stops-and-removes.
 - Issue #635 / ADR-0038 — the same false positive reached by a different route, and the audit that turned this one up.
 - ADR-0028 — the declared regime: computed key, per-entry why, equality in both directions.
-- ADR-0035 — the precedent for pinning a computed domain by set equality rather than by count.
+- ADR-0035 — the precedent for pinning a computed domain by set equality rather than by count, which the unit-type fence follows too.
+- Issue #653 — the five suffixes the scan first read, and the fence that keeps the copy honest.

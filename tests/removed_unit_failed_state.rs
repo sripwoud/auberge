@@ -84,10 +84,56 @@ const UNIT_DIRS: &[&str] = &[
     "/lib/systemd/system",
 ];
 
-const UNIT_SUFFIXES: &[&str] = &[".service", ".timer", ".socket", ".path", ".mount"];
+/// systemd's own closed set of unit types, mirrored from
+/// `src/playbook_meta.rs`.
+const UNIT_TYPE_SUFFIXES: &[&str] = &[
+    ".automount",
+    ".device",
+    ".mount",
+    ".path",
+    ".scope",
+    ".service",
+    ".slice",
+    ".socket",
+    ".swap",
+    ".target",
+    ".timer",
+];
 
 fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// The unit types `src/playbook_meta.rs` declares, read off the declaration
+/// itself so the mirror above cannot drift from it.
+fn declared_unit_type_suffixes() -> Vec<String> {
+    let declaration = "pub const UNIT_TYPE_SUFFIXES: &[&str] = &[";
+    let source = fs::read_to_string(repo().join("src/playbook_meta.rs"))
+        .expect("src/playbook_meta.rs must be readable");
+    let body = source
+        .split_once(declaration)
+        .unwrap_or_else(|| panic!("src/playbook_meta.rs must declare `{declaration}`"))
+        .1
+        .split_once("];")
+        .expect("UNIT_TYPE_SUFFIXES must close with `];`")
+        .0;
+    body.split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            entry
+                .strip_prefix('"')
+                .and_then(|entry| entry.strip_suffix('"'))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "src/playbook_meta.rs declares `{entry}` among its unit \
+                         types, which this test cannot read as a string literal; \
+                         teach it how before relying on it"
+                    )
+                })
+                .to_string()
+        })
+        .collect()
 }
 
 fn field<'a>(task: &'a Mapping, key: &str) -> Option<&'a Value> {
@@ -216,7 +262,7 @@ fn unit_at<'a>(path: &'a str, file: &str, task: &str) -> Option<&'a str> {
          name that does not resolve; teach this test how to expand it before \
          relying on it"
     );
-    UNIT_SUFFIXES
+    UNIT_TYPE_SUFFIXES
         .iter()
         .any(|suffix| name.ends_with(suffix))
         .then_some(name)
@@ -480,5 +526,32 @@ fn test_the_scan_still_sees_every_removal_site() {
         Vec::<&String>::new(),
         "this test lists removals the scan no longer finds; either the removal \
          is gone or the scan stopped seeing it - the second is the dangerous one"
+    );
+}
+
+/// Mirror -> declaration. A unit type this file does not know is a removal it
+/// does not see: `unit_at` fails the suffix test, the path leaves the domain
+/// without a word, and the reach-set test above stays green because it pins
+/// only what the scan found. That is how this fence shipped admitting five of
+/// systemd's eleven unit types (#653) - a guard that had quietly stopped
+/// guarding, with a green build saying otherwise.
+#[test]
+fn test_the_mirrored_unit_types_match_the_declaration() {
+    let mirrored: BTreeSet<String> = UNIT_TYPE_SUFFIXES
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    let declared: BTreeSet<String> = declared_unit_type_suffixes().into_iter().collect();
+    assert_eq!(
+        declared.difference(&mirrored).collect::<Vec<_>>(),
+        Vec::<&String>::new(),
+        "src/playbook_meta.rs declares unit types this file does not mirror; \
+         each one is a removal this fence cannot see - copy them across"
+    );
+    assert_eq!(
+        mirrored.difference(&declared).collect::<Vec<_>>(),
+        Vec::<&String>::new(),
+        "this file mirrors unit types src/playbook_meta.rs no longer declares; \
+         the declaration is the closed set, so drop them"
     );
 }
