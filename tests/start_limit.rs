@@ -19,9 +19,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
 
-use serde_yaml::{Mapping, Sequence, Value};
+use serde_yaml::Value;
+
+mod common;
+
+use common::{all_roles, defaults, field, resolve, role_dir, role_tasks, strings};
 
 /// What systemd does with a unit that cannot start.
 enum Limiter {
@@ -135,141 +138,6 @@ const RESTART_VALUES: &[&str] = &[
 
 /// systemd's own default when a unit sets `Restart=` and no `RestartSec=`.
 const DEFAULT_RESTART_SEC_MS: u64 = 100;
-
-fn roles_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible/roles")
-}
-
-fn role_dir(role: &str) -> PathBuf {
-    roles_dir().join(role)
-}
-
-fn all_roles() -> Vec<String> {
-    let mut roles: Vec<String> = fs::read_dir(roles_dir())
-        .expect("ansible/roles must exist")
-        .flatten()
-        .filter(|entry| entry.path().is_dir())
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect();
-    roles.sort();
-    roles
-}
-
-fn field<'a>(task: &'a Mapping, key: &str) -> Option<&'a Value> {
-    task.get(Value::from(key))
-}
-
-fn strings(value: Option<&Value>) -> Vec<String> {
-    match value {
-        Some(Value::String(one)) => vec![one.clone()],
-        Some(Value::Sequence(many)) => many
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_string)
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn flatten(tasks: &Sequence, out: &mut Vec<Mapping>) {
-    for task in tasks {
-        let Some(body) = task.as_mapping() else {
-            continue;
-        };
-        let mut nested = false;
-        for section in ["block", "rescue", "always"] {
-            if let Some(inner) = field(body, section).and_then(Value::as_sequence) {
-                flatten(inner, out);
-                nested = true;
-            }
-        }
-        if !nested {
-            out.push(body.clone());
-        }
-    }
-}
-
-/// Every task in the role, across all of its task files. A unit installed under
-/// a guard is still a unit whose starts systemd counts.
-fn every_task(role: &str) -> Vec<Mapping> {
-    let mut files: Vec<PathBuf> = fs::read_dir(role_dir(role).join("tasks"))
-        .map(|entries| {
-            entries
-                .flatten()
-                .map(|entry| entry.path())
-                .filter(|path| path.extension().is_some_and(|ext| ext == "yml"))
-                .collect()
-        })
-        .unwrap_or_default();
-    files.sort();
-    let mut tasks = Vec::new();
-    for file in files {
-        let raw = fs::read_to_string(&file).expect("a listed task file must be readable");
-        let parsed: Sequence = serde_yaml::from_str(&raw)
-            .unwrap_or_else(|e| panic!("{} must parse: {e}", file.display()));
-        flatten(&parsed, &mut tasks);
-    }
-    tasks
-}
-
-fn defaults(role: &str) -> BTreeMap<String, String> {
-    let path = role_dir(role).join("defaults/main.yml");
-    let Ok(raw) = fs::read_to_string(&path) else {
-        return BTreeMap::new();
-    };
-    let parsed: Mapping =
-        serde_yaml::from_str(&raw).unwrap_or_else(|e| panic!("{} must parse: {e}", path.display()));
-    parsed
-        .iter()
-        .filter_map(|(key, value)| {
-            let key = key.as_str()?.to_string();
-            match value {
-                Value::String(text) => Some((key, text.clone())),
-                Value::Number(number) => Some((key, number.to_string())),
-                _ => None,
-            }
-        })
-        .collect()
-}
-
-fn substitute(input: &str, vars: &BTreeMap<String, String>) -> String {
-    let mut out = String::new();
-    let mut rest = input;
-    loop {
-        let Some(open) = rest.find("{{") else {
-            out.push_str(rest);
-            return out;
-        };
-        let Some(offset) = rest[open..].find("}}") else {
-            out.push_str(rest);
-            return out;
-        };
-        let close = open + offset;
-        match vars.get(rest[open + 2..close].trim()) {
-            Some(value) => {
-                out.push_str(&rest[..open]);
-                out.push_str(value);
-            }
-            None => out.push_str(&rest[..close + 2]),
-        }
-        rest = &rest[close + 2..];
-    }
-}
-
-/// `{{ var }}` replaced by the default it names, until the string stops
-/// changing; anything the role's defaults do not state is left standing
-/// verbatim.
-fn resolve(raw: &str, vars: &BTreeMap<String, String>) -> String {
-    let mut current = raw.to_string();
-    for _ in 0..10 {
-        let next = substitute(&current, vars);
-        if next == current {
-            return current;
-        }
-        current = next;
-    }
-    panic!("{raw} does not resolve to a fixed point");
-}
 
 /// What a `dest` configures, if anything this model reads: the unit it is or the
 /// unit it refines. Drop-ins are in the domain here, unlike in ADR-0038's scan,
@@ -469,9 +337,9 @@ struct InstalledFile {
 /// Every unit file and drop-in the role installs.
 fn installed_by(role: &str, vars: &BTreeMap<String, String>) -> Vec<InstalledFile> {
     let mut out = Vec::new();
-    for task in every_task(role) {
+    for task in role_tasks(role) {
         for module in ["ansible.builtin.template", "ansible.builtin.copy"] {
-            let Some(args) = field(&task, module).and_then(Value::as_mapping) else {
+            let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
                 continue;
             };
             let dest = field(args, "dest").and_then(Value::as_str);
@@ -492,7 +360,7 @@ fn installed_by(role: &str, vars: &BTreeMap<String, String>) -> Vec<InstalledFil
             let Some(dest) = dest else {
                 continue;
             };
-            let items = strings(field(&task, "loop"));
+            let items = strings(field(&task.body, "loop"));
             let expansions: Vec<(String, String)> = if items.is_empty() {
                 vec![(dest.to_string(), src.to_string())]
             } else {

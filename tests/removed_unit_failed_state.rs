@@ -22,9 +22,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
 
-use serde_yaml::{Mapping, Sequence, Value};
+use serde_yaml::{Mapping, Value};
+
+mod common;
+
+use common::{Plays, field, relative, repo, runnable_files, strings, tasks_in};
 
 /// A package the fleet purges, and the units it installs.
 ///
@@ -100,10 +103,6 @@ const UNIT_TYPE_SUFFIXES: &[&str] = &[
     ".timer",
 ];
 
-fn repo() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
 /// The unit types `src/playbook_meta.rs` declares, read off the declaration
 /// itself so the mirror above cannot drift from it.
 fn declared_unit_type_suffixes() -> Vec<String> {
@@ -134,103 +133,6 @@ fn declared_unit_type_suffixes() -> Vec<String> {
                 .to_string()
         })
         .collect()
-}
-
-fn field<'a>(task: &'a Mapping, key: &str) -> Option<&'a Value> {
-    task.get(Value::from(key))
-}
-
-fn strings(value: Option<&Value>) -> Vec<String> {
-    match value {
-        Some(Value::String(one)) => vec![one.clone()],
-        Some(Value::Sequence(many)) => many
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_string)
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-/// Flattens a task sequence, descending through `block`/`rescue`/`always` and
-/// through a play's task sections. A removal under a guard is still a removal.
-fn collect(seq: &Sequence, out: &mut Vec<Mapping>) {
-    for item in seq {
-        let Some(body) = item.as_mapping() else {
-            continue;
-        };
-        if field(body, "hosts").is_some() {
-            for section in ["pre_tasks", "tasks", "post_tasks", "handlers"] {
-                if let Some(inner) = field(body, section).and_then(Value::as_sequence) {
-                    collect(inner, out);
-                }
-            }
-            continue;
-        }
-        let mut nested = false;
-        for section in ["block", "rescue", "always"] {
-            if let Some(inner) = field(body, section).and_then(Value::as_sequence) {
-                collect(inner, out);
-                nested = true;
-            }
-        }
-        if !nested {
-            out.push(body.clone());
-        }
-    }
-}
-
-fn yml_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            yml_files(&path, out);
-        } else if path.extension().is_some_and(|ext| ext == "yml") {
-            out.push(path);
-        }
-    }
-}
-
-/// Every file that can run a task: role tasks and handlers, and the playbooks
-/// themselves. `.meta.yml` files carry the CLI's own metadata, not tasks.
-fn task_files() -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    for role in fs::read_dir(repo().join("ansible/roles"))
-        .expect("ansible/roles must exist")
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-    {
-        yml_files(&role.join("tasks"), &mut files);
-        yml_files(&role.join("handlers"), &mut files);
-    }
-    yml_files(&repo().join("ansible/playbooks"), &mut files);
-    files.retain(|path| {
-        !path
-            .file_name()
-            .is_some_and(|name| name.to_string_lossy().ends_with(".meta.yml"))
-    });
-    files.sort();
-    files
-}
-
-fn relative(path: &Path) -> String {
-    path.strip_prefix(repo())
-        .unwrap_or(path)
-        .display()
-        .to_string()
-}
-
-fn tasks_in(path: &Path) -> Vec<Mapping> {
-    let raw = fs::read_to_string(path).expect("a listed task file must be readable");
-    let parsed: Sequence =
-        serde_yaml::from_str(&raw).unwrap_or_else(|e| panic!("{} must parse: {e}", relative(path)));
-    let mut tasks = Vec::new();
-    collect(&parsed, &mut tasks);
-    tasks
 }
 
 fn task_name(task: &Mapping) -> String {
@@ -375,10 +277,13 @@ fn scan() -> Scan {
     let mut removals = Vec::new();
     let mut resets = Vec::new();
     let mut purged = BTreeSet::new();
-    for path in task_files() {
+    for path in runnable_files() {
         let file = relative(&path);
-        for task in tasks_in(&path) {
-            for package in packages_purged(&task, &file) {
+        // Plays::Descend, because the radicale removal this fence exists for
+        // lives in a playbook: 19 tasks inside one play, none of them reachable
+        // without descending into it.
+        for task in tasks_in(&path, Plays::Descend) {
+            for package in packages_purged(&task.body, &file) {
                 purged.insert(package.clone());
                 let Some(declared) = declared_for(&package) else {
                     panic!(
@@ -386,27 +291,27 @@ fn scan() -> Scan {
                          not classify. Read the units it ships off the package \
                          (`dpkg -c`) and add an entry - an unclassified purge is a \
                          unit that may latch `failed` with nobody watching",
-                        task_name(&task)
+                        task_name(&task.body)
                     );
                 };
                 for unit in declared.units {
                     removals.push(Removal {
                         file: file.clone(),
-                        task: task_name(&task),
+                        task: task_name(&task.body),
                         unit: (*unit).to_string(),
                         why: format!("the `{package}` package it purges {}", declared.why),
                     });
                 }
             }
-            for unit in unit_files_removed(&task, &file) {
+            for unit in unit_files_removed(&task.body, &file) {
                 removals.push(Removal {
                     file: file.clone(),
-                    task: task_name(&task),
+                    task: task_name(&task.body),
                     why: format!("it deletes `{unit}`'s unit file"),
                     unit,
                 });
             }
-            if let Some(reset) = reset_in(&task, &file) {
+            if let Some(reset) = reset_in(&task.body, &file) {
                 resets.push(reset);
             }
         }
