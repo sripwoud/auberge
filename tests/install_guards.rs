@@ -100,6 +100,9 @@ const MARKER_ROLES: &[MarkerRole] = &[
 /// role must have a ansible.builtin.get_url task"), which is the failure this
 /// fence can survive.
 ///
+/// `Plays::AsTasks` because a role's task file holds no play for the flag to
+/// descend into.
+///
 /// The two domains differ on exactly one role today: `ssh` is the only one with
 /// a second task file, and it is not a marker role.
 fn ordered_tasks(role: &str) -> Vec<Task> {

@@ -32,11 +32,18 @@
 //! A fence picks a domain deliberately and says so at the call site. Widening
 //! one is then a visible edit to a fence, which is the point.
 //!
-//! Every fence that walks the tree now reads it through here (#654, #658).
-//! `grimmory_role.rs`, `immich_container_dirs.rs` and `probe_after_restart.rs`
-//! define a `flatten` too, but theirs are genuinely different walks — a
-//! hard-stop assert on a block-level `when:`, `include_tasks` resolution — and
-//! belong where they are.
+//! Every fence that carried a copy of *this* walk now reads it through here
+//! (#654, #658). `grimmory_role.rs`, `immich_container_dirs.rs` and
+//! `probe_after_restart.rs` define a `flatten` too, but theirs are genuinely
+//! different walks — a hard-stop assert on a block-level `when:`,
+//! `include_tasks` resolution — and belong where they are.
+//!
+//! What this module does *not* yet answer for everyone: `ingress_gate.rs` and
+//! `version_annotations.rs` enumerate `ansible/roles/` with their own
+//! `read_dir` and neither carries the `is_dir()` filter [`all_roles`] does, so
+//! the divergence #658 removed from `install_guards.rs` survives in files it
+//! did not reach (#659). Stating it here rather than leaving the omission to
+//! read as coverage.
 
 // Each of the fences below imports a different subset, so every one of them
 // sees the rest as dead. The cost of the blanket allow: a helper that no fence
@@ -144,6 +151,19 @@ pub fn strings(value: Option<&Value>) -> Vec<String> {
             .collect(),
         _ => Vec::new(),
     }
+}
+
+/// A task's `name:`, or `<unnamed>` for one that declares none — what a failure
+/// message needs to point a reader at the task that failed it.
+///
+/// Borrowed rather than owned so the caller decides: `paperless_quiesce.rs`
+/// compares a list of names against a declared one and wants `&str`. Four
+/// fences still carry their own copy, already drifted across two names and two
+/// parameter types (#659).
+pub fn task_name(task: &Mapping) -> &str {
+    field(task, "name")
+        .and_then(Value::as_str)
+        .unwrap_or("<unnamed>")
 }
 
 /// Flattens a task sequence to the tasks that actually call a module.

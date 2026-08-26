@@ -2,7 +2,7 @@ use serde_yaml::Value;
 
 mod common;
 
-use common::{Plays, Task, field, role_dir, strings, tasks_in};
+use common::{Plays, Task, field, role_dir, strings, task_name, tasks_in};
 
 /// paperless installs by deleting the tree its four units exec and unpacking
 /// another one over it, then migrating the database with the new code. Nothing a
@@ -77,12 +77,6 @@ fn tasks() -> Vec<Task> {
         &role_dir("paperless").join("tasks/main.yml"),
         Plays::AsTasks,
     )
-}
-
-fn name_of(task: &Task) -> &str {
-    field(&task.body, "name")
-        .and_then(Value::as_str)
-        .unwrap_or("<unnamed>")
 }
 
 /// The index of the one task driving all four units to `state`, and the guards
@@ -182,9 +176,9 @@ fn test_every_destructive_task_runs_inside_the_window() {
                  it must sit between the stop and the start. Ordered outside them, the four \
                  workers execute pre-bump code across it -- and a `manage.py migrate` outside \
                  them hands those workers a schema their code does not know (#604)",
-                name_of(task)
+                task_name(&task.body)
             );
-            name_of(task)
+            task_name(&task.body)
         })
         .collect();
     assert_eq!(
