@@ -354,10 +354,11 @@ fn test_the_playbook_walk_excludes_the_meta_sidecars_beside_them() {
     let plays = playbook_files();
     let every = yml_files(&common::playbooks_dir());
 
-    assert!(!plays.is_empty(), "no playbook is in the playbook domain");
+    // Non-emptiness is `playbook_files`'s own hard stop, so there is nothing
+    // left to assert about it here.
     assert!(
         every.len() > plays.len(),
-        "`.meta.yml` sidecars sit beside the playbooks, so excluding them must          drop something; {} files, {} playbooks",
+        "`.meta.yml` sidecars sit beside the playbooks, so excluding them has to drop something; {} files, {} playbooks",
         every.len(),
         plays.len()
     );

@@ -47,11 +47,13 @@
 //! different walks — a hard-stop assert on a block-level `when:`,
 //! `include_tasks` resolution — and belong where they are.
 //!
-//! Three more fences enumerated the tree with a `read_dir` of their own, and
-//! two of them had lost [`all_roles`]'s `is_dir()` filter — the same divergence
-//! #658 removed from `install_guards.rs`, surviving in the files it did not
-//! reach. They read the tree through here now, so the filter has one definition
-//! again (#659).
+//! Four more fences enumerated the tree with a `read_dir` of their own, two of
+//! them without [`all_roles`]'s `is_dir()` filter — the same divergence #658
+//! removed from `install_guards.rs`, surviving in files it did not reach. All
+//! four read the tree through here now, so the filter has one definition again
+//! (#659). What is left of that shape is named where it survives:
+//! [`playbook_files`] on the `.meta.yml` half of the playbooks directory, and
+//! [`task_name`] on the one accessor that is not a copy of the others.
 
 // Each of the fences below imports a different subset, so every one of them
 // sees the rest as dead. The cost of the blanket allow: a helper that no fence
@@ -169,6 +171,12 @@ pub fn strings(value: Option<&Value>) -> Vec<String> {
 /// fences that store a name in a struct call `.to_string()` at that one site.
 /// The five copies this replaced had already drifted across two names and two
 /// return types with nothing naming the difference (#659).
+///
+/// `immich_container_dirs.rs` is the sixth and is deliberately not one of them.
+/// It reads the name through a local `string_at` path accessor and falls back
+/// to a third spelling again, `<unnamed task>`, so folding it is a decision
+/// about that file's accessor rather than the mechanical move the other four
+/// were. Named here so its absence does not read as coverage.
 pub fn task_name(task: &Mapping) -> &str {
     field(task, "name")
         .and_then(Value::as_str)
@@ -267,9 +275,9 @@ fn collect_yml(dir: &Path, out: &mut Vec<PathBuf>) {
 ///
 /// A directory that does not exist yields nothing rather than failing: most
 /// roles have no `handlers/`, and "which files can I read here?" has an honest
-/// empty answer. Every caller pairs it with a domain assertion that would fail
-/// on an empty result where one is not expected — which is what keeps the
-/// tolerance from reading as a swallowed error.
+/// empty answer there. Where an empty answer would instead mean the tree moved
+/// under the fence, saying so is the caller's job — [`playbook_files`] is the
+/// one that has to, and does.
 pub fn yml_files(dir: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     collect_yml(dir, &mut found);
@@ -281,10 +289,23 @@ pub fn yml_files(dir: &Path) -> Vec<PathBuf> {
 ///
 /// A Playbook Meta carries the CLI's own metadata — an App's version, its
 /// units, its backup order — and runs nothing, so a fence reading plays or
-/// tasks must not see it. `version_annotations.rs` wants the other half of this
-/// directory and enumerates the metas itself; it is the only fence that does.
+/// tasks must not see it. Three fences want the other half of this directory
+/// and each enumerates the metas itself (`version_annotations.rs`,
+/// `unit_ownership.rs`, `service_directories.rs`); that is the next leftover,
+/// not this one.
+///
+/// Empty is a hard stop, and it is the reason this is not just a `yml_files`
+/// call at each site. Every caller loops over the result, so a directory that
+/// moved would leave each of them iterating nothing and passing — the two that
+/// now read the tree through here used to spell that guard themselves, as
+/// `.expect("ansible/playbooks must exist")`, and would have lost it.
 pub fn playbook_files() -> Vec<PathBuf> {
     let mut files = yml_files(&playbooks_dir());
+    assert!(
+        !files.is_empty(),
+        "{} holds no .yml at all; every fence over plays reads this domain",
+        relative(&playbooks_dir())
+    );
     files.retain(|path| {
         !path
             .file_name()

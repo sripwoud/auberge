@@ -156,3 +156,55 @@ fn test_handlers_shared_within_a_play_declare_the_same_thing() {
 
     assert!(violations.is_empty(), "{}", violations.join("\n"));
 }
+
+/// What the fence above cannot say for itself.
+///
+/// It reports a violation only where two roles loaded by one play define the
+/// same handler name and disagree about it. `violations.is_empty()` is exactly
+/// as true of a scan that reached no play, no role, or no handler — so the
+/// assertion carries no weight until something states that the walk arrives
+/// somewhere. This is that statement, and it is why `included_roles` may read
+/// the tree through the shared walk at all: widening a walk under a fence with
+/// no floor widens nothing anybody would notice.
+#[test]
+fn test_the_scan_reaches_plays_handlers_and_a_name_two_roles_share() {
+    let plays = plays();
+    assert!(
+        !plays.is_empty(),
+        "no play came back from ansible/playbooks"
+    );
+
+    let definitions: usize = plays
+        .iter()
+        .flat_map(|(_, roles)| roles)
+        .map(|role| role_handlers(role).len())
+        .sum();
+    assert!(
+        definitions > 0,
+        "the plays load roles, and not one of them yielded a handler"
+    );
+
+    let shared = plays
+        .iter()
+        .filter(|(_, roles)| {
+            let mut by_name: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+            for role in roles {
+                for name in role_handlers(role).into_keys() {
+                    by_name.entry(name).or_default().insert(role.clone());
+                }
+            }
+            by_name.values().any(|roles| roles.len() > 1)
+        })
+        .count();
+    assert!(
+        shared > 0,
+        "no play loads two roles that define the same handler name, so the \
+         comparison this file exists to make never runs"
+    );
+
+    assert!(
+        included_roles("baikal").contains("dns_record"),
+        "baikal pulls in `dns_record` with `include_role`, whose handlers join \
+         the same play; the transitive half of the scan stopped seeing it"
+    );
+}
