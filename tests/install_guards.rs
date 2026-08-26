@@ -1,8 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
 
-use serde_yaml::{Mapping, Sequence, Value};
+use serde_yaml::{Mapping, Value};
+
+mod common;
+
+use common::{Plays, Task, all_roles, role_dir, tasks_in};
 
 /// A role that records what it installed in a sidecar `version` file it writes
 /// itself. The marker is a note about the past, so on its own it cannot answer
@@ -84,62 +87,26 @@ const MARKER_ROLES: &[MarkerRole] = &[
     },
 ];
 
-fn role_dir(role: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("ansible/roles")
-        .join(role)
-}
-
-/// One task with the guards it actually runs under: a `when` on an enclosing
-/// block ANDs into every task inside it, which is how `bichon` and `paperless`
-/// gate their installs.
-struct Task {
-    body: Mapping,
-    guards: Vec<String>,
-}
-
-fn whens(task: &Mapping) -> Vec<String> {
-    match task.get(Value::from("when")) {
-        Some(Value::String(one)) => vec![one.clone()],
-        Some(Value::Sequence(all)) => all
-            .iter()
-            .filter_map(|item| item.as_str().map(str::to_string))
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn flatten(tasks: &Sequence, inherited: &[String], out: &mut Vec<Task>) {
-    for task in tasks {
-        let Some(body) = task.as_mapping() else {
-            continue;
-        };
-        let mut scoped = inherited.to_vec();
-        scoped.extend(whens(body));
-        let mut nested = false;
-        for section in ["block", "rescue", "always"] {
-            if let Some(inner) = body.get(Value::from(section)).and_then(Value::as_sequence) {
-                flatten(inner, &scoped, out);
-                nested = true;
-            }
-        }
-        if !nested {
-            out.push(Task {
-                body: body.clone(),
-                guards: scoped,
-            });
-        }
-    }
-}
-
-fn role_tasks(role: &str) -> Vec<Task> {
-    let raw = fs::read_to_string(role_dir(role).join("tasks/main.yml"))
-        .unwrap_or_else(|_| panic!("{role} tasks"));
-    let parsed: Sequence =
-        serde_yaml::from_str(&raw).unwrap_or_else(|e| panic!("{role} tasks must parse: {e}"));
-    let mut tasks = Vec::new();
-    flatten(&parsed, &[], &mut tasks);
-    tasks
+/// One role's `tasks/main.yml`, in the order ansible runs it.
+///
+/// Deliberately narrower than [`common::role_tasks`], which reads every file in
+/// the role's `tasks/` directory. `install_guard` below reasons about *order* --
+/// the fact must be set before the download it gates, and the two stats it
+/// consults must precede the fact -- and order across files is not something the
+/// tree states. The wide walk concatenates files alphabetically, so a role that
+/// moved half its install behind an `include_tasks` would be spliced back
+/// together in filename order and reasoned about as if that were the run order.
+/// Reading the one file makes the same split a loud panic instead ("the {role}
+/// role must have a ansible.builtin.get_url task"), which is the failure this
+/// fence can survive.
+///
+/// `Plays::AsTasks` because a role's task file holds no play for the flag to
+/// descend into.
+///
+/// The two domains differ on exactly one role today: `ssh` is the only one with
+/// a second task file, and it is not a marker role.
+fn ordered_tasks(role: &str) -> Vec<Task> {
+    tasks_in(&role_dir(role).join("tasks/main.yml"), Plays::AsTasks)
 }
 
 fn string_at(task: &Mapping, path: &[&str]) -> Option<String> {
@@ -186,7 +153,7 @@ struct InstallGuard {
 
 fn install_guard(spec: &MarkerRole) -> InstallGuard {
     let role = spec.role;
-    let tasks = role_tasks(role);
+    let tasks = ordered_tasks(role);
     let fact_key = format!("{role}_installed_version");
 
     let mut facts = tasks.iter().enumerate().filter(|(_, task)| {
@@ -529,40 +496,6 @@ fn test_the_artifact_path_has_one_definition() {
     }
 }
 
-fn all_roles() -> Vec<String> {
-    let mut roles: Vec<String> =
-        fs::read_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible/roles"))
-            .expect("ansible/roles must exist")
-            .flatten()
-            .filter_map(|entry| entry.file_name().into_string().ok())
-            .collect();
-    roles.sort();
-    roles
-}
-
-/// Every task in the role, across all of its task files. Order is meaningless
-/// here, so this is for membership questions only.
-fn every_task(role: &str) -> Vec<Task> {
-    let mut files: Vec<PathBuf> = fs::read_dir(role_dir(role).join("tasks"))
-        .map(|entries| {
-            entries
-                .flatten()
-                .map(|entry| entry.path())
-                .filter(|path| path.extension().is_some_and(|ext| ext == "yml"))
-                .collect()
-        })
-        .unwrap_or_default();
-    files.sort();
-    let mut tasks = Vec::new();
-    for file in files {
-        let raw = fs::read_to_string(&file).expect("a listed task file must be readable");
-        let parsed: Sequence = serde_yaml::from_str(&raw)
-            .unwrap_or_else(|e| panic!("{} must parse: {e}", file.display()));
-        flatten(&parsed, &[], &mut tasks);
-    }
-    tasks
-}
-
 /// Paths whose contents the role authors: a `copy` rendering inline `content:`,
 /// or a `template`. A `copy` from a `src:` carries bytes from somewhere else, so
 /// its destination is an artifact, not a note -- which is what separates
@@ -600,7 +533,10 @@ struct MarkerFact {
 fn marker_facts() -> Vec<MarkerFact> {
     let mut facts = Vec::new();
     for role in all_roles() {
-        let tasks = every_task(&role);
+        // The wide domain, unlike `ordered_tasks` above: this asks which tasks
+        // a role has, not what runs when, so a version fact set in a file
+        // `main.yml` merely includes is still a fact the role sets.
+        let tasks = common::role_tasks(&role);
         let authored = authored_paths(&tasks);
 
         let notes: BTreeMap<String, String> = tasks
