@@ -545,8 +545,55 @@ struct SkippedRow {
     reason: String,
 }
 
+/// What the run did with its plan. The one field an ADR-0004 consumer can
+/// branch on without reading stderr: `created` is empty on a dry run, a
+/// cancelled run, and an all-failed run alike, so emptiness decides nothing.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum RunOutcome {
+    Applied,
+    DryRun,
+    Cancelled,
+}
+
+/// The outcome an empty plan reports. Nothing runs and nothing is confirmed,
+/// so the only distinction left is whether the operator asked for a preview:
+/// `cancelled` is unreachable here because there is nothing to proceed with.
+fn empty_plan_outcome(dry_run: bool) -> RunOutcome {
+    if dry_run {
+        RunOutcome::DryRun
+    } else {
+        RunOutcome::Applied
+    }
+}
+
+#[derive(Serialize)]
+struct PlannedRow {
+    app: String,
+    subdomain: String,
+    fqdn: String,
+    ip: String,
+}
+
+impl PlannedRow {
+    fn from(planned: &PlannedRecord) -> Self {
+        Self {
+            app: planned.app.clone(),
+            subdomain: planned.subdomain.clone(),
+            fqdn: planned.fqdn.clone(),
+            ip: planned.ip.clone(),
+        }
+    }
+}
+
+/// `planned` holds the full plan on every outcome — the denominator the other
+/// arrays are read against. On an applied run `created` and `failed` partition
+/// it; on a dry run or a cancelled run it is the primary data, and the records
+/// it holds appear nowhere else because nothing was attempted.
 #[derive(Serialize)]
 struct SetAllOutput {
+    outcome: RunOutcome,
+    planned: Vec<PlannedRow>,
     created: Vec<SetAllRow>,
     skipped: Vec<SkippedRow>,
     failed: Vec<SetAllRow>,
@@ -589,9 +636,21 @@ impl SetAllRow {
     }
 }
 
-fn set_all_json(plan: &SetAllPlan, outcome: &SetAllOutcome) -> SetAllOutput {
+/// The one stdout write `--output json` makes, whichever path the run ends on
+/// (ADR-0044).
+fn print_set_all_body(plan: &SetAllPlan, applied: &SetAllOutcome, run: RunOutcome) -> Result<()> {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&set_all_json(plan, applied, run))?
+    );
+    Ok(())
+}
+
+fn set_all_json(plan: &SetAllPlan, applied: &SetAllOutcome, run: RunOutcome) -> SetAllOutput {
     SetAllOutput {
-        created: outcome.created.iter().map(SetAllRow::from).collect(),
+        outcome: run,
+        planned: plan.to_create.iter().map(PlannedRow::from).collect(),
+        created: applied.created.iter().map(SetAllRow::from).collect(),
         skipped: plan
             .skipped
             .iter()
@@ -601,11 +660,11 @@ fn set_all_json(plan: &SetAllPlan, outcome: &SetAllOutcome) -> SetAllOutput {
                 reason: s.reason.as_str().to_string(),
             })
             .collect(),
-        failed: outcome
+        failed: applied
             .failed
             .iter()
             .map(SetAllRow::from)
-            .chain(outcome.not_attempted.iter().map(SetAllRow::not_attempted))
+            .chain(applied.not_attempted.iter().map(SetAllRow::not_attempted))
             .collect(),
     }
 }
@@ -782,11 +841,11 @@ async fn set_all<D: DnsRecords>(
                 "All discovered apps are tailnet-only; nothing to create."
             });
         } else {
-            let empty = SetAllOutcome::default();
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&set_all_json(&plan, &empty))?
-            );
+            print_set_all_body(
+                &plan,
+                &SetAllOutcome::default(),
+                empty_plan_outcome(dry_run),
+            )?;
         }
         return Ok(SetAllOutcome::default());
     }
@@ -799,6 +858,8 @@ async fn set_all<D: DnsRecords>(
     if dry_run {
         if human {
             output::info("DRY RUN - No changes were made");
+        } else {
+            print_set_all_body(&plan, &SetAllOutcome::default(), RunOutcome::DryRun)?;
         }
         return Ok(SetAllOutcome::default());
     }
@@ -806,6 +867,8 @@ async fn set_all<D: DnsRecords>(
     if !crate::prompt::confirm("Proceed?", yes) {
         if human {
             output::info("Operation cancelled");
+        } else {
+            print_set_all_body(&plan, &SetAllOutcome::default(), RunOutcome::Cancelled)?;
         }
         return Ok(SetAllOutcome::default());
     }
@@ -827,10 +890,7 @@ async fn set_all<D: DnsRecords>(
     if human {
         print_summary(&plan, &outcome, &target_ip);
     } else {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&set_all_json(&plan, &outcome))?
-        );
+        print_set_all_body(&plan, &outcome, RunOutcome::Applied)?;
     }
 
     Ok(outcome)
@@ -966,7 +1026,8 @@ mod tests {
             failed: vec![],
             not_attempted: vec![],
         };
-        let json = serde_json::to_string(&set_all_json(&plan, &outcome)).unwrap();
+        let json =
+            serde_json::to_string(&set_all_json(&plan, &outcome, RunOutcome::Applied)).unwrap();
         assert!(json.contains("\"created\":[{"));
         assert!(json.contains("\"skipped\":[{"));
         assert!(json.contains("\"failed\":[]"));
@@ -978,7 +1039,12 @@ mod tests {
     #[test]
     fn set_all_output_all_tailnet_only_produces_empty_created_and_failed() {
         let plan = plan_with(&[], &["bichon", "paperless"]);
-        let json = serde_json::to_string(&set_all_json(&plan, &SetAllOutcome::default())).unwrap();
+        let json = serde_json::to_string(&set_all_json(
+            &plan,
+            &SetAllOutcome::default(),
+            RunOutcome::Applied,
+        ))
+        .unwrap();
         assert!(json.contains("\"created\":[]"));
         assert!(json.contains("\"failed\":[]"));
         assert!(json.contains("\"bichon\""));
@@ -995,7 +1061,8 @@ mod tests {
             failed: vec![applied("rss", Some("cloudflare rejected rss"))],
             not_attempted: vec![],
         };
-        let json = serde_json::to_string(&set_all_json(&plan, &outcome)).unwrap();
+        let json =
+            serde_json::to_string(&set_all_json(&plan, &outcome, RunOutcome::Applied)).unwrap();
         assert!(json.contains("\"created\":[]"));
         assert!(json.contains("\"error\":\"cloudflare rejected rss\""));
     }
@@ -1011,7 +1078,7 @@ mod tests {
             failed: vec![applied("baikal", Some("cloudflare rejected baikal"))],
             not_attempted: plan.to_create[1..].to_vec(),
         };
-        let body = set_all_json(&plan, &outcome);
+        let body = set_all_json(&plan, &outcome, RunOutcome::Applied);
 
         let named: Vec<&str> = body
             .created
@@ -1031,6 +1098,75 @@ mod tests {
             Some("cloudflare rejected baikal"),
             "the real failure keeps the provider's own message"
         );
+    }
+
+    // A dry run's primary data is the plan. It reaches stdout under `planned`
+    // with the effective fqdn and IP per record, and `created` never holds a
+    // record that was not created.
+    #[test]
+    fn set_all_output_dry_run_puts_the_plan_under_planned() {
+        let plan = plan_with(&["baikal", "rss"], &["bichon"]);
+        let json = serde_json::to_string(&set_all_json(
+            &plan,
+            &SetAllOutcome::default(),
+            RunOutcome::DryRun,
+        ))
+        .unwrap();
+        assert!(json.contains("\"outcome\":\"dry_run\""));
+        assert!(json.contains("\"planned\":[{"));
+        assert!(json.contains("\"app\":\"baikal\""));
+        assert!(json.contains("\"fqdn\":\"baikal.example.com\""));
+        assert!(json.contains("\"ip\":\"1.2.3.4\""));
+        assert!(json.contains("\"created\":[]"));
+        assert!(json.contains("\"failed\":[]"));
+        assert!(json.contains("\"reason\":\"tailnet_only\""));
+    }
+
+    // An empty plan short-circuits before the prompt, so its body can only
+    // report a preview or a vacuous apply — and must not label the preview
+    // `applied`, which would claim a run the operator asked not to have.
+    #[test]
+    fn empty_plan_outcome_reports_the_preview_and_nothing_else() {
+        assert_eq!(empty_plan_outcome(true), RunOutcome::DryRun);
+        assert_eq!(empty_plan_outcome(false), RunOutcome::Applied);
+    }
+
+    // A declined `Proceed?` is what a non-TTY consumer without `--yes` hits:
+    // confirm() refuses off-terminal. The body must say so — before this,
+    // that path was empty stdout + exit 0, indistinguishable from a run with
+    // nothing to do.
+    #[test]
+    fn set_all_output_cancelled_run_says_so_and_keeps_the_plan() {
+        let plan = plan_with(&["rss"], &[]);
+        let json = serde_json::to_string(&set_all_json(
+            &plan,
+            &SetAllOutcome::default(),
+            RunOutcome::Cancelled,
+        ))
+        .unwrap();
+        assert!(json.contains("\"outcome\":\"cancelled\""));
+        assert!(json.contains("\"planned\":[{"));
+        assert!(json.contains("\"fqdn\":\"rss.example.com\""));
+        assert!(json.contains("\"created\":[]"));
+        assert!(json.contains("\"failed\":[]"));
+    }
+
+    // `planned` is the denominator on every outcome: an applied run carries
+    // the same plan its `created`/`failed` arrays partition, so a fail-fast
+    // stop is reconcilable without knowing the NOT_ATTEMPTED convention.
+    #[test]
+    fn set_all_output_applied_run_still_carries_the_plan_it_applied() {
+        let plan = plan_with(&["baikal", "rss"], &[]);
+        let outcome = SetAllOutcome {
+            created: vec![applied("baikal", None), applied("rss", None)],
+            failed: vec![],
+            not_attempted: vec![],
+        };
+        let body = set_all_json(&plan, &outcome, RunOutcome::Applied);
+        let planned: Vec<&str> = body.planned.iter().map(|r| r.app.as_str()).collect();
+        assert_eq!(planned, vec!["baikal", "rss"]);
+        let json = serde_json::to_string(&body).unwrap();
+        assert!(json.contains("\"outcome\":\"applied\""));
     }
 
     #[test]
