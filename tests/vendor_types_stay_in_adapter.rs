@@ -5,6 +5,7 @@
 //! catches; an adapter that stops naming its vendor is how the scan would
 //! silently empty out, so that is an assertion too.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -15,6 +16,62 @@ use std::path::{Path, PathBuf};
 const CONFINED_VENDORS: &[(&str, &str)] = &[
     ("cloudflare", "src/services/cloudflare_dns.rs"),
     ("hickory_resolver", "src/services/dns_verify.rs"),
+];
+
+/// Every module in the crate, so the walk above is checked against a set
+/// rather than trusted to have found things.
+const CRATE_MODULES: &[&str] = &[
+    "src/ansible_assets.rs",
+    "src/commands.rs",
+    "src/commands/ansible.rs",
+    "src/commands/backup.rs",
+    "src/commands/bichon/mod.rs",
+    "src/commands/bichon/reconcile.rs",
+    "src/commands/bichon/rescan.rs",
+    "src/commands/bichon/verify.rs",
+    "src/commands/config_cmd.rs",
+    "src/commands/deploy.rs",
+    "src/commands/dns.rs",
+    "src/commands/headscale.rs",
+    "src/commands/host.rs",
+    "src/commands/select.rs",
+    "src/commands/ssh.rs",
+    "src/commands/sync.rs",
+    "src/commands/versions.rs",
+    "src/config.rs",
+    "src/hosts.rs",
+    "src/key_registry.rs",
+    "src/main.rs",
+    "src/output.rs",
+    "src/playbook_meta.rs",
+    "src/prompt.rs",
+    "src/services.rs",
+    "src/services/ansible_runner.rs",
+    "src/services/backup.rs",
+    "src/services/backup/executor.rs",
+    "src/services/backup/recipe.rs",
+    "src/services/backup/restic.rs",
+    "src/services/backup/session.rs",
+    "src/services/backup/verify.rs",
+    "src/services/bichon/api.rs",
+    "src/services/bichon/coverage.rs",
+    "src/services/bichon/folder_filter.rs",
+    "src/services/bichon/mod.rs",
+    "src/services/bichon/rescan.rs",
+    "src/services/cloudflare_dns.rs",
+    "src/services/dependency_resolver.rs",
+    "src/services/dns.rs",
+    "src/services/dns_verify.rs",
+    "src/services/inventory.rs",
+    "src/services/progress.rs",
+    "src/services/rsync.rs",
+    "src/services/ssh.rs",
+    "src/services/ssh_include.rs",
+    "src/services/unit_state.rs",
+    "src/signal.rs",
+    "src/ssh_config.rs",
+    "src/ssh_session.rs",
+    "src/tool_versions.rs",
 ];
 
 fn src_dir() -> PathBuf {
@@ -59,7 +116,7 @@ fn names_vendor(source: &str, vendor: &str) -> bool {
     false
 }
 
-fn relative(path: &Path) -> String {
+fn repo_relative(path: &Path) -> String {
     path.strip_prefix(env!("CARGO_MANIFEST_DIR"))
         .expect("scanned paths live under the manifest dir")
         .to_string_lossy()
@@ -73,7 +130,7 @@ fn vendor_types_are_named_only_by_their_adapter() {
 
     let mut offenders: Vec<String> = Vec::new();
     for path in &files {
-        let relative = relative(path);
+        let relative = repo_relative(path);
         let source =
             fs::read_to_string(path).unwrap_or_else(|e| panic!("{relative} must be readable: {e}"));
         for (vendor, adapter) in CONFINED_VENDORS {
@@ -109,27 +166,21 @@ fn every_adapter_still_names_its_vendor() {
     }
 }
 
-/// The scan is only as good as the tree it walks.
+/// The scan's reach, by equality in both directions: a new module fails until
+/// it is listed, and a listing the crate no longer holds fails until it is
+/// removed. A floor (`>= 45`) would let modules leave the walk silently, and
+/// every assertion above can pass by seeing nothing.
 #[test]
-fn the_scan_reaches_every_module_in_the_crate() {
-    let mut files = Vec::new();
-    rust_files(&src_dir(), &mut files);
+fn the_scan_sees_exactly_the_modules_the_crate_holds() {
+    let mut walked = Vec::new();
+    rust_files(&src_dir(), &mut walked);
+    let seen: BTreeSet<String> = walked.iter().map(|p| repo_relative(p)).collect();
+    let listed: BTreeSet<String> = CRATE_MODULES.iter().map(|m| (*m).to_string()).collect();
 
+    let unlisted: Vec<&String> = seen.difference(&listed).collect();
+    let missing: Vec<&String> = listed.difference(&seen).collect();
     assert!(
-        files.len() >= 45,
-        "expected the whole crate, walked only {} files",
-        files.len()
+        unlisted.is_empty() && missing.is_empty(),
+        "the crate's module set moved.\n  new, add to CRATE_MODULES: {unlisted:?}\n  gone, drop from CRATE_MODULES: {missing:?}"
     );
-    for expected in [
-        "src/main.rs",
-        "src/services/dns.rs",
-        "src/services/cloudflare_dns.rs",
-        "src/commands/dns.rs",
-        "src/services/bichon/api.rs",
-    ] {
-        assert!(
-            files.iter().any(|p| relative(p) == expected),
-            "{expected} was not reached by the walk"
-        );
-    }
 }
