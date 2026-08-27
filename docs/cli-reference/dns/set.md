@@ -10,11 +10,10 @@ Upserts: updates the existing record if present, creates it otherwise. TTL is se
 
 ## Options
 
-| Option                 | Description                                              | Required |
-| ---------------------- | -------------------------------------------------------- | -------- |
-| `-s, --subdomain NAME` | Subdomain name                                           | Yes      |
-| `-i, --ip IP`          | IPv4 or IPv6 address                                     | Yes      |
-| `-P, --production`     | Accepted and ignored; every call uses the production API | n/a      |
+| Option                 | Description          | Required |
+| ---------------------- | -------------------- | -------- |
+| `-s, --subdomain NAME` | Subdomain name       | Yes      |
+| `-i, --ip IP`          | IPv4 or IPv6 address | Yes      |
 
 ## Examples
 

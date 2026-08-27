@@ -4,6 +4,8 @@
 
 Accepted, 2026-08-27. **Generalises the `DnsLookup` seam** that `services/dns_verify` has had since the DNS Publication check was written, and applies it to the record side it was always the odd sibling of.
 
+Amended, 2026-08-27 (#676): the accepted-and-ignored `--production` flag described below is deleted from the five subcommands that never read it, so the `production: _` destructures are gone too; only `dns delete` still takes the flag.
+
 ## Decision
 
 A third-party SDK the crate calls out to is reached through a crate-local trait. The vendor's own types are translated at exactly one module — the adapter — and nothing above it names them. Three rules follow:

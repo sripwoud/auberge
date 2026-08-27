@@ -8,12 +8,11 @@ auberge dns migrate --ip <IP> [OPTIONS]
 
 ## Options
 
-| Option                | Description                                              | Default |
-| --------------------- | -------------------------------------------------------- | ------- |
-| `-i, --ip IP`         | New IP address (required)                                | —       |
-| `-n, --dry-run`       | Preview without updating                                 | `false` |
-| `-o, --output FORMAT` | `human` or `json`                                        | `human` |
-| `-P, --production`    | Accepted and ignored; every call uses the production API | n/a     |
+| Option                | Description               | Default |
+| --------------------- | ------------------------- | ------- |
+| `-i, --ip IP`         | New IP address (required) | —       |
+| `-n, --dry-run`       | Preview without updating  | `false` |
+| `-o, --output FORMAT` | `human` or `json`         | `human` |
 
 ## Examples
 

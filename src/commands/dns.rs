@@ -25,12 +25,6 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(
-            short = 'P',
-            long,
-            help = "Accepted and ignored: every call uses the production API"
-        )]
-        production: bool,
     },
     #[command(visible_alias = "st", about = "Show DNS status and health")]
     Status {
@@ -42,12 +36,6 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(
-            short = 'P',
-            long,
-            help = "Accepted and ignored: every call uses the production API"
-        )]
-        production: bool,
     },
     #[command(visible_alias = "s", about = "Set an A record for a subdomain")]
     Set {
@@ -55,12 +43,6 @@ pub enum DnsCommands {
         subdomain: Option<String>,
         #[arg(short, long, help = "IP address")]
         ip: Option<String>,
-        #[arg(
-            short = 'P',
-            long,
-            help = "Accepted and ignored: every call uses the production API"
-        )]
-        production: bool,
     },
     #[command(
         visible_alias = "d",
@@ -116,12 +98,6 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(
-            short = 'P',
-            long,
-            help = "Accepted and ignored: every call uses the production API"
-        )]
-        production: bool,
     },
     #[command(
         visible_alias = "sa",
@@ -193,12 +169,6 @@ pub enum DnsCommands {
         output: OutputFormat,
         #[arg(long, help = "Continue on errors instead of failing fast")]
         continue_on_error: bool,
-        #[arg(
-            short = 'P',
-            long,
-            help = "Accepted and ignored: every call uses the production API"
-        )]
-        production: bool,
     },
 }
 
@@ -840,6 +810,47 @@ async fn set_all<D: DnsRecords>(
 mod tests {
     use super::*;
     use crate::services::dns::{PlannedRecord, SkipReason, SkippedApp};
+    use clap::Parser;
+
+    #[derive(clap::Parser)]
+    struct DnsCli {
+        #[command(subcommand)]
+        cmd: DnsCommands,
+    }
+
+    // The one subcommand where --production is load-bearing: it escalates the
+    // confirmation to a retyped subdomain and lands in the JSON body.
+    #[test]
+    fn delete_keeps_the_production_flag() {
+        let cli = DnsCli::try_parse_from(["dns", "delete", "-s", "freshrss", "--production"])
+            .expect("dns delete must keep accepting --production");
+        match cli.cmd {
+            DnsCommands::Delete { production, .. } => assert!(production),
+            _ => unreachable!("parsed 'delete' into another variant"),
+        }
+    }
+
+    // A script passing the flag must fail loudly rather than read as if it
+    // had chosen an environment: every call uses the production API.
+    #[test]
+    fn production_is_an_error_on_the_subcommands_that_never_read_it() {
+        let invocations: [&[&str]; 5] = [
+            &["dns", "list"],
+            &["dns", "status"],
+            &["dns", "set", "-s", "freshrss", "-i", "1.2.3.4"],
+            &["dns", "migrate", "-i", "1.2.3.4"],
+            &["dns", "set-all", "--host", "auberge"],
+        ];
+        for prefix in invocations {
+            for flag in ["--production", "-P"] {
+                let args = [prefix, &[flag]].concat();
+                let Err(err) = DnsCli::try_parse_from(&args) else {
+                    panic!("{:?} must be rejected", args.join(" "));
+                };
+                assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+            }
+        }
+    }
 
     fn applied(subdomain: &str, error: Option<&str>) -> AppliedRecord {
         AppliedRecord {

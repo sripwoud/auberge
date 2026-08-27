@@ -304,20 +304,9 @@ async fn main() -> Result<()> {
             } => signal::with_ctrlc(|| run_sync_hermes(host, source, dry_run, pull)),
         },
         Commands::Dns(cmd) => match cmd {
-            DnsCommands::List {
-                subdomain,
-                output,
-                production: _,
-            } => run_dns_list(subdomain, output).await,
-            DnsCommands::Status {
-                output,
-                production: _,
-            } => run_dns_status(output).await,
-            DnsCommands::Set {
-                subdomain,
-                ip,
-                production: _,
-            } => run_dns_set(subdomain, ip).await,
+            DnsCommands::List { subdomain, output } => run_dns_list(subdomain, output).await,
+            DnsCommands::Status { output } => run_dns_status(output).await,
+            DnsCommands::Set { subdomain, ip } => run_dns_set(subdomain, ip).await,
             DnsCommands::Delete {
                 subdomain,
                 dry_run,
@@ -329,7 +318,6 @@ async fn main() -> Result<()> {
                 ip,
                 dry_run,
                 output,
-                production: _,
             } => run_dns_migrate(ip, dry_run, output).await,
             DnsCommands::SetAll {
                 host,
@@ -341,7 +329,6 @@ async fn main() -> Result<()> {
                 skip,
                 output,
                 continue_on_error,
-                production: _,
             } => std::process::exit(
                 run_dns_set_all(SetAllOptions {
                     host,
