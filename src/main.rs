@@ -1,46 +1,37 @@
-mod ansible_assets;
-mod commands;
-mod config;
-mod hosts;
-mod key_registry;
-mod output;
-mod playbook_meta;
-mod prompt;
-mod services;
-mod signal;
-mod ssh_config;
-mod ssh_session;
-mod tool_versions;
+//! The `auberge` binary: the clap tree and the dispatch `match`, and nothing
+//! else. Every module it dispatches into lives in `lib.rs`, so the integration
+//! fences can import the same vocabulary the commands run on (#667).
 
-use clap::{CommandFactory, Parser, Subcommand};
-use commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ansible_run};
-use commands::backup::{
+use auberge::commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ansible_run};
+use auberge::commands::backup::{
     BackupCommands, RestoreOptions, VerifyOptions, create_parameters, run_backup_create,
     run_backup_list, run_backup_prune, run_backup_push, run_backup_restore, run_backup_sync,
     run_backup_verify, run_export_opml, run_import_opml,
 };
-use commands::bichon::{BichonCommands, run_bichon_command};
-use commands::config_cmd::{
+use auberge::commands::bichon::{BichonCommands, run_bichon_command};
+use auberge::commands::config_cmd::{
     ConfigCommands, run_config_edit, run_config_get, run_config_init, run_config_list,
     run_config_path, run_config_remove, run_config_set,
 };
-use commands::deploy::{DeployCmd, run_deploy};
-use commands::dns::{
+use auberge::commands::deploy::{DeployCmd, run_deploy};
+use auberge::commands::dns::{
     DnsCommands, SetAllOptions, run_dns_delete, run_dns_list, run_dns_migrate, run_dns_set,
     run_dns_set_all, run_dns_status,
 };
-use commands::headscale::{
+use auberge::commands::headscale::{
     HeadscaleCommands, run_headscale_add_user, run_headscale_list_nodes, run_headscale_list_users,
     run_headscale_remove_user,
 };
-use commands::host::{
+use auberge::commands::host::{
     AddHostArgs, HostCommands, run_host_add, run_host_detect_tailscale_ip, run_host_edit,
     run_host_list, run_host_remove, run_host_rename, run_host_show,
 };
-use commands::select::{SelectCommands, run_select_host, run_select_playbook};
-use commands::ssh::{SshCommands, run_ssh_add_key, run_ssh_keygen};
-use commands::sync::{SyncCommands, run_sync_hermes, run_sync_music};
-use commands::versions::{VersionsCmd, run_versions};
+use auberge::commands::select::{SelectCommands, run_select_host, run_select_playbook};
+use auberge::commands::ssh::{SshCommands, run_ssh_add_key, run_ssh_keygen};
+use auberge::commands::sync::{SyncCommands, run_sync_hermes, run_sync_music};
+use auberge::commands::versions::{VersionsCmd, run_versions};
+use auberge::{output, signal};
+use clap::{CommandFactory, Parser, Subcommand};
 use eyre::Result;
 
 #[derive(Parser)]

@@ -21,13 +21,13 @@
 //! classify fails the build.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 
+use auberge::playbook_meta::UNIT_TYPE_SUFFIXES;
 use serde_yaml::{Mapping, Value};
 
 mod common;
 
-use common::{Plays, field, relative, repo, runnable_files, strings, task_name, tasks_in};
+use common::{Plays, field, relative, runnable_files, strings, task_name, tasks_in};
 
 /// A package the fleet purges, and the units it installs.
 ///
@@ -87,54 +87,6 @@ const UNIT_DIRS: &[&str] = &[
     "/lib/systemd/system",
 ];
 
-/// systemd's own closed set of unit types, mirrored from
-/// `src/playbook_meta.rs`.
-const UNIT_TYPE_SUFFIXES: &[&str] = &[
-    ".automount",
-    ".device",
-    ".mount",
-    ".path",
-    ".scope",
-    ".service",
-    ".slice",
-    ".socket",
-    ".swap",
-    ".target",
-    ".timer",
-];
-
-/// The unit types `src/playbook_meta.rs` declares, read off the declaration
-/// itself so the mirror above cannot drift from it.
-fn declared_unit_type_suffixes() -> Vec<String> {
-    let declaration = "pub const UNIT_TYPE_SUFFIXES: &[&str] = &[";
-    let source = fs::read_to_string(repo().join("src/playbook_meta.rs"))
-        .expect("src/playbook_meta.rs must be readable");
-    let body = source
-        .split_once(declaration)
-        .unwrap_or_else(|| panic!("src/playbook_meta.rs must declare `{declaration}`"))
-        .1
-        .split_once("];")
-        .expect("UNIT_TYPE_SUFFIXES must close with `];`")
-        .0;
-    body.split(',')
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-        .map(|entry| {
-            entry
-                .strip_prefix('"')
-                .and_then(|entry| entry.strip_suffix('"'))
-                .unwrap_or_else(|| {
-                    panic!(
-                        "src/playbook_meta.rs declares `{entry}` among its unit \
-                         types, which this test cannot read as a string literal; \
-                         teach it how before relying on it"
-                    )
-                })
-                .to_string()
-        })
-        .collect()
-}
-
 /// The unit a path names, if the path is a plain unit file in a directory
 /// systemd loads units from.
 ///
@@ -145,6 +97,14 @@ fn declared_unit_type_suffixes() -> Vec<String> {
 /// entering the fence. An unresolved *directory* is not that case and is not
 /// caught here - it fails the directory test instead, and is recorded as a
 /// limit in ADR-0041 rather than guessed at.
+///
+/// The suffix test reads the crate's own [`UNIT_TYPE_SUFFIXES`] (ADR-0046), so
+/// this fence and production cannot disagree about what a unit type is — the
+/// disagreement #653 shipped. What the import does not buy: a type dropped from
+/// that const shrinks the qualifier and this fence's domain together, and
+/// `test_the_scan_still_sees_every_removal_site` stays green because it pins
+/// only what the scan found. `playbook_meta`'s
+/// `test_the_unit_type_set_is_every_type_systemd_defines` is what fails there.
 fn unit_at<'a>(path: &'a str, file: &str, task: &str) -> Option<&'a str> {
     let (dir, name) = path.rsplit_once('/')?;
     let known = UNIT_DIRS.contains(&dir) || dir.ends_with("/.config/systemd/user");
@@ -424,32 +384,5 @@ fn test_the_scan_still_sees_every_removal_site() {
         Vec::<&String>::new(),
         "this test lists removals the scan no longer finds; either the removal \
          is gone or the scan stopped seeing it - the second is the dangerous one"
-    );
-}
-
-/// Mirror -> declaration. A unit type this file does not know is a removal it
-/// does not see: `unit_at` fails the suffix test, the path leaves the domain
-/// without a word, and the reach-set test above stays green because it pins
-/// only what the scan found. That is how this fence shipped admitting five of
-/// systemd's eleven unit types (#653) - a guard that had quietly stopped
-/// guarding, with a green build saying otherwise.
-#[test]
-fn test_the_mirrored_unit_types_match_the_declaration() {
-    let mirrored: BTreeSet<String> = UNIT_TYPE_SUFFIXES
-        .iter()
-        .map(|s| (*s).to_string())
-        .collect();
-    let declared: BTreeSet<String> = declared_unit_type_suffixes().into_iter().collect();
-    assert_eq!(
-        declared.difference(&mirrored).collect::<Vec<_>>(),
-        Vec::<&String>::new(),
-        "src/playbook_meta.rs declares unit types this file does not mirror; \
-         each one is a removal this fence cannot see - copy them across"
-    );
-    assert_eq!(
-        mirrored.difference(&declared).collect::<Vec<_>>(),
-        Vec::<&String>::new(),
-        "this file mirrors unit types src/playbook_meta.rs no longer declares; \
-         the declaration is the closed set, so drop them"
     );
 }

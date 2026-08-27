@@ -106,8 +106,13 @@ pub enum Plays {
     Descend,
 }
 
-/// The repository root. Read by `removed_unit_failed_state.rs` to reach
-/// `src/playbook_meta.rs`, whose unit-type declaration it mirrors (#656).
+/// The repository root. Read here by [`ansible_dir`] and [`relative`], and by
+/// `version_annotations.rs` to reach `renovate.json`.
+///
+/// No longer a route into crate source: `removed_unit_failed_state.rs` reached
+/// `src/playbook_meta.rs` through it to mirror the unit-type declaration as
+/// text (#656), and imports the `const` instead since #667. `tests/crate_source`
+/// carries its own root for the questions still asked of `src/` as text.
 pub fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }

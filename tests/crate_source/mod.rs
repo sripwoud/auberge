@@ -26,14 +26,14 @@
 //! and [`Module::src_relative`] — so a fence asks for the form it wants and
 //! cannot reach the other one under the same name.
 //!
-//! `removed_unit_failed_state.rs` is the third file in the suite that reads
-//! crate source, and is deliberately not one of them. It reads exactly one
-//! file, `src/playbook_meta.rs`, to mirror the unit-type list declared there
-//! (#656) — it carries no walk, so there is nothing here to fold, and routing
-//! one `read_to_string` through a walk of 51 modules would buy it nothing.
-//! Named so its absence does not read as coverage: it reads that file beside
-//! the walk rather than through it, and a `src/` the walk stopped reaching
-//! would not fail it.
+//! `removed_unit_failed_state.rs` used to be the third file in the suite that
+//! read crate source, and was deliberately not one of them: it read exactly one
+//! file, `src/playbook_meta.rs`, as *text*, string-splitting on Rust syntax to
+//! recover the unit-type list declared there (#656). #667 gave the crate a
+//! library target, so that fence imports the `const` instead and reads no
+//! source at all. The two fences here are the whole set again — and the reason
+//! the third one left is worth keeping: a fence that wants one crate *item*
+//! should `use` it, and this walk is for the questions asked of source as text.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -65,6 +65,7 @@ pub const CRATE_MODULES: &[&str] = &[
     "src/config.rs",
     "src/hosts.rs",
     "src/key_registry.rs",
+    "src/lib.rs",
     "src/main.rs",
     "src/output.rs",
     "src/playbook_meta.rs",
