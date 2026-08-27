@@ -21,7 +21,7 @@ The merged user-supplied settings (`config.toml`) parsed against the Key Registr
 _Avoid_: Settings, options, user config, env
 
 **Preflight**:
-A capability type carrying a validated `Config` + a Playbook Meta. The only way to construct one is via `Config::preflight_for(playbook)`, which validates required keys. `AnsibleRunner::run` accepts only a `Preflight`, making it impossible to invoke ansible with unvalidated config.
+A capability type standing for a `Config` already validated against the keys a run's Playbook Metas declare. The only way to construct one is `Config::preflight_with_keys`, reached through `services::required_keys::preflight_for`, which resolves those keys off the Metas (ADR-0045). `AnsibleRunner::run` accepts only a `Preflight`, making it impossible to invoke ansible with unvalidated config.
 _Avoid_: Plan, request, prepared run
 
 **Host**:
@@ -208,7 +208,7 @@ _Avoid_: Logger, reporter
 - A **Playbook** has exactly one **Playbook Meta** sibling.
 - A **Playbook Meta** declares zero or more keys from the **Key Registry**.
 - A **Playbook Meta** declares zero or one **Backup Recipe**, zero or more **Memory Budgets** — one per systemd unit the App runs — and the App's **Unit Ownership**.
-- A **Preflight** binds one **Playbook Meta** to a validated **Config**.
+- A **Preflight** binds a validated **Config** to the keys a run's **Playbook Metas** declare — the Playbook's own, unioned with those of the roles its tags select (ADR-0045).
 - The **Recipe Executor** consumes one **Backup Recipe**; the **Backup Session** consumes many.
 - A **Backup Verdict** reads only what a **Backup Session** already pushed, attributing a snapshot to a **Host** by the restic tag push writes (the same tag prune groups retention by).
 - Bichon syncs from an **Upstream Mailbox** into its **Internal Store**; the **Email Archive** and **Tag Snapshot** are derived from the Internal Store; the **Backup Recipe** rsyncs those two and, since ADR-0031, the Internal Store itself — its account registry is original state the derived pair cannot restore.

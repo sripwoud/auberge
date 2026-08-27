@@ -897,8 +897,14 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
             };
 
             // Build a Preflight — best-effort; if config is incomplete we warn and skip.
-            let preflight_result =
-                Config::load().and_then(|cfg| cfg.preflight_for("apps.yml", Some(&tags)));
+            let preflight_result = Config::load().and_then(|cfg| {
+                crate::services::required_keys::preflight_for(
+                    &cfg,
+                    assets.ansible_dir(),
+                    "apps.yml",
+                    Some(&tags),
+                )
+            });
 
             match preflight_result {
                 Err(e) => {

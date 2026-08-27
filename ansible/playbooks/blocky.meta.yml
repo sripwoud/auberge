@@ -1,4 +1,6 @@
-required_keys: []
+required_keys:
+  - admin_user_email
+  - blocky_subdomain
 subdomain: blocky
 version:
   value: "0.34.0"

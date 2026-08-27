@@ -7,6 +7,7 @@ pub mod dns;
 pub mod dns_verify;
 pub mod inventory;
 pub mod progress;
+pub mod required_keys;
 pub mod rsync;
 pub mod ssh;
 pub mod ssh_include;

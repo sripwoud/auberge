@@ -88,6 +88,7 @@ pub const CRATE_MODULES: &[&str] = &[
     "src/services/dns_verify.rs",
     "src/services/inventory.rs",
     "src/services/progress.rs",
+    "src/services/required_keys.rs",
     "src/services/rsync.rs",
     "src/services/ssh.rs",
     "src/services/ssh_include.rs",

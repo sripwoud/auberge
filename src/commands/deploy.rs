@@ -263,6 +263,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
     // Validate config and build preflights for all runs upfront so we fail
     // fast before executing any playbook.
     let config = Config::load()?;
+    let assets = AnsibleAssets::prepare()?;
     let preflights: Vec<_> = runs
         .iter()
         .map(|run| {
@@ -272,7 +273,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
             } else {
                 Some(run.tags.as_slice())
             };
-            config.preflight_for(name, tags)
+            crate::services::required_keys::preflight_for(&config, assets.ansible_dir(), name, tags)
         })
         .collect::<Result<_>>()?;
 
@@ -288,7 +289,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         groups: host.groups.clone(),
     };
 
-    let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
+    let playbooks_dir = assets.playbooks_dir();
     let app_versions = app_version_vars(&playbooks_dir)?;
     let memory_budgets = app_memory_vars(&playbooks_dir)?;
     let hosts_ignoreip = hosts_ignoreip_var()?;

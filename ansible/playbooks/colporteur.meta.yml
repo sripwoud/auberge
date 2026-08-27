@@ -1,4 +1,6 @@
-required_keys: []
+required_keys:
+  - colporteur_feeds_password
+  - colporteur_subdomain
 subdomain: colporteur
 version:
   value: "0.6.0"

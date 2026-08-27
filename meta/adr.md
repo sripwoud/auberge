@@ -52,6 +52,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0042 | [Unit Ownership is declared in Playbook Meta](./adr/0042-unit-ownership-is-declared-in-playbook-meta.md)                                                       |
 | 0043 | [A vendor client is reached through a crate-local trait](./adr/0043-vendor-types-stop-at-their-adapter.md)                                                     |
 | 0044 | [A run's JSON body names its outcome and carries its plan](./adr/0044-a-runs-json-body-names-its-outcome.md)                                                   |
+| 0045 | [Required config keys are declared in Playbook Meta](./adr/0045-required-keys-are-declared-in-playbook-meta.md)                                                |
 
 ## Native systemd by default
 

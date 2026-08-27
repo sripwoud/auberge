@@ -2,8 +2,8 @@ use crate::ansible_assets::AnsibleAssets;
 use crate::config::Config;
 use crate::key_registry::KeyRegistry;
 use crate::output;
-use crate::playbook_meta::PlaybookMeta;
 use crate::prompt::{Choice, select_item};
+use crate::services::required_keys::required_keys_for;
 use clap::{Args, Subcommand};
 use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::{Result, WrapErr};
@@ -112,7 +112,7 @@ fn resolve_key(key: Option<String>, config: &Config, prompt: &str) -> Result<Str
 pub fn run_config_init(args: InitArgs) -> Result<()> {
     let assets = AnsibleAssets::prepare()?;
     let registry = KeyRegistry::load(&assets.ansible_dir().join("keys.yml"))?;
-    let scaffold = build_scaffold(&registry, &args.playbooks, &assets.playbooks_dir())?;
+    let scaffold = build_scaffold(&registry, &args.playbooks, assets.ansible_dir())?;
 
     match args.output {
         None => {
@@ -123,20 +123,27 @@ pub fn run_config_init(args: InitArgs) -> Result<()> {
     }
 }
 
+/// Scaffold the keys `playbooks` require, resolved through the same seam a
+/// deploy uses so `config init` and Preflight cannot disagree about what a
+/// Playbook needs.
 fn build_scaffold(
     registry: &KeyRegistry,
     playbooks: &[String],
-    playbooks_dir: &Path,
+    ansible_dir: &Path,
 ) -> Result<String> {
     if playbooks.is_empty() {
         return Ok(registry.scaffold());
     }
     let mut keys: HashSet<String> = HashSet::new();
     for playbook in playbooks {
-        let meta_path = playbooks_dir.join(format!("{playbook}.meta.yml"));
-        let meta = PlaybookMeta::load(&meta_path)
-            .wrap_err_with(|| format!("Unknown playbook '{playbook}'"))?;
-        keys.extend(meta.required_keys);
+        if !ansible_dir
+            .join("playbooks")
+            .join(format!("{playbook}.meta.yml"))
+            .is_file()
+        {
+            eyre::bail!("Unknown playbook '{playbook}'");
+        }
+        keys.extend(required_keys_for(ansible_dir, playbook, None)?);
     }
     Ok(registry.scaffold_filtered(&keys))
 }
@@ -248,8 +255,7 @@ pub fn run_config_path() -> Result<()> {
 mod tests {
     use super::*;
 
-    fn fixture_registry() -> (tempfile::TempDir, KeyRegistry) {
-        let yaml = r#"
+    const FIXTURE_REGISTRY: &str = r#"
 keys:
   admin_user_name:
     secret: false
@@ -264,17 +270,24 @@ keys:
     secret: true
     doc: "Paperless admin password"
 "#;
+
+    fn fixture_registry() -> (tempfile::TempDir, KeyRegistry) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("keys.yml");
-        fs::write(&path, yaml).unwrap();
+        fs::write(&path, FIXTURE_REGISTRY).unwrap();
         let registry = KeyRegistry::load(&path).unwrap();
         (dir, registry)
     }
 
-    fn fixture_playbooks_dir(metas: &[(&str, &str)]) -> tempfile::TempDir {
+    /// An ansible dir holding the fixture Key Registry and the given Metas, so
+    /// `build_scaffold` resolves them through the same seam a deploy uses.
+    fn fixture_ansible_dir(metas: &[(&str, &str)]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("keys.yml"), FIXTURE_REGISTRY).unwrap();
+        let playbooks = dir.path().join("playbooks");
+        fs::create_dir_all(&playbooks).unwrap();
         for (name, body) in metas {
-            fs::write(dir.path().join(format!("{name}.meta.yml")), body).unwrap();
+            fs::write(playbooks.join(format!("{name}.meta.yml")), body).unwrap();
         }
         dir
     }
@@ -282,7 +295,7 @@ keys:
     #[test]
     fn test_build_scaffold_without_playbooks_includes_all_keys() {
         let (_keys_dir, registry) = fixture_registry();
-        let dir = fixture_playbooks_dir(&[]);
+        let dir = fixture_ansible_dir(&[]);
         let scaffold = build_scaffold(&registry, &[], dir.path()).unwrap();
         assert!(scaffold.contains("admin_user_name"));
         assert!(scaffold.contains("domain"));
@@ -293,7 +306,7 @@ keys:
     #[test]
     fn test_build_scaffold_with_playbooks_emits_union_of_required_keys() {
         let (_keys_dir, registry) = fixture_registry();
-        let dir = fixture_playbooks_dir(&[
+        let dir = fixture_ansible_dir(&[
             (
                 "infra",
                 "required_keys: [admin_user_name, tailscale_authkey]\n",
@@ -315,7 +328,7 @@ keys:
     #[test]
     fn test_build_scaffold_with_unknown_playbook_errors() {
         let (_keys_dir, registry) = fixture_registry();
-        let dir = fixture_playbooks_dir(&[]);
+        let dir = fixture_ansible_dir(&[]);
         let err = build_scaffold(&registry, &["nope".to_string()], dir.path()).unwrap_err();
         assert!(err.to_string().contains("Unknown playbook 'nope'"));
     }
@@ -323,7 +336,7 @@ keys:
     #[test]
     fn test_build_scaffold_with_playbook_having_empty_required_keys_emits_empty() {
         let (_keys_dir, registry) = fixture_registry();
-        let dir = fixture_playbooks_dir(&[("solo", "required_keys: []\n")]);
+        let dir = fixture_ansible_dir(&[("solo", "required_keys: []\n")]);
         let scaffold = build_scaffold(&registry, &["solo".to_string()], dir.path()).unwrap();
         assert!(scaffold.is_empty());
     }

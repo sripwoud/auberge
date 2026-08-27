@@ -1,4 +1,9 @@
-required_keys: []
+required_keys:
+  - admin_user_email
+  - paperless_admin_password
+  - paperless_admin_user
+  - paperless_db_password
+  - paperless_secret_key
 tailnet_only: true
 subdomain: paperless
 version:

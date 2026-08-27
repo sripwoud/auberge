@@ -1,7 +1,7 @@
 use crate::ansible_assets::AnsibleAssets;
 use eyre::{Result, WrapErr};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct PlaybookRun {
@@ -19,7 +19,20 @@ impl PlaybookRun {
     }
 }
 
-pub fn parse_playbook_roles(playbook_path: &PathBuf) -> Result<Vec<(String, Vec<String>)>> {
+/// One entry on a Playbook's roster.
+#[derive(Debug, Clone)]
+pub struct RosterRole {
+    pub name: String,
+    pub tags: Vec<String>,
+    /// Whether the entry carries a `when:`, making it conditional on Host facts
+    /// no caller can evaluate before the play runs.
+    pub guarded: bool,
+}
+
+/// The roster of `playbook_path`, in declaration order. A bare-string role
+/// entry carries neither tags nor a guard and is skipped: nothing can select it
+/// by tag, and `vibecoder.yml` is the only playbook that writes one.
+pub fn parse_roster(playbook_path: &Path) -> Result<Vec<RosterRole>> {
     let content = std::fs::read_to_string(playbook_path)
         .wrap_err_with(|| format!("Failed to read playbook: {}", playbook_path.display()))?;
 
@@ -28,15 +41,19 @@ pub fn parse_playbook_roles(playbook_path: &PathBuf) -> Result<Vec<(String, Vec<
 
     let mut roles = Vec::new();
     for doc in &docs {
-        if let Some(play_roles) = doc.get("roles").and_then(|r| r.as_sequence()) {
-            for role in play_roles {
-                let role_name = role
-                    .get("role")
-                    .and_then(|r| r.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-
-                let tags: Vec<String> = role
+        let Some(play_roles) = doc.get("roles").and_then(|r| r.as_sequence()) else {
+            continue;
+        };
+        for role in play_roles {
+            let Some(name) = role.get("role").and_then(|r| r.as_str()) else {
+                continue;
+            };
+            if name.is_empty() {
+                continue;
+            }
+            roles.push(RosterRole {
+                name: name.to_string(),
+                tags: role
                     .get("tags")
                     .and_then(|t| t.as_sequence())
                     .map(|seq| {
@@ -44,12 +61,9 @@ pub fn parse_playbook_roles(playbook_path: &PathBuf) -> Result<Vec<(String, Vec<
                             .filter_map(|v| v.as_str().map(String::from))
                             .collect()
                     })
-                    .unwrap_or_default();
-
-                if !role_name.is_empty() {
-                    roles.push((role_name, tags));
-                }
-            }
+                    .unwrap_or_default(),
+                guarded: role.get("when").is_some(),
+            });
         }
     }
 
@@ -69,13 +83,12 @@ fn build_tag_playbook_map() -> Result<HashMap<String, Vec<PathBuf>>> {
         let canonical = std::fs::canonicalize(&path)
             .wrap_err_with(|| format!("Failed to canonicalize: {}", path.display()))?;
 
-        let roles = parse_playbook_roles(&canonical)?;
-        for (role_name, tags) in roles {
+        for role in parse_roster(&canonical)? {
             tag_map
-                .entry(role_name)
+                .entry(role.name)
                 .or_default()
                 .push(canonical.clone());
-            for tag in tags {
+            for tag in role.tags {
                 let entry = tag_map.entry(tag).or_default();
                 if !entry.contains(&canonical) {
                     entry.push(canonical.clone());
@@ -121,8 +134,10 @@ fn playbook_role_names(filename: &str) -> Result<Vec<String>> {
     }
     let canonical = std::fs::canonicalize(&path)
         .wrap_err_with(|| format!("Failed to canonicalize: {}", path.display()))?;
-    let roles = parse_playbook_roles(&canonical)?;
-    Ok(roles.into_iter().map(|(name, _)| name).collect())
+    Ok(parse_roster(&canonical)?
+        .into_iter()
+        .map(|role| role.name)
+        .collect())
 }
 
 pub fn get_app_names() -> Result<Vec<String>> {
@@ -192,12 +207,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_playbook_roles_apps() {
+    fn test_parse_roster_apps() {
         let playbooks_dir = AnsibleAssets::prepare().unwrap().playbooks_dir();
         let apps_path = std::fs::canonicalize(playbooks_dir.join("apps.yml")).unwrap();
-        let roles = parse_playbook_roles(&apps_path).unwrap();
+        let roles = parse_roster(&apps_path).unwrap();
 
-        let role_names: Vec<&str> = roles.iter().map(|(name, _)| name.as_str()).collect();
+        let role_names: Vec<&str> = roles.iter().map(|role| role.name.as_str()).collect();
         assert!(role_names.contains(&"paperless"));
         assert!(role_names.contains(&"baikal"));
         assert!(role_names.contains(&"freshrss"));
@@ -208,13 +223,32 @@ mod tests {
         assert!(role_names.contains(&"immich"));
     }
 
+    /// The `guarded` flag decides whether an untagged run demands a role's
+    /// config keys (ADR-0045), so the two roles that carry a `when:` are pinned
+    /// against the rest of the roster.
     #[test]
-    fn test_parse_playbook_roles_infrastructure() {
+    fn test_parse_roster_marks_only_the_when_guarded_roles() {
+        let assets = AnsibleAssets::prepare().unwrap();
+        let playbooks_dir = assets.playbooks_dir();
+        for (playbook, expected) in [("apps.yml", "hermes"), ("infrastructure.yml", "headscale")] {
+            let path = std::fs::canonicalize(playbooks_dir.join(playbook)).unwrap();
+            let guarded: Vec<String> = parse_roster(&path)
+                .unwrap()
+                .into_iter()
+                .filter(|role| role.guarded)
+                .map(|role| role.name)
+                .collect();
+            assert_eq!(guarded, vec![expected.to_string()], "{playbook}");
+        }
+    }
+
+    #[test]
+    fn test_parse_roster_infrastructure() {
         let playbooks_dir = AnsibleAssets::prepare().unwrap().playbooks_dir();
         let infra_path = std::fs::canonicalize(playbooks_dir.join("infrastructure.yml")).unwrap();
-        let roles = parse_playbook_roles(&infra_path).unwrap();
+        let roles = parse_roster(&infra_path).unwrap();
 
-        let role_names: Vec<&str> = roles.iter().map(|(name, _)| name.as_str()).collect();
+        let role_names: Vec<&str> = roles.iter().map(|role| role.name.as_str()).collect();
         assert!(role_names.contains(&"caddy"));
         assert!(role_names.contains(&"tailscale"));
     }
@@ -385,12 +419,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_playbook_roles_hardening() {
+    fn test_parse_roster_hardening() {
         let playbooks_dir = AnsibleAssets::prepare().unwrap().playbooks_dir();
         let hardening_path = std::fs::canonicalize(playbooks_dir.join("hardening.yml")).unwrap();
-        let roles = parse_playbook_roles(&hardening_path).unwrap();
+        let roles = parse_roster(&hardening_path).unwrap();
 
-        let role_names: Vec<&str> = roles.iter().map(|(name, _)| name.as_str()).collect();
+        let role_names: Vec<&str> = roles.iter().map(|role| role.name.as_str()).collect();
         assert!(role_names.contains(&"fail2ban"));
         assert!(role_names.contains(&"kernel_hardening"));
     }

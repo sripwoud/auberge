@@ -1,4 +1,9 @@
-required_keys: []
+required_keys:
+  - yourls_admin_password
+  - yourls_admin_user
+  - yourls_cookiekey
+  - yourls_db_password
+  - yourls_subdomain
 subdomain: yourls
 version:
   value: "1.10.4"
