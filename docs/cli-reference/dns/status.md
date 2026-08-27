@@ -10,10 +10,9 @@ Configured subdomains are discovered from `*_subdomain` keys in `config.toml` (e
 
 ## Options
 
-| Option                | Description                                              | Default |
-| --------------------- | -------------------------------------------------------- | ------- |
-| `-o, --output FORMAT` | `human` or `json`                                        | `human` |
-| `-P, --production`    | Accepted and ignored; every call uses the production API | n/a     |
+| Option                | Description       | Default |
+| --------------------- | ----------------- | ------- |
+| `-o, --output FORMAT` | `human` or `json` | `human` |
 
 ## Examples
 
