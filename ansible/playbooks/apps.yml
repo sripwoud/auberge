@@ -38,8 +38,6 @@
       tags: [apps, sync, syncthing]
     - role: tgtg
       tags: [apps, notifications, tgtg]
-    - role: wireguard
-      tags: [apps, network, vpn, wireguard]
     - role: yourls
       tags: [apps, web, url-shortener, yourls]
 
