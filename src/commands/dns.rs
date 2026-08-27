@@ -3,8 +3,8 @@ use crate::output::OutputFormat;
 use crate::prompt::{Choice, select_item};
 use crate::services::cloudflare_dns::CloudflareDns;
 use crate::services::dns::{
-    AppliedRecord, DnsRecords, SetAllOutcome, SetAllPlan, WRITE_PACE, apply_set_all,
-    discover_all_subdomains, plan_set_all,
+    AppliedRecord, DiscoveredSubdomains, DnsRecords, PlannedRecord, SetAllOutcome, SetAllPlan,
+    WRITE_PACE, apply_set_all, discover_all_subdomains, plan_set_all,
 };
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
@@ -25,7 +25,11 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Accepted and ignored: every call uses the production API"
+        )]
         production: bool,
     },
     #[command(visible_alias = "st", about = "Show DNS status and health")]
@@ -38,7 +42,11 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Accepted and ignored: every call uses the production API"
+        )]
         production: bool,
     },
     #[command(visible_alias = "s", about = "Set an A record for a subdomain")]
@@ -47,7 +55,11 @@ pub enum DnsCommands {
         subdomain: Option<String>,
         #[arg(short, long, help = "IP address")]
         ip: Option<String>,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Accepted and ignored: every call uses the production API"
+        )]
         production: bool,
     },
     #[command(
@@ -61,7 +73,7 @@ pub enum DnsCommands {
                       escalate the confirmation: the user must retype the subdomain name to \
                       proceed.\n\n\
                       EXAMPLES:\n  \
-                      # Pick a subdomain interactively, confirm, then delete (sandbox)\n  \
+                      # Pick a subdomain interactively, confirm, then delete\n  \
                       auberge dns delete\n\n  \
                       # Preview the action without deleting\n  \
                       auberge dns delete -s freshrss --dry-run\n\n  \
@@ -81,7 +93,11 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Treat as a production deletion: retype the subdomain to confirm"
+        )]
         production: bool,
         #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
@@ -100,7 +116,11 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Accepted and ignored: every call uses the production API"
+        )]
         production: bool,
     },
     #[command(
@@ -116,7 +136,7 @@ pub enum DnsCommands {
                         before any record is written; use `auberge deploy <app>` instead.\n\n\
                       EXAMPLES:\n  \
                       # Publish all Public Apps; tailnet-only apps are skipped automatically\n  \
-                      auberge dns set-all --host auberge --production\n\n  \
+                      auberge dns set-all --host auberge\n\n  \
                       # Dry-run preview\n  \
                       auberge dns set-all --host auberge --dry-run\n\n  \
                       # Only specific apps (all must be public)\n  \
@@ -173,7 +193,11 @@ pub enum DnsCommands {
         output: OutputFormat,
         #[arg(long, help = "Continue on errors instead of failing fast")]
         continue_on_error: bool,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Accepted and ignored: every call uses the production API"
+        )]
         production: bool,
     },
 }
@@ -538,6 +562,11 @@ struct SetAllRow {
     error: Option<String>,
 }
 
+/// The `error` a record the run never reached carries. Not a provider message
+/// — the reason no provider was asked.
+const NOT_ATTEMPTED: &str =
+    "not attempted: an earlier record failed and --continue-on-error is off";
+
 impl SetAllRow {
     fn from(applied: &AppliedRecord) -> Self {
         Self {
@@ -546,6 +575,16 @@ impl SetAllRow {
             ip: applied.ip.clone(),
             success: applied.error.is_none(),
             error: applied.error.clone(),
+        }
+    }
+
+    fn not_attempted(planned: &PlannedRecord) -> Self {
+        Self {
+            subdomain: planned.subdomain.clone(),
+            fqdn: planned.fqdn.clone(),
+            ip: planned.ip.clone(),
+            success: false,
+            error: Some(NOT_ATTEMPTED.to_string()),
         }
     }
 }
@@ -562,7 +601,12 @@ fn set_all_json(plan: &SetAllPlan, outcome: &SetAllOutcome) -> SetAllOutput {
                 reason: s.reason.as_str().to_string(),
             })
             .collect(),
-        failed: outcome.failed.iter().map(SetAllRow::from).collect(),
+        failed: outcome
+            .failed
+            .iter()
+            .map(SetAllRow::from)
+            .chain(outcome.not_attempted.iter().map(SetAllRow::not_attempted))
+            .collect(),
     }
 }
 
@@ -595,6 +639,43 @@ fn print_plan(plan: &SetAllPlan, dry_run: bool) {
             names.join(", ")
         );
     }
+}
+
+/// The closing line. A run with failures does not get a success banner, and
+/// says how many records it abandoned rather than implying it tried them: the
+/// denominator is the plan, and only `created` is a claim about what landed.
+fn print_summary(plan: &SetAllPlan, outcome: &SetAllOutcome, target_ip: &str) {
+    let skipped = if plan.skipped.is_empty() {
+        String::new()
+    } else {
+        format!(" (skipped {} tailnet-only)", plan.skipped.len())
+    };
+
+    if outcome.failed.is_empty() {
+        output::success(&format!(
+            "Successfully created {}/{} A records pointing to {}{}",
+            outcome.created.len(),
+            plan.to_create.len(),
+            target_ip,
+            skipped
+        ));
+        return;
+    }
+
+    let abandoned = if outcome.not_attempted.is_empty() {
+        String::new()
+    } else {
+        format!(", {} not attempted", outcome.not_attempted.len())
+    };
+    output::warn(&format!(
+        "Created {}/{} A records pointing to {}; {} failed{}{}",
+        outcome.created.len(),
+        plan.to_create.len(),
+        target_ip,
+        outcome.failed.len(),
+        abandoned,
+        skipped
+    ));
 }
 
 fn resolve_target_ip(host: Option<String>, ip: Option<String>, strict: bool) -> Result<String> {
@@ -636,7 +717,15 @@ pub struct SetAllOptions {
 /// write failed, 2 operational error), so a caller can branch on which of the
 /// three happened instead of parsing the summary.
 pub async fn run_dns_set_all(opts: SetAllOptions) -> i32 {
-    set_all_exit_code(set_all(opts).await)
+    set_all_exit_code(connect_and_set_all(opts).await)
+}
+
+/// The two things `set_all` needs from the outside world, resolved once so the
+/// orchestration below runs against a fake.
+async fn connect_and_set_all(opts: SetAllOptions) -> Result<SetAllOutcome> {
+    let dns = CloudflareDns::connect().await?;
+    let discovered = discover_all_subdomains();
+    set_all(&dns, discovered, opts).await
 }
 
 fn set_all_exit_code(result: Result<SetAllOutcome>) -> i32 {
@@ -656,7 +745,11 @@ fn set_all_exit_code(result: Result<SetAllOutcome>) -> i32 {
     }
 }
 
-async fn set_all(opts: SetAllOptions) -> Result<SetAllOutcome> {
+async fn set_all<D: DnsRecords>(
+    dns: &D,
+    discovered: DiscoveredSubdomains,
+    opts: SetAllOptions,
+) -> Result<SetAllOutcome> {
     use std::collections::HashSet;
 
     let SetAllOptions {
@@ -671,9 +764,7 @@ async fn set_all(opts: SetAllOptions) -> Result<SetAllOutcome> {
         continue_on_error,
     } = opts;
 
-    let dns = CloudflareDns::connect().await?;
     let target_ip = resolve_target_ip(host, ip, strict)?;
-    let discovered = discover_all_subdomains();
 
     if strict && discovered.public.is_empty() {
         eyre::bail!("No subdomain environment variables found");
@@ -731,24 +822,10 @@ async fn set_all(opts: SetAllOptions) -> Result<SetAllOutcome> {
             Some(message) => eprintln!("Failed {}: {}", applied.fqdn, message),
         }
     };
-    let outcome = apply_set_all(&dns, &plan, continue_on_error, WRITE_PACE, &mut report).await;
+    let outcome = apply_set_all(dns, &plan, continue_on_error, WRITE_PACE, &mut report).await;
 
     if human {
-        let summary = format!(
-            "Successfully created {}/{} A records pointing to {}",
-            outcome.created.len(),
-            plan.to_create.len(),
-            target_ip
-        );
-        if plan.skipped.is_empty() {
-            output::success(&summary);
-        } else {
-            output::success(&format!(
-                "{} (skipped {} tailnet-only)",
-                summary,
-                plan.skipped.len()
-            ));
-        }
+        print_summary(&plan, &outcome, &target_ip);
     } else {
         println!(
             "{}",
@@ -887,6 +964,7 @@ mod tests {
         let outcome = SetAllOutcome {
             created: vec![applied("rss", None)],
             failed: vec![],
+            not_attempted: vec![],
         };
         let json = serde_json::to_string(&set_all_json(&plan, &outcome)).unwrap();
         assert!(json.contains("\"created\":[{"));
@@ -915,10 +993,44 @@ mod tests {
         let outcome = SetAllOutcome {
             created: vec![],
             failed: vec![applied("rss", Some("cloudflare rejected rss"))],
+            not_attempted: vec![],
         };
         let json = serde_json::to_string(&set_all_json(&plan, &outcome)).unwrap();
         assert!(json.contains("\"created\":[]"));
         assert!(json.contains("\"error\":\"cloudflare rejected rss\""));
+    }
+
+    // The whole plan must be reconcilable from the body. Fail-fast stops after
+    // the first failure, and a `failed` array holding only that one record
+    // would leave the reader thinking the plan had one record in it.
+    #[test]
+    fn set_all_output_names_every_planned_record_after_a_fail_fast_stop() {
+        let plan = plan_with(&["baikal", "rss", "music"], &[]);
+        let outcome = SetAllOutcome {
+            created: vec![],
+            failed: vec![applied("baikal", Some("cloudflare rejected baikal"))],
+            not_attempted: plan.to_create[1..].to_vec(),
+        };
+        let body = set_all_json(&plan, &outcome);
+
+        let named: Vec<&str> = body
+            .created
+            .iter()
+            .chain(body.failed.iter())
+            .map(|r| r.subdomain.as_str())
+            .collect();
+        assert_eq!(named, vec!["baikal", "rss", "music"]);
+        assert!(body.failed.iter().all(|r| !r.success));
+        assert_eq!(
+            body.failed[1].error.as_deref(),
+            Some(NOT_ATTEMPTED),
+            "an abandoned record says why no provider was asked"
+        );
+        assert_eq!(
+            body.failed[0].error.as_deref(),
+            Some("cloudflare rejected baikal"),
+            "the real failure keeps the provider's own message"
+        );
     }
 
     #[test]
@@ -943,6 +1055,7 @@ mod tests {
             set_all_exit_code(Ok(SetAllOutcome {
                 created: vec![applied("rss", None)],
                 failed: vec![],
+                not_attempted: vec![],
             })),
             0
         );
@@ -950,6 +1063,7 @@ mod tests {
             set_all_exit_code(Ok(SetAllOutcome {
                 created: vec![applied("rss", None)],
                 failed: vec![applied("baikal", Some("timeout"))],
+                not_attempted: vec![],
             })),
             1
         );

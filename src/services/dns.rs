@@ -255,11 +255,18 @@ pub struct AppliedRecord {
     pub error: Option<String>,
 }
 
-/// What applying a plan actually did.
+/// What applying a plan actually did. `created`, `failed` and `not_attempted`
+/// partition the plan: every record it held is in exactly one of them.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct SetAllOutcome {
     pub created: Vec<AppliedRecord>,
     pub failed: Vec<AppliedRecord>,
+    /// Records the run abandoned — fail-fast stopped at an earlier failure
+    /// before reaching these. Not write failures, and not counted as such by
+    /// the exit status; but a report that named only what it attempted would
+    /// drop them from a plan the reader cannot see, so they are still
+    /// accounted for as unsuccessful in the ADR-0004 body.
+    pub not_attempted: Vec<PlannedRecord>,
 }
 
 /// Decides which A records `set-all` writes and which Apps it skips, applying
@@ -348,7 +355,10 @@ pub fn plan_set_all(
 /// the caller reads the verdict off the returned `failed` list, so the failure
 /// path is observable in both `--output` modes.
 ///
-/// `continue_on_error` decides whether the first failure stops the run.
+/// `continue_on_error` decides whether the first failure stops the run. When it
+/// does, the records the run never reached are returned in `not_attempted`, so
+/// the outcome still accounts for the whole plan.
+///
 /// `pace` is the wait between writes — `WRITE_PACE` in production.
 pub async fn apply_set_all<D: DnsRecords>(
     dns: &D,
@@ -376,6 +386,7 @@ pub async fn apply_set_all<D: DnsRecords>(
         if applied.error.is_some() {
             outcome.failed.push(applied);
             if !continue_on_error {
+                outcome.not_attempted = plan.to_create[idx + 1..].to_vec();
                 break;
             }
         } else {
@@ -739,7 +750,6 @@ mod tests {
         records: Vec<DnsRecord>,
         fail_on: HashSet<String>,
         writes: std::cell::RefCell<Vec<(String, String)>>,
-        deleted: std::cell::RefCell<Vec<String>>,
     }
 
     impl FakeDns {
@@ -749,7 +759,6 @@ mod tests {
                 records,
                 fail_on: HashSet::new(),
                 writes: std::cell::RefCell::new(vec![]),
-                deleted: std::cell::RefCell::new(vec![]),
             }
         }
 
@@ -783,7 +792,6 @@ mod tests {
         }
 
         async fn delete_a_record(&self, subdomain: &str) -> Result<bool> {
-            self.deleted.borrow_mut().push(subdomain.to_string());
             Ok(self
                 .records
                 .iter()
@@ -1086,6 +1094,67 @@ mod tests {
         );
         assert!(outcome.created.is_empty());
         assert_eq!(outcome.failed.len(), 1);
+    }
+
+    // Reporting only what it attempted would drop the abandoned records from a
+    // plan the reader cannot see: with three planned and the first failing, the
+    // body would name one subdomain and silently lose two.
+    #[tokio::test]
+    async fn apply_fail_fast_returns_the_records_it_abandoned() {
+        let dns = FakeDns::new("example.com", vec![]).failing_on(&["baikal"]);
+        let plan = apply_plan(&[
+            ("baikal", "baikal"),
+            ("freshrss", "rss"),
+            ("navidrome", "music"),
+        ]);
+        let outcome = apply_set_all(&dns, &plan, false, Duration::ZERO, &mut |_| {}).await;
+
+        let abandoned: Vec<&str> = outcome
+            .not_attempted
+            .iter()
+            .map(|r| r.app.as_str())
+            .collect();
+        assert_eq!(abandoned, vec!["freshrss", "navidrome"]);
+    }
+
+    /// `created`, `failed` and `not_attempted` partition the plan on every
+    /// path, so a reader can always reconcile the report against what was
+    /// planned.
+    async fn assert_outcome_partitions_the_plan(fail_on: &[&str], continue_on_error: bool) {
+        let dns = FakeDns::new("example.com", vec![]).failing_on(fail_on);
+        let plan = apply_plan(&[
+            ("baikal", "baikal"),
+            ("freshrss", "rss"),
+            ("navidrome", "music"),
+        ]);
+        let outcome =
+            apply_set_all(&dns, &plan, continue_on_error, Duration::ZERO, &mut |_| {}).await;
+
+        assert_eq!(
+            outcome.created.len() + outcome.failed.len() + outcome.not_attempted.len(),
+            plan.to_create.len(),
+            "fail_on={fail_on:?} continue_on_error={continue_on_error} left records unaccounted for"
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_accounts_for_every_planned_record_on_every_path() {
+        assert_outcome_partitions_the_plan(&[], false).await;
+        assert_outcome_partitions_the_plan(&["baikal"], false).await;
+        assert_outcome_partitions_the_plan(&["rss"], false).await;
+        assert_outcome_partitions_the_plan(&["music"], false).await;
+        assert_outcome_partitions_the_plan(&["baikal", "music"], true).await;
+        assert_outcome_partitions_the_plan(&["baikal", "rss", "music"], true).await;
+    }
+
+    // continue_on_error tries everything, so nothing is abandoned.
+    #[tokio::test]
+    async fn apply_continue_on_error_abandons_nothing() {
+        let dns = FakeDns::new("example.com", vec![]).failing_on(&["baikal"]);
+        let plan = apply_plan(&[("baikal", "baikal"), ("freshrss", "rss")]);
+        let outcome = apply_set_all(&dns, &plan, true, Duration::ZERO, &mut |_| {}).await;
+
+        assert!(outcome.not_attempted.is_empty());
     }
 
     // Human output streams each write as it lands rather than after the whole
