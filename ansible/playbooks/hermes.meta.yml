@@ -6,7 +6,7 @@ required_keys: [
   hermes_telegram_bot_token,
 ]
 version:
-  value: "v2026.8.19"
+  value: "v2026.8.27"
   datasource: github-releases
   depName: "NousResearch/hermes-agent"
   versioning: loose
