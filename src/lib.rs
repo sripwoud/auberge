@@ -18,6 +18,8 @@
 //!
 //! `main.rs` keeps only what a library cannot hold: the clap tree, the global
 //! output flags, and the dispatch `match`.
+//!
+//! ADR-0046.
 
 pub mod ansible_assets;
 pub mod commands;
