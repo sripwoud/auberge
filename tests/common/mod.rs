@@ -63,7 +63,7 @@
 // — anything load-bearing has an assertion over it there.
 #![allow(dead_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -369,6 +369,103 @@ pub fn runnable_files() -> Vec<PathBuf> {
     files.extend(playbook_files());
     files.sort();
     files
+}
+
+/// A role's subdirectories whose YAML ansible renders during a deploy.
+///
+/// `files/` is deliberately absent: ansible copies it byte for byte, so
+/// `{{ … }}` in one is literal text and reading it as a reference invents a
+/// requirement that does not exist. So is `examples/`, which documents a role
+/// for a human and which no deploy renders.
+const TEMPLATED_ROLE_DIRS: &[&str] = &["defaults", "handlers", "meta", "tasks", "vars"];
+
+/// One role's templated YAML, at any depth.
+pub fn role_yml_files(role: &str) -> Vec<PathBuf> {
+    let dir = role_dir(role);
+    let mut files: Vec<PathBuf> = TEMPLATED_ROLE_DIRS
+        .iter()
+        .flat_map(|sub| yml_files(&dir.join(sub)))
+        .collect();
+    files.sort();
+    files
+}
+
+/// One role's templates, at any depth.
+///
+/// Not filtered to `.j2`: ansible templates whatever `ansible.builtin.template`
+/// is pointed at, so the extension is a convention and the directory is the
+/// fact. Every file there is `.j2` today, and a walk that reads the directory
+/// keeps saying something if one is not.
+pub fn role_template_files(role: &str) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    collect_files(&role_dir(role).join("templates"), &mut files);
+    files.sort();
+    files
+}
+
+fn collect_files(dir: &Path, found: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, found);
+        } else if path.is_file() {
+            found.push(path);
+        }
+    }
+}
+
+/// Every YAML ansible renders during a deploy: [`role_yml_files`] for every
+/// role, plus the playbooks.
+///
+/// Wider than [`runnable_files`] by the directories that hold no task but are
+/// templated all the same — a `defaults/main.yml` that reads
+/// `{{ calibre_subdomain }}` states a requirement as surely as a task does,
+/// and is where most of them are stated (#686).
+pub fn templated_yml_files() -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = all_roles().iter().flat_map(|r| role_yml_files(r)).collect();
+    files.extend(playbook_files());
+    files.sort();
+    files
+}
+
+/// [`role_template_files`] for every role.
+pub fn role_templates() -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = all_roles()
+        .iter()
+        .flat_map(|r| role_template_files(r))
+        .collect();
+    files.sort();
+    files
+}
+
+/// A YAML file parsed, failing loudly and by repo-relative name.
+///
+/// Two fences spelled this identically before it was shared (#686) — the shape
+/// #654 removed from the task walk, surviving in the parse beneath it.
+pub fn parse_yaml(path: &Path) -> Value {
+    let raw = fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", relative(path)));
+    serde_yaml::from_str(&raw).unwrap_or_else(|e| panic!("{} must parse: {e}", relative(path)))
+}
+
+/// Every name in the Key Registry — the vocabulary a Host's `config.toml` may
+/// use, and the only answer to a variable reference that the user supplies.
+pub fn registry_keys() -> BTreeSet<String> {
+    let path = ansible_dir().join("keys.yml");
+    let registry = parse_yaml(&path);
+    let keys = registry
+        .get("keys")
+        .and_then(Value::as_mapping)
+        .unwrap_or_else(|| panic!("{} must hold a keys: mapping", relative(&path)));
+    let names: BTreeSet<String> = keys
+        .keys()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect();
+    assert!(!names.is_empty(), "the Key Registry is empty");
+    names
 }
 
 /// A role's scalar defaults, as a substitution table — which is where every

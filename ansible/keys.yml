@@ -63,6 +63,10 @@ keys:
     secret: false
     doc: "Subdomain for the Blocky DNS server"
 
+  calibre_subdomain:
+    secret: false
+    doc: "Subdomain for the Calibre-Web e-book library"
+
   cloudflare_dns_api_token:
     secret: true
     doc: "Cloudflare API token with DNS edit permissions for ACME/Let's Encrypt challenges"

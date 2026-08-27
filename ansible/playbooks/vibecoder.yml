@@ -6,6 +6,8 @@
     user_name: "{{ ansible_user | default(ansible_ssh_user) }}"
     user_home: "/home/{{ ansible_user | default(ansible_ssh_user) }}"
     ssh_port: "{{ ansible_port | default(22) }}"
+    bash_user_name: "{{ user_name }}"
+    bash_user_home: "{{ user_home }}"
 
   roles:
     - vibecoder

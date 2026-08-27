@@ -19,14 +19,17 @@
 
 mod common;
 
-use common::{meta_files, playbook_files, playbooks_dir, relative};
+use common::{meta_files, parse_yaml, playbook_files, playbooks_dir, registry_keys, relative};
 use serde_yaml::{Mapping, Value};
 use std::collections::BTreeSet;
 use std::fs;
 
+/// The shared parse, narrowed to the mapping every file read here must be.
 fn parse(path: &std::path::Path) -> Mapping {
-    let raw = fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", relative(path)));
-    serde_yaml::from_str(&raw).unwrap_or_else(|e| panic!("{} must parse: {e}", relative(path)))
+    match parse_yaml(path) {
+        Value::Mapping(map) => map,
+        other => panic!("{} must be a mapping, got {other:?}", relative(path)),
+    }
 }
 
 fn declared_keys(meta: &Mapping) -> Vec<String> {
@@ -39,25 +42,6 @@ fn declared_keys(meta: &Mapping) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-fn registry_keys() -> BTreeSet<String> {
-    let path = playbooks_dir()
-        .parent()
-        .expect("playbooks dir has a parent")
-        .join("keys.yml");
-    let registry = parse(&path);
-    let keys = registry
-        .get(Value::from("keys"))
-        .and_then(Value::as_mapping)
-        .unwrap_or_else(|| panic!("{} must hold a keys: mapping", relative(&path)));
-    let names: BTreeSet<String> = keys
-        .keys()
-        .filter_map(Value::as_str)
-        .map(str::to_string)
-        .collect();
-    assert!(!names.is_empty(), "the Key Registry is empty");
-    names
 }
 
 /// The roster of `playbook`, as `(role, tags)` — the same shape the resolver
