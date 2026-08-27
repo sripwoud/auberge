@@ -65,6 +65,7 @@ pub const CRATE_MODULES: &[&str] = &[
     "src/config.rs",
     "src/hosts.rs",
     "src/key_registry.rs",
+    "src/lib.rs",
     "src/main.rs",
     "src/output.rs",
     "src/playbook_meta.rs",

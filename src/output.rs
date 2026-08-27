@@ -80,7 +80,7 @@ pub fn is_quiet() -> bool {
     QUIET.load(Ordering::Relaxed)
 }
 
-pub(crate) fn set_no_color(v: bool) {
+pub fn set_no_color(v: bool) {
     NO_COLOR_FLAG.store(v, Ordering::Relaxed);
 }
 
