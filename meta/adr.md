@@ -285,7 +285,7 @@ Auberge makes choices:
 
 - Single reverse proxy (Caddy)
 - Single DNS provider (Cloudflare)
-- Single VPN (WireGuard)
+- Single VPN (Tailscale)
 
 Reduces maintenance burden, improves documentation, easier testing.
 

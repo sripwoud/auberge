@@ -256,15 +256,6 @@ mod tests {
     fn test_build_tag_playbook_map_overlapping_tags() {
         let map = build_tag_playbook_map().unwrap();
 
-        let network_playbooks = map.get("network").unwrap();
-        assert_eq!(network_playbooks.len(), 2);
-        let filenames: Vec<&str> = network_playbooks
-            .iter()
-            .map(|p| p.file_name().unwrap().to_str().unwrap())
-            .collect();
-        assert!(filenames.contains(&"infrastructure.yml"));
-        assert!(filenames.contains(&"apps.yml"));
-
         let web_playbooks = map.get("web").unwrap();
         assert_eq!(web_playbooks.len(), 2);
         let filenames: Vec<&str> = web_playbooks
@@ -357,8 +348,27 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_networking_tags_stay_in_infrastructure() {
+        for tag in ["network", "vpn"] {
+            let (runs, unknown) = resolve_tags_to_playbook_runs(&[tag.to_string()]).unwrap();
+
+            assert!(unknown.is_empty(), "{tag} resolved to no playbook at all");
+            assert_eq!(
+                runs.len(),
+                1,
+                "{tag} reached a playbook beyond infrastructure"
+            );
+            assert_eq!(
+                runs[0].path.file_name().unwrap().to_str().unwrap(),
+                "infrastructure.yml"
+            );
+            assert_eq!(runs[0].tags, vec![tag]);
+        }
+    }
+
+    #[test]
     fn test_resolve_overlapping_tag_hits_both_playbooks() {
-        let (runs, unknown) = resolve_tags_to_playbook_runs(&["network".to_string()]).unwrap();
+        let (runs, unknown) = resolve_tags_to_playbook_runs(&["web".to_string()]).unwrap();
 
         assert!(unknown.is_empty());
         assert_eq!(runs.len(), 2);
@@ -371,7 +381,7 @@ mod tests {
             runs[1].path.file_name().unwrap().to_str().unwrap(),
             "apps.yml"
         );
-        assert!(runs[1].tags.contains(&"network".to_string()));
+        assert!(runs[1].tags.contains(&"web".to_string()));
     }
 
     #[test]

@@ -44,9 +44,10 @@ fn written_tasks(role: &str) -> String {
 /// is actually on disk. Every role whose task files hold anything at all must
 /// yield at least one task.
 ///
-/// The wireguard role is the reason this is phrased that way and not more
-/// simply: its `tasks/main.yml` holds one byte, a bare newline, and has since
-/// the role was added, so the role is a no-op that `apps.yml` still lists.
+/// The count is checked against every role on disk rather than against all
+/// but one: a role whose task files hold nothing deploys nothing, and fails
+/// here instead of being budgeted for. The allowance this replaces was sized
+/// for wireguard alone (#665).
 #[test]
 fn test_a_role_whose_task_files_hold_anything_yields_a_task() {
     let roles = all_roles();
@@ -58,12 +59,11 @@ fn test_a_role_whose_task_files_hold_anything_yields_a_task() {
 
     // Without this the test passes by finding nothing to check: read every role
     // as empty and `barren` is empty too.
-    assert!(
-        written.len() + 1 == roles.len(),
-        "{} of {} roles were read as having written tasks; every role but \
-         wireguard has them, so the read side of this test has broken",
+    assert_eq!(
         written.len(),
-        roles.len()
+        roles.len(),
+        "a role under ansible/roles has empty task files; either the read side \
+         of this test has broken or a role that deploys nothing has been added"
     );
 
     let barren: Vec<&String> = written

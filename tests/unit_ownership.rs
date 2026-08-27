@@ -377,12 +377,11 @@ fn test_every_declared_unit_is_revealed_by_a_task_or_names_why_not() {
 /// installs no units at all declares none, so a `units:` key on it would be
 /// an inventory of nothing. Pinned so the boundary stays deliberate: yourls
 /// runs on php-fpm (a play-time package fact) and mariadb (shared
-/// substrate), and wireguard has no units — none of which is this fence's
-/// domain.
+/// substrate), neither of which is this fence's domain.
 #[test]
 fn test_apps_outside_the_domain_declare_no_units() {
     let declared = declared_units();
-    for app in ["yourls", "wireguard", "apps", "infrastructure", "hardening"] {
+    for app in ["yourls", "apps", "infrastructure", "hardening"] {
         assert!(
             !declared.iter().any(|owned| owned.app == app),
             "{app} declares units; its exclusion from the ownership domain was \
