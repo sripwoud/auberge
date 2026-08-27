@@ -98,15 +98,13 @@ const UNIT_DIRS: &[&str] = &[
 /// caught here - it fails the directory test instead, and is recorded as a
 /// limit in ADR-0041 rather than guessed at.
 ///
-/// The suffix test reads the crate's own [`UNIT_TYPE_SUFFIXES`], so a unit type
-/// this fence does not know is not a thing that can happen. It could before:
-/// the file carried its own copy of the table, and a type missing from the copy
-/// is a removal that fails this test, leaves the domain without a word, and
-/// keeps `test_the_scan_still_sees_every_removal_site` green — that test pins
-/// only what the scan found. Which is how the fence shipped admitting five of
-/// systemd's eleven unit types (#653), with a green build saying otherwise.
-/// #656 patched it with a second copy plus a scraper that read the declaration
-/// out of `src/playbook_meta.rs` as *text*; #667 deleted both for the import.
+/// The suffix test reads the crate's own [`UNIT_TYPE_SUFFIXES`] (ADR-0046), so
+/// this fence and production cannot disagree about what a unit type is — the
+/// disagreement #653 shipped. What the import does not buy: a type dropped from
+/// that const shrinks the qualifier and this fence's domain together, and
+/// `test_the_scan_still_sees_every_removal_site` stays green because it pins
+/// only what the scan found. `playbook_meta`'s
+/// `test_the_unit_type_set_is_every_type_systemd_defines` is what fails there.
 fn unit_at<'a>(path: &'a str, file: &str, task: &str) -> Option<&'a str> {
     let (dir, name) = path.rsplit_once('/')?;
     let known = UNIT_DIRS.contains(&dir) || dir.ends_with("/.config/systemd/user");

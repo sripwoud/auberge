@@ -1,25 +1,21 @@
 //! Every module the CLI is built from, as a library the integration fences can
 //! import.
 //!
-//! The crate shipped as a bin target alone, which gave `tests/` no way to `use`
-//! anything in it: Cargo links an integration test against the *library*
-//! target, so a fence needing a crate type had to retype it. Both fences over
-//! systemd unit names did — `unit_ownership` mirrored the unit-type table and
-//! `qualified_unit_name` by hand, and `removed_unit_failed_state` held its own
-//! mirror true by reading `src/playbook_meta.rs` as *text* and string-splitting
-//! on Rust syntax to recover one `const`. A mirror is a second authority: #653
-//! caught this one admitting five of systemd's eleven unit types, with a green
-//! build saying otherwise (#667).
+//! Cargo links an integration test against the *library* target, and there was
+//! none, so a fence needing a crate type had to retype it. ADR-0046 has the
+//! incident that cost and the rule it bought: a fence asserting about a crate
+//! item reaches it with `use`.
 //!
 //! Everything is `pub`, and deliberately not a curated surface. Nothing outside
 //! this repository consumes the crate, so a narrower `pub` list would be a
 //! second interface maintained against Cargo's visibility rules for no reader —
 //! the discipline that matters is which vocabulary the fences actually import.
+//! The cost is real and named in the ADR: `dead_code` no longer reaches a `pub`
+//! item, so the ~18 `#[allow(dead_code)]` sites in this crate are now inert and
+//! an unused `pub fn` is nobody's warning.
 //!
-//! `main.rs` keeps only what a library cannot hold: the clap tree, the global
-//! output flags, and the dispatch `match`.
-//!
-//! ADR-0046.
+//! `main.rs` holds the clap tree, the global output flags, the dispatch `match`,
+//! and the tests over that clap surface.
 
 pub mod ansible_assets;
 pub mod commands;

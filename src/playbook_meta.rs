@@ -78,6 +78,8 @@ pub const UNIT_TYPE_SUFFIXES: &[&str] = &[
 /// answers for: an explicit unit type is kept, a bare name is a `.service`.
 /// Instances stay instances — `syncthing@alice` becomes
 /// `syncthing@alice.service`, not the `syncthing@.service` file behind it.
+///
+/// For the unit *file* behind that instance, see [`unit_file_name`].
 pub fn qualified_unit_name(unit: &str) -> String {
     if UNIT_TYPE_SUFFIXES
         .iter()
@@ -97,6 +99,8 @@ pub fn qualified_unit_name(unit: &str) -> String {
 ///
 /// Appending `.service` unconditionally instead read `bichon-archive.timer` as
 /// `bichon-archive.timer.service` and failed the restore preflight (#619).
+///
+/// For the loaded unit rather than the file, see [`qualified_unit_name`].
 pub fn unit_file_name(unit: &str) -> String {
     let (name, suffix) = UNIT_TYPE_SUFFIXES
         .iter()
@@ -1243,6 +1247,56 @@ units:
                     scope: UnitScope::User,
                 },
             ]
+        );
+    }
+
+    /// systemd's unit types are not something this repo can compute, so the
+    /// closed set is declared here off `systemd.unit(5)` and matched against
+    /// the production const by equality in both directions — the declared
+    /// regime of ADR-0028, the shape `PURGED_PACKAGES` already has.
+    ///
+    /// Not the mirror ADR-0046 deletes: that one restated *this crate's* table
+    /// inside a fence, so the fence and production could disagree. This
+    /// restates *systemd's*, which no code here can read.
+    ///
+    /// It exists because the deleted mirrors were an accidental witness. Two
+    /// fences each carried a copy, so truncating this list failed their drift
+    /// check. Importing the const (#667) removed the drift — and the witness
+    /// with it: a type dropped from the list below would shrink the qualifier,
+    /// both fences' suffix tests, and both fences' domains, all green. That is
+    /// #653's failure mode exactly, which is the one this file must not host.
+    #[test]
+    fn test_the_unit_type_set_is_every_type_systemd_defines() {
+        const SYSTEMD_UNIT_TYPES: &[&str] = &[
+            ".automount",
+            ".device",
+            ".mount",
+            ".path",
+            ".scope",
+            ".service",
+            ".slice",
+            ".socket",
+            ".swap",
+            ".target",
+            ".timer",
+        ];
+        let declared: std::collections::BTreeSet<&str> =
+            UNIT_TYPE_SUFFIXES.iter().copied().collect();
+        let systemd: std::collections::BTreeSet<&str> =
+            SYSTEMD_UNIT_TYPES.iter().copied().collect();
+
+        assert_eq!(
+            systemd.difference(&declared).collect::<Vec<_>>(),
+            Vec::<&&str>::new(),
+            "UNIT_TYPE_SUFFIXES is missing unit types systemd defines; every \
+             one is a name `qualified_unit_name` mis-suffixes and a removal the \
+             fleet fences cannot see"
+        );
+        assert_eq!(
+            declared.difference(&systemd).collect::<Vec<_>>(),
+            Vec::<&&str>::new(),
+            "UNIT_TYPE_SUFFIXES declares unit types systemd does not; a name \
+             ending in one would be kept unqualified and address nothing"
         );
     }
 
