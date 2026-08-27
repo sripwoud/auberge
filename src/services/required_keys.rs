@@ -394,6 +394,7 @@ mod tests {
             "bichon",
             &["bichon_api_token", "bichon_encryption_password"],
         ),
+        ("calibre", &["calibre_subdomain"]),
         (
             "colporteur",
             &["colporteur_feeds_password", "colporteur_subdomain"],
