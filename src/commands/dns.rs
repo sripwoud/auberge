@@ -830,45 +830,25 @@ mod tests {
         }
     }
 
-    // Everywhere else every call uses the production API, so an accepted
-    // --production selected nothing. A script passing it must fail loudly
-    // rather than read as if it chose an environment.
+    // A script passing the flag must fail loudly rather than read as if it
+    // had chosen an environment: every call uses the production API.
     #[test]
     fn production_is_an_error_on_the_subcommands_that_never_read_it() {
         let invocations: [&[&str]; 5] = [
-            &["dns", "list", "--production"],
-            &["dns", "status", "--production"],
-            &[
-                "dns",
-                "set",
-                "-s",
-                "freshrss",
-                "-i",
-                "1.2.3.4",
-                "--production",
-            ],
-            &["dns", "migrate", "-i", "1.2.3.4", "--production"],
-            &["dns", "set-all", "--host", "auberge", "--production"],
+            &["dns", "list"],
+            &["dns", "status"],
+            &["dns", "set", "-s", "freshrss", "-i", "1.2.3.4"],
+            &["dns", "migrate", "-i", "1.2.3.4"],
+            &["dns", "set-all", "--host", "auberge"],
         ];
-        for args in invocations {
-            let Err(err) = DnsCli::try_parse_from(args) else {
-                panic!("{:?} must be rejected", args.join(" "));
-            };
-            assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
-        }
-    }
-
-    #[test]
-    fn short_p_is_an_error_on_the_subcommands_that_never_read_it() {
-        for args in [
-            ["dns", "list", "-P"],
-            ["dns", "status", "-P"],
-            ["dns", "migrate", "-P"],
-        ] {
-            let Err(err) = DnsCli::try_parse_from(args) else {
-                panic!("-P must be rejected");
-            };
-            assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+        for prefix in invocations {
+            for flag in ["--production", "-P"] {
+                let args = [prefix, &[flag]].concat();
+                let Err(err) = DnsCli::try_parse_from(&args) else {
+                    panic!("{:?} must be rejected", args.join(" "));
+                };
+                assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+            }
         }
     }
 
