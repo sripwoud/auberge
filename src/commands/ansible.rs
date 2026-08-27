@@ -76,7 +76,7 @@ pub enum AnsibleCommands {
 
 fn validate_config_for_playbook(playbook_name: &str, tags: Option<&[String]>) -> Result<Preflight> {
     let config = Config::load()?;
-    config.preflight_for(playbook_name, tags)
+    crate::services::required_keys::preflight_for(&config, playbook_name, tags)
 }
 
 fn resolve_playbook_name(arg: &Path, playbooks: &[PathBuf]) -> Result<PathBuf> {

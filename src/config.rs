@@ -8,95 +8,20 @@ const SENSITIVE_SUFFIXES: &[&str] = &["password", "key", "token", "secret", "coo
 
 const DEFAULT_TTL: u32 = 300;
 
-/// Metadata describing a playbook's config requirements.
-/// Acts as the Key Registry entry for a given playbook.
-#[derive(Debug)]
-pub struct PlaybookMeta {
-    #[allow(dead_code)]
-    pub name: String,
-    pub required_keys: Vec<String>,
-}
-
-impl PlaybookMeta {
-    /// Look up the required config keys for a playbook by name.
-    /// This is the Key Registry — the single authoritative source of
-    /// which config keys each playbook needs.
-    pub fn for_playbook(name: &str, tags: Option<&[String]>) -> Self {
-        let mut required_keys: Vec<String> = match name {
-            "bootstrap.yml" => vec![
-                "admin_user_name".into(),
-                "ssh_port".into(),
-                "hostname".into(),
-            ],
-            "hardening.yml" => vec![],
-            "infrastructure.yml" => vec![
-                "admin_user_name".into(),
-                "domain".into(),
-                "tailscale_authkey".into(),
-            ],
-            "apps.yml" => vec![
-                "admin_user_name".into(),
-                "domain".into(),
-                "cloudflare_dns_api_token".into(),
-            ],
-            "hermes.yml" => vec![
-                "admin_user_name".into(),
-                "domain".into(),
-                "hermes_llm_provider".into(),
-                "hermes_llm_api_key".into(),
-                "hermes_telegram_bot_token".into(),
-            ],
-            _ => vec!["admin_user_name".into(), "domain".into()],
-        };
-
-        // For apps.yml, add tag-specific required keys
-        if name == "apps.yml"
-            && let Some(tags) = tags
-        {
-            for tag in tags {
-                for key in tag_required_keys(tag) {
-                    let key = key.to_string();
-                    if !required_keys.contains(&key) {
-                        required_keys.push(key);
-                    }
-                }
-            }
-        }
-
-        PlaybookMeta {
-            name: name.to_string(),
-            required_keys,
-        }
-    }
-}
-
-fn tag_required_keys(tag: &str) -> &[&'static str] {
-    match tag {
-        "colporteur" => &["colporteur_subdomain"],
-        "hermes" => &[
-            "hermes_llm_provider",
-            "hermes_llm_api_key",
-            "hermes_telegram_bot_token",
-        ],
-        "tgtg" => &["tgtg_telegram_bot_token"],
-        _ => &[],
-    }
-}
-
 /// A validated snapshot of config variables ready for an Ansible run.
-/// The only way to obtain a `Preflight` is via [`Config::preflight_for`],
+/// The only way to obtain a `Preflight` is via [`Config::preflight_with_keys`],
 /// which guarantees all required keys are present and resolved.
 #[derive(Debug)]
 pub struct Preflight {
-    #[allow(dead_code)]
-    meta: PlaybookMeta,
+    required_keys: Vec<String>,
     flat_vars: HashMap<String, String>,
 }
 
 impl Preflight {
+    /// The keys this run was validated against, in declaration order.
     #[allow(dead_code)]
-    pub fn meta(&self) -> &PlaybookMeta {
-        &self.meta
+    pub fn required_keys(&self) -> &[String] {
+        &self.required_keys
     }
 
     pub fn flat_vars(&self) -> &HashMap<String, String> {
@@ -287,29 +212,28 @@ impl Config {
         Ok(())
     }
 
-    /// Validate that all required keys in `meta` are present and resolved,
-    /// then return a flat map suitable for passing to Ansible.
-    pub fn validate_for(&self, meta: &PlaybookMeta) -> Result<()> {
-        let keys: Vec<&str> = meta.required_keys.iter().map(String::as_str).collect();
-        self.validate_required_resolved(&keys)
-    }
-
     // ── Ansible integration ───────────────────────────────────────────────────
 
     pub fn flatten_for_ansible(&self) -> HashMap<String, String> {
         flatten_toml(&self.values)
     }
 
-    /// Build a [`Preflight`] for `playbook`, validating all required keys.
+    /// Build a [`Preflight`] from the keys a run's Playbook Metas declare.
     ///
-    /// This is the **only** constructor for `Preflight`.  It looks up the
-    /// playbook's requirements in the Key Registry (`PlaybookMeta`), validates
-    /// the config, and returns a capability value that unlocks `AnsibleRunner`.
-    pub fn preflight_for(&self, playbook: &str, tags: Option<&[String]>) -> Result<Preflight> {
-        let meta = PlaybookMeta::for_playbook(playbook, tags);
-        self.validate_for(&meta)?;
-        let flat_vars = self.flatten_for_ansible();
-        Ok(Preflight { meta, flat_vars })
+    /// This is the **only** constructor for `Preflight`: it validates every key
+    /// is present and resolvable, then returns the capability value that
+    /// unlocks `AnsibleRunner`. Callers resolve the keys through
+    /// [`crate::services::required_keys::preflight_for`], which reads the
+    /// declarations off the Metas.
+    pub fn preflight_with_keys(&self, required_keys: Vec<String>) -> Result<Preflight> {
+        {
+            let keys: Vec<&str> = required_keys.iter().map(String::as_str).collect();
+            self.validate_required_resolved(&keys)?;
+        }
+        Ok(Preflight {
+            required_keys,
+            flat_vars: self.flatten_for_ansible(),
+        })
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -843,145 +767,10 @@ ssh_port = 22022
         assert_eq!(config.get("brand_new_key").unwrap(), "hello");
     }
 
-    // ── PlaybookMeta / KeyRegistry ────────────────────────────────────────────
+    // ── preflight_with_keys ───────────────────────────────────────────────────
 
     #[test]
-    fn test_playbook_meta_bootstrap() {
-        let meta = PlaybookMeta::for_playbook("bootstrap.yml", None);
-        assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
-        assert!(meta.required_keys.contains(&"ssh_port".to_string()));
-        assert!(meta.required_keys.contains(&"hostname".to_string()));
-    }
-
-    #[test]
-    fn test_playbook_meta_infrastructure() {
-        let meta = PlaybookMeta::for_playbook("infrastructure.yml", None);
-        assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
-        assert!(meta.required_keys.contains(&"domain".to_string()));
-        assert!(
-            meta.required_keys
-                .contains(&"tailscale_authkey".to_string())
-        );
-    }
-
-    #[test]
-    fn test_playbook_meta_apps() {
-        let meta = PlaybookMeta::for_playbook("apps.yml", None);
-        assert!(
-            meta.required_keys
-                .contains(&"cloudflare_dns_api_token".to_string())
-        );
-        assert!(
-            !meta
-                .required_keys
-                .contains(&"colporteur_subdomain".to_string())
-        );
-    }
-
-    #[test]
-    fn test_playbook_meta_apps_with_colporteur_tag() {
-        let tags = vec!["colporteur".to_string()];
-        let meta = PlaybookMeta::for_playbook("apps.yml", Some(&tags));
-        assert!(
-            meta.required_keys
-                .contains(&"cloudflare_dns_api_token".to_string())
-        );
-        assert!(
-            meta.required_keys
-                .contains(&"colporteur_subdomain".to_string())
-        );
-    }
-
-    #[test]
-    fn test_playbook_meta_apps_with_hermes_tag() {
-        let tags = vec!["hermes".to_string()];
-        let meta = PlaybookMeta::for_playbook("apps.yml", Some(&tags));
-        assert!(
-            meta.required_keys
-                .contains(&"cloudflare_dns_api_token".to_string())
-        );
-        assert!(
-            meta.required_keys
-                .contains(&"hermes_llm_provider".to_string())
-        );
-        assert!(
-            meta.required_keys
-                .contains(&"hermes_llm_api_key".to_string())
-        );
-        assert!(
-            meta.required_keys
-                .contains(&"hermes_telegram_bot_token".to_string())
-        );
-    }
-
-    #[test]
-    fn test_playbook_meta_apps_with_tgtg_tag() {
-        let tags = vec!["tgtg".to_string()];
-        let meta = PlaybookMeta::for_playbook("apps.yml", Some(&tags));
-        assert!(
-            meta.required_keys
-                .contains(&"tgtg_telegram_bot_token".to_string())
-        );
-    }
-
-    #[test]
-    fn test_playbook_meta_apps_with_unrelated_tag() {
-        let tags = vec!["paperless".to_string()];
-        let meta = PlaybookMeta::for_playbook("apps.yml", Some(&tags));
-        assert!(
-            !meta
-                .required_keys
-                .contains(&"colporteur_subdomain".to_string())
-        );
-    }
-
-    #[test]
-    fn test_playbook_meta_ignores_tags_for_non_apps_playbooks() {
-        let tags = vec!["colporteur".to_string()];
-        let meta = PlaybookMeta::for_playbook("infrastructure.yml", Some(&tags));
-        assert!(
-            !meta
-                .required_keys
-                .contains(&"colporteur_subdomain".to_string())
-        );
-    }
-
-    #[test]
-    fn test_playbook_meta_hardening_is_empty() {
-        let meta = PlaybookMeta::for_playbook("hardening.yml", None);
-        assert!(meta.required_keys.is_empty());
-    }
-
-    #[test]
-    fn test_playbook_meta_hermes() {
-        let meta = PlaybookMeta::for_playbook("hermes.yml", None);
-        assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
-        assert!(meta.required_keys.contains(&"domain".to_string()));
-        assert!(
-            meta.required_keys
-                .contains(&"hermes_llm_provider".to_string())
-        );
-        assert!(
-            meta.required_keys
-                .contains(&"hermes_llm_api_key".to_string())
-        );
-        assert!(
-            meta.required_keys
-                .contains(&"hermes_telegram_bot_token".to_string())
-        );
-    }
-
-    #[test]
-    fn test_playbook_meta_unknown_playbook_returns_defaults() {
-        let meta = PlaybookMeta::for_playbook("custom.yml", None);
-        assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
-        assert!(meta.required_keys.contains(&"domain".to_string()));
-    }
-
-    // ── preflight_for ─────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_preflight_for_succeeds_when_all_keys_present() {
+    fn test_preflight_succeeds_when_all_keys_present() {
         let config = make_config(
             r#"
             admin_user_name = "alice"
@@ -989,15 +778,14 @@ ssh_port = 22022
             tailscale_authkey = "tskey-abc123"
         "#,
         );
-        let result = config.preflight_for("infrastructure.yml", None);
-        assert!(result.is_ok());
-        let preflight = result.unwrap();
-        assert_eq!(preflight.meta().name, "infrastructure.yml");
+        let keys = vec!["admin_user_name".to_string(), "domain".to_string()];
+        let preflight = config.preflight_with_keys(keys.clone()).unwrap();
+        assert_eq!(preflight.required_keys(), keys.as_slice());
         assert_eq!(preflight.flat_vars().get("domain").unwrap(), "example.com");
     }
 
     #[test]
-    fn test_preflight_for_fails_when_required_key_missing() {
+    fn test_preflight_fails_when_required_key_missing() {
         let config = make_config(
             r#"
             admin_user_name = "alice"
@@ -1005,88 +793,65 @@ ssh_port = 22022
         "#,
         );
         let err = config
-            .preflight_for("infrastructure.yml", None)
+            .preflight_with_keys(vec!["tailscale_authkey".to_string()])
             .unwrap_err();
         assert!(
             err.to_string().contains("tailscale_authkey"),
-            "error should mention missing key: {}",
-            err
+            "error should mention missing key: {err}"
         );
     }
 
     #[test]
-    fn test_preflight_for_fails_when_required_key_empty() {
+    fn test_preflight_fails_when_required_key_empty() {
         let config = make_config(
             r#"
             admin_user_name = "alice"
-            domain = "example.com"
             tailscale_authkey = ""
         "#,
         );
         let err = config
-            .preflight_for("infrastructure.yml", None)
+            .preflight_with_keys(vec!["tailscale_authkey".to_string()])
             .unwrap_err();
         assert!(
             err.to_string().contains("tailscale_authkey"),
-            "error should mention empty key: {}",
-            err
+            "error should mention empty key: {err}"
         );
     }
 
     #[test]
-    fn test_preflight_for_hardening_requires_no_keys() {
-        // hardening.yml has no required keys — should succeed with empty config
+    fn test_preflight_with_no_keys_accepts_an_empty_config() {
         let config = make_config("");
-        let result = config.preflight_for("hardening.yml", None);
-        assert!(result.is_ok());
+        let preflight = config.preflight_with_keys(Vec::new()).unwrap();
+        assert!(preflight.required_keys().is_empty());
     }
 
     #[test]
-    fn test_preflight_for_flat_vars_contains_all_config() {
+    fn test_preflight_flat_vars_contains_all_config_not_just_required() {
         let config = make_config(
             r#"
             admin_user_name = "alice"
             domain = "example.com"
-            tailscale_authkey = "tskey-abc"
             ssh_port = 22022
         "#,
         );
-        let preflight = config.preflight_for("infrastructure.yml", None).unwrap();
+        let preflight = config
+            .preflight_with_keys(vec!["domain".to_string()])
+            .unwrap();
         let flat = preflight.flat_vars();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
     }
 
     #[test]
-    fn test_preflight_for_apps_with_tag_validates_tag_keys() {
-        let tags = vec!["colporteur".to_string()];
+    fn test_preflight_secret_keys_present_unredacted_in_flat_vars() {
         let config = make_config(
             r#"
-            admin_user_name = "alice"
-            domain = "example.com"
-            cloudflare_dns_api_token = "cftoken"
-        "#,
-        );
-        // Missing colporteur_subdomain
-        let err = config.preflight_for("apps.yml", Some(&tags)).unwrap_err();
-        assert!(
-            err.to_string().contains("colporteur_subdomain"),
-            "error should mention missing tag key: {}",
-            err
-        );
-    }
-
-    #[test]
-    fn test_preflight_for_secret_keys_present_in_flat_vars() {
-        let config = make_config(
-            r#"
-            admin_user_name = "alice"
-            domain = "example.com"
             tailscale_authkey = "tskey-supersecret"
         "#,
         );
-        let preflight = config.preflight_for("infrastructure.yml", None).unwrap();
-        // flat_vars contains the actual (unredacted) secret value for ansible
+        let preflight = config
+            .preflight_with_keys(vec!["tailscale_authkey".to_string()])
+            .unwrap();
         assert_eq!(
             preflight.flat_vars().get("tailscale_authkey").unwrap(),
             "tskey-supersecret"

@@ -272,7 +272,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
             } else {
                 Some(run.tags.as_slice())
             };
-            config.preflight_for(name, tags)
+            crate::services::required_keys::preflight_for(&config, name, tags)
         })
         .collect::<Result<_>>()?;
 
