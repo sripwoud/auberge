@@ -93,11 +93,36 @@ pub trait DnsRecords {
     async fn delete_a_record(&self, subdomain: &str) -> Result<bool>;
 }
 
+/// One in-scope A record and the outcome of its write. `success` is `true` on a
+/// dry run, which writes nothing.
+#[derive(Debug)]
 pub struct MigrationResult {
     pub subdomain: String,
     pub old_ip: String,
     pub new_ip: String,
     pub success: bool,
+}
+
+/// An A record `migrate` left where it was, and why.
+///
+/// Keyed on the record, not on an App as `SkippedApp` is: `migrate` reads the
+/// zone, so a subdomain here need not name an App at all.
+#[derive(Debug, PartialEq, Eq)]
+pub struct SkippedRecord {
+    pub subdomain: String,
+    /// The address the record keeps — the tailnet value that decided the skip.
+    pub ip: String,
+    pub reason: SkipReason,
+}
+
+/// What `migrate_all` did to the zone. `migrated` and `skipped` partition the
+/// records the run took as candidates — so a caller diffing against the zone
+/// can tell a record left behind on purpose from one the run never saw — and
+/// records that were never candidates are in neither.
+#[derive(Debug, Default)]
+pub struct MigrationOutcome {
+    pub migrated: Vec<MigrationResult>,
+    pub skipped: Vec<SkippedRecord>,
 }
 
 pub struct DnsStatus {
@@ -207,10 +232,12 @@ pub fn is_tailscale_ip(ip: &str) -> bool {
     octets[0] == 100 && (64..=127).contains(&octets[1])
 }
 
-/// Why `set-all` will not write a record for an App.
+/// Why a record is neither written nor repointed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkipReason {
-    /// ADR-0003: the App publishes via Blocky, never via a Cloudflare A record.
+    /// ADR-0003 keeps Tailnet-only Apps off Cloudflare, which each subcommand
+    /// meets from its own side: `set-all` never creates the record, and
+    /// `migrate` never repoints one that already holds a tailnet address.
     TailnetOnly,
 }
 
@@ -403,16 +430,20 @@ pub async fn apply_set_all<D: DnsRecords>(
 
 /// Repoints every non-tailnet A record under the Domain at `new_ip`. Records
 /// already holding a Tailscale CGNAT address are left alone — they are a
-/// Tailnet-only App's publication, not a Host address.
+/// Tailnet-only App's publication, not a Host address — and are returned in
+/// `skipped` rather than announced, so the command owns what the human sees.
+///
+/// Records outside the run's scope (the apex, other domains, non-A types) were
+/// never candidates and are in neither list.
 pub async fn migrate_all<D: DnsRecords>(
     dns: &D,
     new_ip: &str,
     dry_run: bool,
-) -> Result<Vec<MigrationResult>> {
+) -> Result<MigrationOutcome> {
     let domain = dns.domain().to_string();
     let domain_suffix = format!(".{}", domain);
     let records = dns.list_records().await?;
-    let mut results = Vec::new();
+    let mut outcome = MigrationOutcome::default();
 
     for record in records {
         let Some(old_ip) = record.a_ip() else {
@@ -422,12 +453,16 @@ pub async fn migrate_all<D: DnsRecords>(
             continue;
         };
         if is_tailscale_ip(&old_ip.to_string()) {
-            eprintln!("Skipping tailnet-only record: {}", record.name);
+            outcome.skipped.push(SkippedRecord {
+                subdomain: subdomain.to_string(),
+                ip: old_ip.to_string(),
+                reason: SkipReason::TailnetOnly,
+            });
             continue;
         }
 
         let success = dry_run || dns.set_a_record(subdomain, new_ip).await.is_ok();
-        results.push(MigrationResult {
+        outcome.migrated.push(MigrationResult {
             subdomain: subdomain.to_string(),
             old_ip: old_ip.to_string(),
             new_ip: new_ip.to_string(),
@@ -435,7 +470,7 @@ pub async fn migrate_all<D: DnsRecords>(
         });
     }
 
-    Ok(results)
+    Ok(outcome)
 }
 
 /// Reads the zone and reports which of `configured_subdomains` have no A record.
@@ -1189,41 +1224,86 @@ mod tests {
                 a_record("baikal.example.com", "203.0.113.10"),
             ],
         );
-        let results = migrate_all(&dns, "198.51.100.7", false).await.unwrap();
+        let outcome = migrate_all(&dns, "198.51.100.7", false).await.unwrap();
 
-        let mut moved: Vec<&str> = results.iter().map(|r| r.subdomain.as_str()).collect();
+        let mut moved: Vec<&str> = outcome
+            .migrated
+            .iter()
+            .map(|r| r.subdomain.as_str())
+            .collect();
         moved.sort();
         assert_eq!(moved, vec!["baikal", "rss"]);
         assert!(
-            results
+            outcome
+                .migrated
                 .iter()
                 .all(|r| r.success && r.new_ip == "198.51.100.7")
         );
+        assert!(outcome.skipped.is_empty());
         assert_eq!(dns.writes().len(), 2);
     }
 
     // A record already holding a CGNAT address is a Tailnet-only App's
     // publication, not a Host address — repointing it would take the App off
-    // the tailnet (ADR-0003).
+    // the tailnet (ADR-0003). The skip is an answer, not a footnote: a caller
+    // diffing the migration against the zone reads it off `skipped` rather
+    // than off stderr.
     #[tokio::test]
-    async fn migrate_leaves_tailscale_records_alone() {
+    async fn migrate_leaves_tailscale_records_alone_and_reports_them_as_data() {
         let dns = FakeDns::new(
             "example.com",
             vec![
                 a_record("rss.example.com", "203.0.113.10"),
                 a_record("grimmory.example.com", "100.101.255.46"),
+                a_record("bichon.example.com", "100.64.0.9"),
             ],
         );
-        let results = migrate_all(&dns, "198.51.100.7", false).await.unwrap();
+        let outcome = migrate_all(&dns, "198.51.100.7", false).await.unwrap();
 
-        let moved: Vec<&str> = results.iter().map(|r| r.subdomain.as_str()).collect();
+        let moved: Vec<&str> = outcome
+            .migrated
+            .iter()
+            .map(|r| r.subdomain.as_str())
+            .collect();
         assert_eq!(moved, vec!["rss"]);
         assert_eq!(
             dns.writes(),
             vec![("rss".to_string(), "198.51.100.7".to_string())]
         );
+        assert_eq!(
+            outcome.skipped,
+            vec![
+                SkippedRecord {
+                    subdomain: "grimmory".to_string(),
+                    ip: "100.101.255.46".to_string(),
+                    reason: SkipReason::TailnetOnly,
+                },
+                SkippedRecord {
+                    subdomain: "bichon".to_string(),
+                    ip: "100.64.0.9".to_string(),
+                    reason: SkipReason::TailnetOnly,
+                },
+            ],
+            "one row per skipped record, in zone order, with the reason named"
+        );
     }
 
+    // Nothing to migrate is not nothing to report.
+    #[tokio::test]
+    async fn migrate_over_a_tailnet_only_zone_writes_nothing_and_still_reports() {
+        let dns = FakeDns::new(
+            "example.com",
+            vec![a_record("bichon.example.com", "100.100.200.1")],
+        );
+        let outcome = migrate_all(&dns, "198.51.100.7", false).await.unwrap();
+
+        assert!(outcome.migrated.is_empty());
+        assert!(dns.writes().is_empty());
+        assert_eq!(outcome.skipped.len(), 1);
+    }
+
+    // The apex, other domains and non-A records were never candidates, so
+    // naming them would inflate the array a caller diffs against the zone.
     #[tokio::test]
     async fn migrate_ignores_non_a_records_the_apex_and_other_domains() {
         let dns = FakeDns::new(
@@ -1241,23 +1321,40 @@ mod tests {
                 },
             ],
         );
-        let results = migrate_all(&dns, "198.51.100.7", false).await.unwrap();
+        let outcome = migrate_all(&dns, "198.51.100.7", false).await.unwrap();
 
-        assert!(results.is_empty());
+        assert!(outcome.migrated.is_empty());
+        assert!(
+            outcome.skipped.is_empty(),
+            "out-of-scope records are not ADR-0003 skips"
+        );
         assert!(dns.writes().is_empty());
     }
 
+    // A dry run decides the same skips as a real one — the preview is only
+    // trustworthy if it reports them.
     #[tokio::test]
     async fn migrate_dry_run_reports_without_writing() {
         let dns = FakeDns::new(
             "example.com",
-            vec![a_record("rss.example.com", "203.0.113.10")],
+            vec![
+                a_record("rss.example.com", "203.0.113.10"),
+                a_record("bichon.example.com", "100.64.0.9"),
+            ],
         );
-        let results = migrate_all(&dns, "198.51.100.7", true).await.unwrap();
+        let outcome = migrate_all(&dns, "198.51.100.7", true).await.unwrap();
 
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].old_ip, "203.0.113.10");
-        assert!(results[0].success);
+        assert_eq!(outcome.migrated.len(), 1);
+        assert_eq!(outcome.migrated[0].old_ip, "203.0.113.10");
+        assert!(outcome.migrated[0].success);
+        assert_eq!(
+            outcome.skipped,
+            vec![SkippedRecord {
+                subdomain: "bichon".to_string(),
+                ip: "100.64.0.9".to_string(),
+                reason: SkipReason::TailnetOnly,
+            }]
+        );
         assert!(dns.writes().is_empty(), "a dry run must write nothing");
     }
 
