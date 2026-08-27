@@ -50,6 +50,16 @@ pub struct OwnedUnit {
 
 /// systemd's own closed set of unit types. An entry carrying one of these is
 /// already a unit name; anything else is a bare service name.
+///
+/// The two functions below read this one table to answer two different
+/// questions about the same declared name, and `@` is where they part:
+/// [`qualified_unit_name`] answers what `systemctl show` addresses, where an
+/// instance stays an instance, and [`unit_file_name`] answers what
+/// `systemctl list-unit-files` knows, where an instance collapses to the
+/// template behind it. Intentional forks, not duplicates — a caller that
+/// reaches for the other one gets a name systemd will not resolve, which is
+/// how the restore preflight came to look for `syncthing@alice.service` among
+/// unit files that only hold `syncthing@.service`.
 pub const UNIT_TYPE_SUFFIXES: &[&str] = &[
     ".automount",
     ".device",
@@ -64,10 +74,10 @@ pub const UNIT_TYPE_SUFFIXES: &[&str] = &[
     ".timer",
 ];
 
-/// The loaded unit a declared name addresses: an explicit unit type is kept,
-/// a bare name is a `.service`. Instances stay instances — `syncthing@alice`
-/// becomes `syncthing@alice.service`, the unit whose state `systemctl show`
-/// answers for, not the `syncthing@.service` file behind it.
+/// The loaded unit a declared name addresses, which is what `systemctl show`
+/// answers for: an explicit unit type is kept, a bare name is a `.service`.
+/// Instances stay instances — `syncthing@alice` becomes
+/// `syncthing@alice.service`, not the `syncthing@.service` file behind it.
 pub fn qualified_unit_name(unit: &str) -> String {
     if UNIT_TYPE_SUFFIXES
         .iter()
@@ -76,6 +86,25 @@ pub fn qualified_unit_name(unit: &str) -> String {
         unit.to_string()
     } else {
         format!("{unit}.service")
+    }
+}
+
+/// The unit *file* a declared name resolves to, which is what
+/// `systemctl list-unit-files` answers for: the same suffix rule, and then a
+/// template instance collapses to its template, because `list-unit-files`
+/// holds no entry for the instance — `syncthing@alice` is
+/// `syncthing@.service`.
+///
+/// Appending `.service` unconditionally instead read `bichon-archive.timer` as
+/// `bichon-archive.timer.service` and failed the restore preflight (#619).
+pub fn unit_file_name(unit: &str) -> String {
+    let (name, suffix) = UNIT_TYPE_SUFFIXES
+        .iter()
+        .find_map(|suffix| unit.strip_suffix(suffix).map(|name| (name, *suffix)))
+        .unwrap_or((unit, ".service"));
+    match name.split_once('@') {
+        Some((template, _)) => format!("{template}@{suffix}"),
+        None => format!("{name}{suffix}"),
     }
 }
 
@@ -1229,6 +1258,35 @@ units:
             qualified_unit_name("syncthing@alice"),
             "syncthing@alice.service"
         );
+    }
+
+    #[test]
+    fn unit_file_name_appends_service_suffix() {
+        assert_eq!(unit_file_name("freshrss"), "freshrss.service");
+    }
+
+    #[test]
+    fn unit_file_name_maps_template_instance_to_template_file() {
+        assert_eq!(unit_file_name("syncthing@alice"), "syncthing@.service");
+    }
+
+    #[test]
+    fn unit_file_name_keeps_an_explicit_unit_type_suffix() {
+        assert_eq!(
+            unit_file_name("bichon-archive.timer"),
+            "bichon-archive.timer"
+        );
+        assert_eq!(unit_file_name("bichon.service"), "bichon.service");
+    }
+
+    #[test]
+    fn unit_file_name_appends_service_to_a_dotted_name_that_is_not_a_unit_type() {
+        assert_eq!(unit_file_name("foo.bar"), "foo.bar.service");
+    }
+
+    #[test]
+    fn unit_file_name_maps_a_suffixed_template_instance_to_its_template_file() {
+        assert_eq!(unit_file_name("backup@daily.timer"), "backup@.timer");
     }
 
     #[test]

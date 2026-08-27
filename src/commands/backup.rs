@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg as hosts_select_or_arg};
 use crate::output;
-use crate::playbook_meta::{BackupRecipe, UNIT_TYPE_SUFFIXES};
+use crate::playbook_meta::{BackupRecipe, unit_file_name};
 use crate::prompt::confirm;
 use crate::services::backup::executor::{RecipeExecutor, staged_parameters, staged_paths};
 use crate::services::backup::recipe::{
@@ -1454,25 +1454,6 @@ fn default_backup_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
 
-/// The unit *file* a Recipe entry resolves to, which is what
-/// `systemctl list-unit-files` answers for. Mirrors systemd's rule: an
-/// explicit unit type is kept, a bare name is a `.service`. Appending
-/// `.service` unconditionally instead read `bichon-archive.timer` as
-/// `bichon-archive.timer.service` and failed the restore preflight (#619).
-///
-/// Template instances (`syncthing@alice`) have no unit file of their own —
-/// `list-unit-files` only knows the template (`syncthing@.service`).
-fn unit_file_name(unit: &str) -> String {
-    let (name, suffix) = UNIT_TYPE_SUFFIXES
-        .iter()
-        .find_map(|suffix| unit.strip_suffix(suffix).map(|name| (name, *suffix)))
-        .unwrap_or((unit, ".service"));
-    match name.split_once('@') {
-        Some((template, _)) => format!("{template}@{suffix}"),
-        None => format!("{name}{suffix}"),
-    }
-}
-
 fn check_remote_unit_exists(host: &Host, ssh_key: &Path, unit: &str) -> Result<bool> {
     let unit_file = unit_file_name(unit);
     let output =
@@ -1597,35 +1578,6 @@ fn validate_cross_host_restore(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn unit_file_name_appends_service_suffix() {
-        assert_eq!(unit_file_name("freshrss"), "freshrss.service");
-    }
-
-    #[test]
-    fn unit_file_name_maps_template_instance_to_template_file() {
-        assert_eq!(unit_file_name("syncthing@alice"), "syncthing@.service");
-    }
-
-    #[test]
-    fn unit_file_name_keeps_an_explicit_unit_type_suffix() {
-        assert_eq!(
-            unit_file_name("bichon-archive.timer"),
-            "bichon-archive.timer"
-        );
-        assert_eq!(unit_file_name("bichon.service"), "bichon.service");
-    }
-
-    #[test]
-    fn unit_file_name_appends_service_to_a_dotted_name_that_is_not_a_unit_type() {
-        assert_eq!(unit_file_name("foo.bar"), "foo.bar.service");
-    }
-
-    #[test]
-    fn unit_file_name_maps_a_suffixed_template_instance_to_its_template_file() {
-        assert_eq!(unit_file_name("backup@daily.timer"), "backup@.timer");
-    }
 
     #[test]
     fn test_push_variant_exists() {
