@@ -83,8 +83,8 @@ pub fn required_keys_for(
 }
 
 /// Build a [`Preflight`] for `playbook`, validating every key the Playbook
-/// Metas declare for this run. The only path to a `Preflight`, and so the only
-/// path to an Ansible run.
+/// Metas declare for this run. Every production path to an Ansible run comes
+/// through here, so the Metas are the only authority a deploy consults.
 pub fn preflight_for(
     config: &Config,
     playbook: &str,
