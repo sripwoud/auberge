@@ -21,7 +21,7 @@ The merged user-supplied settings (`config.toml`) parsed against the Key Registr
 _Avoid_: Settings, options, user config, env
 
 **Preflight**:
-A capability type standing for a `Config` already validated against the keys a run's Playbook Metas declare. The only way to construct one is `Config::preflight_with_keys`, reached through `services::required_keys::preflight_for`, which resolves those keys off the Metas (ADR-0044). `AnsibleRunner::run` accepts only a `Preflight`, making it impossible to invoke ansible with unvalidated config.
+A capability type standing for a `Config` already validated against the keys a run's Playbook Metas declare. The only way to construct one is `Config::preflight_with_keys`, reached through `services::required_keys::preflight_for`, which resolves those keys off the Metas (ADR-0045). `AnsibleRunner::run` accepts only a `Preflight`, making it impossible to invoke ansible with unvalidated config.
 _Avoid_: Plan, request, prepared run
 
 **Host**:

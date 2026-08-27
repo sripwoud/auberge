@@ -1,6 +1,6 @@
 //! Every `required_keys` declaration is answerable, and every run has one to read.
 //!
-//! ADR-0044 moved Preflight validation onto the Playbook Metas, which makes the
+//! ADR-0045 moved Preflight validation onto the Playbook Metas, which makes the
 //! declarations load-bearing in a way they were not while `config.rs` held a
 //! hardcoded table beside them. Three things have to hold for a run's demand to
 //! mean anything, and none of them held by construction before:

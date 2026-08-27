@@ -224,7 +224,7 @@ mod tests {
     }
 
     /// The `guarded` flag decides whether an untagged run demands a role's
-    /// config keys (ADR-0044), so the two roles that carry a `when:` are pinned
+    /// config keys (ADR-0045), so the two roles that carry a `when:` are pinned
     /// against the rest of the roster.
     #[test]
     fn test_parse_roster_marks_only_the_when_guarded_roles() {

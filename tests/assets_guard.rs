@@ -22,7 +22,7 @@ const RUNNER: &str = "services/ansible_runner.rs";
 /// child process, or holds it across user interaction, belongs in the runner's
 /// shape instead: bind the `AnsibleAssets`, then use its paths.
 ///
-/// `commands/deploy.rs` was one of these and is not any more (ADR-0044): it
+/// `commands/deploy.rs` was one of these and is not any more (ADR-0045): it
 /// preflights every run in the plan and then reads App Versions and Memory
 /// Budgets off the tree, all from one bound `AnsibleAssets`, where before it
 /// took a transient path *after* confirming the deploy with the operator —

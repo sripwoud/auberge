@@ -376,7 +376,7 @@ mod tests {
         );
     }
 
-    /// Every key the audit in ADR-0044 found an App role to hard-require: an
+    /// Every key the audit in ADR-0045 found an App role to hard-require: an
     /// in-role `assert` names it, or it is referenced unguarded with no default
     /// in the role, group_vars, or anywhere else. Enforced at Preflight now,
     /// where before the run failed mid-play.
