@@ -113,7 +113,7 @@ pub enum DnsCommands {
                       • Implicit discovery (no --subdomains): tailnet-only apps are skipped \
                         automatically; a grouped info line is emitted to stderr.\n\
                       • Explicit target (--subdomains names a tailnet-only app): hard-error \
-                        before any Cloudflare API call; use `auberge deploy <app>` instead.\n\n\
+                        before any record is written; use `auberge deploy <app>` instead.\n\n\
                       EXAMPLES:\n  \
                       # Publish all Public Apps; tailnet-only apps are skipped automatically\n  \
                       auberge dns set-all --host auberge --production\n\n  \
