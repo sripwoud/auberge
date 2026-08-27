@@ -14,8 +14,7 @@
 
 mod common;
 
-use common::{Plays, all_roles, field, role_tasks, tasks_in};
-use serde_yaml::Value;
+use common::{Plays, all_roles, field, playbook_files, role_tasks, task_name, tasks_in, yml_files};
 
 /// The bytes a role's `tasks/` files actually hold, so an empty file can be told
 /// apart from a walk that stopped reading.
@@ -36,13 +35,6 @@ fn written_tasks(role: &str) -> String {
         })
         .collect::<String>()
         .trim()
-        .to_string()
-}
-
-fn name_of(task: &common::Task) -> String {
-    field(&task.body, "name")
-        .and_then(Value::as_str)
-        .unwrap_or("<unnamed>")
         .to_string()
 }
 
@@ -136,7 +128,7 @@ fn test_a_task_carries_the_guards_of_every_block_enclosing_it() {
             assert!(
                 task.guards.contains(clause),
                 "`{}` carries `when: {clause}` that the walk dropped",
-                name_of(task)
+                task_name(&task.body)
             );
         }
         if task.guards.len() > own.len() {
@@ -237,7 +229,7 @@ fn test_the_flag_changes_nothing_for_a_file_that_holds_no_play() {
             as_task.guards,
             "{}: the two walks disagree on `{}`'s guards",
             path.display(),
-            name_of(descended)
+            task_name(&descended.body)
         );
     }
 }
@@ -294,4 +286,87 @@ fn test_a_default_resolves_and_an_unknown_expression_survives_intact() {
         .find(|(_, value)| !value.contains("{{"))
         .expect("a role must declare at least one literal default");
     assert_eq!(&common::resolve(&format!("{{{{ {key} }}}}"), &vars), value);
+}
+
+/// The tree walk underneath the task walk. A fence that asks "which files can I
+/// read here?" and gets a short answer narrows its domain exactly as a task walk
+/// that stops descending does, and just as quietly (#659).
+#[test]
+fn test_the_file_walk_reaches_a_role_and_tolerates_an_absent_directory() {
+    let ssh = yml_files(&common::role_dir("ssh").join("tasks"));
+    assert!(
+        ssh.len() > 1,
+        "the ssh role has more than one task file; the walk found {}",
+        ssh.len()
+    );
+
+    assert!(
+        yml_files(&common::role_dir("ssh").join("no-such-directory")).is_empty(),
+        "a directory that does not exist yields nothing rather than failing"
+    );
+}
+
+/// The one assertion here that a fixture serves better than the tree.
+///
+/// Everything else in this file is anchored on shapes `ansible/` actually
+/// contains, because a fixture only proves the walker walks a fixture. Ordering
+/// is the exception: it is a postcondition of the walker, not a fact about the
+/// tree, and `read_dir` returns whatever the filesystem holds. This checkout was
+/// written by git in index order, so every directory in `ansible/` happens to
+/// come back sorted already — drop the `sort()` and the suite stays green. A
+/// directory built in the opposite order is what makes the claim falsifiable.
+///
+/// Whole path, not basename: a nested file sorts under its own directory
+/// rather than among the files beside it, so `nested/bravo.yml` follows
+/// `mike.yml` instead of `alpha.yml`.
+#[test]
+fn test_the_file_walk_reports_in_path_order_whatever_the_filesystem_says() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["zulu.yml", "mike.yml", "alpha.yml"] {
+        std::fs::write(dir.path().join(name), "[]").unwrap();
+    }
+    std::fs::create_dir(dir.path().join("nested")).unwrap();
+    std::fs::write(dir.path().join("nested/bravo.yml"), "[]").unwrap();
+
+    let found: Vec<String> = yml_files(dir.path())
+        .iter()
+        .map(|path| {
+            path.strip_prefix(dir.path())
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        })
+        .collect();
+
+    assert_eq!(
+        found,
+        vec!["alpha.yml", "mike.yml", "nested/bravo.yml", "zulu.yml"],
+        "the walk must report in whole-path order, not in whatever order `read_dir` hands back"
+    );
+}
+
+/// `playbook_files` exists to keep the CLI's `.meta.yml` sidecars out of a walk
+/// over plays. Asserting only that none come back would pass just as well if the
+/// directory held none, so the exclusion is measured against what is actually
+/// beside them.
+#[test]
+fn test_the_playbook_walk_excludes_the_meta_sidecars_beside_them() {
+    let plays = playbook_files();
+    let every = yml_files(&common::playbooks_dir());
+
+    // Non-emptiness is `playbook_files`'s own hard stop, so there is nothing
+    // left to assert about it here.
+    assert!(
+        every.len() > plays.len(),
+        "`.meta.yml` sidecars sit beside the playbooks, so excluding them has to drop something; {} files, {} playbooks",
+        every.len(),
+        plays.len()
+    );
+    for path in &plays {
+        assert!(
+            !path.to_string_lossy().ends_with(".meta.yml"),
+            "{} is a Playbook Meta and runs nothing",
+            common::relative(path)
+        );
+    }
 }

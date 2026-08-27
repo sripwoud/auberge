@@ -1,17 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
+mod common;
 
-fn roles_dir() -> PathBuf {
-    repo_root().join("ansible/roles")
-}
-
-fn playbooks_dir() -> PathBuf {
-    repo_root().join("ansible/playbooks")
-}
+use common::{all_roles, playbooks_dir, repo, role_dir};
 
 /// Tool Versions: build/runtime inputs a role needs, not App identities.
 /// They stay in `defaults/main.yml` with a `# renovate:` annotation.
@@ -36,12 +28,15 @@ fn is_version_variable(line: &str) -> Option<&str> {
     .then_some(key)
 }
 
+/// Every `defaults/main.yml` in the tree. A role without one contributes
+/// nothing, which is the same answer as a role whose defaults declare no
+/// version — and both readers below are membership tests, so the order roles
+/// arrive in is immaterial.
 fn defaults_files() -> Vec<PathBuf> {
-    fs::read_dir(roles_dir())
-        .expect("ansible/roles must exist")
-        .filter_map(|e| e.ok())
-        .map(|e| e.path().join("defaults/main.yml"))
-        .filter(|p| p.exists())
+    all_roles()
+        .iter()
+        .map(|role| role_dir(role).join("defaults/main.yml"))
+        .filter(|path| path.exists())
         .collect()
 }
 
@@ -186,16 +181,12 @@ fn test_every_versioned_role_declares_an_app_version_in_its_meta() {
         .collect();
     let mut violations = Vec::new();
 
-    for entry in fs::read_dir(roles_dir()).expect("ansible/roles must exist") {
-        let role_dir = entry.unwrap().path();
-        let Some(role) = role_dir.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
+    for role in all_roles() {
         let version_var = format!("{role}_version");
-        if !role_references(&role_dir, &version_var) {
+        if !role_references(&role_dir(&role), &version_var) {
             continue;
         }
-        if !declared.contains(&role.to_string()) {
+        if !declared.contains(&role) {
             violations.push(format!(
                 "role `{role}` references {{{{ {version_var} }}}} but \
                  {role}.meta.yml declares no `version:` block"
@@ -205,7 +196,7 @@ fn test_every_versioned_role_declares_an_app_version_in_its_meta() {
 
     for app in &declared {
         let version_var = format!("{app}_version");
-        if !role_references(&roles_dir().join(app), &version_var) {
+        if !role_references(&role_dir(app), &version_var) {
             violations.push(format!(
                 "{app}.meta.yml declares a version but role `{app}` never \
                  references {{{{ {version_var} }}}}"
@@ -219,8 +210,7 @@ fn test_every_versioned_role_declares_an_app_version_in_its_meta() {
 #[test]
 fn test_renovate_manager_matches_every_declared_app_version() {
     let renovate: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(repo_root().join("renovate.json")).unwrap())
-            .unwrap();
+        serde_json::from_str(&fs::read_to_string(repo().join("renovate.json")).unwrap()).unwrap();
     let manager = renovate["customManagers"]
         .as_array()
         .unwrap()
@@ -254,7 +244,7 @@ fn test_renovate_manager_matches_every_declared_app_version() {
             "{rel_path} escapes the renovate managerFilePatterns"
         );
 
-        let content = fs::read_to_string(repo_root().join(&rel_path)).unwrap();
+        let content = fs::read_to_string(repo().join(&rel_path)).unwrap();
         let captures = match_string.captures(&content).unwrap_or_else(|| {
             panic!("{app}.meta.yml `version:` block is invisible to the renovate matchString")
         });

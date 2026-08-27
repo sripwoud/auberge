@@ -27,7 +27,7 @@ use serde_yaml::{Mapping, Value};
 
 mod common;
 
-use common::{Plays, field, relative, repo, runnable_files, strings, tasks_in};
+use common::{Plays, field, relative, repo, runnable_files, strings, task_name, tasks_in};
 
 /// A package the fleet purges, and the units it installs.
 ///
@@ -135,13 +135,6 @@ fn declared_unit_type_suffixes() -> Vec<String> {
         .collect()
 }
 
-fn task_name(task: &Mapping) -> String {
-    field(task, "name")
-        .and_then(Value::as_str)
-        .unwrap_or("<unnamed>")
-        .to_string()
-}
-
 /// The unit a path names, if the path is a plain unit file in a directory
 /// systemd loads units from.
 ///
@@ -228,7 +221,7 @@ fn unit_files_removed(task: &Mapping, file: &str) -> Vec<String> {
     ["path", "dest", "name"]
         .iter()
         .find_map(|key| field(args, key).and_then(Value::as_str))
-        .and_then(|path| unit_at(path, file, &task_name(task)))
+        .and_then(|path| unit_at(path, file, task_name(task)))
         .map(|unit| vec![unit.to_string()])
         .unwrap_or_default()
 }
@@ -261,7 +254,7 @@ fn reset_in(task: &Mapping, file: &str) -> Option<Reset> {
     }
     Some(Reset {
         file: file.to_string(),
-        task: task_name(task),
+        task: task_name(task).to_string(),
         targets: expansions,
     })
 }
@@ -297,7 +290,7 @@ fn scan() -> Scan {
                 for unit in declared.units {
                     removals.push(Removal {
                         file: file.clone(),
-                        task: task_name(&task.body),
+                        task: task_name(&task.body).to_string(),
                         unit: (*unit).to_string(),
                         why: format!("the `{package}` package it purges {}", declared.why),
                     });
@@ -306,7 +299,7 @@ fn scan() -> Scan {
             for unit in unit_files_removed(&task.body, &file) {
                 removals.push(Removal {
                     file: file.clone(),
-                    task: task_name(&task.body),
+                    task: task_name(&task.body).to_string(),
                     why: format!("it deletes `{unit}`'s unit file"),
                     unit,
                 });

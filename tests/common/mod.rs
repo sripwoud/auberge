@@ -32,18 +32,28 @@
 //! A fence picks a domain deliberately and says so at the call site. Widening
 //! one is then a visible edit to a fence, which is the point.
 //!
+//! Underneath the task walk sits the tree walk it reads through, and the fences
+//! that never walk a task still ask that half — which roles are there, which
+//! files under one can I read:
+//!
+//! - [`all_roles`] is the role list, directories only.
+//! - [`yml_files`] is every `.yml` under a directory, at any depth.
+//! - [`playbook_files`] is the playbooks, without the `.meta.yml` sidecars that
+//!   run nothing.
+//!
 //! Every fence that carried a copy of *this* walk now reads it through here
 //! (#654, #658). `grimmory_role.rs`, `immich_container_dirs.rs` and
 //! `probe_after_restart.rs` define a `flatten` too, but theirs are genuinely
 //! different walks — a hard-stop assert on a block-level `when:`,
 //! `include_tasks` resolution — and belong where they are.
 //!
-//! What this module does *not* yet answer for everyone: `ingress_gate.rs` and
-//! `version_annotations.rs` enumerate `ansible/roles/` with their own
-//! `read_dir` and neither carries the `is_dir()` filter [`all_roles`] does, so
-//! the divergence #658 removed from `install_guards.rs` survives in files it
-//! did not reach (#659). Stating it here rather than leaving the omission to
-//! read as coverage.
+//! Four more fences enumerated the tree with a `read_dir` of their own, two of
+//! them without [`all_roles`]'s `is_dir()` filter — the same divergence #658
+//! removed from `install_guards.rs`, surviving in files it did not reach. All
+//! four read the tree through here now, so the filter has one definition again
+//! (#659). What is left of that shape is named where it survives:
+//! [`playbook_files`] on the `.meta.yml` half of the playbooks directory, and
+//! [`task_name`] on the one accessor that is not a copy of the others.
 
 // Each of the fences below imports a different subset, so every one of them
 // sees the rest as dead. The cost of the blanket allow: a helper that no fence
@@ -157,9 +167,16 @@ pub fn strings(value: Option<&Value>) -> Vec<String> {
 /// message needs to point a reader at the task that failed it.
 ///
 /// Borrowed rather than owned so the caller decides: `paperless_quiesce.rs`
-/// compares a list of names against a declared one and wants `&str`. Four
-/// fences still carry their own copy, already drifted across two names and two
-/// parameter types (#659).
+/// compares a list of names against a declared one and wants `&str`, while the
+/// fences that store a name in a struct call `.to_string()` at that one site.
+/// The five copies this replaced had already drifted across two names and two
+/// return types with nothing naming the difference (#659).
+///
+/// `immich_container_dirs.rs` is the sixth and is deliberately not one of them.
+/// It reads the name through a local `string_at` path accessor and falls back
+/// to a third spelling again, `<unnamed task>`, so folding it is a decision
+/// about that file's accessor rather than the mechanical move the other four
+/// were. Named here so its absence does not read as coverage.
 pub fn task_name(task: &Mapping) -> &str {
     field(task, "name")
         .and_then(Value::as_str)
@@ -240,43 +257,76 @@ pub fn role_tasks(role: &str) -> Vec<Task> {
         .collect()
 }
 
-fn yml_files(dir: &Path, out: &mut Vec<PathBuf>) {
+fn collect_yml(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            yml_files(&path, out);
+            collect_yml(&path, out);
         } else if path.extension().is_some_and(|ext| ext == "yml") {
             out.push(path);
         }
     }
 }
 
-/// Every file in the repository that can run a task: each role's `tasks/` and
-/// `handlers/`, at any depth, and the playbooks themselves. `.meta.yml` files
-/// carry the CLI's own metadata, not tasks.
+/// Every `.yml` file under `dir`, at any depth, sorted.
 ///
-/// Walk these with [`Plays::Descend`] — a playbook's tasks are unreachable
-/// without it.
-pub fn runnable_files() -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    for role in fs::read_dir(roles_dir())
-        .expect("ansible/roles must exist")
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-    {
-        yml_files(&role.join("tasks"), &mut files);
-        yml_files(&role.join("handlers"), &mut files);
-    }
-    yml_files(&playbooks_dir(), &mut files);
+/// A directory that does not exist yields nothing rather than failing: most
+/// roles have no `handlers/`, and "which files can I read here?" has an honest
+/// empty answer there. Where an empty answer would instead mean the tree moved
+/// under the fence, saying so is the caller's job — [`playbook_files`] is the
+/// one that has to, and does.
+pub fn yml_files(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    collect_yml(dir, &mut found);
+    found.sort();
+    found
+}
+
+/// The playbooks themselves, without the `.meta.yml` sidecars beside them.
+///
+/// A Playbook Meta carries the CLI's own metadata — an App's version, its
+/// units, its backup order — and runs nothing, so a fence reading plays or
+/// tasks must not see it. Three fences want the other half of this directory
+/// and each enumerates the metas itself (`version_annotations.rs`,
+/// `unit_ownership.rs`, `service_directories.rs`); that is the next leftover,
+/// not this one.
+///
+/// Empty is a hard stop, and it is the reason this is not just a `yml_files`
+/// call at each site. Every caller loops over the result, so a directory that
+/// moved would leave each of them iterating nothing and passing — the two that
+/// now read the tree through here used to spell that guard themselves, as
+/// `.expect("ansible/playbooks must exist")`, and would have lost it.
+pub fn playbook_files() -> Vec<PathBuf> {
+    let mut files = yml_files(&playbooks_dir());
+    assert!(
+        !files.is_empty(),
+        "{} holds no .yml at all; every fence over plays reads this domain",
+        relative(&playbooks_dir())
+    );
     files.retain(|path| {
         !path
             .file_name()
             .is_some_and(|name| name.to_string_lossy().ends_with(".meta.yml"))
     });
+    files
+}
+
+/// Every file in the repository that can run a task: each role's `tasks/` and
+/// `handlers/`, at any depth, and the playbooks themselves.
+///
+/// Walk these with [`Plays::Descend`] — a playbook's tasks are unreachable
+/// without it.
+pub fn runnable_files() -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for role in all_roles() {
+        let dir = role_dir(&role);
+        files.extend(yml_files(&dir.join("tasks")));
+        files.extend(yml_files(&dir.join("handlers")));
+    }
+    files.extend(playbook_files());
     files.sort();
     files
 }

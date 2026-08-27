@@ -1,20 +1,12 @@
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_yaml::{Mapping, Value};
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
+mod common;
 
-fn roles_dir() -> PathBuf {
-    repo_root().join("ansible/roles")
-}
-
-fn playbooks_dir() -> PathBuf {
-    repo_root().join("ansible/playbooks")
-}
+use common::{all_roles, field, playbook_files, role_dir, yml_files};
 
 /// The role a play must run in `post_tasks` once any of its roles can restart caddy.
 const GATE_ROLE: &str = "ingress_gate";
@@ -22,61 +14,27 @@ const GATE_ROLE: &str = "ingress_gate";
 /// The handler name every vhost writer notifies.
 const RESTART_HANDLER: &str = "Restart caddy";
 
-fn field<'a>(mapping: &'a Mapping, key: &str) -> Option<&'a Value> {
-    mapping.get(Value::String(key.to_string()))
-}
-
-fn collect_yaml(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_yaml(&path, out);
-        } else if path.extension().is_some_and(|ext| ext == "yml") {
-            out.push(path);
-        }
-    }
-}
-
 /// Roles with a task that notifies `Restart caddy`. A restart is what makes a bad
 /// vhost fatal: `caddy reload` validates and keeps the running config, but a restart
 /// replaces it, so a vhost binding an address the host does not own takes every other
 /// vhost down with it.
+///
+/// Read as text rather than as parsed `notify:` lists on purpose. This is the
+/// discovery half of the fence, and it is allowed to over-report: a role that
+/// merely mentions the handler is gated too, which costs a `post_task` and
+/// nothing else. Under-reporting is what takes the fleet down, so the loose
+/// test is the safe direction — and
+/// `test_roles_that_restart_caddy_are_discovered` is what stops it from
+/// silently reporting nobody.
 fn roles_that_restart_caddy() -> BTreeSet<String> {
-    let mut roles = BTreeSet::new();
-    for entry in fs::read_dir(roles_dir()).expect("ansible/roles must exist") {
-        let role_dir = entry.unwrap().path();
-        let Some(role) = role_dir.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        let mut task_files = Vec::new();
-        collect_yaml(&role_dir.join("tasks"), &mut task_files);
-        let notifies = task_files
-            .iter()
-            .any(|file| fs::read_to_string(file).unwrap().contains(RESTART_HANDLER));
-        if notifies {
-            roles.insert(role.to_string());
-        }
-    }
-    roles
-}
-
-fn playbook_files() -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = fs::read_dir(playbooks_dir())
-        .expect("ansible/playbooks must exist")
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                return false;
-            };
-            name.ends_with(".yml") && !name.ends_with(".meta.yml")
+    all_roles()
+        .into_iter()
+        .filter(|role| {
+            yml_files(&role_dir(role).join("tasks"))
+                .iter()
+                .any(|file| fs::read_to_string(file).unwrap().contains(RESTART_HANDLER))
         })
-        .collect();
-    files.sort();
-    files
+        .collect()
 }
 
 fn plays(path: &Path) -> Vec<Mapping> {
@@ -152,7 +110,7 @@ fn test_roles_that_restart_caddy_are_discovered() {
 fn test_every_play_that_restarts_caddy_gates_on_ingress() {
     let restarters = roles_that_restart_caddy();
     assert!(
-        roles_dir().join(GATE_ROLE).join("tasks/main.yml").exists(),
+        role_dir(GATE_ROLE).join("tasks/main.yml").exists(),
         "the playbooks include `{GATE_ROLE}`, so the role must exist"
     );
 

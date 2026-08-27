@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_yaml::{Mapping, Sequence, Value};
 
-fn roles_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible/roles")
-}
+mod common;
+
+use common::{all_roles, field, role_dir, task_name};
 
 /// Handlers whose flush must stay at end of play.
 ///
@@ -25,10 +25,6 @@ const DEFERRED_HANDLERS: &[&str] = &["Restart caddy"];
 /// restart sshd mid-port-change — the lockout the whole validate block exists to
 /// avoid — and a reload has already proven the config loads.
 const SELF_APPLIED: &[(&str, &str)] = &[("ssh", "Restart sshd")];
-
-fn field<'a>(task: &'a Mapping, key: &str) -> Option<&'a Value> {
-    task.get(Value::String(key.to_string()))
-}
 
 /// The file an `include_tasks` names. A non-string value is a shape this model
 /// cannot resolve, and silently skipping it would hide whatever the file probes.
@@ -81,7 +77,7 @@ fn flatten(tasks: &Sequence, dir: &Path, out: &mut Vec<Mapping>) {
 }
 
 fn role_tasks(role: &str) -> Vec<Mapping> {
-    let dir = roles_dir().join(role).join("tasks");
+    let dir = role_dir(role).join("tasks");
     let entry = dir.join("main.yml");
     if !entry.exists() {
         return Vec::new();
@@ -89,24 +85,6 @@ fn role_tasks(role: &str) -> Vec<Mapping> {
     let mut tasks = Vec::new();
     flatten(&parse_tasks(&entry), &dir, &mut tasks);
     tasks
-}
-
-fn roles() -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(roles_dir())
-        .expect("ansible/roles must exist")
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().is_dir())
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect();
-    names.sort();
-    names
-}
-
-fn task_name(task: &Mapping) -> String {
-    field(task, "name")
-        .and_then(Value::as_str)
-        .unwrap_or("<unnamed>")
-        .to_string()
 }
 
 /// Handlers a task notifies, minus the ones whose flush is deliberately deferred.
@@ -173,7 +151,7 @@ struct UnflushedNotify {
 fn unflushed_notifies() -> Vec<UnflushedNotify> {
     let mut findings = Vec::new();
 
-    for role in roles() {
+    for role in all_roles() {
         let tasks = role_tasks(&role);
         let probes: Vec<usize> = (0..tasks.len()).filter(|i| is_probe(&tasks[*i])).collect();
         let flushes: Vec<usize> = (0..tasks.len()).filter(|i| is_flush(&tasks[*i])).collect();
@@ -193,8 +171,8 @@ fn unflushed_notifies() -> Vec<UnflushedNotify> {
                 findings.push(UnflushedNotify {
                     role: role.clone(),
                     handler,
-                    notifier: task_name(task),
-                    probe: task_name(&tasks[*probe]),
+                    notifier: task_name(task).to_string(),
+                    probe: task_name(&tasks[*probe]).to_string(),
                 });
             }
         }
@@ -207,11 +185,11 @@ fn unflushed_notifies() -> Vec<UnflushedNotify> {
 /// that stops seeing one shows up here rather than as a quietly passing suite.
 fn probes_by_role() -> BTreeMap<String, Vec<String>> {
     let mut found = BTreeMap::new();
-    for role in roles() {
+    for role in all_roles() {
         let names: Vec<String> = role_tasks(&role)
             .iter()
             .filter(|task| is_probe(task))
-            .map(task_name)
+            .map(|task| task_name(task).to_string())
             .collect();
         if !names.is_empty() {
             found.insert(role, names);

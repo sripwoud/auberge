@@ -5,7 +5,7 @@ use serde_yaml::{Mapping, Sequence, Value};
 
 mod common;
 
-use common::{all_roles, defaults, field, resolve, role_dir, role_tasks, strings};
+use common::{all_roles, defaults, field, resolve, role_dir, role_tasks, strings, task_name};
 
 /// A version bump replaces an artifact on a Host where the old one is already
 /// running, and nothing downstream in the play notices. `state: started` no-ops
@@ -303,13 +303,6 @@ impl Replacement {
     }
 }
 
-fn task_name(task: &Mapping) -> String {
-    field(task, "name")
-        .and_then(Value::as_str)
-        .unwrap_or("<unnamed>")
-        .to_string()
-}
-
 /// Whether a string names the role's App Version, as a whole word rather than a
 /// substring -- `blocky_lego_version` is a Tool Version and must not read as
 /// `blocky_version`.
@@ -391,7 +384,7 @@ fn replacements() -> Vec<Replacement> {
                 }
                 found.push(Replacement {
                     role: role.clone(),
-                    task: task_name(&task.body),
+                    task: task_name(&task.body).to_string(),
                     dest: dest.to_string(),
                     holds,
                     restarts: strings(field(&task.body, "notify"))
