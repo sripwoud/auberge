@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.18](https://github.com/sripwoud/auberge/compare/v0.15.17...v0.15.18) - 2026-08-27
+
+### Other
+
+- fold the fence suite's last tree-enumerators and name accessors ([#661](https://github.com/sripwoud/auberge/pull/661))
+- *(paperless)* bump to 3.1.0 ([#662](https://github.com/sripwoud/auberge/pull/662))
+- fold the last two fence files onto the shared ansible walker ([#660](https://github.com/sripwoud/auberge/pull/660))
+
 ## [0.15.17](https://github.com/sripwoud/auberge/compare/v0.15.16...v0.15.17) - 2026-08-26
 
 ### Fixed
