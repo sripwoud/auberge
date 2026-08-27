@@ -350,6 +350,141 @@ mod tests {
         );
     }
 
+    /// Every key the audit in ADR-0044 found an App role to hard-require: an
+    /// in-role `assert` names it, or it is referenced unguarded with no default
+    /// in the role, group_vars, or anywhere else. Enforced at Preflight now,
+    /// where before the run failed mid-play.
+    const APP_SPECIFIC_KEYS: &[(&str, &[&str])] = &[
+        (
+            "baikal",
+            &[
+                "admin_user_email",
+                "baikal_admin_password",
+                "baikal_busy_feed_token",
+                "baikal_subdomain",
+            ],
+        ),
+        (
+            "bichon",
+            &["bichon_api_token", "bichon_encryption_password"],
+        ),
+        (
+            "colporteur",
+            &["colporteur_feeds_password", "colporteur_subdomain"],
+        ),
+        ("freshrss", &["freshrss_subdomain"]),
+        (
+            "gokapi",
+            &[
+                "gokapi_admin_password",
+                "gokapi_admin_user",
+                "gokapi_subdomain",
+            ],
+        ),
+        (
+            "grimmory",
+            &[
+                "grimmory_admin_password",
+                "grimmory_admin_user",
+                "grimmory_db_password",
+                "grimmory_subdomain",
+            ],
+        ),
+        (
+            "immich",
+            &[
+                "immich_b2_application_key",
+                "immich_b2_key_id",
+                "immich_db_password",
+                "immich_restic_password",
+                "immich_restic_repository",
+                "immich_subdomain",
+            ],
+        ),
+        ("navidrome", &["navidrome_subdomain"]),
+        (
+            "paperless",
+            &[
+                "admin_user_email",
+                "paperless_admin_password",
+                "paperless_admin_user",
+                "paperless_db_password",
+                "paperless_secret_key",
+            ],
+        ),
+        ("radio", &["radio_listener_password", "radio_subdomain"]),
+        ("tgtg", &["tgtg_telegram_bot_token"]),
+        (
+            "yourls",
+            &[
+                "yourls_admin_password",
+                "yourls_admin_user",
+                "yourls_cookiekey",
+                "yourls_db_password",
+                "yourls_subdomain",
+            ],
+        ),
+    ];
+
+    #[test]
+    fn test_app_tag_resolves_every_key_its_role_requires() {
+        let mut gaps = Vec::new();
+        for (app, expected) in APP_SPECIFIC_KEYS {
+            let tags = vec![(*app).to_string()];
+            let keys = required_keys_for(&repo_ansible_dir(), "apps.yml", Some(&tags)).unwrap();
+            for key in *expected {
+                if !keys.iter().any(|k| k == key) {
+                    gaps.push(format!("{app}: {key}"));
+                }
+            }
+        }
+        assert!(
+            gaps.is_empty(),
+            "app tags that do not resolve a key their role requires: {}",
+            gaps.join(", ")
+        );
+    }
+
+    #[test]
+    fn test_app_tag_still_resolves_the_shared_base_keys() {
+        let tags = vec!["colporteur".to_string()];
+        let keys = required_keys_for(&repo_ansible_dir(), "apps.yml", Some(&tags)).unwrap();
+        let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
+        assert!(set.contains("admin_user_name"), "{keys:?}");
+        assert!(set.contains("domain"), "{keys:?}");
+        assert!(set.contains("cloudflare_dns_api_token"), "{keys:?}");
+    }
+
+    #[test]
+    fn test_category_tag_unions_the_apps_beneath_it() {
+        let tags = vec!["media".to_string()];
+        let keys = required_keys_for(&repo_ansible_dir(), "apps.yml", Some(&tags)).unwrap();
+        let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
+        for key in [
+            "radio_listener_password",
+            "navidrome_subdomain",
+            "immich_db_password",
+        ] {
+            assert!(set.contains(key), "media should resolve {key}: {keys:?}");
+        }
+        assert!(
+            !set.contains("yourls_cookiekey"),
+            "media must not resolve a web App's key: {keys:?}"
+        );
+    }
+
+    /// An App that is also a standalone playbook cannot lean on
+    /// `apps.meta.yml` for the shared base, so its own Meta carries them.
+    #[test]
+    fn test_standalone_app_playbook_resolves_its_own_base_keys() {
+        for app in ["gokapi", "immich"] {
+            let keys = required_keys_for(&repo_ansible_dir(), &format!("{app}.yml"), None).unwrap();
+            let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
+            assert!(set.contains("domain"), "{app}: {keys:?}");
+            assert!(set.contains("cloudflare_dns_api_token"), "{app}: {keys:?}");
+        }
+    }
+
     #[test]
     fn test_repo_hardening_requires_nothing() {
         let keys = required_keys_for(&repo_ansible_dir(), "hardening.yml", None).unwrap();

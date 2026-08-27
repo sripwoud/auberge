@@ -1,4 +1,6 @@
-required_keys: []
+required_keys:
+  - bichon_api_token
+  - bichon_encryption_password
 tailnet_only: true
 subdomain: bichon
 version:

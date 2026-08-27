@@ -1,4 +1,8 @@
-required_keys: [baikal_busy_feed_token]
+required_keys:
+  - admin_user_email
+  - baikal_admin_password
+  - baikal_busy_feed_token
+  - baikal_subdomain
 subdomain: baikal
 version:
   value: "0.12.1"

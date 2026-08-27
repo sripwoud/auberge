@@ -1,4 +1,6 @@
-required_keys: [radio_listener_password]
+required_keys:
+  - radio_listener_password
+  - radio_subdomain
 subdomain: radio
 memory:
   liquidsoap: { high: 320M, max: 384M }

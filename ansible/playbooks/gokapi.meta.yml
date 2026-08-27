@@ -1,6 +1,9 @@
 required_keys:
-  - gokapi_admin_user
+  - cloudflare_dns_api_token
+  - domain
   - gokapi_admin_password
+  - gokapi_admin_user
+  - gokapi_subdomain
 subdomain: share
 version:
   value: "2.2.4"

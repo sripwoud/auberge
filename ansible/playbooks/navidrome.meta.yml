@@ -1,4 +1,5 @@
-required_keys: []
+required_keys:
+  - navidrome_subdomain
 subdomain: navidrome
 memory:
   navidrome: { high: 256M, max: 384M }

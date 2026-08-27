@@ -1,4 +1,8 @@
-required_keys: []
+required_keys:
+  - grimmory_admin_password
+  - grimmory_admin_user
+  - grimmory_db_password
+  - grimmory_subdomain
 subdomain: grimmory
 memory:
   grimmory: { high: 1100M, max: 1200M }
