@@ -10,13 +10,13 @@ Idempotent: reports success with "nothing to delete" if no A record exists. Only
 
 ## Options
 
-| Option                | Description                     | Default         |
-| --------------------- | ------------------------------- | --------------- |
-| `-s, --subdomain`     | Subdomain (omit to be prompted) | Interactive     |
-| `-n, --dry-run`       | Preview without deleting        | false           |
-| `-o, --output FORMAT` | `human` or `json`               | `human`         |
-| `-y, --yes`           | Skip confirmation               | false           |
-| `-P, --production`    | Use production API              | false (sandbox) |
+| Option                | Description                                                     | Default     |
+| --------------------- | --------------------------------------------------------------- | ----------- |
+| `-s, --subdomain`     | Subdomain (omit to be prompted)                                 | Interactive |
+| `-n, --dry-run`       | Preview without deleting                                        | false       |
+| `-o, --output FORMAT` | `human` or `json`                                               | `human`     |
+| `-y, --yes`           | Skip confirmation                                               | false       |
+| `-P, --production`    | Treat as a production deletion: retype the subdomain to confirm | `false`     |
 
 ## Examples
 
@@ -28,7 +28,7 @@ auberge dns delete -s calibre --production --yes   # CI / no prompts
 
 ## Gotchas
 
-!> Production deletes require retyping the subdomain name to confirm. Sandbox uses a `[y/N]` prompt. Non-TTY without `--yes` exits without deleting (CI-safe).
+!> `--production` deletes require retyping the subdomain name to confirm; without it the prompt is a plain `[y/N]`. Non-TTY without `--yes` exits without deleting (CI-safe).
 
 <details>
 <summary>JSON output schema</summary>
@@ -41,7 +41,7 @@ auberge dns delete -s calibre --production --yes   # CI / no prompts
 | ------------ | ------- | -------------------------------------------- |
 | `deleted`    | boolean | `true` if removed; `false` if already absent |
 | `fqdn`       | string  | Fully-qualified domain name targeted         |
-| `production` | boolean | Whether the production API was used          |
+| `production` | boolean | Whether `--production` was passed            |
 
 JSON goes to stdout; human-format chrome goes to stderr. The `deleted` field distinguishes an actual deletion from an idempotent no-op — see [ADR-0004](https://github.com/sripwoud/auberge/blob/master/meta/adr/0004-cli-structured-output.md).
 

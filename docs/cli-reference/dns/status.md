@@ -10,16 +10,16 @@ Configured subdomains are discovered from `*_subdomain` keys in `config.toml` (e
 
 ## Options
 
-| Option                | Description        | Default         |
-| --------------------- | ------------------ | --------------- |
-| `-o, --output FORMAT` | `human` or `json`  | `human`         |
-| `-P, --production`    | Use production API | false (sandbox) |
+| Option                | Description                                              | Default |
+| --------------------- | -------------------------------------------------------- | ------- |
+| `-o, --output FORMAT` | `human` or `json`                                        | `human` |
+| `-P, --production`    | Accepted and ignored; every call uses the production API | n/a     |
 
 ## Examples
 
 ```bash
 auberge dns status
-auberge dns status --production
+auberge dns status
 auberge dns status --output json
 ```
 

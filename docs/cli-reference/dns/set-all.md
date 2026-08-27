@@ -8,18 +8,18 @@ auberge dns set-all [OPTIONS]
 
 ## Options
 
-| Option                   | Description                           | Default     |
-| ------------------------ | ------------------------------------- | ----------- |
-| `-H, --host HOST`        | Target host                           | Interactive |
-| `-i, --ip IP`            | Override IP (conflicts with `--host`) | From host   |
-| `-n, --dry-run`          | Preview without creating              | `false`     |
-| `-y, --yes`              | Skip confirmation                     | `false`     |
-| `-s, --strict`           | Fail if any subdomain env var missing | `false`     |
-| `-S, --subdomains NAMES` | Process only these subdomains         | All         |
-| `--skip NAMES`           | Exclude these subdomains              | None        |
-| `--continue-on-error`    | Continue past errors                  | `false`     |
-| `-o, --output FORMAT`    | `human` or `json`                     | `human`     |
-| `-P, --production`       | Use production API (default: sandbox) | `false`     |
+| Option                   | Description                                              | Default     |
+| ------------------------ | -------------------------------------------------------- | ----------- |
+| `-H, --host HOST`        | Target host                                              | Interactive |
+| `-i, --ip IP`            | Override IP (conflicts with `--host`)                    | From host   |
+| `-n, --dry-run`          | Preview without creating                                 | `false`     |
+| `-y, --yes`              | Skip confirmation                                        | `false`     |
+| `-s, --strict`           | Fail if any subdomain env var missing                    | `false`     |
+| `-S, --subdomains NAMES` | Process only these subdomains                            | All         |
+| `--skip NAMES`           | Exclude these subdomains                                 | None        |
+| `--continue-on-error`    | Continue past errors                                     | `false`     |
+| `-o, --output FORMAT`    | `human` or `json`                                        | `human`     |
+| `-P, --production`       | Accepted and ignored; every call uses the production API | n/a         |
 
 ## Examples
 
