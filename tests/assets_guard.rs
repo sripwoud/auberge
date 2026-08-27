@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
 
-fn src_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
-}
+mod crate_source;
+
+use crate_source::modules;
 
 /// The one site whose guard has to outlive a subprocess: `run_playbook` and
 /// `run_bootstrap` spawn `ansible-playbook`, which reads templates and
@@ -30,17 +28,6 @@ const DECLARED_TRANSIENT: &[(&str, usize)] = &[
     ("services/inventory.rs", 1),
 ];
 
-fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir).expect("src must be readable").flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            rust_files(&path, out);
-        } else if path.extension().is_some_and(|ext| ext == "rs") {
-            out.push(path);
-        }
-    }
-}
-
 fn transient_uses(source: &str) -> usize {
     source
         .match_indices("AnsibleAssets::prepare()")
@@ -51,22 +38,10 @@ fn transient_uses(source: &str) -> usize {
         .count()
 }
 
-fn relative(path: &Path) -> String {
-    path.strip_prefix(src_dir())
-        .expect("every scanned file lives under src")
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
 fn scan() -> BTreeMap<String, usize> {
-    let mut files = Vec::new();
-    rust_files(&src_dir(), &mut files);
-    files
-        .iter()
-        .map(|path| {
-            let source = fs::read_to_string(path).expect("source must be readable");
-            (relative(path), transient_uses(&source))
-        })
+    modules()
+        .into_iter()
+        .map(|module| (module.src_relative, transient_uses(&module.source)))
         .filter(|(_, count)| *count > 0)
         .collect()
 }
@@ -89,14 +64,17 @@ fn test_only_declared_call_sites_drop_the_assets_guard() {
 
 #[test]
 fn test_the_playbook_runner_holds_its_guard() {
-    let source = fs::read_to_string(src_dir().join(RUNNER)).expect("the runner must exist");
+    let runner = modules()
+        .into_iter()
+        .find(|module| module.src_relative == RUNNER)
+        .unwrap_or_else(|| panic!("the walk over src/ must reach {RUNNER}"));
 
     assert!(
-        source.contains("AnsibleAssets::prepare()"),
+        runner.source.contains("AnsibleAssets::prepare()"),
         "{RUNNER} must prepare the assets it runs ansible-playbook against"
     );
     assert_eq!(
-        transient_uses(&source),
+        transient_uses(&runner.source),
         0,
         "{RUNNER} spawns ansible-playbook, which reads templates lazily at task \
          runtime; discarding the AnsibleAssets releases the lock that keeps the \
