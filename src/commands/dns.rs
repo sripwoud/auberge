@@ -3,8 +3,8 @@ use crate::output::OutputFormat;
 use crate::prompt::{Choice, select_item};
 use crate::services::cloudflare_dns::CloudflareDns;
 use crate::services::dns::{
-    AppliedRecord, DiscoveredSubdomains, DnsRecords, PlannedRecord, SetAllOutcome, SetAllPlan,
-    WRITE_PACE, apply_set_all, discover_all_subdomains, plan_set_all,
+    AppliedRecord, DiscoveredSubdomains, DnsRecords, MigrationOutcome, PlannedRecord,
+    SetAllOutcome, SetAllPlan, WRITE_PACE, apply_set_all, discover_all_subdomains, plan_set_all,
 };
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
@@ -460,49 +460,95 @@ struct MigrationRow {
     success: bool,
 }
 
+/// One `SkippedRecord` as the JSON body spells it.
+#[derive(Serialize)]
+struct MigrationSkippedRow {
+    subdomain: String,
+    ip: String,
+    reason: String,
+}
+
+/// The ADR-0004 body, mirroring `MigrationOutcome`.
+#[derive(Serialize)]
+struct MigrationOutput {
+    migrated: Vec<MigrationRow>,
+    skipped: Vec<MigrationSkippedRow>,
+}
+
+fn migration_json(outcome: &MigrationOutcome) -> MigrationOutput {
+    MigrationOutput {
+        migrated: outcome
+            .migrated
+            .iter()
+            .map(|r| MigrationRow {
+                subdomain: r.subdomain.clone(),
+                old_ip: r.old_ip.clone(),
+                new_ip: r.new_ip.clone(),
+                success: r.success,
+            })
+            .collect(),
+        skipped: outcome
+            .skipped
+            .iter()
+            .map(|s| MigrationSkippedRow {
+                subdomain: s.subdomain.clone(),
+                ip: s.ip.clone(),
+                reason: s.reason.as_str().to_string(),
+            })
+            .collect(),
+    }
+}
+
+fn print_migration(outcome: &MigrationOutcome, dry_run: bool) {
+    print_mode_banner();
+    if dry_run {
+        eprintln!("[DRY RUN] DNS Migration Preview");
+    } else {
+        eprintln!("DNS Migration");
+    }
+    eprintln!("{}", "-".repeat(50));
+    eprintln!(
+        "{:<14} {:<16} {:^3} {:<16}",
+        "SUBDOMAIN", "CURRENT", "", "NEW"
+    );
+    eprintln!("{}", "-".repeat(50));
+    for result in &outcome.migrated {
+        eprintln!(
+            "{:<14} {:<16} ->  {:<16}",
+            result.subdomain, result.old_ip, result.new_ip
+        );
+    }
+
+    if !outcome.skipped.is_empty() {
+        eprintln!("\nSkipping (holds a tailnet address, not a Host address):");
+        for skipped in &outcome.skipped {
+            eprintln!("  • {} ({})", skipped.subdomain, skipped.ip);
+        }
+    }
+
+    let skipped = tailnet_only_suffix(outcome.skipped.len());
+    if dry_run {
+        eprintln!(
+            "\nWould update {} A record(s).{}",
+            outcome.migrated.len(),
+            skipped
+        );
+    } else {
+        let success_count = outcome.migrated.iter().filter(|r| r.success).count();
+        eprintln!("\nUpdated {} A record(s).{}", success_count, skipped);
+    }
+}
+
 pub async fn run_dns_migrate(ip: String, dry_run: bool, output: OutputFormat) -> Result<()> {
     let dns = CloudflareDns::connect().await?;
-    let results = crate::services::dns::migrate_all(&dns, &ip, dry_run).await?;
+    let outcome = crate::services::dns::migrate_all(&dns, &ip, dry_run).await?;
 
     match output {
-        OutputFormat::Json => {
-            let rows: Vec<MigrationRow> = results
-                .iter()
-                .map(|r| MigrationRow {
-                    subdomain: r.subdomain.clone(),
-                    old_ip: r.old_ip.clone(),
-                    new_ip: r.new_ip.clone(),
-                    success: r.success,
-                })
-                .collect();
-            println!("{}", serde_json::to_string_pretty(&rows)?);
-        }
-        OutputFormat::Human => {
-            print_mode_banner();
-            if dry_run {
-                eprintln!("[DRY RUN] DNS Migration Preview");
-            } else {
-                eprintln!("DNS Migration");
-            }
-            eprintln!("{}", "-".repeat(50));
-            eprintln!(
-                "{:<14} {:<16} {:^3} {:<16}",
-                "SUBDOMAIN", "CURRENT", "", "NEW"
-            );
-            eprintln!("{}", "-".repeat(50));
-            for result in &results {
-                eprintln!(
-                    "{:<14} {:<16} ->  {:<16}",
-                    result.subdomain, result.old_ip, result.new_ip
-                );
-            }
-            if dry_run {
-                eprintln!("\nWould update {} A record(s).", results.len());
-            } else {
-                let success_count = results.iter().filter(|r| r.success).count();
-                eprintln!("\nUpdated {} A record(s).", success_count);
-            }
-        }
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&migration_json(&outcome))?
+        ),
+        OutputFormat::Human => print_migration(&outcome, dry_run),
     }
 
     Ok(())
@@ -670,15 +716,20 @@ fn print_plan(plan: &SetAllPlan, dry_run: bool) {
     }
 }
 
+/// The tail both closing lines carry, empty when nothing was skipped.
+fn tailnet_only_suffix(count: usize) -> String {
+    if count == 0 {
+        String::new()
+    } else {
+        format!(" (skipped {count} tailnet-only)")
+    }
+}
+
 /// The closing line. A run with failures does not get a success banner, and
 /// says how many records it abandoned rather than implying it tried them: the
 /// denominator is the plan, and only `created` is a claim about what landed.
 fn print_summary(plan: &SetAllPlan, outcome: &SetAllOutcome, target_ip: &str) {
-    let skipped = if plan.skipped.is_empty() {
-        String::new()
-    } else {
-        format!(" (skipped {} tailnet-only)", plan.skipped.len())
-    };
+    let skipped = tailnet_only_suffix(plan.skipped.len());
 
     if outcome.failed.is_empty() {
         output::success(&format!(
@@ -869,7 +920,9 @@ async fn set_all<D: DnsRecords>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::dns::{PlannedRecord, SkipReason, SkippedApp};
+    use crate::services::dns::{
+        MigrationResult, PlannedRecord, SkipReason, SkippedApp, SkippedRecord,
+    };
     use clap::Parser;
 
     #[derive(clap::Parser)]
@@ -961,6 +1014,55 @@ mod tests {
         };
         let json = serde_json::to_string(&row).unwrap();
         assert!(json.contains("\"success\":true"));
+    }
+
+    fn migrated(subdomain: &str) -> MigrationResult {
+        MigrationResult {
+            subdomain: subdomain.to_string(),
+            old_ip: "203.0.113.10".to_string(),
+            new_ip: "198.51.100.7".to_string(),
+            success: true,
+        }
+    }
+
+    fn skipped_record(subdomain: &str, ip: &str) -> SkippedRecord {
+        SkippedRecord {
+            subdomain: subdomain.to_string(),
+            ip: ip.to_string(),
+            reason: SkipReason::TailnetOnly,
+        }
+    }
+
+    // `migrate -o json` answers the ADR-0003 skip as data, in `set-all`'s
+    // `skipped` shape: one row per record, `reason` named rather than implied.
+    #[test]
+    fn migration_output_serialises_with_migrated_and_skipped_arrays() {
+        let outcome = MigrationOutcome {
+            migrated: vec![migrated("rss")],
+            skipped: vec![skipped_record("bichon", "100.64.0.9")],
+        };
+        let json = serde_json::to_string(&migration_json(&outcome)).unwrap();
+        assert!(json.contains("\"migrated\":[{"));
+        assert!(json.contains("\"skipped\":[{"));
+        assert!(json.contains("\"subdomain\":\"bichon\""));
+        assert!(json.contains("\"ip\":\"100.64.0.9\""));
+        assert!(json.contains("\"reason\":\"tailnet_only\""));
+    }
+
+    // A zone of nothing but tailnet-only records still emits a body, so a
+    // consumer never has to read an empty array as "the run saw nothing".
+    #[test]
+    fn migration_output_over_a_tailnet_only_zone_carries_only_skips() {
+        let outcome = MigrationOutcome {
+            migrated: vec![],
+            skipped: vec![
+                skipped_record("bichon", "100.64.0.9"),
+                skipped_record("cockpit", "100.101.255.46"),
+            ],
+        };
+        let json = serde_json::to_string(&migration_json(&outcome)).unwrap();
+        assert!(json.contains("\"migrated\":[]"));
+        assert_eq!(migration_json(&outcome).skipped.len(), 2);
     }
 
     #[test]
