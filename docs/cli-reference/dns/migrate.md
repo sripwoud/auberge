@@ -8,19 +8,19 @@ auberge dns migrate --ip <IP> [OPTIONS]
 
 ## Options
 
-| Option                | Description                           | Default |
-| --------------------- | ------------------------------------- | ------- |
-| `-i, --ip IP`         | New IP address (required)             | —       |
-| `-n, --dry-run`       | Preview without updating              | `false` |
-| `-o, --output FORMAT` | `human` or `json`                     | `human` |
-| `-P, --production`    | Use production API (default: sandbox) | `false` |
+| Option                | Description                                              | Default |
+| --------------------- | -------------------------------------------------------- | ------- |
+| `-i, --ip IP`         | New IP address (required)                                | —       |
+| `-n, --dry-run`       | Preview without updating                                 | `false` |
+| `-o, --output FORMAT` | `human` or `json`                                        | `human` |
+| `-P, --production`    | Accepted and ignored; every call uses the production API | n/a     |
 
 ## Examples
 
 ```bash
 auberge dns migrate --ip 10.0.0.5 --dry-run    # always preview first
 auberge dns migrate --ip 10.0.0.5
-auberge dns migrate --ip 10.0.0.5 --production
+auberge dns migrate --ip 10.0.0.5
 ```
 
 ## Gotchas

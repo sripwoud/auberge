@@ -50,6 +50,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0040 | [A restarting unit declares whether it gives up](./adr/0040-a-restarting-unit-declares-whether-it-gives-up.md)                                                 |
 | 0041 | [A removed unit clears its own failed state](./adr/0041-a-removed-unit-clears-its-failed-state.md)                                                             |
 | 0042 | [Unit Ownership is declared in Playbook Meta](./adr/0042-unit-ownership-is-declared-in-playbook-meta.md)                                                       |
+| 0043 | [A vendor client is reached through a crate-local trait](./adr/0043-vendor-types-stop-at-their-adapter.md)                                                     |
 
 ## Native systemd by default
 

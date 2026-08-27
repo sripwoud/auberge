@@ -26,8 +26,8 @@ use commands::config_cmd::{
 };
 use commands::deploy::{DeployCmd, run_deploy};
 use commands::dns::{
-    DnsCommands, run_dns_delete, run_dns_list, run_dns_migrate, run_dns_set, run_dns_set_all,
-    run_dns_status,
+    DnsCommands, SetAllOptions, run_dns_delete, run_dns_list, run_dns_migrate, run_dns_set,
+    run_dns_set_all, run_dns_status,
 };
 use commands::headscale::{
     HeadscaleCommands, run_headscale_add_user, run_headscale_list_nodes, run_headscale_list_users,
@@ -102,7 +102,7 @@ enum Commands {
     #[command(
         subcommand,
         visible_alias = "d",
-        about = "DNS management via Namecheap"
+        about = "DNS management via Cloudflare"
     )]
     Dns(DnsCommands),
     #[command(subcommand, visible_alias = "c", about = "Manage user configuration")]
@@ -307,14 +307,17 @@ async fn main() -> Result<()> {
             DnsCommands::List {
                 subdomain,
                 output,
-                production,
-            } => run_dns_list(subdomain, output, production).await,
-            DnsCommands::Status { output, production } => run_dns_status(output, production).await,
+                production: _,
+            } => run_dns_list(subdomain, output).await,
+            DnsCommands::Status {
+                output,
+                production: _,
+            } => run_dns_status(output).await,
             DnsCommands::Set {
                 subdomain,
                 ip,
-                production,
-            } => run_dns_set(subdomain, ip, production).await,
+                production: _,
+            } => run_dns_set(subdomain, ip).await,
             DnsCommands::Delete {
                 subdomain,
                 dry_run,
@@ -326,8 +329,8 @@ async fn main() -> Result<()> {
                 ip,
                 dry_run,
                 output,
-                production,
-            } => run_dns_migrate(ip, dry_run, output, production).await,
+                production: _,
+            } => run_dns_migrate(ip, dry_run, output).await,
             DnsCommands::SetAll {
                 host,
                 ip,
@@ -338,9 +341,9 @@ async fn main() -> Result<()> {
                 skip,
                 output,
                 continue_on_error,
-                production,
-            } => {
-                run_dns_set_all(
+                production: _,
+            } => std::process::exit(
+                run_dns_set_all(SetAllOptions {
                     host,
                     ip,
                     dry_run,
@@ -350,10 +353,9 @@ async fn main() -> Result<()> {
                     skip,
                     output,
                     continue_on_error,
-                    production,
-                )
-                .await
-            }
+                })
+                .await,
+            ),
         },
         Commands::Config(cmd) => match cmd {
             ConfigCommands::Init(args) => run_config_init(args),

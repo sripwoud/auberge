@@ -8,18 +8,18 @@ auberge dns set-all [OPTIONS]
 
 ## Options
 
-| Option                   | Description                           | Default     |
-| ------------------------ | ------------------------------------- | ----------- |
-| `-H, --host HOST`        | Target host                           | Interactive |
-| `-i, --ip IP`            | Override IP (conflicts with `--host`) | From host   |
-| `-n, --dry-run`          | Preview without creating              | `false`     |
-| `-y, --yes`              | Skip confirmation                     | `false`     |
-| `-s, --strict`           | Fail if any subdomain env var missing | `false`     |
-| `-S, --subdomains NAMES` | Process only these subdomains         | All         |
-| `--skip NAMES`           | Exclude these subdomains              | None        |
-| `--continue-on-error`    | Continue past errors                  | `false`     |
-| `-o, --output FORMAT`    | `human` or `json`                     | `human`     |
-| `-P, --production`       | Use production API (default: sandbox) | `false`     |
+| Option                   | Description                                              | Default     |
+| ------------------------ | -------------------------------------------------------- | ----------- |
+| `-H, --host HOST`        | Target host                                              | Interactive |
+| `-i, --ip IP`            | Override IP (conflicts with `--host`)                    | From host   |
+| `-n, --dry-run`          | Preview without creating                                 | `false`     |
+| `-y, --yes`              | Skip confirmation                                        | `false`     |
+| `-s, --strict`           | Fail if any subdomain env var missing                    | `false`     |
+| `-S, --subdomains NAMES` | Process only these subdomains                            | All         |
+| `--skip NAMES`           | Exclude these subdomains                                 | None        |
+| `--continue-on-error`    | Continue past errors                                     | `false`     |
+| `-o, --output FORMAT`    | `human` or `json`                                        | `human`     |
+| `-P, --production`       | Accepted and ignored; every call uses the production API | n/a         |
 
 ## Examples
 
@@ -42,9 +42,25 @@ Apps whose playbook meta declares `tailnet_only: true` (currently `bichon`, `coc
 | Source                                             | Behavior                                                                       |
 | -------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Implicit (no `--subdomains`)                       | Skipped silently with `Skipping (tailnet-only — published via Blocky): <apps>` |
-| Explicit (`--subdomains` names a tailnet-only app) | Hard-error before any API call. Use `auberge deploy <app>` instead.            |
+| Explicit (`--subdomains` names a tailnet-only app) | Hard-error before any record is written. Use `auberge deploy <app>` instead.   |
 
 !> A 500 ms delay is inserted between API calls to respect Cloudflare rate limits.
+
+## Exit codes
+
+Follow the Backup Verdict convention, so a script can branch on which of the three happened:
+
+| Code | Meaning                                                                                                        |
+| ---- | -------------------------------------------------------------------------------------------------------------- |
+| `0`  | Every planned record written — including a run with nothing to do, a `--dry-run`, and a cancelled confirmation |
+| `1`  | At least one write failed; the failures are in the `failed` array                                              |
+| `2`  | Operational error — no `--host`/`--ip`, host absent from inventory, a tailnet-only app named in `--subdomains` |
+
+A failed write emits the full JSON body before exiting `1`, so the failure is readable in both output modes:
+
+```bash
+auberge dns set-all --host my-vps --yes --output json --continue-on-error > records.json || echo "some records failed"
+```
 
 <details>
 <summary>JSON output schema</summary>

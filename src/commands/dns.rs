@@ -1,7 +1,11 @@
 use crate::output;
 use crate::output::OutputFormat;
 use crate::prompt::{Choice, select_item};
-use crate::services::dns::DnsService;
+use crate::services::cloudflare_dns::CloudflareDns;
+use crate::services::dns::{
+    AppliedRecord, DiscoveredSubdomains, DnsRecords, PlannedRecord, SetAllOutcome, SetAllPlan,
+    WRITE_PACE, apply_set_all, discover_all_subdomains, plan_set_all,
+};
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::Result;
@@ -21,7 +25,11 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Accepted and ignored: every call uses the production API"
+        )]
         production: bool,
     },
     #[command(visible_alias = "st", about = "Show DNS status and health")]
@@ -34,7 +42,11 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Accepted and ignored: every call uses the production API"
+        )]
         production: bool,
     },
     #[command(visible_alias = "s", about = "Set an A record for a subdomain")]
@@ -43,7 +55,11 @@ pub enum DnsCommands {
         subdomain: Option<String>,
         #[arg(short, long, help = "IP address")]
         ip: Option<String>,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Accepted and ignored: every call uses the production API"
+        )]
         production: bool,
     },
     #[command(
@@ -57,7 +73,7 @@ pub enum DnsCommands {
                       escalate the confirmation: the user must retype the subdomain name to \
                       proceed.\n\n\
                       EXAMPLES:\n  \
-                      # Pick a subdomain interactively, confirm, then delete (sandbox)\n  \
+                      # Pick a subdomain interactively, confirm, then delete\n  \
                       auberge dns delete\n\n  \
                       # Preview the action without deleting\n  \
                       auberge dns delete -s freshrss --dry-run\n\n  \
@@ -77,7 +93,11 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Treat as a production deletion: retype the subdomain to confirm"
+        )]
         production: bool,
         #[arg(short = 'y', long, help = "Skip confirmation prompt")]
         yes: bool,
@@ -96,7 +116,11 @@ pub enum DnsCommands {
             help = "Output format"
         )]
         output: OutputFormat,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Accepted and ignored: every call uses the production API"
+        )]
         production: bool,
     },
     #[command(
@@ -109,10 +133,10 @@ pub enum DnsCommands {
                       • Implicit discovery (no --subdomains): tailnet-only apps are skipped \
                         automatically; a grouped info line is emitted to stderr.\n\
                       • Explicit target (--subdomains names a tailnet-only app): hard-error \
-                        before any Cloudflare API call; use `auberge deploy <app>` instead.\n\n\
+                        before any record is written; use `auberge deploy <app>` instead.\n\n\
                       EXAMPLES:\n  \
                       # Publish all Public Apps; tailnet-only apps are skipped automatically\n  \
-                      auberge dns set-all --host auberge --production\n\n  \
+                      auberge dns set-all --host auberge\n\n  \
                       # Dry-run preview\n  \
                       auberge dns set-all --host auberge --dry-run\n\n  \
                       # Only specific apps (all must be public)\n  \
@@ -169,7 +193,11 @@ pub enum DnsCommands {
         output: OutputFormat,
         #[arg(long, help = "Continue on errors instead of failing fast")]
         continue_on_error: bool,
-        #[arg(short = 'P', long, help = "Use production API (default: sandbox)")]
+        #[arg(
+            short = 'P',
+            long,
+            help = "Accepted and ignored: every call uses the production API"
+        )]
         production: bool,
     },
 }
@@ -182,14 +210,13 @@ struct DnsRecordRow {
     ttl: u32,
 }
 
-pub async fn run_dns_list(
-    subdomain: Option<String>,
-    output: OutputFormat,
-    production: bool,
-) -> Result<()> {
-    let service = DnsService::new_with_production(Some(production)).await?;
+fn print_mode_banner() {
+    output::info("CLOUDFLARE DNS");
+}
 
-    let records = service.list_records().await?;
+pub async fn run_dns_list(subdomain: Option<String>, output: OutputFormat) -> Result<()> {
+    let dns = CloudflareDns::connect().await?;
+    let records = dns.list_records().await?;
 
     let filtered: Vec<_> = match &subdomain {
         Some(name) => records.iter().filter(|r| r.name == *name).collect(),
@@ -200,14 +227,11 @@ pub async fn run_dns_list(
         OutputFormat::Json => {
             let rows: Vec<DnsRecordRow> = filtered
                 .iter()
-                .map(|r| {
-                    let (record_type, content) = format_dns_content(&r.content);
-                    DnsRecordRow {
-                        name: r.name.clone(),
-                        record_type,
-                        content,
-                        ttl: r.ttl,
-                    }
+                .map(|r| DnsRecordRow {
+                    name: r.name.clone(),
+                    record_type: r.content.kind().to_string(),
+                    content: r.content.value(),
+                    ttl: r.ttl,
                 })
                 .collect();
             println!("{}", serde_json::to_string_pretty(&rows)?);
@@ -220,7 +244,7 @@ pub async fn run_dns_list(
             }
             eprintln!(
                 "DNS Records for {}\n{:<40} {:<8} {:<24} {:>6}",
-                service.domain(),
+                dns.domain(),
                 "NAME",
                 "TYPE",
                 "CONTENT",
@@ -228,35 +252,18 @@ pub async fn run_dns_list(
             );
             eprintln!("{}", "-".repeat(80));
             for record in filtered {
-                let (record_type, content) = format_dns_content(&record.content);
                 eprintln!(
                     "{:<40} {:<8} {:<24} {:>6}",
-                    record.name, record_type, content, record.ttl
+                    record.name,
+                    record.content.kind(),
+                    record.content.value(),
+                    record.ttl
                 );
             }
         }
     }
 
     Ok(())
-}
-
-fn format_dns_content(content: &cloudflare::endpoints::dns::dns::DnsContent) -> (String, String) {
-    use cloudflare::endpoints::dns::dns::DnsContent;
-    match content {
-        DnsContent::A { content } => ("A".to_string(), content.to_string()),
-        DnsContent::AAAA { content } => ("AAAA".to_string(), content.to_string()),
-        DnsContent::CNAME { content } => ("CNAME".to_string(), content.clone()),
-        DnsContent::MX { content, priority } => {
-            ("MX".to_string(), format!("{} ({})", content, priority))
-        }
-        DnsContent::TXT { content } => ("TXT".to_string(), content.clone()),
-        DnsContent::NS { content } => ("NS".to_string(), content.clone()),
-        DnsContent::SRV { content } => ("SRV".to_string(), content.clone()),
-    }
-}
-
-fn print_mode_banner() {
-    output::info("CLOUDFLARE DNS");
 }
 
 #[derive(Serialize)]
@@ -273,15 +280,25 @@ struct DnsStatusJson {
     missing_subdomains: Vec<String>,
 }
 
-pub async fn run_dns_status(output: OutputFormat, production: bool) -> Result<()> {
-    let service = DnsService::new_with_production(Some(production)).await?;
-    let status = service.status().await?;
+/// The subdomains `dns status` expects to find published, sorted so the report
+/// does not inherit `HashMap` iteration order.
+fn configured_subdomains() -> Vec<String> {
+    let mut names: Vec<String> = crate::services::dns::discover_subdomains()
+        .into_values()
+        .map(|e| e.subdomain)
+        .collect();
+    names.sort();
+    names
+}
 
-    use cloudflare::endpoints::dns::dns::DnsContent;
-    let a_records: Vec<_> = status
+pub async fn run_dns_status(output: OutputFormat) -> Result<()> {
+    let dns = CloudflareDns::connect().await?;
+    let status = crate::services::dns::status(&dns, configured_subdomains()).await?;
+
+    let a_records: Vec<(&str, String)> = status
         .active_records
         .iter()
-        .filter(|r| matches!(r.content, DnsContent::A { .. }))
+        .filter_map(|r| r.a_ip().map(|ip| (r.name.as_str(), ip.to_string())))
         .collect();
 
     match output {
@@ -291,15 +308,9 @@ pub async fn run_dns_status(output: OutputFormat, production: bool) -> Result<()
                 configured_subdomains: status.configured_subdomains.clone(),
                 active_a_records: a_records
                     .iter()
-                    .filter_map(|r| {
-                        if let DnsContent::A { content } = r.content {
-                            Some(StatusARecord {
-                                name: r.name.clone(),
-                                ip: content.to_string(),
-                            })
-                        } else {
-                            None
-                        }
+                    .map(|(name, ip)| StatusARecord {
+                        name: (*name).to_string(),
+                        ip: ip.clone(),
                     })
                     .collect(),
                 missing_subdomains: status.missing_subdomains.clone(),
@@ -315,10 +326,8 @@ pub async fn run_dns_status(output: OutputFormat, production: bool) -> Result<()
                 status.configured_subdomains.join(", ")
             );
             eprintln!("\nActive A records: {}", a_records.len());
-            for record in &a_records {
-                if let DnsContent::A { content } = record.content {
-                    eprintln!("  {} -> {}", record.name, content);
-                }
+            for (name, ip) in &a_records {
+                eprintln!("  {} -> {}", name, ip);
             }
             if !status.missing_subdomains.is_empty() {
                 eprintln!(
@@ -343,12 +352,10 @@ fn resolve_subdomain(subdomain: Option<String>) -> Result<String> {
                 eyre::bail!("No subdomain provided. Pass -s <name> for non-interactive use.");
             }
             crate::config::Config::load()?;
-            let subdomains = crate::services::dns::discover_subdomains();
-            let mut items: Vec<String> = subdomains.values().map(|e| e.subdomain.clone()).collect();
+            let mut items = configured_subdomains();
             if items.is_empty() {
                 eyre::bail!("No subdomains defined in config");
             }
-            items.sort();
             items.dedup();
             select_item(
                 &items,
@@ -375,25 +382,21 @@ fn resolve_ip(ip: Option<String>) -> Result<String> {
     }
 }
 
-pub async fn run_dns_set(
-    subdomain: Option<String>,
-    ip: Option<String>,
-    production: bool,
-) -> Result<()> {
+pub async fn run_dns_set(subdomain: Option<String>, ip: Option<String>) -> Result<()> {
     let subdomain = resolve_subdomain(subdomain)?;
     let ip = resolve_ip(ip)?;
 
-    let service = DnsService::new_with_production(Some(production)).await?;
+    let dns = CloudflareDns::connect().await?;
     print_mode_banner();
 
     output::info(&format!(
         "Setting A record: {}.{} -> {}",
         subdomain,
-        service.domain(),
+        dns.domain(),
         ip
     ));
 
-    service.set_a_record(&subdomain, &ip).await?;
+    dns.set_a_record(&subdomain, &ip).await?;
     output::success("A record set successfully");
 
     Ok(())
@@ -414,8 +417,8 @@ pub async fn run_dns_delete(
     yes: bool,
 ) -> Result<()> {
     let subdomain = resolve_subdomain(subdomain)?;
-    let service = DnsService::new_with_production(Some(production)).await?;
-    let fqdn = format!("{}.{}", subdomain, service.domain());
+    let dns = CloudflareDns::connect().await?;
+    let fqdn = format!("{}.{}", subdomain, dns.domain());
 
     if dry_run {
         match output {
@@ -452,7 +455,7 @@ pub async fn run_dns_delete(
         return Ok(());
     }
 
-    let deleted = service.delete_a_record(&subdomain).await?;
+    let deleted = dns.delete_a_record(&subdomain).await?;
 
     match output {
         OutputFormat::Json => {
@@ -487,14 +490,9 @@ struct MigrationRow {
     success: bool,
 }
 
-pub async fn run_dns_migrate(
-    ip: String,
-    dry_run: bool,
-    output: OutputFormat,
-    production: bool,
-) -> Result<()> {
-    let service = DnsService::new_with_production(Some(production)).await?;
-    let results = service.migrate_all(&ip, dry_run).await?;
+pub async fn run_dns_migrate(ip: String, dry_run: bool, output: OutputFormat) -> Result<()> {
+    let dns = CloudflareDns::connect().await?;
+    let results = crate::services::dns::migrate_all(&dns, &ip, dry_run).await?;
 
     match output {
         OutputFormat::Json => {
@@ -564,317 +562,294 @@ struct SetAllRow {
     error: Option<String>,
 }
 
-type SubdomainMap = std::collections::HashMap<String, crate::services::dns::SubdomainEntry>;
-type PartitionResult = (
-    Vec<(String, crate::services::dns::SubdomainEntry)>,
-    Vec<SkippedRow>,
-);
+/// The `error` a record the run never reached carries. Not a provider message
+/// — the reason no provider was asked.
+const NOT_ATTEMPTED: &str =
+    "not attempted: an earlier record failed and --continue-on-error is off";
 
-/// Partitions discovery output into the "create" and "skip" lists, applying
-/// `--subdomains` / `--skip` operator intent and ADR-0003 invariants:
-///
-/// - Implicit (`subdomains` empty): all `--skip`-filtered tailnet-only apps
-///   are skipped; remaining public apps are scheduled to create. `to_skip`
-///   is sorted alphabetically by app name for deterministic output.
-/// - Explicit (`subdomains` non-empty): if any non-`--skip`-excluded entry
-///   names a tailnet-only app, hard-error before any Cloudflare API call.
-///   `to_skip` is empty in this branch — explicit means "operator owns it".
-///
-/// `public_discovered` is mutated in place (drained of selected entries) so
-/// the caller still owns the residual map if it ever needs it.
-fn partition_for_set_all(
-    subdomains: Vec<String>,
-    skip_set: &std::collections::HashSet<String>,
-    public_discovered: &mut SubdomainMap,
-    tailnet_only_discovered: &SubdomainMap,
-) -> Result<PartitionResult> {
-    if !subdomains.is_empty() {
-        let offenders: Vec<(String, String)> = subdomains
-            .iter()
-            .filter(|s| !skip_set.contains(*s))
-            .filter_map(|s| {
-                tailnet_only_discovered
-                    .get(s)
-                    .map(|entry| (s.clone(), entry.subdomain.clone()))
-            })
-            .collect();
-        if !offenders.is_empty() {
-            let apps_list = offenders
-                .iter()
-                .map(|(app, sub)| format!("  • {} (subdomain: {})", app, sub))
-                .collect::<Vec<_>>()
-                .join("\n");
-            eyre::bail!(
-                "tailnet-only apps cannot have Cloudflare A records (ADR-0003):\n{}\n\n\
-                 DNS for tailnet-only apps is published via Blocky on `auberge deploy <app>`.",
-                apps_list
-            );
+impl SetAllRow {
+    fn from(applied: &AppliedRecord) -> Self {
+        Self {
+            subdomain: applied.subdomain.clone(),
+            fqdn: applied.fqdn.clone(),
+            ip: applied.ip.clone(),
+            success: applied.error.is_none(),
+            error: applied.error.clone(),
         }
-        let to_process = subdomains
-            .into_iter()
-            .filter(|s| !skip_set.contains(s))
-            .filter_map(|s| public_discovered.remove(&s).map(|entry| (s, entry)))
-            .collect();
-        Ok((to_process, vec![]))
-    } else {
-        let mut skip_vec: Vec<SkippedRow> = tailnet_only_discovered
-            .iter()
-            .filter(|(k, _)| !skip_set.contains(*k))
-            .map(|(app, entry)| SkippedRow {
-                app: app.clone(),
-                subdomain: entry.subdomain.clone(),
-                reason: "tailnet_only".to_string(),
-            })
-            .collect();
-        skip_vec.sort_by(|a, b| a.app.cmp(&b.app));
+    }
 
-        let to_process = public_discovered
-            .drain()
-            .filter(|(k, _)| !skip_set.contains(k))
-            .collect();
-        Ok((to_process, skip_vec))
+    fn not_attempted(planned: &PlannedRecord) -> Self {
+        Self {
+            subdomain: planned.subdomain.clone(),
+            fqdn: planned.fqdn.clone(),
+            ip: planned.ip.clone(),
+            success: false,
+            error: Some(NOT_ATTEMPTED.to_string()),
+        }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn run_dns_set_all(
-    host: Option<String>,
-    ip: Option<String>,
-    dry_run: bool,
-    yes: bool,
-    strict: bool,
-    subdomains: Vec<String>,
-    skip: Vec<String>,
-    output: OutputFormat,
-    continue_on_error: bool,
-    production: bool,
-) -> Result<()> {
-    use crate::services::dns::discover_all_subdomains;
-    use crate::services::inventory::discover_hosts_with_ips;
-    use std::collections::HashSet;
+fn set_all_json(plan: &SetAllPlan, outcome: &SetAllOutcome) -> SetAllOutput {
+    SetAllOutput {
+        created: outcome.created.iter().map(SetAllRow::from).collect(),
+        skipped: plan
+            .skipped
+            .iter()
+            .map(|s| SkippedRow {
+                app: s.app.clone(),
+                subdomain: s.subdomain.clone(),
+                reason: s.reason.as_str().to_string(),
+            })
+            .collect(),
+        failed: outcome
+            .failed
+            .iter()
+            .map(SetAllRow::from)
+            .chain(outcome.not_attempted.iter().map(SetAllRow::not_attempted))
+            .collect(),
+    }
+}
 
-    let service = DnsService::new_with_production(Some(production)).await?;
+fn print_plan(plan: &SetAllPlan, dry_run: bool) {
+    let verb = if dry_run {
+        "DRY RUN - Would create"
+    } else {
+        "Creating"
+    };
+    if plan.skipped.is_empty() {
+        output::info(&format!("{} {} A record(s):", verb, plan.to_create.len()));
+    } else {
+        output::info(&format!(
+            "{} {} A record(s), skipping {} (tailnet-only):",
+            verb,
+            plan.to_create.len(),
+            plan.skipped.len()
+        ));
+    }
 
-    let target_ip = match (&host, &ip) {
-        (Some(host_name), None) => {
-            let hosts = discover_hosts_with_ips(None)?;
-            hosts
-                .get(host_name)
-                .ok_or_else(|| {
-                    eyre::eyre!(
-                        "Host '{}' not found in inventory. Available: {}",
-                        host_name,
-                        hosts.keys().cloned().collect::<Vec<_>>().join(", ")
-                    )
-                })?
-                .clone()
-        }
-        (None, Some(ip_addr)) => ip_addr.clone(),
-        (None, None) => {
-            if !strict {
-                eyre::bail!("Either --host or --ip must be specified");
-            } else {
-                eyre::bail!("Either --host or --ip must be specified in strict mode");
-            }
-        }
-        _ => unreachable!(),
+    eprintln!("\nTo create:");
+    for record in &plan.to_create {
+        eprintln!("  • {} → {}", record.fqdn, record.ip);
+    }
+
+    if !plan.skipped.is_empty() {
+        let names: Vec<&str> = plan.skipped.iter().map(|s| s.app.as_str()).collect();
+        eprintln!(
+            "\nSkipping (tailnet-only — published via Blocky):\n  • {}",
+            names.join(", ")
+        );
+    }
+}
+
+/// The closing line. A run with failures does not get a success banner, and
+/// says how many records it abandoned rather than implying it tried them: the
+/// denominator is the plan, and only `created` is a claim about what landed.
+fn print_summary(plan: &SetAllPlan, outcome: &SetAllOutcome, target_ip: &str) {
+    let skipped = if plan.skipped.is_empty() {
+        String::new()
+    } else {
+        format!(" (skipped {} tailnet-only)", plan.skipped.len())
     };
 
-    let mut discovered = discover_all_subdomains();
+    if outcome.failed.is_empty() {
+        output::success(&format!(
+            "Successfully created {}/{} A records pointing to {}{}",
+            outcome.created.len(),
+            plan.to_create.len(),
+            target_ip,
+            skipped
+        ));
+        return;
+    }
+
+    let abandoned = if outcome.not_attempted.is_empty() {
+        String::new()
+    } else {
+        format!(", {} not attempted", outcome.not_attempted.len())
+    };
+    output::warn(&format!(
+        "Created {}/{} A records pointing to {}; {} failed{}{}",
+        outcome.created.len(),
+        plan.to_create.len(),
+        target_ip,
+        outcome.failed.len(),
+        abandoned,
+        skipped
+    ));
+}
+
+fn resolve_target_ip(host: Option<String>, ip: Option<String>, strict: bool) -> Result<String> {
+    use crate::services::inventory::discover_hosts_with_ips;
+    match (host, ip) {
+        (Some(host_name), None) => {
+            let hosts = discover_hosts_with_ips(None)?;
+            hosts.get(&host_name).cloned().ok_or_else(|| {
+                eyre::eyre!(
+                    "Host '{}' not found in inventory. Available: {}",
+                    host_name,
+                    hosts.keys().cloned().collect::<Vec<_>>().join(", ")
+                )
+            })
+        }
+        (None, Some(ip_addr)) => Ok(ip_addr),
+        (None, None) if strict => {
+            eyre::bail!("Either --host or --ip must be specified in strict mode")
+        }
+        (None, None) => eyre::bail!("Either --host or --ip must be specified"),
+        (Some(_), Some(_)) => unreachable!("clap declares --ip conflicts_with --host"),
+    }
+}
+
+pub struct SetAllOptions {
+    pub host: Option<String>,
+    pub ip: Option<String>,
+    pub dry_run: bool,
+    pub yes: bool,
+    pub strict: bool,
+    pub subdomains: Vec<String>,
+    pub skip: Vec<String>,
+    pub output: OutputFormat,
+    pub continue_on_error: bool,
+}
+
+/// Returns the process exit code — the Backup Verdict convention `backup
+/// verify` and `versions` already use (0 every record written, 1 at least one
+/// write failed, 2 operational error), so a caller can branch on which of the
+/// three happened instead of parsing the summary.
+pub async fn run_dns_set_all(opts: SetAllOptions) -> i32 {
+    set_all_exit_code(connect_and_set_all(opts).await)
+}
+
+/// The two things `set_all` needs from the outside world, resolved once so the
+/// orchestration below runs against a fake.
+async fn connect_and_set_all(opts: SetAllOptions) -> Result<SetAllOutcome> {
+    let dns = CloudflareDns::connect().await?;
+    let discovered = discover_all_subdomains();
+    set_all(&dns, discovered, opts).await
+}
+
+fn set_all_exit_code(result: Result<SetAllOutcome>) -> i32 {
+    match result {
+        Ok(outcome) => {
+            if outcome.failed.is_empty() {
+                0
+            } else {
+                eprintln!("Failed to create {} records", outcome.failed.len());
+                1
+            }
+        }
+        Err(e) => {
+            eprintln!("✗ {e:#}");
+            2
+        }
+    }
+}
+
+async fn set_all<D: DnsRecords>(
+    dns: &D,
+    discovered: DiscoveredSubdomains,
+    opts: SetAllOptions,
+) -> Result<SetAllOutcome> {
+    use std::collections::HashSet;
+
+    let SetAllOptions {
+        host,
+        ip,
+        dry_run,
+        yes,
+        strict,
+        subdomains,
+        skip,
+        output,
+        continue_on_error,
+    } = opts;
+
+    let target_ip = resolve_target_ip(host, ip, strict)?;
 
     if strict && discovered.public.is_empty() {
         eyre::bail!("No subdomain environment variables found");
     }
 
-    let skip_set: HashSet<String> = skip.iter().cloned().collect();
+    let skip_set: HashSet<String> = skip.into_iter().collect();
+    let plan = plan_set_all(dns.domain(), &target_ip, discovered, subdomains, &skip_set)?;
+    let human = matches!(output, OutputFormat::Human);
 
-    let (mut subdomains_to_process, to_skip) = partition_for_set_all(
-        subdomains,
-        &skip_set,
-        &mut discovered.public,
-        &discovered.tailnet_only,
-    )?;
-
-    if subdomains_to_process.is_empty() {
-        let message = if to_skip.is_empty() {
-            "No subdomains to process"
-        } else {
-            "All discovered apps are tailnet-only; nothing to create."
-        };
-        match output {
-            OutputFormat::Json => {
-                let result = SetAllOutput {
-                    created: vec![],
-                    skipped: to_skip,
-                    failed: vec![],
-                };
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            }
-            OutputFormat::Human => output::info(message),
-        }
-        return Ok(());
-    }
-
-    // Sort `subdomains_to_process` for deterministic output (`to_skip` is
-    // already sorted within the implicit-discovery branch above, since it is
-    // built in one place).  Both sorts happen before any output so callers
-    // always see alphabetical order regardless of HashMap iteration order.
-    subdomains_to_process.sort_by(|(a, _), (b, _)| a.cmp(b));
-
-    if matches!(output, OutputFormat::Human) {
-        print_mode_banner();
-        if to_skip.is_empty() {
-            if dry_run {
-                output::info(&format!(
-                    "DRY RUN - Would create {} A record(s):",
-                    subdomains_to_process.len()
-                ));
+    if plan.to_create.is_empty() {
+        if human {
+            output::info(if plan.skipped.is_empty() {
+                "No subdomains to process"
             } else {
-                output::info(&format!(
-                    "Creating {} A record(s):",
-                    subdomains_to_process.len()
-                ));
-            }
-        } else if dry_run {
-            output::info(&format!(
-                "DRY RUN - Would create {} A record(s), skipping {} (tailnet-only):",
-                subdomains_to_process.len(),
-                to_skip.len()
-            ));
+                "All discovered apps are tailnet-only; nothing to create."
+            });
         } else {
-            output::info(&format!(
-                "Creating {} A record(s), skipping {} (tailnet-only):",
-                subdomains_to_process.len(),
-                to_skip.len()
-            ));
-        }
-
-        eprintln!("\nTo create:");
-        for (_, entry) in &subdomains_to_process {
-            let effective_ip = entry.ip_override.as_deref().unwrap_or(&target_ip);
-            eprintln!(
-                "  • {}.{} → {}",
-                entry.subdomain,
-                service.domain(),
-                effective_ip
+            let empty = SetAllOutcome::default();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&set_all_json(&plan, &empty))?
             );
         }
-
-        if !to_skip.is_empty() {
-            let names: Vec<&str> = to_skip.iter().map(|r| r.app.as_str()).collect();
-            eprintln!(
-                "\nSkipping (tailnet-only — published via Blocky):\n  • {}",
-                names.join(", ")
-            );
-        }
+        return Ok(SetAllOutcome::default());
     }
 
-    if !dry_run && !crate::prompt::confirm("Proceed?", yes) {
-        if matches!(output, OutputFormat::Human) {
-            output::info("Operation cancelled");
-        }
-        return Ok(());
+    if human {
+        print_mode_banner();
+        print_plan(&plan, dry_run);
     }
 
     if dry_run {
-        if matches!(output, OutputFormat::Human) {
+        if human {
             output::info("DRY RUN - No changes were made");
         }
-        return Ok(());
+        return Ok(SetAllOutcome::default());
     }
 
-    let mut created_rows: Vec<SetAllRow> = Vec::new();
-    let mut failed_rows: Vec<SetAllRow> = Vec::new();
-    let mut succeeded = 0;
-    let mut failed = 0;
+    if !crate::prompt::confirm("Proceed?", yes) {
+        if human {
+            output::info("Operation cancelled");
+        }
+        return Ok(SetAllOutcome::default());
+    }
 
-    if matches!(output, OutputFormat::Human) {
+    if human {
         eprintln!();
     }
-
-    for (idx, (_app_name, entry)) in subdomains_to_process.iter().enumerate() {
-        let effective_ip = entry.ip_override.as_deref().unwrap_or(&target_ip);
-        let fqdn = format!("{}.{}", entry.subdomain, service.domain());
-        match service.set_a_record(&entry.subdomain, effective_ip).await {
-            Ok(_) => {
-                if matches!(output, OutputFormat::Human) {
-                    output::success(&format!("Created {}", fqdn));
-                }
-                created_rows.push(SetAllRow {
-                    subdomain: entry.subdomain.clone(),
-                    fqdn,
-                    ip: effective_ip.to_string(),
-                    success: true,
-                    error: None,
-                });
-                succeeded += 1;
-            }
-            Err(e) => {
-                if matches!(output, OutputFormat::Human) {
-                    eprintln!("Failed {}: {}", fqdn, e);
-                }
-                failed_rows.push(SetAllRow {
-                    subdomain: entry.subdomain.clone(),
-                    fqdn,
-                    ip: effective_ip.to_string(),
-                    success: false,
-                    error: Some(e.to_string()),
-                });
-                failed += 1;
-                if !continue_on_error {
-                    return Err(e);
-                }
-            }
+    let mut report = |applied: &AppliedRecord| {
+        if !human {
+            return;
         }
-
-        if idx < subdomains_to_process.len() - 1 {
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        match &applied.error {
+            None => output::success(&format!("Created {}", applied.fqdn)),
+            Some(message) => eprintln!("Failed {}: {}", applied.fqdn, message),
         }
+    };
+    let outcome = apply_set_all(dns, &plan, continue_on_error, WRITE_PACE, &mut report).await;
+
+    if human {
+        print_summary(&plan, &outcome, &target_ip);
+    } else {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&set_all_json(&plan, &outcome))?
+        );
     }
 
-    match output {
-        OutputFormat::Json => {
-            let result = SetAllOutput {
-                created: created_rows,
-                skipped: to_skip,
-                failed: failed_rows,
-            };
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
-        OutputFormat::Human => {
-            if to_skip.is_empty() {
-                output::success(&format!(
-                    "Successfully created {}/{} A records pointing to {}",
-                    succeeded,
-                    subdomains_to_process.len(),
-                    target_ip
-                ));
-            } else {
-                output::success(&format!(
-                    "Successfully created {}/{} A records pointing to {} (skipped {} tailnet-only)",
-                    succeeded,
-                    subdomains_to_process.len(),
-                    target_ip,
-                    to_skip.len()
-                ));
-            }
-        }
-    }
-
-    if failed > 0 {
-        eprintln!("Failed to create {} records", failed);
-        std::process::exit(1);
-    }
-
-    Ok(())
+    Ok(outcome)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        DnsDeleteResult, DnsRecordRow, DnsStatusJson, MigrationRow, SetAllOutput, SetAllRow,
-        SkippedRow, StatusARecord,
-    };
+    use super::*;
+    use crate::services::dns::{PlannedRecord, SkipReason, SkippedApp};
+
+    fn applied(subdomain: &str, error: Option<&str>) -> AppliedRecord {
+        AppliedRecord {
+            subdomain: subdomain.to_string(),
+            fqdn: format!("{subdomain}.example.com"),
+            ip: "1.2.3.4".to_string(),
+            error: error.map(str::to_string),
+        }
+    }
+
     #[test]
     fn dns_record_row_serialises_to_json() {
         let row = DnsRecordRow {
@@ -919,27 +894,15 @@ mod tests {
 
     #[test]
     fn set_all_row_omits_error_field_when_success() {
-        let row = SetAllRow {
-            subdomain: "baikal".to_string(),
-            fqdn: "baikal.example.com".to_string(),
-            ip: "1.2.3.4".to_string(),
-            success: true,
-            error: None,
-        };
-        let json = serde_json::to_string(&row).unwrap();
+        let json = serde_json::to_string(&SetAllRow::from(&applied("baikal", None))).unwrap();
         assert!(!json.contains("\"error\""));
+        assert!(json.contains("\"success\":true"));
     }
 
     #[test]
     fn set_all_row_includes_error_field_on_failure() {
-        let row = SetAllRow {
-            subdomain: "baikal".to_string(),
-            fqdn: "baikal.example.com".to_string(),
-            ip: "1.2.3.4".to_string(),
-            success: false,
-            error: Some("timeout".to_string()),
-        };
-        let json = serde_json::to_string(&row).unwrap();
+        let json =
+            serde_json::to_string(&SetAllRow::from(&applied("baikal", Some("timeout")))).unwrap();
         assert!(json.contains("\"error\":\"timeout\""));
         assert!(json.contains("\"success\":false"));
     }
@@ -971,27 +934,39 @@ mod tests {
         );
     }
 
+    fn plan_with(to_create: &[&str], skipped: &[&str]) -> SetAllPlan {
+        SetAllPlan {
+            to_create: to_create
+                .iter()
+                .map(|app| PlannedRecord {
+                    app: (*app).to_string(),
+                    subdomain: (*app).to_string(),
+                    fqdn: format!("{app}.example.com"),
+                    ip: "1.2.3.4".to_string(),
+                })
+                .collect(),
+            skipped: skipped
+                .iter()
+                .map(|app| SkippedApp {
+                    app: (*app).to_string(),
+                    subdomain: (*app).to_string(),
+                    reason: SkipReason::TailnetOnly,
+                })
+                .collect(),
+        }
+    }
+
     // Lock the `SetAllOutput` JSON shape: top-level object with `created`,
-    // `skipped`, and `failed` arrays, parallel to
-    // `dns_delete_result_distinguishes_real_delete_from_noop`.
+    // `skipped`, and `failed` arrays (ADR-0004).
     #[test]
     fn set_all_output_serialises_with_created_skipped_failed_arrays() {
-        let output = SetAllOutput {
-            created: vec![SetAllRow {
-                subdomain: "rss".to_string(),
-                fqdn: "rss.example.com".to_string(),
-                ip: "1.2.3.4".to_string(),
-                success: true,
-                error: None,
-            }],
-            skipped: vec![SkippedRow {
-                app: "bichon".to_string(),
-                subdomain: "bichon".to_string(),
-                reason: "tailnet_only".to_string(),
-            }],
+        let plan = plan_with(&["rss"], &["bichon"]);
+        let outcome = SetAllOutcome {
+            created: vec![applied("rss", None)],
             failed: vec![],
+            not_attempted: vec![],
         };
-        let json = serde_json::to_string(&output).unwrap();
+        let json = serde_json::to_string(&set_all_json(&plan, &outcome)).unwrap();
         assert!(json.contains("\"created\":[{"));
         assert!(json.contains("\"skipped\":[{"));
         assert!(json.contains("\"failed\":[]"));
@@ -1002,27 +977,60 @@ mod tests {
 
     #[test]
     fn set_all_output_all_tailnet_only_produces_empty_created_and_failed() {
-        let output = SetAllOutput {
-            created: vec![],
-            skipped: vec![
-                SkippedRow {
-                    app: "bichon".to_string(),
-                    subdomain: "bichon".to_string(),
-                    reason: "tailnet_only".to_string(),
-                },
-                SkippedRow {
-                    app: "paperless".to_string(),
-                    subdomain: "paperless".to_string(),
-                    reason: "tailnet_only".to_string(),
-                },
-            ],
-            failed: vec![],
-        };
-        let json = serde_json::to_string(&output).unwrap();
+        let plan = plan_with(&[], &["bichon", "paperless"]);
+        let json = serde_json::to_string(&set_all_json(&plan, &SetAllOutcome::default())).unwrap();
         assert!(json.contains("\"created\":[]"));
         assert!(json.contains("\"failed\":[]"));
         assert!(json.contains("\"bichon\""));
         assert!(json.contains("\"paperless\""));
+    }
+
+    // A failed write used to reach the operator only as a bare exit(1) — the
+    // JSON body was never emitted. It now carries the failure.
+    #[test]
+    fn set_all_output_carries_the_failed_record_and_its_error() {
+        let plan = plan_with(&["rss"], &[]);
+        let outcome = SetAllOutcome {
+            created: vec![],
+            failed: vec![applied("rss", Some("cloudflare rejected rss"))],
+            not_attempted: vec![],
+        };
+        let json = serde_json::to_string(&set_all_json(&plan, &outcome)).unwrap();
+        assert!(json.contains("\"created\":[]"));
+        assert!(json.contains("\"error\":\"cloudflare rejected rss\""));
+    }
+
+    // The whole plan must be reconcilable from the body. Fail-fast stops after
+    // the first failure, and a `failed` array holding only that one record
+    // would leave the reader thinking the plan had one record in it.
+    #[test]
+    fn set_all_output_names_every_planned_record_after_a_fail_fast_stop() {
+        let plan = plan_with(&["baikal", "rss", "music"], &[]);
+        let outcome = SetAllOutcome {
+            created: vec![],
+            failed: vec![applied("baikal", Some("cloudflare rejected baikal"))],
+            not_attempted: plan.to_create[1..].to_vec(),
+        };
+        let body = set_all_json(&plan, &outcome);
+
+        let named: Vec<&str> = body
+            .created
+            .iter()
+            .chain(body.failed.iter())
+            .map(|r| r.subdomain.as_str())
+            .collect();
+        assert_eq!(named, vec!["baikal", "rss", "music"]);
+        assert!(body.failed.iter().all(|r| !r.success));
+        assert_eq!(
+            body.failed[1].error.as_deref(),
+            Some(NOT_ATTEMPTED),
+            "an abandoned record says why no provider was asked"
+        );
+        assert_eq!(
+            body.failed[0].error.as_deref(),
+            Some("cloudflare rejected baikal"),
+            "the real failure keeps the provider's own message"
+        );
     }
 
     #[test]
@@ -1030,7 +1038,7 @@ mod tests {
         let row = SkippedRow {
             app: "cockpit".to_string(),
             subdomain: "cockpit".to_string(),
-            reason: "tailnet_only".to_string(),
+            reason: SkipReason::TailnetOnly.as_str().to_string(),
         };
         let json = serde_json::to_string(&row).unwrap();
         assert!(json.contains("\"app\":\"cockpit\""));
@@ -1038,194 +1046,69 @@ mod tests {
         assert!(json.contains("\"reason\":\"tailnet_only\""));
     }
 
+    // The Backup Verdict convention, matching `versions_exit_code`: 0 every
+    // record written, 1 at least one write failed, 2 operational error.
     #[test]
-    fn discover_all_subdomains_partitions_tailnet_only() {
-        use crate::services::dns::discover_all_subdomains;
-        // discover_all_subdomains -> Config::load() reads XDG_CONFIG_HOME, which
-        // other tests in this binary mutate. Hold TEST_LOCK to serialize.
-        let _guard = crate::output::TEST_LOCK.lock().unwrap();
-        let discovered = discover_all_subdomains();
-        for app in ["bichon", "cockpit", "paperless"] {
-            assert!(
-                discovered.tailnet_only.contains_key(app),
-                "tailnet-only app '{app}' must appear in tailnet-only partition"
-            );
-            assert!(
-                !discovered.public.contains_key(app),
-                "tailnet-only app '{app}' must not appear in public partition"
-            );
-        }
-        for app in ["freshrss", "baikal", "navidrome"] {
-            assert!(
-                discovered.public.contains_key(app),
-                "public app '{app}' must appear in public partition"
-            );
-            assert!(
-                !discovered.tailnet_only.contains_key(app),
-                "public app '{app}' must not appear in tailnet-only partition"
-            );
-        }
+    fn set_all_exit_code_mirrors_the_backup_verdict_convention() {
+        assert_eq!(set_all_exit_code(Ok(SetAllOutcome::default())), 0);
+        assert_eq!(
+            set_all_exit_code(Ok(SetAllOutcome {
+                created: vec![applied("rss", None)],
+                failed: vec![],
+                not_attempted: vec![],
+            })),
+            0
+        );
+        assert_eq!(
+            set_all_exit_code(Ok(SetAllOutcome {
+                created: vec![applied("rss", None)],
+                failed: vec![applied("baikal", Some("timeout"))],
+                not_attempted: vec![],
+            })),
+            1
+        );
+        assert_eq!(set_all_exit_code(Err(eyre::eyre!("boom"))), 2);
     }
 
-    fn entry(subdomain: &str) -> crate::services::dns::SubdomainEntry {
-        crate::services::dns::SubdomainEntry {
-            subdomain: subdomain.to_string(),
-            ip_override: None,
-        }
-    }
-
+    // An ADR-0003 violation is refused before any write, so it is an
+    // operational error (2) and never a partial-write verdict (1).
     #[test]
-    fn partition_implicit_partitions_public_and_tailnet_only() {
-        use std::collections::{HashMap, HashSet};
-        let mut public: HashMap<_, _> = [("freshrss".to_string(), entry("rss"))]
-            .into_iter()
-            .collect();
-        let tailnet: HashMap<_, _> = [("bichon".to_string(), entry("bichon"))]
-            .into_iter()
-            .collect();
-        let skip_set: HashSet<String> = HashSet::new();
-
-        let (to_process, skipped) =
-            super::partition_for_set_all(vec![], &skip_set, &mut public, &tailnet).unwrap();
-
-        assert_eq!(to_process.len(), 1);
-        assert_eq!(to_process[0].0, "freshrss");
-        assert_eq!(skipped.len(), 1);
-        assert_eq!(skipped[0].app, "bichon");
-        assert_eq!(skipped[0].subdomain, "bichon");
-        assert_eq!(skipped[0].reason, "tailnet_only");
-    }
-
-    #[test]
-    fn partition_implicit_skip_excludes_tailnet_only_from_skipped_list() {
-        use std::collections::{HashMap, HashSet};
-        let mut public: HashMap<_, _> = HashMap::new();
-        let tailnet: HashMap<_, _> = [
-            ("bichon".to_string(), entry("bichon")),
-            ("paperless".to_string(), entry("paperless")),
-        ]
-        .into_iter()
-        .collect();
-        let skip_set: HashSet<String> = ["bichon".to_string()].into_iter().collect();
-
-        let (_, skipped) =
-            super::partition_for_set_all(vec![], &skip_set, &mut public, &tailnet).unwrap();
-
-        let skipped_names: Vec<&str> = skipped.iter().map(|r| r.app.as_str()).collect();
-        assert_eq!(skipped_names, vec!["paperless"]);
-    }
-
-    #[test]
-    fn partition_implicit_skipped_list_is_sorted_alphabetically() {
-        use std::collections::{HashMap, HashSet};
-        let mut public: HashMap<_, _> = HashMap::new();
-        let tailnet: HashMap<_, _> = [
-            ("paperless".to_string(), entry("paperless")),
-            ("bichon".to_string(), entry("bichon")),
-            ("cockpit".to_string(), entry("cockpit")),
-        ]
-        .into_iter()
-        .collect();
-        let skip_set: HashSet<String> = HashSet::new();
-
-        let (_, skipped) =
-            super::partition_for_set_all(vec![], &skip_set, &mut public, &tailnet).unwrap();
-
-        let names: Vec<&str> = skipped.iter().map(|r| r.app.as_str()).collect();
-        assert_eq!(names, vec!["bichon", "cockpit", "paperless"]);
-    }
-
-    #[test]
-    fn partition_explicit_tailnet_only_target_errors_before_returning() {
-        use std::collections::{HashMap, HashSet};
-        let mut public: HashMap<_, _> = HashMap::new();
-        let tailnet: HashMap<_, _> = [("paperless".to_string(), entry("docs"))]
-            .into_iter()
-            .collect();
-        let skip_set: HashSet<String> = HashSet::new();
-
-        let err = super::partition_for_set_all(
+    fn set_all_exit_code_separates_an_operational_error_from_a_failed_write() {
+        let refused = plan_set_all(
+            "example.com",
+            "1.2.3.4",
+            crate::services::dns::DiscoveredSubdomains {
+                public: Default::default(),
+                tailnet_only: [(
+                    "paperless".to_string(),
+                    crate::services::dns::SubdomainEntry {
+                        subdomain: "docs".to_string(),
+                        ip_override: None,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            },
             vec!["paperless".to_string()],
-            &skip_set,
-            &mut public,
-            &tailnet,
+            &Default::default(),
         )
-        .unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("paperless"), "error must name the offender");
-        assert!(
-            msg.contains("subdomain: docs"),
-            "error must surface effective subdomain"
-        );
-        assert!(msg.contains("ADR-0003"), "error must reference the ADR");
-        assert!(
-            msg.contains("auberge deploy"),
-            "error must point to the corrective action"
+        .map(|_| SetAllOutcome::default());
+        assert_eq!(set_all_exit_code(refused), 2);
+    }
+
+    #[test]
+    fn resolve_target_ip_prefers_an_explicit_ip() {
+        assert_eq!(
+            resolve_target_ip(None, Some("203.0.113.10".to_string()), false).unwrap(),
+            "203.0.113.10"
         );
     }
 
     #[test]
-    fn partition_explicit_skip_excludes_tailnet_only_target_avoids_error() {
-        use std::collections::{HashMap, HashSet};
-        let mut public: HashMap<_, _> = HashMap::new();
-        let tailnet: HashMap<_, _> = [("bichon".to_string(), entry("bichon"))]
-            .into_iter()
-            .collect();
-        let skip_set: HashSet<String> = ["bichon".to_string()].into_iter().collect();
-
-        let (to_process, skipped) = super::partition_for_set_all(
-            vec!["bichon".to_string()],
-            &skip_set,
-            &mut public,
-            &tailnet,
-        )
-        .unwrap();
-        assert!(to_process.is_empty());
-        assert!(
-            skipped.is_empty(),
-            "explicit branch returns empty skip list — operator owns the choice"
-        );
-    }
-
-    #[test]
-    fn partition_explicit_public_only_returns_empty_skip() {
-        use std::collections::{HashMap, HashSet};
-        let mut public: HashMap<_, _> = [
-            ("freshrss".to_string(), entry("rss")),
-            ("baikal".to_string(), entry("baikal")),
-        ]
-        .into_iter()
-        .collect();
-        let tailnet: HashMap<_, _> = HashMap::new();
-        let skip_set: HashSet<String> = HashSet::new();
-
-        let (to_process, skipped) = super::partition_for_set_all(
-            vec!["freshrss".to_string()],
-            &skip_set,
-            &mut public,
-            &tailnet,
-        )
-        .unwrap();
-        assert_eq!(to_process.len(), 1);
-        assert_eq!(to_process[0].0, "freshrss");
-        assert!(skipped.is_empty());
-    }
-
-    #[test]
-    fn partition_explicit_unknown_app_silently_dropped() {
-        use std::collections::{HashMap, HashSet};
-        let mut public: HashMap<_, _> = HashMap::new();
-        let tailnet: HashMap<_, _> = HashMap::new();
-        let skip_set: HashSet<String> = HashSet::new();
-
-        let (to_process, skipped) = super::partition_for_set_all(
-            vec!["nonexistent".to_string()],
-            &skip_set,
-            &mut public,
-            &tailnet,
-        )
-        .unwrap();
-        assert!(to_process.is_empty());
-        assert!(skipped.is_empty());
+    fn resolve_target_ip_requires_a_host_or_an_ip() {
+        let err = resolve_target_ip(None, None, false).unwrap_err();
+        assert!(err.to_string().contains("--host or --ip"));
+        let strict = resolve_target_ip(None, None, true).unwrap_err();
+        assert!(strict.to_string().contains("strict mode"));
     }
 }

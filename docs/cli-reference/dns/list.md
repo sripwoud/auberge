@@ -10,18 +10,18 @@ Requires `cloudflare_dns_api_token` and `domain` in `config.toml`. Displays A, A
 
 ## Options
 
-| Option                 | Description         | Default         |
-| ---------------------- | ------------------- | --------------- |
-| `-s, --subdomain NAME` | Filter by subdomain | All records     |
-| `-o, --output FORMAT`  | `human` or `json`   | `human`         |
-| `-P, --production`     | Use production API  | false (sandbox) |
+| Option                 | Description                                              | Default     |
+| ---------------------- | -------------------------------------------------------- | ----------- |
+| `-s, --subdomain NAME` | Filter by subdomain                                      | All records |
+| `-o, --output FORMAT`  | `human` or `json`                                        | `human`     |
+| `-P, --production`     | Accepted and ignored; every call uses the production API | n/a         |
 
 ## Examples
 
 ```bash
 auberge dns list
 auberge dns list --subdomain freshrss
-auberge dns list --output json --production
+auberge dns list --output json
 ```
 
 <details>
