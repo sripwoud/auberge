@@ -25,13 +25,15 @@
 //! spellings are now named products of the one walk — [`Module::repo_relative`]
 //! and [`Module::src_relative`] — so a fence asks for the form it wants and
 //! cannot reach the other one under the same name.
-
-// Neither fence reads every field, so each sees the rest as dead. The cost of
-// the blanket allow is the usual one: a field no fence reads at all is never
-// flagged either. Both are load-bearing in a `DECLARED_TRANSIENT` key and a
-// `CONFINED_VENDORS` key respectively, so a field that stopped being produced
-// would fail those comparisons rather than pass quietly.
-#![allow(dead_code)]
+//!
+//! `removed_unit_failed_state.rs` is the third file in the suite that reads
+//! crate source, and is deliberately not one of them. It reads exactly one
+//! file, `src/playbook_meta.rs`, to mirror the unit-type list declared there
+//! (#656) — it carries no walk, so there is nothing here to fold, and routing
+//! one `read_to_string` through a walk of 51 modules would buy it nothing.
+//! Named so its absence does not read as coverage: it reads that file beside
+//! the walk rather than through it, and a `src/` the walk stopped reaching
+//! would not fail it.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -42,7 +44,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Spelled repo-relative because that is the form a reader can paste into an
 /// editor, and the form `CONFINED_VENDORS` already names an adapter by.
-const CRATE_MODULES: &[&str] = &[
+pub const CRATE_MODULES: &[&str] = &[
     "src/ansible_assets.rs",
     "src/commands.rs",
     "src/commands/ansible.rs",
@@ -98,16 +100,28 @@ const CRATE_MODULES: &[&str] = &[
 
 /// One `.rs` file under `src/`: its text, and both spellings of its name.
 ///
-/// The text is read eagerly because both fences read every module anyway, and
-/// a `Module` that carried a path instead would put the failure message for an
-/// unreadable file back at each call site, where the two copies already spelled
-/// it two ways.
+/// The text is read eagerly so that an unreadable file has one failure message
+/// instead of one per call site — the two copies this replaced already spelled
+/// that message two ways. It is a real cost at the two call sites that want a
+/// single module and discard the other fifty reads, and it is paid on purpose:
+/// those two used to reach their file with a `read_to_string` beside the walk,
+/// which is how a fence comes to assert against a file its own scan never saw.
 pub struct Module {
     /// `src/services/dns.rs` — rooted at the repository, so it is a path a
     /// reader can open and the form `CONFINED_VENDORS` names an adapter by.
+    ///
+    /// Allowed dead because a fence reads the spelling it needs and no other:
+    /// this one is dead in `assets_guard`'s binary and `src_relative` is dead
+    /// in the vendor fence's. The allow is on the two fields rather than the
+    /// module, so a *helper* here that no fence calls at all is still flagged —
+    /// which is the cost `common/mod.rs` pays for its blanket allow and offsets
+    /// with `tests/task_walker.rs`. `tests/crate_source_walk.rs` is this
+    /// module's equivalent, and reads both spellings besides.
+    #[allow(dead_code)]
     pub repo_relative: String,
     /// `services/dns.rs` — rooted at `src/`, the form `DECLARED_TRANSIENT`
     /// names a call site by.
+    #[allow(dead_code)]
     pub src_relative: String,
     pub source: String,
 }
@@ -120,27 +134,41 @@ fn src_dir() -> PathBuf {
     repo().join("src")
 }
 
-/// `path` with `root` stripped, forward-slashed. The one relativiser; which of
+/// `path` with `root` stripped, forward-slashed. The one relativiser: which of
 /// [`Module`]'s two names it produces is `root`'s to say, so the difference
 /// between them is a parameter rather than a property of a second copy.
-fn strip(path: &Path, root: &Path) -> String {
+fn relative_to(path: &Path, root: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or_else(|e| panic!("{} must live under {}: {e}", path.display(), root.display()))
         .to_string_lossy()
         .replace('\\', "/")
 }
 
-fn rust_files(dir: &Path, found: &mut Vec<PathBuf>) {
+fn collect_rust(dir: &Path, out: &mut Vec<PathBuf>) {
     let entries =
         fs::read_dir(dir).unwrap_or_else(|e| panic!("{} must be readable: {e}", dir.display()));
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            rust_files(&path, found);
+            collect_rust(&path, out);
         } else if path.extension().is_some_and(|ext| ext == "rs") {
-            found.push(path);
+            out.push(path);
         }
     }
+}
+
+/// Every `.rs` file under `dir`, at any depth, in path order.
+///
+/// Sorted here rather than at the caller because ordering is a postcondition of
+/// the walk, not a fact about the tree: `read_dir` returns whatever the
+/// filesystem holds, and this checkout happens to come back sorted already.
+/// `tests/crate_source_walk.rs` builds a directory in the opposite order, which
+/// is what makes the claim falsifiable.
+pub fn rust_files(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    collect_rust(dir, &mut found);
+    found.sort();
+    found
 }
 
 /// The walk's reach, by equality in both directions: a new module fails until
@@ -154,8 +182,8 @@ fn pin_reach(walked: &[Module]) {
         .collect();
     let listed: BTreeSet<&str> = CRATE_MODULES.iter().copied().collect();
 
-    let unlisted: Vec<&&str> = seen.difference(&listed).collect();
-    let missing: Vec<&&str> = listed.difference(&seen).collect();
+    let unlisted: Vec<&str> = seen.difference(&listed).copied().collect();
+    let missing: Vec<&str> = listed.difference(&seen).copied().collect();
     assert!(
         unlisted.is_empty() && missing.is_empty(),
         "the crate's module set moved.\n  new, add to CRATE_MODULES in tests/crate_source/mod.rs: {unlisted:?}\n  gone, drop from CRATE_MODULES: {missing:?}"
@@ -169,15 +197,11 @@ fn pin_reach(walked: &[Module]) {
 /// walk that stopped reaching somewhere fails inside whichever fence relies on
 /// it — the caller inherits the reach instead of trusting it.
 pub fn modules() -> Vec<Module> {
-    let mut paths = Vec::new();
-    rust_files(&src_dir(), &mut paths);
-    paths.sort();
-
-    let walked: Vec<Module> = paths
+    let walked: Vec<Module> = rust_files(&src_dir())
         .iter()
         .map(|path| Module {
-            repo_relative: strip(path, &repo()),
-            src_relative: strip(path, &src_dir()),
+            repo_relative: relative_to(path, &repo()),
+            src_relative: relative_to(path, &src_dir()),
             source: fs::read_to_string(path)
                 .unwrap_or_else(|e| panic!("{} must be readable: {e}", path.display())),
         })

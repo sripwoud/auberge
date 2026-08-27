@@ -50,7 +50,7 @@ fn vendor_types_are_named_only_by_their_adapter() {
     for module in modules() {
         let relative = &module.repo_relative;
         for (vendor, adapter) in CONFINED_VENDORS {
-            if relative != adapter && names_vendor(&module.source, vendor) {
+            if relative != *adapter && names_vendor(&module.source, vendor) {
                 offenders.push(format!(
                     "  {relative} names `{vendor}::` — translate it at {adapter} \
                      and give the caller a crate-local type (ADR-0043)"
