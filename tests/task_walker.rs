@@ -370,3 +370,147 @@ fn test_the_playbook_walk_excludes_the_meta_sidecars_beside_them() {
         );
     }
 }
+
+/// The templated domain is wider than the runnable one by the directories that
+/// hold no task but are rendered anyway, and narrower than the tree by the two
+/// that are never rendered at all (#686).
+#[test]
+fn test_the_templated_domain_adds_defaults_and_drops_what_is_never_rendered() {
+    let templated = common::templated_yml_files();
+    let runnable = common::runnable_files();
+
+    let has = |files: &[std::path::PathBuf], needle: &str| {
+        files
+            .iter()
+            .any(|path| path.to_string_lossy().contains(needle))
+    };
+
+    assert!(
+        has(&templated, "/defaults/"),
+        "no role defaults file is in the templated domain, and that is where \
+         most variable references are written"
+    );
+    assert!(
+        has(&templated, "/meta/"),
+        "no role meta file is in the templated domain, and that is where a role \
+         declares the roles it drags in"
+    );
+    assert!(
+        !has(&runnable, "/defaults/"),
+        "the runnable domain reaches defaults now; the two domains no longer \
+         differ and one of them is redundant"
+    );
+    assert!(
+        !has(&templated, "/files/"),
+        "a role's files/ is in the templated domain; ansible copies those byte \
+         for byte, so reading `{{ … }}` in one invents a requirement"
+    );
+    assert!(
+        !has(&templated, "/examples/"),
+        "a role's examples/ is in the templated domain; no deploy renders it"
+    );
+    for path in &runnable {
+        assert!(
+            templated.contains(path),
+            "{} runs tasks but is outside the templated domain, which has to be \
+             the wider of the two",
+            common::relative(path)
+        );
+    }
+}
+
+/// The per-role walks and the whole-tree walks are the same domain, so a fence
+/// reading one role at a time cannot be reading less than one reading all of
+/// them — which is the difference the scoped sweep in
+/// `variable_answerability.rs` depends on being exact.
+#[test]
+fn test_the_per_role_walks_partition_the_whole_tree() {
+    let mut from_roles: Vec<std::path::PathBuf> = all_roles()
+        .iter()
+        .flat_map(|role| common::role_yml_files(role))
+        .collect();
+    from_roles.extend(playbook_files());
+    from_roles.sort();
+    assert_eq!(
+        from_roles,
+        common::templated_yml_files(),
+        "walking roles one at a time and walking the tree disagree about the \
+         templated domain"
+    );
+
+    let mut templates: Vec<std::path::PathBuf> = all_roles()
+        .iter()
+        .flat_map(|role| common::role_template_files(role))
+        .collect();
+    templates.sort();
+    assert_eq!(
+        templates,
+        common::role_templates(),
+        "walking roles one at a time and walking the tree disagree about the \
+         template domain"
+    );
+}
+
+/// Templates are enumerated by their directory, not their extension.
+#[test]
+fn test_the_template_walk_reads_the_directory_not_the_suffix() {
+    let templates = common::role_templates();
+
+    assert!(
+        !templates.is_empty(),
+        "no role template is in the template domain"
+    );
+    for path in &templates {
+        assert!(
+            path.to_string_lossy().contains("/templates/"),
+            "{} is in the template domain but not under a templates/ directory",
+            common::relative(path)
+        );
+        assert!(
+            path.is_file(),
+            "{} is in the template domain but is not a file",
+            common::relative(path)
+        );
+    }
+
+    // Every template in the tree is `.j2` today, which is the convention the
+    // walk deliberately does not enforce. Asserting the convention holds is
+    // what makes a break in it visible here rather than as a file nothing
+    // notices in `variable_answerability.rs`.
+    let strays: Vec<String> = templates
+        .iter()
+        .filter(|path| !path.extension().is_some_and(|ext| ext == "j2"))
+        .map(|path| common::relative(path))
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "template(s) without a .j2 suffix: {}. The walk reads them, so nothing \
+         is unscanned — but the convention moved and this is the notice",
+        strays.join(", ")
+    );
+}
+
+/// The Key Registry read, and the parse underneath it, both fail loudly.
+#[test]
+fn test_the_registry_walk_reads_the_registry_and_the_parse_says_which_file() {
+    let keys = common::registry_keys();
+    assert!(
+        keys.contains("domain"),
+        "the Key Registry does not hold `domain`, which every App's Caddy site \
+         is built from; the registry read is looking at the wrong file"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let broken = dir.path().join("broken.yml");
+    std::fs::write(&broken, "a: [1,\n").unwrap();
+    let failure = std::panic::catch_unwind(|| common::parse_yaml(&broken))
+        .expect_err("unparseable YAML must panic rather than yield an empty document");
+    let message = failure
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .unwrap_or("");
+    assert!(
+        message.contains("broken.yml") && message.contains("must parse"),
+        "a parse failure has to name the file it read; got {message:?}"
+    );
+}
