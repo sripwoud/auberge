@@ -25,6 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
+use auberge::playbook_meta::{UNIT_TYPE_SUFFIXES, qualified_unit_name};
 use serde_yaml::{Mapping, Value};
 
 mod common;
@@ -40,22 +41,6 @@ const DECLARED_WITHOUT_FILE: &[(&str, &str, &str)] = &[(
     "a packaged template unit the role only enables per user; there is no \
      file to install, so no task reveals it",
 )];
-
-/// systemd's own closed set of unit types, mirrored from
-/// `src/playbook_meta.rs`.
-const UNIT_TYPE_SUFFIXES: &[&str] = &[
-    ".automount",
-    ".device",
-    ".mount",
-    ".path",
-    ".scope",
-    ".service",
-    ".slice",
-    ".socket",
-    ".swap",
-    ".target",
-    ".timer",
-];
 
 /// One unit an App owns: its `systemctl` name and the manager it lives in.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -262,21 +247,6 @@ fn computed_units() -> BTreeSet<Owned> {
     out
 }
 
-/// The declared unit as `systemctl` addresses it: an explicit unit type is
-/// kept, a bare name is a `.service` — mirrored from
-/// `playbook_meta::qualified_unit_name`, with `{admin_user}` left standing
-/// so the comparison stays host-independent.
-fn qualified(name: &str) -> String {
-    if UNIT_TYPE_SUFFIXES
-        .iter()
-        .any(|suffix| name.ends_with(suffix))
-    {
-        name.to_string()
-    } else {
-        format!("{name}.service")
-    }
-}
-
 /// Every `units:` declaration across the committed Playbook Metas.
 fn declared_units() -> BTreeSet<Owned> {
     let mut out = BTreeSet::new();
@@ -314,7 +284,12 @@ fn declared_units() -> BTreeSet<Owned> {
             };
             out.insert(Owned {
                 app: app.to_string(),
-                unit: qualified(&name),
+                // The crate's own qualifier, not a copy of its rule. Called
+                // without the `{admin_user}` substitution `owned_units` does
+                // first, so the comparison stays host-independent — the
+                // placeholder is what DECLARED_WITHOUT_FILE names syncthing's
+                // unit by.
+                unit: qualified_unit_name(&name),
                 user_scope: match scope.as_str() {
                     "system" => false,
                     "user" => true,
