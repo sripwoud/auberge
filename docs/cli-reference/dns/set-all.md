@@ -55,17 +55,29 @@ Follow the Backup Verdict convention, so a script can branch on which of the thr
 | `1`  | At least one write failed; the failures are in the `failed` array                                              |
 | `2`  | Operational error — no `--host`/`--ip`, host absent from inventory, a tailnet-only app named in `--subdomains` |
 
-A failed write emits the full JSON body before exiting `1`, so the failure is readable in both output modes:
+Under `--output json`, every path the run can end on emits a body (ADR-0044) — a failed write before exiting `1`, a dry run, and a declined confirmation alike:
 
 ```bash
 auberge dns set-all --host my-vps --yes --output json --continue-on-error > records.json || echo "some records failed"
+auberge dns set-all --host my-vps --dry-run --output json | jq '.planned'
 ```
 
 <details>
 <summary>JSON output schema</summary>
 
+One shape on every path. `outcome` says what the run did with its plan; `planned` always holds the full plan.
+
 ```json
 {
+  "outcome": "applied",
+  "planned": [
+    {
+      "app": "freshrss",
+      "subdomain": "rss",
+      "fqdn": "rss.example.com",
+      "ip": "203.0.113.10"
+    }
+  ],
   "created": [
     {
       "subdomain": "rss",
@@ -81,11 +93,17 @@ auberge dns set-all --host my-vps --yes --output json --continue-on-error > reco
 }
 ```
 
-| Array              | Field                                          | Type   | Description                     |
-| ------------------ | ---------------------------------------------- | ------ | ------------------------------- |
-| `created`/`failed` | `subdomain`, `fqdn`, `ip`, `success`, `error?` | mixed  | Operation result per app        |
-| `skipped`          | `app`, `subdomain`, `reason`                   | string | Always `reason: "tailnet_only"` |
+| Field              | Contents                                       | Description                                                                               |
+| ------------------ | ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `outcome`          | `"applied"` \| `"dry_run"` \| `"cancelled"`    | What the run did with its plan — branch here, not on array emptiness                      |
+| `planned`          | `app`, `subdomain`, `fqdn`, `ip`               | The full plan with effective IPs, on every outcome — the denominator for the arrays below |
+| `created`/`failed` | `subdomain`, `fqdn`, `ip`, `success`, `error?` | Operation result per app; both empty unless `outcome` is `applied`                        |
+| `skipped`          | `app`, `subdomain`, `reason`                   | Always `reason: "tailnet_only"`                                                           |
 
-Both arrays are sorted alphabetically by app name. JSON to stdout; chrome to stderr.
+- `outcome: "applied"` — the plan ran; `created` and `failed` partition `planned`.
+- `outcome: "dry_run"` — nothing was written; the plan is under `planned`, and `created`/`failed` are empty.
+- `outcome: "cancelled"` — the `Proceed?` confirmation was declined; same body as a dry run. A non-interactive caller that forgets `--yes` lands here (the prompt refuses off-terminal), so a non-empty `planned` with `outcome: "cancelled"` is the "you forgot `--yes`" signal.
+
+All arrays are sorted alphabetically by app name. JSON to stdout; chrome to stderr.
 
 </details>

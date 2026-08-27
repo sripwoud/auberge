@@ -79,7 +79,9 @@ Apply the rule when proposing `--output` on a new command. The conversation live
 
 ### Stdout discipline
 
-`output::info` / `success` / `warn` already use `eprintln!`. Bare `println!` in command modules is acceptable only for the command's data output. Audit scope for this ADR: the commands listed above. CLI-wide audit (e.g. `host remove`'s "Cancelled.", `ssh`'s "Cancelled") is tracked separately in #302.
+`output::info` / `success` / `warn` already use `eprintln!`. Bare `println!` in command modules is acceptable only for the command's data output.
+
+"Unconditionally" covers paths that write nothing: a `--dry-run` and a declined confirmation still owe the consumer a body. ADR-0044 records the shape `dns set-all` uses — one schema on every path, discriminated by a top-level `outcome`. Audit scope for this ADR: the commands listed above. CLI-wide audit (e.g. `host remove`'s "Cancelled.", `ssh`'s "Cancelled") is tracked separately in #302.
 
 ### `--quiet` stays orthogonal to `--output`
 
