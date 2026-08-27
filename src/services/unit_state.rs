@@ -17,7 +17,7 @@
 use crate::ansible_assets::AnsibleAssets;
 use crate::hosts::HostManager;
 use crate::playbook_meta::{OwnedUnit, UnitScope, load_all_metas};
-use crate::services::dependency_resolver::{PlaybookRun, parse_playbook_roles};
+use crate::services::dependency_resolver::{PlaybookRun, parse_roster};
 use crate::services::ssh::{LiveSshSession, SshSession, resolve_ssh_key_path};
 use eyre::{Result, WrapErr};
 use std::collections::BTreeMap;
@@ -71,9 +71,9 @@ pub fn units_for_run(
     let mut apps: Vec<String> = if run.tags.is_empty() {
         // The run's own playbook file, not a fresh assets lookup: roles and
         // metas must come from one tree.
-        let mut apps: Vec<String> = parse_playbook_roles(&run.path)?
+        let mut apps: Vec<String> = parse_roster(&run.path)?
             .into_iter()
-            .map(|(name, _)| name)
+            .map(|role| role.name)
             .collect();
         if let Some(stem) = run.path.file_stem().and_then(|s| s.to_str()) {
             apps.push(stem.to_string());

@@ -13,17 +13,10 @@ const DEFAULT_TTL: u32 = 300;
 /// which guarantees all required keys are present and resolved.
 #[derive(Debug)]
 pub struct Preflight {
-    required_keys: Vec<String>,
     flat_vars: HashMap<String, String>,
 }
 
 impl Preflight {
-    /// The keys this run was validated against, in declaration order.
-    #[allow(dead_code)]
-    pub fn required_keys(&self) -> &[String] {
-        &self.required_keys
-    }
-
     pub fn flat_vars(&self) -> &HashMap<String, String> {
         &self.flat_vars
     }
@@ -225,13 +218,10 @@ impl Config {
     /// unlocks `AnsibleRunner`. Callers resolve the keys through
     /// [`crate::services::required_keys::preflight_for`], which reads the
     /// declarations off the Metas.
-    pub fn preflight_with_keys(&self, required_keys: Vec<String>) -> Result<Preflight> {
-        {
-            let keys: Vec<&str> = required_keys.iter().map(String::as_str).collect();
-            self.validate_required_resolved(&keys)?;
-        }
+    pub fn preflight_with_keys(&self, required_keys: &[String]) -> Result<Preflight> {
+        let keys: Vec<&str> = required_keys.iter().map(String::as_str).collect();
+        self.validate_required_resolved(&keys)?;
         Ok(Preflight {
-            required_keys,
             flat_vars: self.flatten_for_ansible(),
         })
     }
@@ -779,8 +769,7 @@ ssh_port = 22022
         "#,
         );
         let keys = vec!["admin_user_name".to_string(), "domain".to_string()];
-        let preflight = config.preflight_with_keys(keys.clone()).unwrap();
-        assert_eq!(preflight.required_keys(), keys.as_slice());
+        let preflight = config.preflight_with_keys(&keys).unwrap();
         assert_eq!(preflight.flat_vars().get("domain").unwrap(), "example.com");
     }
 
@@ -793,7 +782,7 @@ ssh_port = 22022
         "#,
         );
         let err = config
-            .preflight_with_keys(vec!["tailscale_authkey".to_string()])
+            .preflight_with_keys(&["tailscale_authkey".to_string()])
             .unwrap_err();
         assert!(
             err.to_string().contains("tailscale_authkey"),
@@ -810,7 +799,7 @@ ssh_port = 22022
         "#,
         );
         let err = config
-            .preflight_with_keys(vec!["tailscale_authkey".to_string()])
+            .preflight_with_keys(&["tailscale_authkey".to_string()])
             .unwrap_err();
         assert!(
             err.to_string().contains("tailscale_authkey"),
@@ -821,8 +810,7 @@ ssh_port = 22022
     #[test]
     fn test_preflight_with_no_keys_accepts_an_empty_config() {
         let config = make_config("");
-        let preflight = config.preflight_with_keys(Vec::new()).unwrap();
-        assert!(preflight.required_keys().is_empty());
+        assert!(config.preflight_with_keys(&[]).is_ok());
     }
 
     #[test]
@@ -834,9 +822,7 @@ ssh_port = 22022
             ssh_port = 22022
         "#,
         );
-        let preflight = config
-            .preflight_with_keys(vec!["domain".to_string()])
-            .unwrap();
+        let preflight = config.preflight_with_keys(&["domain".to_string()]).unwrap();
         let flat = preflight.flat_vars();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
@@ -850,7 +836,7 @@ ssh_port = 22022
         "#,
         );
         let preflight = config
-            .preflight_with_keys(vec!["tailscale_authkey".to_string()])
+            .preflight_with_keys(&["tailscale_authkey".to_string()])
             .unwrap();
         assert_eq!(
             preflight.flat_vars().get("tailscale_authkey").unwrap(),

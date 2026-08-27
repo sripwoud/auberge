@@ -40,6 +40,8 @@
 //! - [`yml_files`] is every `.yml` under a directory, at any depth.
 //! - [`playbook_files`] is the playbooks, without the `.meta.yml` sidecars that
 //!   run nothing.
+//! - [`meta_files`] is the sidecars themselves, for the fences over what an App
+//!   declares rather than what it runs.
 //!
 //! Every fence that carried a copy of *this* walk now reads it through here
 //! (#654, #658). `grimmory_role.rs`, `immich_container_dirs.rs` and
@@ -52,8 +54,8 @@
 //! removed from `install_guards.rs`, surviving in files it did not reach. All
 //! four read the tree through here now, so the filter has one definition again
 //! (#659). What is left of that shape is named where it survives:
-//! [`playbook_files`] on the `.meta.yml` half of the playbooks directory, and
-//! [`task_name`] on the one accessor that is not a copy of the others.
+//! [`task_name`] on the one accessor that is not a copy of the others, and the
+//! three meta enumerators [`meta_files`] has not yet absorbed, listed on it.
 
 // Each of the fences below imports a different subset, so every one of them
 // sees the rest as dead. The cost of the blanket allow: a helper that no fence
@@ -312,6 +314,39 @@ pub fn playbook_files() -> Vec<PathBuf> {
             .is_some_and(|name| name.to_string_lossy().ends_with(".meta.yml"))
     });
     files
+}
+
+/// The other half of the playbooks directory: every `<app>.meta.yml`, paired
+/// with the App name it declares for, sorted by name.
+///
+/// [`playbook_files`] filters these out; a fence over the declarations wants
+/// exactly them. `version_annotations.rs`, `unit_ownership.rs` and
+/// `service_directories.rs` still enumerate the metas with a `read_dir` of
+/// their own — folding those three is #658's remit, not this accessor's, and
+/// they are named here so their absence does not read as coverage.
+///
+/// Empty is a hard stop for [`playbook_files`]'s reason: every caller loops the
+/// result, so a directory that moved would leave each of them iterating nothing
+/// and passing.
+pub fn meta_files() -> Vec<(String, PathBuf)> {
+    let mut metas: Vec<(String, PathBuf)> = yml_files(&playbooks_dir())
+        .into_iter()
+        .filter_map(|path| {
+            let app = path
+                .file_name()?
+                .to_str()?
+                .strip_suffix(".meta.yml")?
+                .to_string();
+            Some((app, path))
+        })
+        .collect();
+    assert!(
+        !metas.is_empty(),
+        "{} holds no .meta.yml at all; every fence over the declarations reads this domain",
+        relative(&playbooks_dir())
+    );
+    metas.sort();
+    metas
 }
 
 /// Every file in the repository that can run a task: each role's `tasks/` and

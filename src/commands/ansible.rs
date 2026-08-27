@@ -74,9 +74,13 @@ pub enum AnsibleCommands {
     },
 }
 
-fn validate_config_for_playbook(playbook_name: &str, tags: Option<&[String]>) -> Result<Preflight> {
+fn validate_config_for_playbook(
+    ansible_dir: &Path,
+    playbook_name: &str,
+    tags: Option<&[String]>,
+) -> Result<Preflight> {
     let config = Config::load()?;
-    crate::services::required_keys::preflight_for(&config, playbook_name, tags)
+    crate::services::required_keys::preflight_for(&config, ansible_dir, playbook_name, tags)
 }
 
 fn resolve_playbook_name(arg: &Path, playbooks: &[PathBuf]) -> Result<PathBuf> {
@@ -235,7 +239,8 @@ fn run_auto_resolved(
             Some(run.tags.as_slice())
         };
 
-        let preflight = validate_config_for_playbook(playbook_file, run_tags_ref)?;
+        let preflight =
+            validate_config_for_playbook(assets.ansible_dir(), playbook_file, run_tags_ref)?;
         show_playbook_warnings(playbook_file, force)?;
 
         let run_tags = if run.tags.is_empty() {
@@ -339,7 +344,8 @@ fn run_single_playbook(
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
 
-    let preflight = validate_config_for_playbook(playbook_file, tags)?;
+    let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+    let preflight = validate_config_for_playbook(assets.ansible_dir(), playbook_file, tags)?;
     let is_fresh_bootstrap = playbook_file == "bootstrap.yml";
 
     if is_fresh_bootstrap {
@@ -573,11 +579,11 @@ pub fn run_ansible_bootstrap(
     user: Option<String>,
     force: bool,
 ) -> Result<()> {
-    let preflight = validate_config_for_playbook("bootstrap.yml", None)?;
+    let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+    let preflight = validate_config_for_playbook(assets.ansible_dir(), "bootstrap.yml", None)?;
 
     let host = select_or_arg(host_arg, HOST_POSITIONAL)?;
     let host_name = host.name.clone();
-    let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     let bootstrap_playbook = assets.playbooks_dir().join("bootstrap.yml");
 
     if !bootstrap_playbook.exists() {

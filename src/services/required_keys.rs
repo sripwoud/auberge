@@ -1,8 +1,7 @@
-use crate::ansible_assets::AnsibleAssets;
 use crate::config::{Config, Preflight};
 use crate::key_registry::KeyRegistry;
 use crate::playbook_meta::PlaybookMeta;
-use crate::services::dependency_resolver::parse_playbook_roles;
+use crate::services::dependency_resolver::parse_roster;
 use eyre::Result;
 use std::path::{Path, PathBuf};
 
@@ -30,20 +29,36 @@ fn declared_keys(playbooks_dir: &Path, stem: &str, registry: &KeyRegistry) -> Re
     Ok(keys)
 }
 
-/// The roster roles a tag selection resolves to: a role is selected when one of
-/// its declared tags was named, or when the tag is the role's own name.
-fn selected_roles(playbook_path: &PathBuf, tags: &[String]) -> Result<Vec<String>> {
+/// The roster roles a run enters.
+///
+/// A tagged run selects a role when one of its declared tags was named, or when
+/// the tag is the role's own name. An untagged run enters the whole roster, so
+/// it selects every entry that is not `when:`-guarded — a guard turns on Host
+/// facts no caller can evaluate before the play runs, and demanding its keys
+/// would fail Hosts the role never touches.
+fn selected_roles(playbook_path: &Path, tags: &[String]) -> Result<Vec<String>> {
     if !playbook_path.is_file() {
         return Ok(Vec::new());
     }
-    Ok(parse_playbook_roles(playbook_path)?
+    Ok(parse_roster(playbook_path)?
         .into_iter()
-        .filter(|(role, role_tags)| {
-            tags.iter()
-                .any(|tag| tag == role || role_tags.contains(tag))
+        .filter(|role| match tags {
+            [] => !role.guarded,
+            tags => tags
+                .iter()
+                .any(|tag| *tag == role.name || role.tags.contains(tag)),
         })
-        .map(|(role, _)| role)
+        .map(|role| role.name)
         .collect())
+}
+
+/// The Playbook file for `stem`, whichever extension it carries.
+fn roster_path(playbooks_dir: &Path, stem: &str) -> PathBuf {
+    let yml = playbooks_dir.join(format!("{stem}.yml"));
+    if yml.is_file() {
+        return yml;
+    }
+    playbooks_dir.join(format!("{stem}.yaml"))
 }
 
 /// The effective required config keys for one Playbook run: the Playbook's own
@@ -67,7 +82,7 @@ pub fn required_keys_for(
 
     let mut sources = vec![stem.to_string()];
     sources.extend(selected_roles(
-        &playbooks_dir.join(playbook),
+        &roster_path(&playbooks_dir, stem),
         tags.unwrap_or_default(),
     )?);
 
@@ -85,13 +100,17 @@ pub fn required_keys_for(
 /// Build a [`Preflight`] for `playbook`, validating every key the Playbook
 /// Metas declare for this run. Every production path to an Ansible run comes
 /// through here, so the Metas are the only authority a deploy consults.
+///
+/// `ansible_dir` is the caller's already-prepared Assets Tree: a deploy
+/// preflights every run in its plan, and preparing the tree per run would take
+/// the extract-and-sweep lock once per playbook instead of once (ADR-0034).
 pub fn preflight_for(
     config: &Config,
+    ansible_dir: &Path,
     playbook: &str,
     tags: Option<&[String]>,
 ) -> Result<Preflight> {
-    let assets = AnsibleAssets::prepare()?;
-    config.preflight_with_keys(required_keys_for(assets.ansible_dir(), playbook, tags)?)
+    config.preflight_with_keys(&required_keys_for(ansible_dir, playbook, tags)?)
 }
 
 #[cfg(test)]
@@ -101,14 +120,6 @@ mod tests {
 
     fn repo_ansible_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ansible")
-    }
-
-    fn playbooks_dir() -> PathBuf {
-        repo_ansible_dir().join(PLAYBOOKS_DIR)
-    }
-
-    fn registry() -> KeyRegistry {
-        KeyRegistry::load(&repo_ansible_dir().join(REGISTRY_FILE)).unwrap()
     }
 
     /// An ansible dir holding a Key Registry of `keys` plus the given
@@ -128,18 +139,10 @@ mod tests {
         dir
     }
 
-    fn roster_roles() -> Vec<String> {
-        parse_playbook_roles(&playbooks_dir().join("apps.yml"))
-            .unwrap()
-            .into_iter()
-            .map(|(role, _)| role)
-            .collect()
-    }
-
     // ── union semantics ───────────────────────────────────────────────────────
 
     #[test]
-    fn test_untagged_run_takes_only_the_playbooks_own_meta() {
+    fn test_untagged_run_unions_every_unguarded_roster_role() {
         let dir = fixture_ansible_dir(
             &["admin_user_name", "app_token"],
             &[
@@ -152,7 +155,51 @@ mod tests {
             ],
         );
         let keys = required_keys_for(dir.path(), "apps.yml", None).unwrap();
-        assert_eq!(keys, vec!["admin_user_name".to_string()]);
+        assert_eq!(
+            keys,
+            vec!["admin_user_name".to_string(), "app_token".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_untagged_run_skips_a_when_guarded_role() {
+        let dir = fixture_ansible_dir(
+            &["admin_user_name", "guarded_token", "plain_token"],
+            &[
+                ("apps.meta.yml", "required_keys: [admin_user_name]\n"),
+                ("guarded.meta.yml", "required_keys: [guarded_token]\n"),
+                ("plain.meta.yml", "required_keys: [plain_token]\n"),
+                (
+                    "apps.yml",
+                    "---\n- hosts: all\n  roles:\n    - role: guarded\n      tags: [apps, guarded]\n      when: \"'x' in group_names\"\n    - role: plain\n      tags: [apps, plain]\n",
+                ),
+            ],
+        );
+        let keys = required_keys_for(dir.path(), "apps.yml", None).unwrap();
+        assert_eq!(
+            keys,
+            vec!["admin_user_name".to_string(), "plain_token".to_string()]
+        );
+    }
+
+    /// Naming the guarded role's tag is the operator asserting the role runs,
+    /// so its keys are demanded — only the untagged sweep skips it.
+    #[test]
+    fn test_naming_a_guarded_roles_tag_still_demands_its_keys() {
+        let dir = fixture_ansible_dir(
+            &["admin_user_name", "guarded_token"],
+            &[
+                ("apps.meta.yml", "required_keys: [admin_user_name]\n"),
+                ("guarded.meta.yml", "required_keys: [guarded_token]\n"),
+                (
+                    "apps.yml",
+                    "---\n- hosts: all\n  roles:\n    - role: guarded\n      tags: [apps, guarded]\n      when: \"'x' in group_names\"\n",
+                ),
+            ],
+        );
+        let tags = vec!["guarded".to_string()];
+        let keys = required_keys_for(dir.path(), "apps.yml", Some(&tags)).unwrap();
+        assert!(keys.contains(&"guarded_token".to_string()), "{keys:?}");
     }
 
     #[test]
@@ -271,73 +318,52 @@ mod tests {
     // ── the repo's own Metas ──────────────────────────────────────────────────
 
     #[test]
-    fn test_every_declared_required_key_exists_in_the_key_registry() {
-        let registry = registry();
-        let mut unknown = Vec::new();
-        for (app, meta) in crate::playbook_meta::load_all_metas(&playbooks_dir()).unwrap() {
-            for key in meta.required_keys {
-                if registry.get(&key).is_none() {
-                    unknown.push(format!("{app}: {key}"));
-                }
-            }
-        }
-        assert!(
-            unknown.is_empty(),
-            "Metas declare required keys absent from the Key Registry: {}",
-            unknown.join(", ")
-        );
-    }
-
-    #[test]
-    fn test_every_roster_role_has_a_playbook_meta() {
-        let missing: Vec<String> = roster_roles()
-            .into_iter()
-            .filter(|role| {
-                !playbooks_dir()
-                    .join(format!("{role}{META_SUFFIX}"))
-                    .is_file()
-            })
-            .collect();
-        assert!(
-            missing.is_empty(),
-            "apps.yml roster roles without a Playbook Meta: {}",
-            missing.join(", ")
-        );
-    }
-
-    #[test]
-    fn test_every_playbook_has_a_playbook_meta() {
-        let mut missing = Vec::new();
-        for entry in std::fs::read_dir(playbooks_dir()).unwrap() {
-            let path = entry.unwrap().path();
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            if name.ends_with(META_SUFFIX) || !name.ends_with(".yml") {
-                continue;
-            }
-            let stem = name.strip_suffix(".yml").unwrap();
-            if !playbooks_dir()
-                .join(format!("{stem}{META_SUFFIX}"))
-                .is_file()
-            {
-                missing.push(name.to_string());
-            }
-        }
-        assert!(
-            missing.is_empty(),
-            "playbooks without a Playbook Meta (their runs would validate nothing): {}",
-            missing.join(", ")
-        );
-    }
-
-    #[test]
     fn test_repo_apps_playbook_resolves_the_base_keys_untagged() {
         let keys = required_keys_for(&repo_ansible_dir(), "apps.yml", None).unwrap();
         let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
         assert!(set.contains("admin_user_name"), "{keys:?}");
         assert!(set.contains("domain"), "{keys:?}");
         assert!(set.contains("cloudflare_dns_api_token"), "{keys:?}");
+    }
+
+    /// The run enters every unguarded App, so it demands their keys too — this
+    /// is the case the drift left failing mid-play.
+    #[test]
+    fn test_repo_untagged_apps_run_demands_the_app_keys() {
+        let keys = required_keys_for(&repo_ansible_dir(), "apps.yml", None).unwrap();
+        let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
+        for key in [
+            "yourls_cookiekey",
+            "paperless_secret_key",
+            "grimmory_db_password",
+            "radio_listener_password",
+            "immich_db_password",
+        ] {
+            assert!(
+                set.contains(key),
+                "untagged apps should demand {key}: {keys:?}"
+            );
+        }
+    }
+
+    /// `hermes` is the roster's one `when:`-guarded App: it runs only on Hosts
+    /// in the hermes group, so an untagged run cannot demand its keys.
+    #[test]
+    fn test_repo_untagged_apps_run_skips_the_guarded_app() {
+        let keys = required_keys_for(&repo_ansible_dir(), "apps.yml", None).unwrap();
+        assert!(
+            !keys.iter().any(|k| k == "hermes_llm_api_key"),
+            "untagged apps must not demand a guarded App's keys: {keys:?}"
+        );
+    }
+
+    /// `headscale` carries infrastructure's only `when:`.
+    #[test]
+    fn test_repo_untagged_infrastructure_run_skips_the_guarded_role() {
+        let keys = required_keys_for(&repo_ansible_dir(), "infrastructure.yml", None).unwrap();
+        let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
+        assert!(set.contains("blocky_subdomain"), "{keys:?}");
+        assert!(set.contains("tailscale_authkey"), "{keys:?}");
     }
 
     #[test]
