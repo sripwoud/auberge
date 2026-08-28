@@ -6,7 +6,7 @@ required_keys:
   - yourls_subdomain
 subdomain: yourls
 version:
-  value: "1.10.4"
+  value: "1.10.5"
   datasource: github-releases
   depName: "YOURLS/YOURLS"
 backup:
