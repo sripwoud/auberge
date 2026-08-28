@@ -58,15 +58,33 @@ impl CreateOutcome {
     }
 }
 
+/// A `Progress` per App, built by the caller.
+///
+/// One per App rather than one per Session: the terminal shows a bar for the
+/// App being backed up, and a single shared Progress would collapse thirteen
+/// of them into one (ADR-0047).
+pub type ProgressFactory<'a> = Box<dyn Fn(&str) -> Box<dyn Progress> + 'a>;
+
 pub struct BackupSession<'a, S: SshSession + ?Sized> {
     ssh: &'a S,
     recipes: Vec<(String, BackupRecipe)>,
     opts: SessionOpts,
+    progress_for: ProgressFactory<'a>,
 }
 
 impl<'a, S: SshSession + ?Sized> BackupSession<'a, S> {
-    pub fn new(ssh: &'a S, recipes: Vec<(String, BackupRecipe)>, opts: SessionOpts) -> Self {
-        Self { ssh, recipes, opts }
+    pub fn new(
+        ssh: &'a S,
+        recipes: Vec<(String, BackupRecipe)>,
+        opts: SessionOpts,
+        progress_for: impl Fn(&str) -> Box<dyn Progress> + 'a,
+    ) -> Self {
+        Self {
+            ssh,
+            recipes,
+            opts,
+            progress_for: Box::new(progress_for),
+        }
     }
 
     pub fn create(&self) -> Result<CreateOutcome> {
@@ -74,6 +92,7 @@ impl<'a, S: SshSession + ?Sized> BackupSession<'a, S> {
         let mut results = Vec::with_capacity(self.recipes.len());
 
         for (app_name, recipe) in &self.recipes {
+            let mut progress = (self.progress_for)(app_name);
             let app_dir = self
                 .opts
                 .dest
@@ -82,7 +101,7 @@ impl<'a, S: SshSession + ?Sized> BackupSession<'a, S> {
                 .join(app_name);
 
             if let Err(e) = fs::create_dir_all(&app_dir) {
-                eprintln!("✗ {} backup failed: {}", app_name, e);
+                progress.error(&format!("{} backup failed: {}", app_name, e));
                 results.push(RecipeOutcome {
                     app: app_name.clone(),
                     size_bytes: None,
@@ -91,16 +110,13 @@ impl<'a, S: SshSession + ?Sized> BackupSession<'a, S> {
                 continue;
             }
 
-            let mut progress = make_recipe_progress(app_name);
             let exec_result =
                 executor.backup(recipe, &app_dir, &self.opts.parameters, &mut *progress);
 
             match exec_result {
                 Ok(()) => {
                     let size = calculate_dir_size(&app_dir).unwrap_or(0);
-                    if !output::is_verbose() {
-                        output::success(&format!("{} ({})", app_name, output::format_size(size)));
-                    }
+                    progress.success(&format!("{} ({})", app_name, output::format_size(size)));
                     results.push(RecipeOutcome {
                         app: app_name.clone(),
                         size_bytes: Some(size),
@@ -109,7 +125,7 @@ impl<'a, S: SshSession + ?Sized> BackupSession<'a, S> {
                 }
                 Err(e) => {
                     let _ = fs::remove_dir_all(&app_dir);
-                    eprintln!("✗ {} backup failed: {}", app_name, e);
+                    progress.error(&format!("{} backup failed: {}", app_name, e));
                     results.push(RecipeOutcome {
                         app: app_name.clone(),
                         size_bytes: None,
@@ -124,16 +140,6 @@ impl<'a, S: SshSession + ?Sized> BackupSession<'a, S> {
             timestamp: self.opts.timestamp.clone(),
         })
     }
-}
-
-#[cfg(not(test))]
-fn make_recipe_progress(app: &str) -> Box<dyn Progress> {
-    Box::new(TerminalProgress::new(&format!("Backing up {}", app)))
-}
-
-#[cfg(test)]
-fn make_recipe_progress(app: &str) -> Box<dyn Progress> {
-    Box::new(TerminalProgress::hidden(&format!("Backing up {}", app)))
 }
 
 fn backup_args(backup_dir: &Path, host: &str) -> Vec<std::ffi::OsString> {
@@ -322,7 +328,15 @@ fn calculate_dir_size(path: &Path) -> Result<u64> {
 mod tests {
     use super::*;
     use crate::playbook_meta::{DbEngine, DbRecipe};
+    use crate::services::progress::{MockProgress, ProgressEvent};
     use crate::services::ssh::{MockSshSession, SshOp};
+    use std::cell::RefCell;
+
+    /// A factory that records every App's events into one list, in the order
+    /// the Session emitted them.
+    fn recording(into: &MockProgress) -> impl Fn(&str) -> Box<dyn Progress> + '_ {
+        move |_app| Box::new(into.share())
+    }
 
     fn baikal_recipe() -> BackupRecipe {
         BackupRecipe {
@@ -414,7 +428,8 @@ mod tests {
             ("baikal".to_string(), baikal_recipe()),
             ("bichon".to_string(), bichon_recipe()),
         ];
-        let session = BackupSession::new(&mock, recipes, opts(tmp.path()));
+        let events = MockProgress::new();
+        let session = BackupSession::new(&mock, recipes, opts(tmp.path()), recording(&events));
 
         let outcome = session.create().unwrap();
 
@@ -447,7 +462,8 @@ mod tests {
             ("baikal".to_string(), baikal_recipe()),
             ("bichon".to_string(), bichon_recipe()),
         ];
-        let session = BackupSession::new(&mock, recipes, opts(tmp.path()));
+        let events = MockProgress::new();
+        let session = BackupSession::new(&mock, recipes, opts(tmp.path()), recording(&events));
 
         session.create().unwrap();
 
@@ -481,7 +497,8 @@ mod tests {
             ("paperless".to_string(), paperless_recipe()),
             ("baikal".to_string(), baikal_recipe()),
         ];
-        let session = BackupSession::new(&mock, recipes, opts(tmp.path()));
+        let events = MockProgress::new();
+        let session = BackupSession::new(&mock, recipes, opts(tmp.path()), recording(&events));
 
         let outcome = session.create().unwrap();
 
@@ -542,13 +559,107 @@ mod tests {
     fn create_handles_empty_recipe_list() {
         let tmp = tempfile::tempdir().unwrap();
         let mock = MockSshSession::new();
-        let session = BackupSession::new(&mock, vec![], opts(tmp.path()));
+        let events = MockProgress::new();
+        let session = BackupSession::new(&mock, vec![], opts(tmp.path()), recording(&events));
 
         let outcome = session.create().unwrap();
 
         assert!(outcome.results.is_empty());
         assert_eq!(outcome.timestamp, "2026-04-28_03-00-00");
         assert!(mock.calls().is_empty());
+    }
+
+    #[test]
+    fn create_asks_for_one_progress_per_app_by_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock = MockSshSession::new();
+        let recipes = vec![
+            ("baikal".to_string(), baikal_recipe()),
+            ("bichon".to_string(), bichon_recipe()),
+        ];
+        let asked: RefCell<Vec<String>> = RefCell::new(Vec::new());
+
+        let session = BackupSession::new(&mock, recipes, opts(tmp.path()), |app| {
+            asked.borrow_mut().push(app.to_string());
+            Box::new(MockProgress::new())
+        });
+        session.create().unwrap();
+        drop(session);
+
+        assert_eq!(asked.into_inner(), vec!["baikal", "bichon"]);
+    }
+
+    #[test]
+    fn create_reports_a_finished_app_as_a_success_event() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock = MockSshSession::new();
+        let events = MockProgress::new();
+        let recipes = vec![("baikal".to_string(), baikal_recipe())];
+
+        let session = BackupSession::new(&mock, recipes, opts(tmp.path()), recording(&events));
+        session.create().unwrap();
+
+        assert!(
+            events
+                .events()
+                .contains(&ProgressEvent::Success("baikal (0 B)".to_string()))
+        );
+    }
+
+    #[test]
+    fn create_reports_a_failed_app_as_an_error_event() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock = MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: b"connection refused".to_vec(),
+        });
+        let events = MockProgress::new();
+        let recipes = vec![("paperless".to_string(), paperless_recipe())];
+
+        let session = BackupSession::new(&mock, recipes, opts(tmp.path()), recording(&events));
+        session.create().unwrap();
+
+        let reported: Vec<String> = events
+            .events()
+            .into_iter()
+            .filter_map(|e| match e {
+                ProgressEvent::Error(msg) => Some(msg),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(reported.len(), 1);
+        assert!(reported[0].starts_with("paperless backup failed: "));
+        assert!(reported[0].contains("connection refused"));
+    }
+
+    // The per-App line has to stream, which is why it cannot move to the
+    // summary the command renders after `create` returns.
+    #[test]
+    fn create_reports_each_app_before_the_next_one_starts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock = MockSshSession::new();
+        let events = MockProgress::new();
+        let recipes = vec![
+            ("baikal".to_string(), baikal_recipe()),
+            ("bichon".to_string(), bichon_recipe()),
+        ];
+
+        let session = BackupSession::new(&mock, recipes, opts(tmp.path()), recording(&events));
+        session.create().unwrap();
+
+        let stream = events.events();
+        let baikal_done = stream
+            .iter()
+            .position(|e| matches!(e, ProgressEvent::Success(m) if m.starts_with("baikal ")))
+            .unwrap();
+        let bichon_started = stream
+            .iter()
+            .position(|e| matches!(e, ProgressEvent::TaskStarted(m) if m == "Stopping bichon"))
+            .unwrap();
+        assert!(baikal_done < bichon_started);
     }
 
     #[test]
@@ -585,10 +696,12 @@ mod tests {
             parameters: session_params,
         };
 
+        let events = MockProgress::new();
         let session = BackupSession::new(
             &mock,
             vec![("navidrome".to_string(), navidrome)],
             opts_with_param,
+            recording(&events),
         );
         session.create().unwrap();
 
