@@ -3,7 +3,7 @@ use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg};
 use crate::output;
 use crate::output::OutputFormat;
 use crate::prompt::{Choice, confirm, select_item};
-use crate::ssh_session::SshSession;
+use crate::services::ssh::{LiveSshSession, SshSession};
 use clap::Subcommand;
 use dialoguer::{Input, Select, theme::ColorfulTheme};
 use eyre::{Context, Result};
@@ -242,20 +242,18 @@ fn strip_ssh_banner(output: &str) -> &str {
     trimmed
 }
 
-fn run_headscale_cmd(session: &SshSession, args: &str) -> Result<String> {
+fn run_headscale_cmd(session: &dyn SshSession, args: &str) -> Result<String> {
     let cmd = format!("sudo headscale {}", args);
     let out = session.run(&cmd)?;
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let cleaned = strip_ssh_banner(&stderr);
+    if !out.success {
+        let cleaned = strip_ssh_banner(&out.stderr_str()).to_string();
         if cleaned.is_empty() {
             eyre::bail!("headscale {} failed", args);
         } else {
             eyre::bail!("headscale {} failed: {}", args, cleaned);
         }
     }
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    Ok(strip_ssh_banner(&stdout).to_string())
+    Ok(strip_ssh_banner(&out.stdout_str()).to_string())
 }
 
 pub fn run_headscale_add_user(
@@ -264,7 +262,7 @@ pub fn run_headscale_add_user(
     host: Option<String>,
 ) -> Result<()> {
     let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = SshSession::new(&host_info, &ssh_key);
+    let session = LiveSshSession::new(&host_info, &ssh_key);
 
     let is_tty = std::io::stdin().is_terminal();
 
@@ -341,7 +339,7 @@ pub fn run_headscale_add_user(
 
 pub fn run_headscale_list_users(output_fmt: OutputFormat, host: Option<String>) -> Result<()> {
     let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = SshSession::new(&host_info, &ssh_key);
+    let session = LiveSshSession::new(&host_info, &ssh_key);
 
     let raw = run_headscale_cmd(&session, "users list -o json")?;
     let users: Vec<HeadscaleUser> =
@@ -365,7 +363,7 @@ pub fn run_headscale_list_users(output_fmt: OutputFormat, host: Option<String>) 
 
 pub fn run_headscale_list_nodes(output_fmt: OutputFormat, host: Option<String>) -> Result<()> {
     let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = SshSession::new(&host_info, &ssh_key);
+    let session = LiveSshSession::new(&host_info, &ssh_key);
 
     let raw = run_headscale_cmd(&session, "nodes list -o json")?;
     let parsed: Value =
@@ -402,7 +400,7 @@ pub fn run_headscale_remove_user(
     }
 
     let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = SshSession::new(&host_info, &ssh_key);
+    let session = LiveSshSession::new(&host_info, &ssh_key);
 
     let is_tty = std::io::stdin().is_terminal();
 
@@ -446,6 +444,61 @@ pub fn run_headscale_remove_user(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::ssh::{CommandResult, MockSshSession, SshOp};
+
+    #[test]
+    fn headscale_cmd_prefixes_sudo_headscale() {
+        let mock = MockSshSession::new();
+        run_headscale_cmd(&mock, "users list -o json").unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run("sudo headscale users list -o json".to_string())]
+        );
+    }
+
+    #[test]
+    fn headscale_cmd_strips_the_login_banner_from_stdout() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult {
+            success: true,
+            exit_code: Some(0),
+            stdout: b"**** Authorized uses only ****\n[]".to_vec(),
+            stderr: Vec::new(),
+        });
+        assert_eq!(
+            run_headscale_cmd(&mock, "users list -o json").unwrap(),
+            "[]"
+        );
+    }
+
+    #[test]
+    fn headscale_cmd_reports_the_remote_stderr_on_failure() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: b"user \"ghost\" not found".to_vec(),
+        });
+        let err = run_headscale_cmd(&mock, "users destroy ghost").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "headscale users destroy ghost failed: user \"ghost\" not found"
+        );
+    }
+
+    #[test]
+    fn headscale_cmd_names_the_subcommand_when_the_remote_says_nothing() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        });
+        let err = run_headscale_cmd(&mock, "nodes list").unwrap_err();
+        assert_eq!(err.to_string(), "headscale nodes list failed");
+    }
 
     #[test]
     fn parse_users_list_json() {
