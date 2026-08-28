@@ -86,6 +86,7 @@ pub const CRATE_MODULES: &[&str] = &[
     "src/services/backup/executor.rs",
     "src/services/backup/recipe.rs",
     "src/services/backup/restic.rs",
+    "src/services/backup/restore.rs",
     "src/services/backup/session.rs",
     "src/services/backup/verify.rs",
     "src/services/bichon/api.rs",

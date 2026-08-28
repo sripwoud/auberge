@@ -368,7 +368,7 @@ fn forget_snapshots(restic_repo: &str, restic_password: &str, dry_run: bool) -> 
     Ok(String::from_utf8_lossy(&prune_output.stdout).into_owned())
 }
 
-fn calculate_dir_size(path: &Path) -> Result<u64> {
+pub fn calculate_dir_size(path: &Path) -> Result<u64> {
     let mut total = 0u64;
 
     if path.is_file() {
