@@ -104,10 +104,14 @@ pub fn identity_scan_dirs(home_dir: &Path, host: &str) -> [PathBuf; 2] {
     [identities.join(host), identities]
 }
 
+/// The exit status ssh(1) reserves for its own failures, documented under
+/// EXIT STATUS: "ssh exits with the exit status of the remote command or with
+/// 255 if an error occurred."
+const SSH_TRANSPORT_EXIT: i32 = 255;
+
 #[derive(Debug, Clone)]
 pub struct CommandResult {
     pub success: bool,
-    #[allow(dead_code)]
     pub exit_code: Option<i32>,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
@@ -146,6 +150,19 @@ impl CommandResult {
         }
     }
 
+    /// An ssh that never connected: 255, nothing on stdout, its own complaint
+    /// on stderr. Staged by both this module's tests and the restore
+    /// pre-flight's, so it is declared once rather than hand-built at each.
+    #[cfg(test)]
+    pub fn transport_failure(stderr: &str) -> Self {
+        Self {
+            success: false,
+            exit_code: Some(SSH_TRANSPORT_EXIT),
+            stdout: Vec::new(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
     /// A failed result carrying `stderr` — the other half of the pair.
     #[cfg(test)]
     pub fn from_stderr(stderr: &str) -> Self {
@@ -155,6 +172,16 @@ impl CommandResult {
             stdout: Vec::new(),
             stderr: stderr.as_bytes().to_vec(),
         }
+    }
+
+    /// `true` when the *transport* failed rather than the remote command
+    /// answering. The stdout half is what keeps a remote command's own 255
+    /// out: output proves the remote ran.
+    ///
+    /// A remote command that exits 255 having printed nothing is the one case
+    /// this cannot separate — ssh multiplexes both onto one exit status.
+    fn ssh_transport_failed(&self) -> bool {
+        self.exit_code == Some(SSH_TRANSPORT_EXIT) && self.stdout.is_empty()
     }
 
     pub fn stdout_str(&self) -> String {
@@ -187,6 +214,12 @@ pub trait SshSession {
     /// login shell parses the result either way, and a value carrying a space
     /// or a glob is no safer here than in [`SshSession::run`]. What it saves is
     /// the local `format!`, for the callers whose command is already a list.
+    ///
+    /// Unlike [`SshSession::run`], an `Ok` here means the *Host* answered: a
+    /// transport failure is an `Err`, worded by [`unreachable_error`] like
+    /// every other. `run`'s own callers each already turn a non-zero exit into
+    /// their own domain error, so re-contracting the twenty-five of them is a
+    /// separate decision from fixing the one caller here (#693).
     fn run_raw(&self, args: &[&str]) -> Result<CommandResult>;
     /// One bounded, non-interactive connect. Callers that are about to issue a
     /// series of commands against a Host that may have gone dark use it so a
@@ -235,7 +268,11 @@ impl SshSession for LiveSshSession<'_> {
     }
 
     fn run_raw(&self, args: &[&str]) -> Result<CommandResult> {
-        Ok(CommandResult::from_output(self.inner.run_raw(args)?))
+        let result = CommandResult::from_output(self.inner.run_raw(args)?);
+        if result.ssh_transport_failed() {
+            return Err(unreachable_error(self.host, &result.stderr_str()));
+        }
+        Ok(result)
     }
 
     fn reachable(&self, timeout: Duration) -> Result<()> {
@@ -457,7 +494,11 @@ impl SshSession for MockSshSession {
         self.calls
             .borrow_mut()
             .push(SshOp::RunRaw(args.iter().map(|a| a.to_string()).collect()));
-        Ok(self.next_result())
+        let result = self.next_result();
+        if result.ssh_transport_failed() {
+            return Err(unreachable_error(&mock_host(), &result.stderr_str()));
+        }
+        Ok(result)
     }
 
     fn reachable(&self, timeout: Duration) -> Result<()> {
@@ -787,5 +828,50 @@ mod tests {
                 group: "paperless".to_string(),
             }]
         );
+    }
+
+    #[test]
+    fn ssh_transport_failed_on_255_with_no_output() {
+        assert!(
+            CommandResult::transport_failure("ssh: connect to host: Connection refused")
+                .ssh_transport_failed()
+        );
+    }
+
+    /// Output on stdout proves the remote ran, so a 255 alongside it is the
+    /// remote command's own — the stdout half of the test is load-bearing.
+    #[test]
+    fn ssh_transport_not_failed_when_the_remote_answered() {
+        let answered = CommandResult {
+            stdout: b"navidrome.service enabled\n".to_vec(),
+            ..CommandResult::transport_failure("")
+        };
+        assert!(!answered.ssh_transport_failed());
+    }
+
+    /// Every other non-zero exit is the remote command's answer, however
+    /// unhelpful — a systemd that exits 1 for a name it does not know is not
+    /// a transport failure.
+    #[test]
+    fn ssh_transport_not_failed_on_a_remote_nonzero_exit() {
+        assert!(!CommandResult::from_stderr("Unit not found").ssh_transport_failed());
+        assert!(!CommandResult::ok().ssh_transport_failed());
+    }
+
+    /// The seam raises it, so the one wording reaches a `run_raw` caller that
+    /// never sees a `CommandResult`.
+    #[test]
+    fn mock_run_raw_reports_a_transport_failure_as_unreachable() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::transport_failure(
+            "ssh: connect to host: Connection refused",
+        ));
+
+        let err = format!(
+            "{:#}",
+            mock.run_raw(&["systemctl", "list-unit-files"]).unwrap_err()
+        );
+        assert!(err.contains("unreachable over ssh"), "{err}");
+        assert!(err.contains("Connection refused"), "{err}");
     }
 }

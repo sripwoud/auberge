@@ -18,6 +18,8 @@ Before any data is moved, the CLI validates:
 | Required systemd services installed on target | Abort — run `auberge ansible run --host new-vps` first |
 | Free disk ≥ 120% of backup size               | Abort                                                  |
 
+?> A service probe that never reached the target aborts as a transport failure rather than as a missing service, so `not found` is not a network diagnosis. The one case it cannot tell apart is a remote command that exits 255 having printed nothing.
+
 !> Cross-host restore prompts you to **type the target hostname** before proceeding. With `--yes`, a 3-second cancellable delay replaces the prompt.
 
 ## Emergency backup

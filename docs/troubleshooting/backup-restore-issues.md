@@ -21,11 +21,12 @@ auberge backup create --host my-vps
 
 ## Restore
 
-| Error                           | Cause                          | Fix                                                                            |
-| ------------------------------- | ------------------------------ | ------------------------------------------------------------------------------ |
-| `"No backups found for host"`   | No backup exists               | `auberge backup list`; create one first                                        |
-| `"Service not found on target"` | App not deployed on target VPS | Deploy first: `auberge ansible run --host new-vps --tags baikal`               |
-| `"Insufficient disk space"`     | Target VPS full                | `ssh ansible@vps "df -h"`; use `--apps baikal,freshrss` to restore selectively |
+| Error                                               | Cause                                  | Fix                                                                              |
+| --------------------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------- |
+| `"No backups found for host"`                       | No backup exists                       | `auberge backup list`; create one first                                          |
+| `"Service not found on target"`                     | App not deployed on target VPS         | Deploy first: `auberge ansible run --host new-vps --tags baikal`                 |
+| `"cannot tell whether <unit>.service is installed"` | Target went unreachable mid-pre-flight | Check connectivity, then retry. Not a deployment problem — do not re-run Ansible |
+| `"Insufficient disk space"`                         | Target VPS full                        | `ssh ansible@vps "df -h"`; use `--apps baikal,freshrss` to restore selectively   |
 
 ### Service won't start after restore
 
