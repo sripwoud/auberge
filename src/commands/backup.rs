@@ -1541,15 +1541,24 @@ fn default_backup_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
 
-/// The answer is the unit file name appearing in systemctl's own output, not
-/// the exit code: `list-unit-files` prints a header and "0 unit files listed."
+/// The answer is the unit file name appearing in systemctl's own output, and
+/// nothing else: `list-unit-files` prints a header and "0 unit files listed."
 /// for a name it does not know, so a non-empty stdout proves nothing, and its
-/// exit code for that case is systemd-version-dependent. The exit code is
-/// and-ed in to reject a transport failure, not to answer the question.
+/// exit code for that case is systemd-version-dependent.
+///
+/// Which leaves the exit code unable to answer the question at all. And-ing it
+/// in read an unreachable Host as an absent unit, so the pre-flight aborted
+/// the restore telling the operator to re-run a deploy that was never the
+/// problem (#693); it also let a systemd that answered under a non-zero exit
+/// hide a unit that is installed. [`SshSession::run_raw`] now raises the
+/// transport failure itself, and the `?` carries it — leaving this to say only
+/// what it can: whether the Host named the unit file.
 fn check_remote_unit_exists(session: &dyn SshSession, unit: &str) -> Result<bool> {
     let unit_file = unit_file_name(unit);
-    let output = session.run_raw(&["systemctl", "list-unit-files", &unit_file])?;
-    Ok(output.success && output.stdout_str().contains(&unit_file))
+    let output = session
+        .run_raw(&["systemctl", "list-unit-files", &unit_file])
+        .wrap_err_with(|| format!("cannot tell whether {} is installed", unit_file))?;
+    Ok(output.stdout_str().contains(&unit_file))
 }
 
 fn check_remote_disk_space(session: &dyn SshSession, path: &str) -> Result<u64> {
@@ -1597,21 +1606,18 @@ fn validate_cross_host_restore(
             None => continue,
         };
         for service in &recipe.systemd_services {
-            match check_remote_unit_exists(&session, service) {
-                Ok(true) => {
-                    eprintln!("    ✓ {} service exists", service);
-                }
-                Ok(false) => {
-                    eprintln!("    ⚠ {} service not found on target", service);
-                    eprintln!(
-                        "      Run 'auberge ansible run --host {}' to install services",
-                        host.name
-                    );
-                    eyre::bail!("Required service {} not found on target host", service);
-                }
-                Err(e) => {
-                    eprintln!("    ⚠ Failed to check {}: {}", service, e);
-                }
+            // `?`, not the warning this used to print: an unanswered probe
+            // has not cleared the unit, and this check is the one the restore
+            // treats as a gate.
+            if check_remote_unit_exists(&session, service)? {
+                eprintln!("    ✓ {} service exists", service);
+            } else {
+                eprintln!("    ⚠ {} service not found on target", service);
+                eprintln!(
+                    "      Run 'auberge ansible run --host {}' to install services",
+                    host.name
+                );
+                eyre::bail!("Required service {} not found on target host", service);
             }
         }
     }
@@ -1928,6 +1934,54 @@ mod tests {
             "0 unit files listed.\n",
         ));
         assert!(!check_remote_unit_exists(&mock, "navidrome").unwrap());
+    }
+
+    /// The case #693 is about: an unreachable Host must not read as an absent
+    /// unit. Asserted on the whole chain, since the unit context wraps the
+    /// transport wording the seam raises.
+    #[test]
+    fn check_remote_unit_exists_reports_a_transport_failure_as_one() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult::transport_failure(
+            "ssh: connect to host 10.0.0.9 port 22: Connection refused",
+        ));
+
+        let err = format!(
+            "{:#}",
+            check_remote_unit_exists(&mock, "navidrome").unwrap_err()
+        );
+        assert!(err.contains("navidrome.service"), "{err}");
+        assert!(err.contains("Connection refused"), "{err}");
+        assert!(
+            !err.to_lowercase().contains("not found"),
+            "must not read as an absent unit: {err}"
+        );
+    }
+
+    /// systemd's exit code for a name it does not know is version-dependent
+    /// (1 on 258), so a non-zero exit alongside an answer stays an answer.
+    #[test]
+    fn check_remote_unit_exists_reads_systemds_answer_under_a_nonzero_exit() {
+        let absent = crate::services::ssh::MockSshSession::new();
+        absent.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: b"UNIT FILE STATE PRESET\n\n0 unit files listed.\n".to_vec(),
+            stderr: Vec::new(),
+        });
+        assert!(!check_remote_unit_exists(&absent, "navidrome").unwrap());
+
+        let present = crate::services::ssh::MockSshSession::new();
+        present.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: b"navidrome.service enabled enabled\n".to_vec(),
+            stderr: Vec::new(),
+        });
+        assert!(
+            check_remote_unit_exists(&present, "navidrome").unwrap(),
+            "a listed unit is installed whatever systemd exited with"
+        );
     }
 
     #[test]
