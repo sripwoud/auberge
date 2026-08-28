@@ -2,15 +2,20 @@ use crate::commands::opml::OpmlCommands;
 use crate::config::Config;
 use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg as hosts_select_or_arg};
 use crate::output;
-use crate::playbook_meta::{BackupRecipe, unit_file_name};
+use crate::playbook_meta::unit_file_name;
 use crate::prompt::confirm;
-use crate::services::backup::executor::{RecipeExecutor, staged_parameters, staged_paths};
+use crate::services::ansible_runner::AnsibleResult;
+use crate::services::backup::executor::staged_paths;
 use crate::services::backup::recipe::{
     assets_playbooks_dir, discover_backuppable_apps, load_app_recipe,
 };
 use crate::services::backup::restic;
+use crate::services::backup::restore::{
+    EmergencyOutcome, RedeployOutcome, RestoreOpts, RestoreOutcome, RestorePhase, RestoreSession,
+    RestoreTarget,
+};
 use crate::services::backup::session::{
-    BackupSession, CreateOutcome, SessionOpts, restic_prune, restic_push,
+    BackupSession, CreateOutcome, SessionOpts, calculate_dir_size, restic_prune, restic_push,
 };
 use crate::services::backup::verify::{self, MaxAge, Status, Verdict, VerifyRequest};
 use crate::services::progress::{Progress, TerminalProgress};
@@ -201,14 +206,6 @@ pub enum BackupCommands {
 }
 
 pub use crate::output::OutputFormat;
-
-/// One app's share of a restore: which app, where its staged backup is, and
-/// the Recipe that decides what comes out of it.
-struct RestoreTarget {
-    app: String,
-    backup_path: PathBuf,
-    recipe: BackupRecipe,
-}
 
 pub struct RestoreOptions {
     pub backup_id: Option<String>,
@@ -650,29 +647,6 @@ fn discover_backups(
     Ok(backups)
 }
 
-fn calculate_dir_size(path: &Path) -> Result<u64> {
-    let mut total = 0u64;
-
-    if path.is_file() {
-        return Ok(path.metadata()?.len());
-    }
-
-    if path.is_dir() {
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let metadata = entry.metadata()?;
-
-            if metadata.is_file() {
-                total += metadata.len();
-            } else if metadata.is_dir() {
-                total += calculate_dir_size(&entry.path())?;
-            }
-        }
-    }
-
-    Ok(total)
-}
-
 fn print_backups_table(backups: &[BackupEntry]) {
     let display_backups: Vec<BackupDisplay> = backups.iter().map(BackupDisplay::from).collect();
     output::print_table(&display_backups);
@@ -697,22 +671,6 @@ fn print_backups_json(backups: &[BackupEntry]) -> Result<()> {
 
     println!("{}", json);
     Ok(())
-}
-
-fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
 }
 
 pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
@@ -772,13 +730,16 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         eyre::bail!("No backups to restore");
     }
 
-    let total_backup_size: u64 = restore_plan
-        .iter()
-        .map(|target| calculate_dir_size(&target.backup_path).unwrap_or(0))
-        .sum();
+    // One session for pre-flight and restore, so the socket the reachability
+    // probe warms is the one every later command reuses.
+    let ssh = LiveSshSession::new(&host, &ssh_key_path);
 
     if is_cross_host {
-        validate_cross_host_restore(&host, &ssh_key_path, &app_names, total_backup_size)?;
+        let total_backup_size: u64 = restore_plan
+            .iter()
+            .map(|target| calculate_dir_size(&target.backup_path).unwrap_or(0))
+            .sum();
+        validate_cross_host_restore(&ssh, &host, &app_names, total_backup_size)?;
     }
 
     eprintln!("\n=== Restore Plan ===");
@@ -838,215 +799,213 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         std::thread::sleep(std::time::Duration::from_secs(3));
     }
 
-    if is_cross_host && !opts.dry_run {
+    if is_cross_host {
         eprintln!("\n--- Creating Emergency Backup ---");
         eprintln!(
             "  Backing up current state of '{}' before cross-host restore",
             host.name
         );
+    }
 
-        let emergency_timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-        let emergency_backup_name = format!("pre-migration-{}", emergency_timestamp);
-
-        let mut emergency_parameters: HashMap<String, bool> = HashMap::new();
-        for target in &restore_plan {
-            for (name, present) in staged_parameters(&target.recipe, &target.backup_path) {
-                *emergency_parameters.entry(name).or_insert(false) |= present;
+    let session = RestoreSession::new(
+        &ssh,
+        &restore_plan,
+        RestoreOpts {
+            host_name: host.name.clone(),
+            backup_root: backup_root.clone(),
+            emergency_timestamp: Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string(),
+            cross_host: is_cross_host,
+        },
+        |phase, app| match phase {
+            RestorePhase::EmergencyBackup => {
+                Box::new(TerminalProgress::new(&format!("Backing up {}", app)))
             }
-        }
-
-        let emergency_result = run_backup_create(
-            Some(host.name.clone()),
-            Some(app_names.clone()),
-            Some(backup_root.clone()),
-            Some(ssh_key_path.clone()),
-            emergency_parameters,
-            false,
-        )
-        .and_then(|outcome| {
-            let failed = outcome.failed_apps();
-            if failed.is_empty() {
-                Ok(())
+            RestorePhase::AppRestore => {
+                eprintln!("\n--- Restoring {} ---", app);
+                Box::new(TerminalProgress::new(&format!("Restoring {}", app)))
+            }
+        },
+        || {
+            eprintln!("\n✓ All restores completed successfully");
+            if opts.skip_playbook_unsafe {
+                RedeployOutcome::SkippedUnsafe
             } else {
-                eyre::bail!("{} backup(s) failed", failed.len());
+                ansible_redeploy(&host, &app_names)
             }
-        });
+        },
+        |error| {
+            eprintln!("  ⚠ Failed to create emergency backup: {}", error);
+            eprintln!("    Continue without emergency backup? This is DANGEROUS!");
+            confirm("Continue without emergency backup?", false)
+        },
+    );
 
-        match emergency_result {
-            Ok(_) => {
-                eprintln!("  ✓ Emergency backup created: {}", emergency_backup_name);
-                eprintln!(
-                    "    Location: {}/{}/{}/",
-                    backup_root.display(),
-                    host.name,
-                    emergency_timestamp
-                );
-            }
-            Err(e) => {
-                eprintln!("  ⚠ Failed to create emergency backup: {}", e);
-                eprintln!("    Continue without emergency backup? This is DANGEROUS!");
+    let outcome = session.restore()?;
+    render_restore_outcome(
+        &outcome,
+        &restore_plan,
+        &host,
+        &backup_root,
+        &app_names,
+        is_cross_host,
+    );
+    Ok(())
+}
 
-                if !confirm("Continue without emergency backup?", false) {
-                    eprintln!("Restore cancelled");
-                    return Ok(());
-                }
-            }
+/// Re-run the apps playbook over the restored apps so ownership and
+/// permissions match what the roles declare. The Restore Session's redeploy
+/// capability: command-layer code, so it renders its own run and hands the
+/// Session only the outcome.
+fn ansible_redeploy(host: &Host, apps: &[String]) -> RedeployOutcome {
+    eprintln!("\nRunning Ansible playbooks to fix permissions...");
+    match run_apps_playbook(host, apps) {
+        Ok(result) if result.success => {
+            eprintln!("✓ Ansible playbooks completed successfully");
+            eprintln!("  File permissions have been corrected");
+            RedeployOutcome::Completed
         }
+        Ok(result) => failed_redeploy(apps, format!("exit code: {}", result.exit_code)),
+        Err(e) => failed_redeploy(apps, format!("{e:#}")),
+    }
+}
+
+fn failed_redeploy(apps: &[String], reason: String) -> RedeployOutcome {
+    eprintln!("⚠ Ansible playbook failed: {}", reason);
+    eprintln!("  Services may fail due to incorrect file ownership!");
+    eprintln!(
+        "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
+        apps.join(",")
+    );
+    RedeployOutcome::Failed(reason)
+}
+
+fn run_apps_playbook(host: &Host, apps: &[String]) -> Result<AnsibleResult> {
+    let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
+    let apps_playbook = assets.playbooks_dir().join("apps.yml");
+    if !apps_playbook.exists() {
+        eyre::bail!("Ansible playbook not found: {}", apps_playbook.display());
     }
 
-    let phase_label = if opts.skip_playbook_unsafe || opts.dry_run {
-        ""
-    } else {
-        "[1/2] "
+    let preflight = Config::load()
+        .and_then(|cfg| {
+            crate::services::required_keys::preflight_for(
+                &cfg,
+                assets.ansible_dir(),
+                "apps.yml",
+                Some(apps),
+            )
+        })
+        .wrap_err("config validation failed")?;
+
+    let inventory_host = crate::services::ansible_runner::InventoryHost {
+        name: host.name.clone(),
+        address: host.address.clone(),
+        port: host.port,
+        user: host.user.clone(),
+        groups: host.tags.clone(),
     };
-    eprintln!("\n{}Starting restore...", phase_label);
 
-    for target in &restore_plan {
-        restore_app(&host, target, &ssh_key_path)?;
-    }
+    let app_versions = crate::playbook_meta::app_version_vars(&assets.playbooks_dir())?;
+    let memory_budgets = crate::playbook_meta::app_memory_vars(&assets.playbooks_dir())?;
+    let extra_vars: Vec<(&str, &str)> = app_versions
+        .iter()
+        .chain(memory_budgets.iter())
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
 
-    eprintln!("\n✓ All restores completed successfully");
+    let mut progress = TerminalProgress::new("");
+    crate::services::ansible_runner::run_playbook(
+        &preflight,
+        &apps_playbook,
+        &inventory_host,
+        false,
+        Some(apps),
+        None,
+        Some(&extra_vars),
+        false,
+        false,
+        &mut progress,
+    )
+}
 
-    if !opts.skip_playbook_unsafe && !opts.dry_run {
-        eprintln!("\n[2/2] Running Ansible playbooks to fix permissions...");
-
-        let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
-        let apps_playbook = assets.playbooks_dir().join("apps.yml");
-
-        if !apps_playbook.exists() {
-            eprintln!("⚠ Ansible playbook not found: {}", apps_playbook.display());
-            eprintln!("  Services may fail due to incorrect file ownership!");
-            eprintln!("  Run manually: cd ansible && ansible-playbook playbooks/apps.yml");
-        } else {
-            let tags: Vec<String> = app_names.iter().map(|s| s.to_string()).collect();
-
-            let inventory_host = crate::services::ansible_runner::InventoryHost {
-                name: host.name.clone(),
-                address: host.address.clone(),
-                port: host.port,
-                user: host.user.clone(),
-                groups: host.tags.clone(),
-            };
-
-            // Build a Preflight — best-effort; if config is incomplete we warn and skip.
-            let preflight_result = Config::load().and_then(|cfg| {
-                crate::services::required_keys::preflight_for(
-                    &cfg,
-                    assets.ansible_dir(),
-                    "apps.yml",
-                    Some(&tags),
-                )
-            });
-
-            match preflight_result {
-                Err(e) => {
-                    eprintln!(
-                        "⚠ Skipping Ansible playbook (config validation failed): {}",
-                        e
-                    );
-                    eprintln!("  Services may fail due to incorrect file ownership!");
-                    eprintln!(
-                        "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
-                        tags.join(",")
-                    );
-                }
-                Ok(preflight) => {
-                    let app_versions =
-                        crate::playbook_meta::app_version_vars(&assets.playbooks_dir())?;
-                    let memory_budgets =
-                        crate::playbook_meta::app_memory_vars(&assets.playbooks_dir())?;
-                    let extra_vars: Vec<(&str, &str)> = app_versions
-                        .iter()
-                        .chain(memory_budgets.iter())
-                        .map(|(name, value)| (name.as_str(), value.as_str()))
-                        .collect();
-                    let mut progress = crate::services::progress::TerminalProgress::new("");
-                    match crate::services::ansible_runner::run_playbook(
-                        &preflight,
-                        &apps_playbook,
-                        &inventory_host,
-                        false,
-                        Some(&tags),
-                        None,
-                        Some(&extra_vars),
-                        false,
-                        false,
-                        &mut progress,
-                    ) {
-                        Ok(result) if result.success => {
-                            eprintln!("✓ Ansible playbooks completed successfully");
-                            eprintln!("  File permissions have been corrected");
-                        }
-                        Ok(result) => {
-                            eprintln!(
-                                "⚠ Ansible playbook failed (exit code: {})",
-                                result.exit_code
-                            );
-                            eprintln!("  Services may fail due to incorrect file ownership!");
-                            eprintln!(
-                                "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
-                                tags.join(",")
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("⚠ Failed to run Ansible playbook: {}", e);
-                            eprintln!("  Services may fail due to incorrect file ownership!");
-                            eprintln!(
-                                "  Fix manually: cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
-                                tags.join(",")
-                            );
-                        }
-                    }
-                }
-            }
+fn render_restore_outcome(
+    outcome: &RestoreOutcome,
+    plan: &[RestoreTarget],
+    host: &Host,
+    backup_root: &Path,
+    apps: &[String],
+    is_cross_host: bool,
+) {
+    let (emergency, redeploy) = match outcome {
+        RestoreOutcome::Cancelled { .. } => {
+            eprintln!("Restore cancelled");
+            return;
         }
-    } else if opts.skip_playbook_unsafe && !opts.dry_run {
+        RestoreOutcome::Restored {
+            emergency,
+            redeploy,
+        } => (emergency, redeploy),
+    };
+
+    if let RedeployOutcome::SkippedUnsafe = redeploy {
         eprintln!("\n⚠️  WARNING: Skipped Ansible playbooks (--skip-playbook-unsafe)");
         eprintln!("⚠️  Services WILL fail until you run:");
         eprintln!(
             "     cd ansible && ansible-playbook playbooks/apps.yml --tags {}",
-            app_names.join(",")
+            apps.join(",")
+        );
+    }
+
+    if let EmergencyOutcome::Created { timestamp } = emergency {
+        eprintln!("\n✓ Emergency backup created: pre-migration-{}", timestamp);
+        eprintln!(
+            "  Location: {}/{}/{}/",
+            backup_root.display(),
+            host.name,
+            timestamp
         );
     }
 
     if is_cross_host {
-        eprintln!("\n=== Post-Restore Actions Required ===");
-        eprintln!("  Cross-host restore completed. Manual verification needed:\n");
-        let all_services: Vec<&str> = restore_plan
-            .iter()
-            .flat_map(|target| target.recipe.systemd_services.iter().map(String::as_str))
-            .collect();
-        if !all_services.is_empty() {
-            eprintln!("  1. Verify services are running:");
+        render_post_restore_actions(plan, host);
+    }
+}
+
+fn render_post_restore_actions(plan: &[RestoreTarget], host: &Host) {
+    eprintln!("\n=== Post-Restore Actions Required ===");
+    eprintln!("  Cross-host restore completed. Manual verification needed:\n");
+    let all_services: Vec<&str> = plan
+        .iter()
+        .flat_map(|target| target.recipe.systemd_services.iter().map(String::as_str))
+        .collect();
+    if !all_services.is_empty() {
+        eprintln!("  1. Verify services are running:");
+        eprintln!(
+            "     ssh {}@{} 'systemctl status {}'",
+            host.user,
+            host.address,
+            all_services.join(" ")
+        );
+    }
+    eprintln!("\n  2. Check service logs for errors:");
+    for target in plan {
+        for service in &target.recipe.systemd_services {
             eprintln!(
-                "     ssh {}@{} 'systemctl status {}'",
-                host.user,
-                host.address,
-                all_services.join(" ")
+                "     ssh {}@{} 'journalctl -u {} --since \"5 minutes ago\" | grep -i error'",
+                host.user, host.address, service
             );
         }
-        eprintln!("\n  2. Check service logs for errors:");
-        for target in &restore_plan {
-            for service in &target.recipe.systemd_services {
-                eprintln!(
-                    "     ssh {}@{} 'journalctl -u {} --since \"5 minutes ago\" | grep -i error'",
-                    host.user, host.address, service
-                );
-            }
-        }
-        eprintln!("\n  3. Update DNS records if hostnames changed");
-        eprintln!("\n  4. Verify SSL certificates are valid for new domain\n");
+    }
+    eprintln!("\n  3. Update DNS records if hostnames changed");
+    eprintln!("\n  4. Verify SSL certificates are valid for new domain\n");
 
-        let advice = declared_restore_advice(&restore_plan);
-        if !advice.is_empty() {
-            eprintln!("  ⚠  App-specific notes:");
-            for (app, note) in &advice {
-                eprintln!("     - {app}: {note}");
-            }
+    let advice = declared_restore_advice(plan);
+    if !advice.is_empty() {
+        eprintln!("  ⚠  App-specific notes:");
+        for (app, note) in &advice {
+            eprintln!("     - {app}: {note}");
         }
     }
-
-    Ok(())
 }
 
 /// Each restored App paired with the `restore_advice` its Recipe declares, in
@@ -1063,19 +1022,6 @@ fn declared_restore_advice(plan: &[RestoreTarget]) -> Vec<(&str, &str)> {
                 .map(|advice| (target.app.as_str(), advice))
         })
         .collect()
-}
-
-fn restore_app(host: &Host, target: &RestoreTarget, ssh_key: &Path) -> Result<()> {
-    eprintln!("\n--- Restoring {} ---", target.app);
-
-    let session = LiveSshSession::new(host, ssh_key);
-    let executor = RecipeExecutor::new(&session);
-    let mut progress =
-        crate::services::progress::TerminalProgress::new(&format!("Restoring {}", target.app));
-    executor.restore(&target.recipe, &target.backup_path, &mut progress)?;
-
-    eprintln!("✓ {} restore completed", target.app);
-    Ok(())
 }
 
 fn load_restic_config() -> Result<(String, String)> {
@@ -1454,16 +1400,12 @@ fn check_remote_disk_space(session: &dyn SshSession, path: &str) -> Result<u64> 
 }
 
 fn validate_cross_host_restore(
+    session: &dyn SshSession,
     host: &Host,
-    ssh_key: &Path,
     apps: &[String],
     backup_size_bytes: u64,
 ) -> Result<()> {
     eprintln!("\n--- Pre-flight Validation ---");
-
-    // One session for the whole pre-flight, so the socket the reachability
-    // probe warms is the one the service and disk checks reuse.
-    let session = LiveSshSession::new(host, ssh_key);
 
     eprintln!("  Checking SSH connectivity...");
     session.reachable(CONNECT_TIMEOUT)?;
@@ -1483,7 +1425,7 @@ fn validate_cross_host_restore(
             // `?`, not the warning this used to print: an unanswered probe
             // has not cleared the unit, and this check is the one the restore
             // treats as a gate.
-            if check_remote_unit_exists(&session, service)? {
+            if check_remote_unit_exists(session, service)? {
                 eprintln!("    ✓ {} service exists", service);
             } else {
                 eprintln!("    ⚠ {} service not found on target", service);
@@ -1497,20 +1439,20 @@ fn validate_cross_host_restore(
     }
 
     eprintln!("  Checking disk space...");
-    match check_remote_disk_space(&session, "/") {
+    match check_remote_disk_space(session, "/") {
         Ok(available_bytes) => {
             let required_bytes = (backup_size_bytes as f64 * 1.2) as u64;
             eprintln!(
                 "    Available: {}, Required: {} (with 20% buffer)",
-                format_size(available_bytes),
-                format_size(required_bytes)
+                output::format_size(available_bytes),
+                output::format_size(required_bytes)
             );
 
             if available_bytes < required_bytes {
                 eyre::bail!(
                     "Insufficient disk space: need {}, have {}",
-                    format_size(required_bytes),
-                    format_size(available_bytes)
+                    output::format_size(required_bytes),
+                    output::format_size(available_bytes)
                 );
             }
             eprintln!("    ✓ Sufficient disk space available");
@@ -1528,6 +1470,7 @@ fn validate_cross_host_restore(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::playbook_meta::BackupRecipe;
     use crate::services::progress::{MockProgress, ProgressEvent};
 
     #[test]
