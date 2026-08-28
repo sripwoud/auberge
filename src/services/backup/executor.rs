@@ -351,6 +351,7 @@ mod tests {
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         }
     }
 
@@ -437,6 +438,7 @@ mod tests {
             post_restore_command: Some("sudo -u paperless ./manage.py migrate".to_string()),
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         }
     }
 
@@ -453,6 +455,7 @@ mod tests {
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         }
     }
 
@@ -470,6 +473,7 @@ mod tests {
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: Some(LIBRARY_QUERY.to_string()),
+            restore_advice: None,
         }
     }
 
@@ -507,6 +511,7 @@ mod tests {
             post_restore_command: None,
             parameters: params,
             attests: None,
+            restore_advice: None,
         }
     }
 
@@ -523,6 +528,7 @@ mod tests {
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         }
     }
 
@@ -628,6 +634,7 @@ mod tests {
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         };
         let executor = RecipeExecutor::new(&mock);
         let mut progress = crate::services::progress::MockProgress::new();
@@ -858,6 +865,7 @@ mod tests {
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         };
         let mut progress = crate::services::progress::MockProgress::new();
         executor

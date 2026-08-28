@@ -1005,24 +1005,32 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         eprintln!("\n  3. Update DNS records if hostnames changed");
         eprintln!("\n  4. Verify SSL certificates are valid for new domain\n");
 
-        eprintln!("  ⚠  App-specific notes:");
-        for app_name in &app_names {
-            match app_name.as_str() {
-                "navidrome" => {
-                    eprintln!("     - Navidrome: May need to rescan music library");
-                    eprintln!("       Fix: Trigger rescan from web UI or restart service");
-                }
-                "freshrss" => {
-                    eprintln!(
-                        "     - FreshRSS: Database paths should be fine, but verify feeds update"
-                    );
-                }
-                _ => {}
+        let advice = declared_restore_advice(&restore_plan);
+        if !advice.is_empty() {
+            eprintln!("  ⚠  App-specific notes:");
+            for (app, note) in &advice {
+                eprintln!("     - {app}: {note}");
             }
         }
     }
 
     Ok(())
+}
+
+/// Each restored App paired with the `restore_advice` its Recipe declares, in
+/// the order the plan restores them. Reads the plan rather than the requested
+/// app list, so an App whose backup directory was missing and got skipped
+/// contributes nothing. Selection only — the caller owns the formatting.
+fn declared_restore_advice(plan: &[RestoreTarget]) -> Vec<(&str, &str)> {
+    plan.iter()
+        .filter_map(|target| {
+            target
+                .recipe
+                .restore_advice
+                .as_deref()
+                .map(|advice| (target.app.as_str(), advice))
+        })
+        .collect()
 }
 
 fn restore_app(host: &Host, target: &RestoreTarget, ssh_key: &Path) -> Result<()> {
@@ -1578,6 +1586,66 @@ fn validate_cross_host_restore(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn recipe_advising(advice: Option<&str>) -> BackupRecipe {
+        BackupRecipe {
+            systemd_services: Vec::new(),
+            paths: Vec::new(),
+            attests: None,
+            owner: None,
+            db: None,
+            post_restore_command: None,
+            restore_advice: advice.map(str::to_string),
+            parameters: HashMap::new(),
+        }
+    }
+
+    fn target(app: &str, advice: Option<&str>) -> RestoreTarget {
+        RestoreTarget {
+            app: app.to_string(),
+            backup_path: PathBuf::from("/tmp").join(app),
+            recipe: recipe_advising(advice),
+        }
+    }
+
+    #[test]
+    fn declared_restore_advice_pairs_each_declaring_app_in_plan_order() {
+        let plan = vec![
+            target("navidrome", Some("rescan the library")),
+            target("freshrss", Some("verify feeds update")),
+        ];
+
+        assert_eq!(
+            declared_restore_advice(&plan),
+            vec![
+                ("navidrome", "rescan the library"),
+                ("freshrss", "verify feeds update"),
+            ]
+        );
+    }
+
+    #[test]
+    fn declared_restore_advice_skips_a_recipe_that_declares_none() {
+        let plan = vec![
+            target("baikal", None),
+            target("navidrome", Some("rescan the library")),
+        ];
+
+        assert_eq!(
+            declared_restore_advice(&plan),
+            vec![("navidrome", "rescan the library")]
+        );
+    }
+
+    #[test]
+    fn declared_restore_advice_is_empty_when_no_app_declares_any() {
+        let plan = vec![target("baikal", None), target("gokapi", None)];
+
+        assert!(
+            declared_restore_advice(&plan).is_empty(),
+            "a plan with no declared advice must render no section at all"
+        );
+    }
 
     #[test]
     fn test_push_variant_exists() {

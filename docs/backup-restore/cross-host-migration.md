@@ -43,8 +43,8 @@ curl -I https://cal.example.com                                       # verify S
 App-specific:
 
 - **Baikal**: verify admin + DAV users in the web admin.
-- **Navidrome**: rescan if music paths changed (web UI or restart service).
-- **FreshRSS**: confirm feed refresh works.
+
+Apps declaring `restore_advice` in their Backup Recipe — Navidrome and FreshRSS — have `backup restore` print their note at the end of a cross-host run, so it is not repeated here. Baikal declares none.
 
 ## Common failures
 

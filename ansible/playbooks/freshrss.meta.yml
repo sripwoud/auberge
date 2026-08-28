@@ -9,4 +9,5 @@ backup:
   systemd_services: [freshrss]
   paths: [/var/lib/freshrss, /opt/freshrss/data]
   owner: [freshrss, freshrss]
+  restore_advice: "database paths should be fine, but verify feeds update"
 units: [freshrss, freshrss-update, freshrss-update.timer]

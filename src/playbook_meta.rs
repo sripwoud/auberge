@@ -160,6 +160,11 @@ pub struct BackupRecipe {
     pub db: Option<DbRecipe>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_restore_command: Option<String>,
+    /// What a human still has to do once the restore has landed — the App's
+    /// own note, rendered after a cross-host restore and nowhere else (#671).
+    /// Recipes without one render nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restore_advice: Option<String>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub parameters: HashMap<String, BackupParameter>,
 }
@@ -216,6 +221,7 @@ impl BackupRecipe {
                 engine: db.engine,
             }),
             post_restore_command: self.post_restore_command.map(sub),
+            restore_advice: self.restore_advice.map(sub),
             parameters: self
                 .parameters
                 .into_iter()
@@ -512,6 +518,14 @@ mod tests {
             backup.paths,
             vec!["/var/lib/freshrss", "/opt/freshrss/data"]
         );
+        assert!(
+            backup
+                .restore_advice
+                .as_deref()
+                .unwrap()
+                .contains("verify feeds update"),
+            "freshrss owns its own post-restore note (#671)"
+        );
     }
 
     #[test]
@@ -589,6 +603,10 @@ mod tests {
         let backup = load_meta("navidrome").backup.unwrap();
         assert_eq!(backup.systemd_services, vec!["navidrome"]);
         assert_eq!(backup.paths, vec!["/var/lib/navidrome", "/etc/navidrome"]);
+        assert!(
+            backup.restore_advice.as_deref().unwrap().contains("rescan"),
+            "navidrome owns its own post-restore note (#671)"
+        );
         let parameter = backup.parameters.get("include_music").unwrap();
         assert!(!parameter.default);
         assert_eq!(parameter.adds_paths, vec!["/srv/music"]);
@@ -925,6 +943,7 @@ backup:
         assert!(backup.systemd_services.is_empty());
         assert!(backup.db.is_none());
         assert!(backup.post_restore_command.is_none());
+        assert!(backup.restore_advice.is_none());
         assert!(backup.parameters.is_empty());
     }
 
@@ -942,6 +961,7 @@ backup:
     name: paperless
     dump_path: /tmp/paperless_db.dump
   post_restore_command: "sudo -u paperless bash -c 'cd /opt/paperless/src && ./manage.py migrate'"
+  restore_advice: "confirm the consumer picked the inbox back up"
 "#;
         let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
         let backup = meta.backup.unwrap();
@@ -967,6 +987,10 @@ backup:
                 .as_deref()
                 .unwrap()
                 .contains("manage.py migrate")
+        );
+        assert_eq!(
+            backup.restore_advice.as_deref(),
+            Some("confirm the consumer picked the inbox back up")
         );
     }
 
@@ -1012,6 +1036,7 @@ backup:
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         };
         let yaml = serde_yaml::to_string(&recipe).unwrap();
         assert!(
@@ -1052,6 +1077,7 @@ backup:
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         };
         let effective = recipe.effective_paths(&HashMap::new());
         assert_eq!(effective, vec!["/var/lib/app".to_string()]);
@@ -1075,6 +1101,7 @@ backup:
             post_restore_command: None,
             parameters,
             attests: None,
+            restore_advice: None,
         };
         let mut values = HashMap::new();
         values.insert("include_music".to_string(), true);
@@ -1101,6 +1128,7 @@ backup:
             post_restore_command: None,
             parameters,
             attests: None,
+            restore_advice: None,
         };
         let effective = recipe.effective_paths(&HashMap::new());
         assert!(!effective.contains(&"/srv/music".to_string()));
@@ -1124,6 +1152,7 @@ backup:
             db: None,
             post_restore_command: Some("chown {admin_user} /tmp/x".to_string()),
             parameters,
+            restore_advice: Some("check /home/{admin_user}/Sync came back".to_string()),
         };
 
         let resolved = recipe.resolve("alice");
@@ -1142,6 +1171,10 @@ backup:
             Some("chown alice /tmp/x")
         );
         assert_eq!(resolved.attests.as_deref(), Some("echo /home/alice/Sync"));
+        assert_eq!(
+            resolved.restore_advice.as_deref(),
+            Some("check /home/alice/Sync came back")
+        );
         assert_eq!(
             resolved.parameters.get("include_extra").unwrap().adds_paths,
             vec!["/home/alice/extra"]
@@ -1162,6 +1195,7 @@ backup:
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         };
 
         let resolved = recipe.clone().resolve("alice");
