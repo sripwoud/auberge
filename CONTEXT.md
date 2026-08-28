@@ -121,6 +121,10 @@ _Avoid_: Backup runner, recipe runner
 The Rust module that orchestrates multiple Recipe Executor invocations across a Host's Apps, plus restic push and prune. Owns cross-recipe concerns; per-recipe semantics live in the Recipe Executor. Takes a **Progress** factory and asks it for one per App, in recipe order; restic push and prune each take a Progress, and their ordering and whole output live in a driver over closures standing for the restic invocations — the split `sync music` already had, and what makes "is an absent repository initialized before the push?" a test rather than an inspection (ADR-0047).
 _Avoid_: Backup job, backup workflow
 
+**Restore Session**:
+The Rust module that orchestrates one restore against one Host: emergency backup, then the Recipe Executor per App, then redeploy, returning an outcome value the command renders. The emergency backup is inside it, so no caller can skip ADR-0026's rollback guarantee. Consumes the same seams as the Backup Session (SshSession, Progress); the redeploy is injected by the command.
+_Avoid_: restore runner, restore workflow
+
 **Backup Verdict**:
 The verdict `auberge backup verify` reaches about a Host's newest offsite restic snapshot — or, with `-a`, the newest snapshot _holding that App_, which a partial sync can leave behind an App-less newer push — as a fail-fast checklist: repository reachable → a snapshot exists → it contains an App → it is younger than a threshold, carried by the exit code (0 verified, 1 a check failed, 2 operational error). A pure function of `restic snapshots --json` plus one containment probe per candidate snapshot, so the whole decision is unit-tested without invoking restic. Asserts the "backup is current" half of ADR-0007's boundary; it says nothing about the **Upstream Mailbox**, which would be coverage-check and stays out of scope.
 _Avoid_: Health check, audit, validation, integrity check (restic's own `check` verifies repository integrity — a different question).
