@@ -333,6 +333,7 @@ mod tests {
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         }
     }
 
@@ -345,6 +346,7 @@ mod tests {
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         }
     }
 
@@ -361,6 +363,7 @@ mod tests {
             post_restore_command: None,
             parameters: HashMap::new(),
             attests: None,
+            restore_advice: None,
         }
     }
 
@@ -569,6 +572,7 @@ mod tests {
             post_restore_command: None,
             parameters: params,
             attests: None,
+            restore_advice: None,
         };
 
         let mut session_params = HashMap::new();

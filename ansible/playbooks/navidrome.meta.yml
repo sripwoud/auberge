@@ -12,6 +12,7 @@ backup:
   systemd_services: [navidrome]
   paths: [/var/lib/navidrome, /etc/navidrome]
   owner: [navidrome, navidrome]
+  restore_advice: "may need a music library rescan — trigger one from the web UI or restart the service"
   parameters:
     include_music:
       default: false

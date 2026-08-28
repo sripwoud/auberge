@@ -75,7 +75,7 @@ One directory per run, holding one directory per app backed up in that run. `aub
 6. For apps with databases: dump is uploaded via `scp` and restored — `pg_restore --clean --if-exists` for PostgreSQL, piping the dump into `mariadb` for MariaDB — then any `post_restore_command` (e.g. Paperless-ngx's Django migrations) is run
 7. File ownership is set to service user (e.g., `chown -R calibre:calibre /home/calibre`)
 8. Services are restarted on target
-9. Post-restore guidance displayed (cross-host only)
+9. Post-restore guidance displayed (cross-host only) — the generic checklist, then each restored app's `restore_advice` from its Backup Recipe. Apps declaring none add nothing, and a run where none declares any prints no such section
 
 ### Offsite Backup
 
