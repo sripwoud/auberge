@@ -1,15 +1,21 @@
 //! The crate's own source, as the fences read it.
 //!
-//! Three fences ask a question of `src/**/*.rs` — which call sites discard an
+//! Four fences ask a question of `src/**/*.rs` — which call sites discard an
 //! `AnsibleAssets` guard, which modules name a vendor crate, which modules
-//! carry a compile-time seam — and the first two each carried its own copy of
-//! the walk that answers it. The walk is the shared premise underneath all
-//! three, and a premise that quietly stops reaching somewhere does not fail. It
-//! shrinks the domain, and every fence over it goes on passing, vacuously. `tests/common/mod.rs` is the same lesson learned on the ansible
-//! tree, where six copies had already diverged far enough that two fences
-//! asking the same question of the same tree got answers 83 tasks apart (#654).
-//! That module is scoped to `ansible/`; this one is the crate's own source, so
-//! it stands beside it rather than inside it.
+//! spawn ssh or scp, which modules carry a compile-time seam — and the first
+//! two each carried its own copy of the walk that answers it. The walk is the
+//! shared premise underneath all four, and a premise that quietly stops
+//! reaching somewhere does not fail. It shrinks the domain, and every fence
+//! over it goes on passing, vacuously. `tests/common/mod.rs` is the same lesson
+//! learned on the ansible tree, where six copies had already diverged far
+//! enough that two fences asking the same question of the same tree got answers
+//! 83 tasks apart (#654). That module is scoped to `ansible/`; this one is the
+//! crate's own source, so it stands beside it rather than inside it.
+//!
+//! The count is load-bearing prose, so it is stated as a count: two of the four
+//! arrived after this module did (`ssh_stays_in_the_transport` with #669,
+//! `seams_are_injected` with #670), and a reader who trusts a stale one is
+//! reading about a domain smaller than the real one.
 //!
 //! Only one of the two copies pinned its reach: `vendor_types_stay_in_adapter`
 //! asserted the walked set equals [`CRATE_MODULES`] by difference in both
@@ -31,13 +37,12 @@
 //! file, `src/playbook_meta.rs`, as *text*, string-splitting on Rust syntax to
 //! recover the unit-type list declared there (#656). #667 gave the crate a
 //! library target, so that fence imports the `const` instead and reads no
-//! source at all, which is why it is not the third reader here. That place went
-//! to `seams_are_injected.rs`, which asks two textual questions — where a
-//! `not(test)` predicate sits, and where a `TerminalProgress` is constructed
-//! (#670) — and inherits the reach rather than walking again. The reason the
-//! unit-type fence left is worth keeping either way: a fence that wants one
-//! crate *item* should `use` it, and this walk is for the questions asked of
-//! source as text.
+//! source at all, which is why it is not among the four. The reason it left is
+//! worth keeping: a fence that wants one crate *item* should `use` it, and this
+//! walk is for the questions asked of source as text. `seams_are_injected.rs`
+//! is the case in point — two textual questions, where a `not(test)` predicate
+//! sits and where a `TerminalProgress` is constructed (#670) — neither of which
+//! an import could answer.
 
 use std::collections::BTreeSet;
 use std::fs;

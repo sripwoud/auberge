@@ -15,7 +15,7 @@ Two rules follow for `Progress`, the crate's one output seam:
 
 Render policy stays above the seam. Whether an App's result is streamed per-App or tabled at the end is the command's business: `ResultsSuppressed` in `commands/backup.rs` is a `Progress` that drops `success` and forwards the rest, so `create` emits one `success` per App and does not know what renders it.
 
-The global output flags are untouched, and their teardown is not this decision. `is_verbose()` is read in four places, all in the command layer; `TerminalProgress` reads `is_quiet()` and `should_use_colors()` because it is the terminal. ADR-0004's `--output {human,json}` contract is a different surface and is not involved — this is how services reach stderr internally.
+The global output flags are untouched, and their teardown is not this decision. **Every `is_verbose()` read now sits in the command layer** — the Backup Session held the only one below it, and the rest were already there (five today, all in `commands/backup.rs`, a count that moves with the file). Stated as the invariant rather than the count, because the count is what goes stale; `TerminalProgress` reads `is_quiet()` and `should_use_colors()` because it is the terminal. ADR-0004's `--output {human,json}` contract is a different surface and is not involved — this is how services reach stderr internally.
 
 ### What it costs
 
@@ -58,7 +58,7 @@ The cost compounded next door. `restic_push` and `restic_prune` each constructed
 
 The split is the one `sync music` already had: a driver owning ordering and output over closures standing for the subprocess calls, and wiring owning the subprocesses. It is what makes "does an absent repository get initialized before the push?" a test rather than an inspection.
 
-25 tests added, 909 to 934.
+25 tests added, 970 to 995.
 
 ### Why a factory rather than one Progress
 
