@@ -133,6 +133,30 @@ impl CommandResult {
         }
     }
 
+    /// A successful result carrying `text` on stdout — the shape almost every
+    /// staged result wants, and previously re-declared in each test mod that
+    /// needed it.
+    #[cfg(test)]
+    pub fn from_stdout(text: &str) -> Self {
+        Self {
+            success: true,
+            exit_code: Some(0),
+            stdout: text.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        }
+    }
+
+    /// A failed result carrying `stderr` — the other half of the pair.
+    #[cfg(test)]
+    pub fn from_stderr(stderr: &str) -> Self {
+        Self {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
     pub fn stdout_str(&self) -> String {
         String::from_utf8_lossy(&self.stdout).into_owned()
     }
@@ -142,10 +166,13 @@ impl CommandResult {
     }
 }
 
-/// The bound every reachability probe uses. [`SshSession::reachable`] takes the
-/// timeout as a parameter because a caller may one day want a different bound;
-/// today all three want this one, and a shared const makes that visible rather
-/// than a coincidence three modules maintain separately.
+/// The bound every reachability probe uses.
+///
+/// Two of the three probes this replaced carried ten seconds and the third
+/// carried none at all, so the const is what makes the agreement real rather
+/// than a coincidence maintained in three modules. The timeout stays a
+/// parameter of [`SshSession::reachable`] — that is the signature #669
+/// settled on — but no caller has yet wanted a different one.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The only way to reach a Host. Every ssh, scp and rsync the CLI issues goes
@@ -214,9 +241,6 @@ impl SshSession for LiveSshSession<'_> {
     fn reachable(&self, timeout: Duration) -> Result<()> {
         let out = self.inner.probe(timeout)?;
         if out.status.success() {
-            let lines =
-                crate::output::subprocess_output("ssh", &String::from_utf8_lossy(&out.stderr));
-            crate::output::clear_subprocess_lines(lines);
             return Ok(());
         }
         Err(unreachable_error(
@@ -401,8 +425,9 @@ impl MockSshSession {
 #[cfg(test)]
 pub const MOCK_RSYNC_E_ARG: &str = "ssh <mock>";
 
-/// The Host a mock probe words its failure against, so [`unreachable_error`] is
-/// exercised by the same code path the live session takes.
+/// A stand-in Host for [`MockSshSession::reachable`] to word its failure
+/// against. The mock has no Host of its own, and the alternative — a second
+/// wording for the mock — is the thing [`unreachable_error`] exists to prevent.
 #[cfg(test)]
 fn mock_host() -> Host {
     Host {
@@ -544,16 +569,8 @@ mod tests {
 
     fn test_host() -> Host {
         Host {
-            name: "test".to_string(),
-            address: "192.0.2.1".to_string(),
-            user: "deploy".to_string(),
             port: 2222,
-            ssh_key: None,
-            tags: vec![],
-            description: None,
-            python_interpreter: None,
-            become_method: "sudo".to_string(),
-            tailscale_ip: None,
+            ..mock_host()
         }
     }
 
@@ -749,7 +766,7 @@ mod tests {
     fn test_unreachable_error_says_nothing_extra_when_stderr_is_empty() {
         let msg = unreachable_error(&test_host(), "   ").to_string();
         let first_line = msg.lines().next().unwrap();
-        assert!(first_line.ends_with("192.0.2.1:2222"), "{first_line}");
+        assert!(first_line.ends_with("192.0.2.9:2222"), "{first_line}");
     }
 
     #[test]

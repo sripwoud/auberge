@@ -1,16 +1,22 @@
 //! Every ssh and scp argv the CLI issues, and the processes that run them.
 //!
 //! Private to [`super`] on purpose. This type used to be `pub` and named
-//! `SshSession` — the same name as the trait one module up that CONTEXT.md
-//! calls the only test seam — and four commands imported it past that trait,
-//! which is exactly how they became unmockable. The trait is now the only way
-//! to reach a Host, and Rust enforces it: nothing outside `services::ssh` can
-//! name this type (#669).
+//! `SshSession` — the same name as the trait one module up, which CONTEXT.md
+//! calls the Recipe Executor's only test seam — and four commands imported it
+//! past that trait, which is exactly how they became unmockable. The trait is
+//! now the only way to reach a Host, and Rust enforces it: nothing outside
+//! `services::ssh` can name this type (#669).
 //!
-//! Mux hygiene is deliberately left as it is. The control socket is never torn
-//! down and its path is fixed under `/tmp`: `ControlPersist` expires it on its
-//! own, and ssh refuses a socket owned by another user, so neither is a leak
-//! worth code to close.
+//! Mux hygiene is deliberately left as it is: the control socket is never torn
+//! down, and `ControlPath` is a fixed `/tmp/ssh-%r@%h:%p`. `ControlPersist`
+//! expires the socket on its own, which covers the teardown. The path is the
+//! sharper edge — ssh_config(5) recommends a directory "not writable by other
+//! users", and `%r` is the *remote* username, so two local users reaching the
+//! same remote account collide on one name. Left because this CLI is
+//! single-operator by construction (`~/.ssh/identities/<host>/<user>` keys,
+//! a user-local `hosts.toml`), and narrowing it is a change to every session's
+//! socket path rather than to this refactor. `Reach::FirstContact` opts out
+//! entirely where the sharing would actually cost something.
 
 use crate::hosts::Host;
 use crate::output;
@@ -115,11 +121,16 @@ impl<'a> SshTransport<'a> {
     }
 
     pub fn probe(&self, timeout: Duration) -> Result<Output> {
-        Command::new("ssh")
+        let out = Command::new("ssh")
             .args(self.probe_args(timeout))
             .arg("true")
             .output()
-            .wrap_err("Failed to execute ssh")
+            .wrap_err("Failed to execute ssh")?;
+        let lines = output::subprocess_output("ssh", &String::from_utf8_lossy(&out.stderr));
+        if out.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
+        Ok(out)
     }
 
     pub fn run(&self, command: &str) -> Result<Output> {

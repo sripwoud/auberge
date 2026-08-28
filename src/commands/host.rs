@@ -992,19 +992,12 @@ mod tests {
         assert_eq!(run_etc_hosts_sed(&script, input), input);
     }
 
-    fn stdout_result(text: &str) -> crate::services::ssh::CommandResult {
-        crate::services::ssh::CommandResult {
-            success: true,
-            exit_code: Some(0),
-            stdout: text.as_bytes().to_vec(),
-            stderr: Vec::new(),
-        }
-    }
-
     #[test]
     fn detect_tailscale_ip_asks_the_host_for_its_v4_address() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(stdout_result("100.101.255.46\n"));
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
+            "100.101.255.46\n",
+        ));
         assert_eq!(
             detect_tailscale_ip(&mock, "auberge").unwrap(),
             "100.101.255.46"
@@ -1020,7 +1013,9 @@ mod tests {
     #[test]
     fn detect_tailscale_ip_rejects_a_non_cgnat_answer() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(stdout_result("192.168.1.10\n"));
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
+            "192.168.1.10\n",
+        ));
         let err = detect_tailscale_ip(&mock, "auberge").unwrap_err();
         assert!(err.to_string().contains("No Tailscale CGNAT IPv4"), "{err}");
     }

@@ -216,6 +216,29 @@ pub fn run_sync_music(
     Ok(())
 }
 
+fn prepare_hermes_dir(session: &dyn SshSession) -> Result<()> {
+    let prepare = session
+        .run("mkdir -p ~/.hermes")
+        .wrap_err("Failed to prepare remote ~/.hermes directory")?;
+    if !prepare.success {
+        eyre::bail!("Remote ~/.hermes directory is missing and could not be created");
+    }
+    Ok(())
+}
+
+/// hermes-gateway is a *user* unit, so `systemctl --user` needs the bus socket
+/// its `XDG_RUNTIME_DIR` names — an ssh command runs without the session
+/// environment a login would have set up, and the restart fails without it.
+fn restart_hermes_gateway(session: &dyn SshSession) -> Result<()> {
+    let restart = session
+        .run("XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart hermes-gateway")
+        .wrap_err("Failed to restart hermes-gateway")?;
+    if !restart.success {
+        eyre::bail!("hermes-gateway restart failed");
+    }
+    Ok(())
+}
+
 /// One config file, pushed. The flag set is the caller's — `--dry-run` is the
 /// reason this is not [`SshSession::scp_to`] or [`SshSession::rsync_to`], and
 /// `--delete` and `--rsync-path=sudo rsync` would both be wrong for a file
@@ -289,12 +312,7 @@ pub fn run_sync_hermes(
     let remote_dest = format!("{}@{}:.hermes/config.yaml", xdg_host.user, xdg_host.address);
 
     output::info("Preparing remote ~/.hermes directory...");
-    let prepare = session
-        .run("mkdir -p ~/.hermes")
-        .wrap_err("Failed to prepare remote ~/.hermes directory")?;
-    if !prepare.success {
-        eyre::bail!("Remote ~/.hermes directory is missing and could not be created");
-    }
+    prepare_hermes_dir(&session)?;
 
     output::info(&format!("Syncing hermes config to {}", remote_dest));
 
@@ -320,12 +338,7 @@ pub fn run_sync_hermes(
     }
 
     output::info("Restarting hermes-gateway...");
-    let restart = session
-        .run("XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart hermes-gateway")
-        .wrap_err("Failed to restart hermes-gateway")?;
-    if !restart.success {
-        eyre::bail!("hermes-gateway restart failed");
-    }
+    restart_hermes_gateway(&session)?;
     output::success("hermes-gateway restarted");
 
     Ok(())
@@ -348,6 +361,49 @@ mod tests {
         cmd.get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect()
+    }
+
+    #[test]
+    fn prepare_hermes_dir_creates_it_idempotently() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        prepare_hermes_dir(&mock).unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![crate::services::ssh::SshOp::Run(
+                "mkdir -p ~/.hermes".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn prepare_hermes_dir_fails_loudly_when_the_remote_refuses() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stderr(
+            "mkdir: Permission denied",
+        ));
+        let err = prepare_hermes_dir(&mock).unwrap_err();
+        assert!(err.to_string().contains("could not be created"), "{err}");
+    }
+
+    #[test]
+    fn restart_hermes_gateway_carries_the_user_bus_into_the_ssh_command() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        restart_hermes_gateway(&mock).unwrap();
+        let crate::services::ssh::SshOp::Run(cmd) = &mock.calls()[0] else {
+            panic!("expected a Run");
+        };
+        assert!(cmd.contains("XDG_RUNTIME_DIR=/run/user/$(id -u)"), "{cmd}");
+        assert!(
+            cmd.contains("systemctl --user restart hermes-gateway"),
+            "{cmd}"
+        );
+    }
+
+    #[test]
+    fn restart_hermes_gateway_fails_loudly() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stderr("no bus"));
+        assert!(restart_hermes_gateway(&mock).is_err());
     }
 
     #[test]

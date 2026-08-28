@@ -1737,28 +1737,10 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("Backup not found"));
     }
 
-    fn stdout_result(text: &str) -> crate::services::ssh::CommandResult {
-        crate::services::ssh::CommandResult {
-            success: true,
-            exit_code: Some(0),
-            stdout: text.as_bytes().to_vec(),
-            stderr: Vec::new(),
-        }
-    }
-
-    fn failed_result(stderr: &str) -> crate::services::ssh::CommandResult {
-        crate::services::ssh::CommandResult {
-            success: false,
-            exit_code: Some(1),
-            stdout: Vec::new(),
-            stderr: stderr.as_bytes().to_vec(),
-        }
-    }
-
     #[test]
     fn check_remote_unit_exists_asks_systemctl_by_unit_file_name() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(stdout_result(
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
             "UNIT FILE          STATE\nnavidrome.service  enabled\n",
         ));
         assert!(check_remote_unit_exists(&mock, "navidrome").unwrap());
@@ -1775,21 +1757,27 @@ mod tests {
     #[test]
     fn check_remote_unit_exists_is_false_when_systemctl_lists_nothing() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(stdout_result("0 unit files listed.\n"));
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
+            "0 unit files listed.\n",
+        ));
         assert!(!check_remote_unit_exists(&mock, "navidrome").unwrap());
     }
 
     #[test]
     fn check_remote_unit_exists_keeps_a_timer_a_timer() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(stdout_result("bichon-archive.timer  enabled\n"));
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
+            "bichon-archive.timer  enabled\n",
+        ));
         assert!(check_remote_unit_exists(&mock, "bichon-archive.timer").unwrap());
     }
 
     #[test]
     fn check_remote_disk_space_converts_dfs_kilobytes_to_bytes() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(stdout_result("  20971520\n"));
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
+            "  20971520\n",
+        ));
         assert_eq!(
             check_remote_disk_space(&mock, "/").unwrap(),
             20_971_520 * 1024
@@ -1805,14 +1793,18 @@ mod tests {
     #[test]
     fn check_remote_disk_space_fails_on_unparsable_output() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(stdout_result("df: /nope: No such file\n"));
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
+            "df: /nope: No such file\n",
+        ));
         assert!(check_remote_disk_space(&mock, "/nope").is_err());
     }
 
     #[test]
     fn export_opml_returns_the_remote_stdout_verbatim() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(stdout_result("<opml version=\"2.0\"/>"));
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
+            "<opml version=\"2.0\"/>",
+        ));
         assert_eq!(
             export_opml(&mock, "cd /opt/freshrss && ...").unwrap(),
             b"<opml version=\"2.0\"/>".to_vec()
@@ -1822,7 +1814,9 @@ mod tests {
     #[test]
     fn export_opml_reports_the_remote_stderr() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(failed_result("User 'ghost' does not exist"));
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stderr(
+            "User 'ghost' does not exist",
+        ));
         let err = export_opml(&mock, "cd /opt/freshrss && ...").unwrap_err();
         assert_eq!(
             err.to_string(),
@@ -1833,7 +1827,9 @@ mod tests {
     #[test]
     fn import_opml_uploads_before_it_imports() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(stdout_result("12 feeds imported\n"));
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
+            "12 feeds imported\n",
+        ));
         let out = import_opml(
             &mock,
             Path::new("/tmp/feeds.opml"),
@@ -1859,7 +1855,9 @@ mod tests {
     #[test]
     fn import_opml_reports_the_remote_stderr() {
         let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(failed_result("malformed OPML"));
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stderr(
+            "malformed OPML",
+        ));
         let err =
             import_opml(&mock, Path::new("/tmp/feeds.opml"), "/tmp/x.opml", "import").unwrap_err();
         assert_eq!(err.to_string(), "OPML import failed: malformed OPML");
