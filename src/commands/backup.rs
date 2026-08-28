@@ -1245,12 +1245,20 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
             )
         })?;
 
-    restic_push(&restic_repo, &restic_password, &backup_dir, &host)
+    let mut progress = TerminalProgress::new("");
+    restic_push(
+        &restic_repo,
+        &restic_password,
+        &backup_dir,
+        &host,
+        &mut progress,
+    )
 }
 
 pub fn run_backup_prune(dry_run: bool) -> Result<()> {
     let (restic_repo, restic_password) = load_restic_config()?;
-    restic_prune(&restic_repo, &restic_password, dry_run)
+    let mut progress = TerminalProgress::new("");
+    restic_prune(&restic_repo, &restic_password, dry_run, &mut progress)
 }
 
 pub struct VerifyOptions {

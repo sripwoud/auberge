@@ -2,7 +2,7 @@ use crate::output;
 use crate::playbook_meta::BackupRecipe;
 use crate::services::backup::executor::RecipeExecutor;
 use crate::services::backup::restic::{self, ResticMessage, parse_restic_message};
-use crate::services::progress::{Progress, TerminalProgress};
+use crate::services::progress::Progress;
 use crate::services::ssh::SshSession;
 use eyre::{Context, Result};
 use std::collections::HashMap;
@@ -171,60 +171,116 @@ fn forget_args(dry_run: bool) -> Vec<&'static str> {
     args
 }
 
+/// Whether restic's repository already exists at the configured location.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RepoState {
+    Initialized,
+    Uninitialized,
+}
+
 pub fn restic_push(
     restic_repo: &str,
     restic_password: &str,
     backup_dir: &Path,
     host: &str,
+    progress: &mut dyn Progress,
 ) -> Result<()> {
-    output::info(&format!("Pushing {} to restic", backup_dir.display()));
+    drive_restic_push(
+        backup_dir,
+        progress,
+        || probe_repo(restic_repo, restic_password),
+        || init_repo(restic_repo, restic_password),
+        |progress| stream_push(restic_repo, restic_password, backup_dir, host, progress),
+    )
+}
 
-    let mut progress = TerminalProgress::new("Checking restic repository");
+/// The push's ordering and its whole output, over closures that stand for the
+/// three restic invocations.
+///
+/// Split out so both are assertable without restic: what a run reports is the
+/// event stream, and the branch that decides whether the repository is created
+/// first is otherwise reachable only against a repository that does not exist.
+fn drive_restic_push(
+    backup_dir: &Path,
+    progress: &mut dyn Progress,
+    probe: impl FnOnce() -> Result<RepoState>,
+    init: impl FnOnce() -> Result<()>,
+    push: impl FnOnce(&mut dyn Progress) -> Result<Option<String>>,
+) -> Result<()> {
+    progress.info(&format!("Pushing {} to restic", backup_dir.display()));
+    progress.task_started("Checking restic repository");
+
+    if probe()? == RepoState::Uninitialized {
+        progress.task_started("Initializing restic repository");
+        init()?;
+    }
+
+    progress.task_started(&format!("Pushing {}", backup_dir.display()));
+    let pushed = push(&mut *progress);
+    progress.task_done();
+
+    match pushed? {
+        Some(id) => progress.success(&format!("Push complete: snapshot {}", id)),
+        None => progress.success("Push complete"),
+    }
+
+    Ok(())
+}
+
+fn probe_repo(restic_repo: &str, restic_password: &str) -> Result<RepoState> {
     let snapshots_check = restic::command(restic_repo, restic_password)
         .arg("snapshots")
         .arg("--json")
         .output();
 
-    let needs_init = match snapshots_check {
+    match snapshots_check {
         Ok(out) => {
             let stderr_text = String::from_utf8_lossy(&out.stderr);
             let lines = output::subprocess_output("restic", &stderr_text);
             if out.status.success() {
                 output::clear_subprocess_lines(lines);
-                false
+                Ok(RepoState::Initialized)
             } else if stderr_text.contains("Is there a repository at the following location")
                 || stderr_text.contains("unable to open config file")
             {
                 output::clear_subprocess_lines(lines);
-                true
+                Ok(RepoState::Uninitialized)
             } else {
                 eyre::bail!("restic snapshots failed: {}", stderr_text.trim());
             }
         }
         Err(_) => eyre::bail!("restic not found. Install restic: https://restic.net"),
-    };
-
-    if needs_init {
-        progress.task_started("Initializing restic repository");
-        let init_output = restic::command(restic_repo, restic_password)
-            .arg("init")
-            .output()
-            .wrap_err("Failed to initialize restic repository")?;
-        let stderr_text = String::from_utf8_lossy(&init_output.stderr);
-        let lines = output::subprocess_output("restic", &stderr_text);
-        if init_output.status.success() {
-            output::clear_subprocess_lines(lines);
-        }
-
-        if !init_output.status.success() {
-            eyre::bail!(
-                "Failed to initialize restic repository: {}",
-                stderr_text.trim()
-            );
-        }
     }
+}
 
-    progress.task_started(&format!("Pushing {}", backup_dir.display()));
+fn init_repo(restic_repo: &str, restic_password: &str) -> Result<()> {
+    let init_output = restic::command(restic_repo, restic_password)
+        .arg("init")
+        .output()
+        .wrap_err("Failed to initialize restic repository")?;
+    let stderr_text = String::from_utf8_lossy(&init_output.stderr);
+    let lines = output::subprocess_output("restic", &stderr_text);
+
+    if !init_output.status.success() {
+        eyre::bail!(
+            "Failed to initialize restic repository: {}",
+            stderr_text.trim()
+        );
+    }
+    output::clear_subprocess_lines(lines);
+
+    Ok(())
+}
+
+/// Runs `restic backup`, reporting bytes as they land. `Ok(None)` is a
+/// successful push whose summary message never arrived.
+fn stream_push(
+    restic_repo: &str,
+    restic_password: &str,
+    backup_dir: &Path,
+    host: &str,
+    progress: &mut dyn Progress,
+) -> Result<Option<String>> {
     let mut snapshot_id: Option<String> = None;
 
     let result = output::stream_command_stdout(
@@ -249,56 +305,67 @@ pub fn restic_push(
     )
     .wrap_err("Failed to run restic backup")?;
 
-    progress.task_done();
-
     if !result.status.success() {
         if result.last_stderr.is_empty() {
             eyre::bail!("restic backup failed");
-        } else {
-            eyre::bail!("restic backup failed: {}", result.last_stderr.trim());
         }
+        eyre::bail!("restic backup failed: {}", result.last_stderr.trim());
     }
 
-    match snapshot_id {
-        Some(id) => output::success(&format!("Push complete: snapshot {}", id)),
-        None => output::success("Push complete"),
-    };
+    Ok(snapshot_id)
+}
+
+pub fn restic_prune(
+    restic_repo: &str,
+    restic_password: &str,
+    dry_run: bool,
+    progress: &mut dyn Progress,
+) -> Result<()> {
+    drive_restic_prune(dry_run, progress, || {
+        forget_snapshots(restic_repo, restic_password, dry_run)
+    })
+}
+
+fn drive_restic_prune(
+    dry_run: bool,
+    progress: &mut dyn Progress,
+    forget: impl FnOnce() -> Result<String>,
+) -> Result<()> {
+    progress.task_started("Pruning restic snapshots");
+    let report = forget();
+    progress.task_done();
+
+    let report = report?;
+    let report = report.trim();
+    if !report.is_empty() {
+        progress.line(report);
+    }
+
+    if dry_run {
+        progress.info("Dry run completed (no changes made)");
+    } else {
+        progress.success("Prune complete");
+    }
 
     Ok(())
 }
 
-pub fn restic_prune(restic_repo: &str, restic_password: &str, dry_run: bool) -> Result<()> {
-    let mut progress = TerminalProgress::new("Pruning restic snapshots");
-
+/// Runs `restic forget --prune`, returning restic's own retention report.
+fn forget_snapshots(restic_repo: &str, restic_password: &str, dry_run: bool) -> Result<String> {
     let mut cmd = restic::command(restic_repo, restic_password);
     cmd.args(forget_args(dry_run));
 
     let prune_output = cmd.output().wrap_err("Failed to run restic forget")?;
 
-    progress.task_done();
-
     let stderr_text = String::from_utf8_lossy(&prune_output.stderr);
     let lines = output::subprocess_output("restic", &stderr_text);
-    if prune_output.status.success() {
-        output::clear_subprocess_lines(lines);
-    }
 
     if !prune_output.status.success() {
         eyre::bail!("restic prune failed: {}", stderr_text.trim());
     }
+    output::clear_subprocess_lines(lines);
 
-    let stdout = String::from_utf8_lossy(&prune_output.stdout);
-    if !stdout.is_empty() {
-        eprintln!("{}", stdout.trim());
-    }
-
-    if dry_run {
-        output::info("Dry run completed (no changes made)");
-    } else {
-        output::success("Prune complete");
-    }
-
-    Ok(())
+    Ok(String::from_utf8_lossy(&prune_output.stdout).into_owned())
 }
 
 fn calculate_dir_size(path: &Path) -> Result<u64> {
@@ -418,6 +485,231 @@ mod tests {
     #[test]
     fn forget_args_dry_run_appends_flag() {
         assert!(forget_args(true).contains(&"--dry-run"));
+    }
+
+    fn push_dir() -> &'static Path {
+        Path::new("/backups/myserver/2026-04-28_03-00-00")
+    }
+
+    #[test]
+    fn push_initializes_an_absent_repository_before_pushing() {
+        let mut progress = MockProgress::new();
+        let mut initialized = false;
+
+        drive_restic_push(
+            push_dir(),
+            &mut progress,
+            || Ok(RepoState::Uninitialized),
+            || {
+                initialized = true;
+                Ok(())
+            },
+            |_| Ok(Some("abc123".to_string())),
+        )
+        .unwrap();
+
+        assert!(initialized);
+        assert_eq!(
+            progress.events(),
+            [
+                ProgressEvent::Info(
+                    "Pushing /backups/myserver/2026-04-28_03-00-00 to restic".to_string()
+                ),
+                ProgressEvent::TaskStarted("Checking restic repository".to_string()),
+                ProgressEvent::TaskStarted("Initializing restic repository".to_string()),
+                ProgressEvent::TaskStarted(
+                    "Pushing /backups/myserver/2026-04-28_03-00-00".to_string()
+                ),
+                ProgressEvent::TaskDone,
+                ProgressEvent::Success("Push complete: snapshot abc123".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn push_leaves_an_initialized_repository_alone() {
+        let mut progress = MockProgress::new();
+
+        drive_restic_push(
+            push_dir(),
+            &mut progress,
+            || Ok(RepoState::Initialized),
+            || panic!("an initialized repository must not be re-initialized"),
+            |_| Ok(Some("abc123".to_string())),
+        )
+        .unwrap();
+
+        assert!(!progress.events().contains(&ProgressEvent::TaskStarted(
+            "Initializing restic repository".to_string()
+        )));
+    }
+
+    // restic reports the snapshot id in a summary message; a push that lands
+    // without one still succeeded, and says so without inventing an id.
+    #[test]
+    fn push_reports_completion_when_no_snapshot_id_arrives() {
+        let mut progress = MockProgress::new();
+
+        drive_restic_push(
+            push_dir(),
+            &mut progress,
+            || Ok(RepoState::Initialized),
+            || Ok(()),
+            |_| Ok(None),
+        )
+        .unwrap();
+
+        assert_eq!(
+            progress.events().last(),
+            Some(&ProgressEvent::Success("Push complete".to_string()))
+        );
+    }
+
+    #[test]
+    fn push_forwards_the_bytes_restic_reports() {
+        let mut progress = MockProgress::new();
+
+        drive_restic_push(
+            push_dir(),
+            &mut progress,
+            || Ok(RepoState::Initialized),
+            || Ok(()),
+            |progress| {
+                progress.set_total(Some(9_300_000_000));
+                progress.bytes_transferred(1_200_000_000);
+                Ok(Some("abc123".to_string()))
+            },
+        )
+        .unwrap();
+
+        let events = progress.events();
+        assert!(events.contains(&ProgressEvent::SetTotal(Some(9_300_000_000))));
+        assert!(events.contains(&ProgressEvent::BytesTransferred(1_200_000_000)));
+    }
+
+    #[test]
+    fn push_that_fails_announces_no_completion() {
+        let mut progress = MockProgress::new();
+
+        let err = drive_restic_push(
+            push_dir(),
+            &mut progress,
+            || Ok(RepoState::Initialized),
+            || Ok(()),
+            |_| eyre::bail!("restic backup failed: no space left on device"),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("no space left on device"));
+        let events = progress.events();
+        assert_eq!(events.last(), Some(&ProgressEvent::TaskDone));
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, ProgressEvent::Success(_)))
+        );
+    }
+
+    #[test]
+    fn push_stops_before_pushing_when_the_repository_cannot_be_read() {
+        let mut progress = MockProgress::new();
+
+        let err = drive_restic_push(
+            push_dir(),
+            &mut progress,
+            || eyre::bail!("restic snapshots failed: permission denied"),
+            || panic!("an unreadable repository must not be initialized"),
+            |_| panic!("an unreadable repository must not be pushed to"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("permission denied"));
+
+        assert_eq!(
+            progress.events(),
+            [
+                ProgressEvent::Info(
+                    "Pushing /backups/myserver/2026-04-28_03-00-00 to restic".to_string()
+                ),
+                ProgressEvent::TaskStarted("Checking restic repository".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn prune_reports_restics_own_retention_report() {
+        let mut progress = MockProgress::new();
+
+        drive_restic_prune(false, &mut progress, || {
+            Ok("Applying Policy: keep 7 daily snapshots\nremove 2 snapshots\n".to_string())
+        })
+        .unwrap();
+
+        assert_eq!(
+            progress.events(),
+            [
+                ProgressEvent::TaskStarted("Pruning restic snapshots".to_string()),
+                ProgressEvent::TaskDone,
+                ProgressEvent::Line(
+                    "Applying Policy: keep 7 daily snapshots\nremove 2 snapshots".to_string()
+                ),
+                ProgressEvent::Success("Prune complete".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn prune_dry_run_reports_that_nothing_changed() {
+        let mut progress = MockProgress::new();
+
+        drive_restic_prune(true, &mut progress, || Ok("remove 2 snapshots".to_string())).unwrap();
+
+        let events = progress.events();
+        assert_eq!(
+            events.last(),
+            Some(&ProgressEvent::Info(
+                "Dry run completed (no changes made)".to_string()
+            ))
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, ProgressEvent::Success(_)))
+        );
+    }
+
+    #[test]
+    fn prune_with_nothing_to_report_emits_no_line() {
+        let mut progress = MockProgress::new();
+
+        drive_restic_prune(false, &mut progress, || Ok("  \n".to_string())).unwrap();
+
+        assert_eq!(
+            progress.events(),
+            [
+                ProgressEvent::TaskStarted("Pruning restic snapshots".to_string()),
+                ProgressEvent::TaskDone,
+                ProgressEvent::Success("Prune complete".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn prune_that_fails_announces_no_completion() {
+        let mut progress = MockProgress::new();
+
+        let err = drive_restic_prune(false, &mut progress, || {
+            eyre::bail!("restic prune failed: repository is locked")
+        })
+        .unwrap_err();
+
+        assert!(err.to_string().contains("repository is locked"));
+        assert_eq!(
+            progress.events(),
+            [
+                ProgressEvent::TaskStarted("Pruning restic snapshots".to_string()),
+                ProgressEvent::TaskDone,
+            ]
+        );
     }
 
     #[test]
