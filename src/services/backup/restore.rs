@@ -3,7 +3,7 @@ use crate::services::backup::executor::{RecipeExecutor, staged_parameters};
 use crate::services::backup::session::{BackupSession, SessionOpts};
 use crate::services::progress::Progress;
 use crate::services::ssh::SshSession;
-use eyre::{Context, Result};
+use eyre::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -16,7 +16,7 @@ pub struct RestoreTarget {
 }
 
 #[derive(Debug, Clone)]
-pub struct RestoreOpts {
+pub struct RestoreSessionOpts {
     pub host_name: String,
     /// Where the emergency backup stages, as `{backup_root}/{host}/{timestamp}/`.
     pub backup_root: PathBuf,
@@ -74,6 +74,15 @@ pub enum RestoreOutcome {
     /// The emergency backup failed and the injected decision declined to
     /// continue; nothing was restored.
     Cancelled { emergency_error: String },
+    /// An App's restore failed: later Apps were not attempted and the
+    /// redeploy did not run. A failure is an outcome rather than an error so
+    /// the emergency backup is still reported — a half-overwritten Host is
+    /// exactly when the operator needs the rollback pointer.
+    Failed {
+        emergency: EmergencyOutcome,
+        app: String,
+        error: String,
+    },
     Restored {
         emergency: EmergencyOutcome,
         redeploy: RedeployOutcome,
@@ -91,7 +100,7 @@ pub enum RestoreOutcome {
 pub struct RestoreSession<'a, S: SshSession + ?Sized> {
     ssh: &'a S,
     plan: &'a [RestoreTarget],
-    opts: RestoreOpts,
+    opts: RestoreSessionOpts,
     progress_for: RestoreProgressFactory<'a>,
     redeploy: Box<dyn FnOnce() -> RedeployOutcome + 'a>,
     continue_without_emergency: Box<dyn FnOnce(&str) -> bool + 'a>,
@@ -101,7 +110,7 @@ impl<'a, S: SshSession + ?Sized> RestoreSession<'a, S> {
     pub fn new(
         ssh: &'a S,
         plan: &'a [RestoreTarget],
-        opts: RestoreOpts,
+        opts: RestoreSessionOpts,
         progress_for: impl Fn(RestorePhase, &str) -> Box<dyn Progress> + 'a,
         redeploy: impl FnOnce() -> RedeployOutcome + 'a,
         continue_without_emergency: impl FnOnce(&str) -> bool + 'a,
@@ -116,11 +125,11 @@ impl<'a, S: SshSession + ?Sized> RestoreSession<'a, S> {
         }
     }
 
-    /// An App failure aborts the run — later Apps are not attempted and the
+    /// An App failure ends the run — later Apps are not attempted and the
     /// redeploy does not happen, unlike `BackupSession::create`, which carries
     /// on: a failed backup skips one App, a failed restore leaves the Host
     /// half-overwritten and every step after it would widen the damage.
-    pub fn restore(self) -> Result<RestoreOutcome> {
+    pub fn restore(self) -> RestoreOutcome {
         let Self {
             ssh,
             plan,
@@ -138,9 +147,9 @@ impl<'a, S: SshSession + ?Sized> RestoreSession<'a, S> {
                 Err(e) => {
                     let error = format!("{e:#}");
                     if !continue_without_emergency(&error) {
-                        return Ok(RestoreOutcome::Cancelled {
+                        return RestoreOutcome::Cancelled {
                             emergency_error: error,
-                        });
+                        };
                     }
                     EmergencyOutcome::ContinuedWithout { error }
                 }
@@ -152,16 +161,20 @@ impl<'a, S: SshSession + ?Sized> RestoreSession<'a, S> {
         let executor = RecipeExecutor::new(ssh);
         for target in plan {
             let mut progress = progress_for(RestorePhase::AppRestore, &target.app);
-            executor
-                .restore(&target.recipe, &target.backup_path, &mut *progress)
-                .wrap_err_with(|| format!("Failed to restore {}", target.app))?;
+            if let Err(e) = executor.restore(&target.recipe, &target.backup_path, &mut *progress) {
+                return RestoreOutcome::Failed {
+                    emergency,
+                    app: target.app.clone(),
+                    error: format!("{e:#}"),
+                };
+            }
             progress.success(&format!("{} restore completed", target.app));
         }
 
-        Ok(RestoreOutcome::Restored {
+        RestoreOutcome::Restored {
             emergency,
             redeploy: redeploy(),
-        })
+        }
     }
 }
 
@@ -175,7 +188,7 @@ impl<'a, S: SshSession + ?Sized> RestoreSession<'a, S> {
 fn emergency_backup<S: SshSession + ?Sized>(
     ssh: &S,
     plan: &[RestoreTarget],
-    opts: &RestoreOpts,
+    opts: &RestoreSessionOpts,
     progress_for: &RestoreProgressFactory<'_>,
 ) -> Result<()> {
     let mut parameters: HashMap<String, bool> = HashMap::new();
@@ -248,8 +261,8 @@ mod tests {
         ]
     }
 
-    fn opts(backup_root: &Path, cross_host: bool) -> RestoreOpts {
-        RestoreOpts {
+    fn opts(backup_root: &Path, cross_host: bool) -> RestoreSessionOpts {
+        RestoreSessionOpts {
             host_name: "myserver".to_string(),
             backup_root: backup_root.to_path_buf(),
             emergency_timestamp: "2026-08-28_09-00-00".to_string(),
@@ -298,7 +311,7 @@ mod tests {
             || RedeployOutcome::Completed,
             |_| panic!("a same-host restore has no emergency backup to fail"),
         );
-        let outcome = session.restore().unwrap();
+        let outcome = session.restore();
 
         assert_eq!(
             outcome,
@@ -333,7 +346,7 @@ mod tests {
             || RedeployOutcome::Completed,
             |_| panic!("the emergency backup succeeded, no decision to make"),
         );
-        let outcome = session.restore().unwrap();
+        let outcome = session.restore();
 
         assert_eq!(
             outcome,
@@ -410,7 +423,7 @@ mod tests {
             || RedeployOutcome::Completed,
             |_| panic!("the emergency backup succeeded, no decision to make"),
         );
-        session.restore().unwrap();
+        session.restore();
 
         assert!(
             rsync_from_remotes(&mock.calls()).contains(&"/srv/music".to_string()),
@@ -457,7 +470,7 @@ mod tests {
                 false
             },
         );
-        let outcome = session.restore().unwrap();
+        let outcome = session.restore();
 
         assert_eq!(
             outcome,
@@ -488,7 +501,7 @@ mod tests {
             || RedeployOutcome::Completed,
             |_| true,
         );
-        let outcome = session.restore().unwrap();
+        let outcome = session.restore();
 
         assert_eq!(
             outcome,
@@ -525,12 +538,60 @@ mod tests {
             || panic!("a failed restore must not redeploy"),
             |_| panic!("a same-host restore has no emergency backup to fail"),
         );
-        let err = session.restore().unwrap_err().to_string();
+        let outcome = session.restore();
 
-        assert!(err.contains("Failed to restore baikal"), "{err}");
+        let RestoreOutcome::Failed {
+            emergency,
+            app,
+            error,
+        } = outcome
+        else {
+            panic!("a failed App must end the run as Failed, got {outcome:?}");
+        };
+        assert_eq!(emergency, EmergencyOutcome::NotNeeded);
+        assert_eq!(app, "baikal");
+        assert!(error.contains("post_restore_command failed"), "{error}");
         assert!(
             !rsync_to_remotes(&mock.calls()).contains(&"/opt/bichon/data".to_string()),
             "an App after the failure must not be attempted"
+        );
+    }
+
+    // The rollback pointer must survive a mid-restore failure: a
+    // half-overwritten Host is exactly when the operator reaches for the
+    // emergency backup, so the outcome carries it even when the run ends
+    // early.
+    #[test]
+    fn a_mid_restore_failure_still_reports_the_emergency_backup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock = MockSshSession::new();
+        // The emergency backup issues no `run` calls for this recipe, so the
+        // staged failure lands on the restore's post_restore_command.
+        mock.stage_run_result(failed_dump());
+
+        let mut broken = recipe(&["/opt/baikal/Specific"]);
+        broken.post_restore_command = Some("false".to_string());
+        let plan = vec![target("baikal", broken)];
+        let events = MockProgress::new();
+
+        let session = RestoreSession::new(
+            &mock,
+            &plan,
+            opts(tmp.path(), true),
+            recording(&events),
+            || panic!("a failed restore must not redeploy"),
+            |_| panic!("the emergency backup succeeded, no decision to make"),
+        );
+        let outcome = session.restore();
+
+        let RestoreOutcome::Failed { emergency, .. } = outcome else {
+            panic!("a failed App must end the run as Failed, got {outcome:?}");
+        };
+        assert_eq!(
+            emergency,
+            EmergencyOutcome::Created {
+                timestamp: "2026-08-28_09-00-00".to_string()
+            }
         );
     }
 
@@ -553,7 +614,7 @@ mod tests {
             },
             |_| panic!("a same-host restore has no emergency backup to fail"),
         );
-        let outcome = session.restore().unwrap();
+        let outcome = session.restore();
 
         assert_eq!(ops_seen_at_redeploy.into_inner(), Some(mock.calls().len()));
         assert_eq!(
@@ -583,7 +644,7 @@ mod tests {
             || RedeployOutcome::Completed,
             |_| panic!("the emergency backup succeeded, no decision to make"),
         );
-        session.restore().unwrap();
+        session.restore();
 
         assert_eq!(
             asked.into_inner(),
@@ -611,7 +672,7 @@ mod tests {
             || RedeployOutcome::Completed,
             |_| panic!("a same-host restore has no emergency backup to fail"),
         );
-        session.restore().unwrap();
+        session.restore();
 
         let stream = events.events();
         assert!(stream.contains(&ProgressEvent::Success(

@@ -11,8 +11,8 @@ use crate::services::backup::recipe::{
 };
 use crate::services::backup::restic;
 use crate::services::backup::restore::{
-    EmergencyOutcome, RedeployOutcome, RestoreOpts, RestoreOutcome, RestorePhase, RestoreSession,
-    RestoreTarget,
+    EmergencyOutcome, RedeployOutcome, RestoreOutcome, RestorePhase, RestoreSession,
+    RestoreSessionOpts, RestoreTarget,
 };
 use crate::services::backup::session::{
     BackupSession, CreateOutcome, SessionOpts, calculate_dir_size, restic_prune, restic_push,
@@ -810,7 +810,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
     let session = RestoreSession::new(
         &ssh,
         &restore_plan,
-        RestoreOpts {
+        RestoreSessionOpts {
             host_name: host.name.clone(),
             backup_root: backup_root.clone(),
             emergency_timestamp: Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string(),
@@ -840,7 +840,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         },
     );
 
-    let outcome = session.restore()?;
+    let outcome = session.restore();
     render_restore_outcome(
         &outcome,
         &restore_plan,
@@ -848,8 +848,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         &backup_root,
         &app_names,
         is_cross_host,
-    );
-    Ok(())
+    )
 }
 
 /// Re-run the apps playbook over the restored apps so ownership and
@@ -935,11 +934,19 @@ fn render_restore_outcome(
     backup_root: &Path,
     apps: &[String],
     is_cross_host: bool,
-) {
+) -> Result<()> {
     let (emergency, redeploy) = match outcome {
         RestoreOutcome::Cancelled { .. } => {
             eprintln!("Restore cancelled");
-            return;
+            return Ok(());
+        }
+        RestoreOutcome::Failed {
+            emergency,
+            app,
+            error,
+        } => {
+            render_emergency_backup(emergency, host, backup_root);
+            eyre::bail!("Failed to restore {}: {}", app, error);
         }
         RestoreOutcome::Restored {
             emergency,
@@ -956,6 +963,18 @@ fn render_restore_outcome(
         );
     }
 
+    render_emergency_backup(emergency, host, backup_root);
+
+    if is_cross_host {
+        render_post_restore_actions(plan, host);
+    }
+
+    Ok(())
+}
+
+/// The rollback pointer. Rendered for failed restores too: a half-overwritten
+/// Host is exactly when the operator reaches for it.
+fn render_emergency_backup(emergency: &EmergencyOutcome, host: &Host, backup_root: &Path) {
     if let EmergencyOutcome::Created { timestamp } = emergency {
         eprintln!("\n✓ Emergency backup created: pre-migration-{}", timestamp);
         eprintln!(
@@ -964,10 +983,6 @@ fn render_restore_outcome(
             host.name,
             timestamp
         );
-    }
-
-    if is_cross_host {
-        render_post_restore_actions(plan, host);
     }
 }
 
