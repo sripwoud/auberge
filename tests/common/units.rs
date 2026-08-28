@@ -235,9 +235,14 @@ impl Body {
         }
     }
 
-    /// The file's text. A `src` naming a file the role does not hold is a hard
-    /// stop: the deploy would fail on it, and reading it as an absent unit
-    /// would take one out of the domain instead.
+    /// The file's text, read out of the role.
+    ///
+    /// A `src` the role does not hold is a hard stop rather than an absent
+    /// unit, which would leave the domain one short. That the deploy would
+    /// fail on it too holds only for a `src` ansible reads locally:
+    /// `remote_src: true` names a path on the Host, so such a task is valid
+    /// and its body is not in the repo at all. [`installed_by`] stops on one
+    /// before reaching here, with the reason it can actually give.
     fn text(&self, role: &str) -> String {
         match self {
             Body::Inline(text) => text.clone(),
@@ -295,6 +300,14 @@ fn installed_by(role: &str, vars: &BTreeMap<String, String>) -> Vec<InstalledUni
                 let Some((name, scope, dropin)) = unit_configured_at(&resolve(&dest, vars)) else {
                     continue;
                 };
+                assert!(
+                    field(args, "remote_src")
+                        .and_then(Value::as_bool)
+                        .is_none_or(|remote| !remote),
+                    "{role}: `{dest}` installs a systemd unit from a `remote_src`, \
+                     so its body is a path on the Host and not in this repo; teach \
+                     this scan where to read it before relying on it"
+                );
                 out.push(InstalledUnit {
                     role: role.to_string(),
                     name,
@@ -364,6 +377,30 @@ pub const FLEET_UNIT_FILES: &[&str] = &[
 ];
 
 fn pin_reach(scanned: &[InstalledUnit]) {
+    // Before the set comparison, because a set cannot see this. Two tasks in
+    // one role writing the same dest -- the `when: production` /
+    // `when: not production` pair the repo writes elsewhere -- collapse into
+    // one entry here and pass the pin. Downstream they do not collapse:
+    // `start_limit` groups by `(role, name)` and sorts by `dropin`, which is
+    // `None` for both, so the second file's directives override the first's as
+    // if it were a drop-in, and `assignments_of` reports the same file name for
+    // each. Nothing in the fleet writes one twice today.
+    let mut counted: BTreeMap<String, usize> = BTreeMap::new();
+    for id in scanned.iter().map(InstalledUnit::file_id) {
+        *counted.entry(id).or_default() += 1;
+    }
+    let twice: Vec<&String> = counted
+        .iter()
+        .filter(|(_, count)| **count > 1)
+        .map(|(id, _)| id)
+        .collect();
+    assert!(
+        twice.is_empty(),
+        "these unit files are written by more than one task: {twice:?}. Which \
+         one lands is a `when:` this scan does not weigh, and a fence reading \
+         the merged directives would read the second as refining the first"
+    );
+
     let seen: BTreeSet<String> = scanned.iter().map(InstalledUnit::file_id).collect();
     let listed: BTreeSet<String> = FLEET_UNIT_FILES.iter().map(|id| id.to_string()).collect();
 

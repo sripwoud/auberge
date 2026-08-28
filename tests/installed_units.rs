@@ -35,15 +35,21 @@ fn file(id: &str) -> common::units::InstalledUnit {
 /// The reach pin, under a name. It fires inside [`fleet_units`] so that every
 /// fence inherits it rather than trusting the scan, which means its failure
 /// surfaces in whichever fence happened to call first; this is the assertion
-/// that says so out loud, and that the pin is not vacuous — a
-/// `FLEET_UNIT_FILES` emptied to `&[]` would make the two-way difference pass
-/// over nothing.
+/// that says so out loud.
+///
+/// The one shape the pin cannot catch by itself is both halves going empty at
+/// once. Emptying `FLEET_UNIT_FILES` alone fails inside it — every scanned file
+/// lands in `unlisted` — and so does a scan that stops finding anything while
+/// the list still holds 39 names. It is the pair that passes: nothing scanned
+/// and nothing listed makes the difference empty in both directions, and all
+/// five fences then run over an empty domain. That is what the emptiness check
+/// below is for, and it is the only thing it is for.
 #[test]
 fn test_the_scan_is_pinned_to_the_files_it_finds() {
     assert!(
         !FLEET_UNIT_FILES.is_empty(),
-        "FLEET_UNIT_FILES is empty, so the reach pin compares two empty sets and \
-         all five fences over this domain pass having seen nothing"
+        "FLEET_UNIT_FILES is empty, so a scan that found nothing compares two \
+         empty sets and all five fences over this domain pass having seen nothing"
     );
     assert_eq!(
         fleet_units().len(),
