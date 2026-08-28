@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
+use auberge::playbook_meta::qualified_unit_name;
 use serde_yaml::{Mapping, Sequence, Value};
 
 mod common;
 
+use common::units::{InstalledUnit, Scope, fleet_units};
 use common::{all_roles, defaults, field, resolve, role_dir, role_tasks, strings, task_name};
 
 /// A version bump replaces an artifact on a Host where the old one is already
@@ -55,16 +57,6 @@ const SERVICE_MODULES: &[&str] = &[
     "ansible.builtin.service",
 ];
 
-/// A unit's name as systemd knows it: bare names are services, and a name that
-/// already carries a type keeps it.
-fn unit_name(name: &str) -> String {
-    if name.contains('.') {
-        name.to_string()
-    } else {
-        format!("{name}.service")
-    }
-}
-
 struct Unit {
     name: String,
     /// The absolute paths its `ExecStart` and `WorkingDirectory` name -- what it
@@ -114,15 +106,19 @@ fn arguments(line: &str) -> Vec<String> {
     out
 }
 
-fn directive_paths(body: &str, vars: &BTreeMap<String, String>) -> Vec<String> {
-    body.lines()
-        .filter_map(|line| {
-            ["ExecStart=", "WorkingDirectory="]
-                .iter()
-                .find_map(|directive| line.strip_prefix(directive))
+/// The absolute paths a unit's `[Service]` names as what it runs, in file
+/// order. Read from that section alone: `ExecStart` outside it configures
+/// nothing, so a unit whose paths were read from `[Install]` would be judged
+/// against an artifact systemd never execs.
+fn directive_paths(unit: &InstalledUnit, vars: &BTreeMap<String, String>) -> Vec<String> {
+    unit.directives
+        .iter()
+        .filter(|directive| {
+            directive.section == "Service"
+                && ["ExecStart", "WorkingDirectory"].contains(&directive.key.as_str())
         })
-        .flat_map(|value| {
-            arguments(&resolve(value.trim(), vars))
+        .flat_map(|directive| {
+            arguments(&resolve(&directive.value, vars))
                 .into_iter()
                 .filter(|token| token.starts_with('/'))
                 .collect::<Vec<_>>()
@@ -130,63 +126,25 @@ fn directive_paths(body: &str, vars: &BTreeMap<String, String>) -> Vec<String> {
         .collect()
 }
 
-/// Units the role deploys, read out of the templates it renders into
-/// `/etc/systemd/system`.
-fn units(role: &str, vars: &BTreeMap<String, String>) -> Vec<Unit> {
-    let mut units = Vec::new();
-    for task in role_tasks(role) {
-        for module in ["ansible.builtin.template", "ansible.builtin.copy"] {
-            let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
-                continue;
-            };
-            let (Some(dest), Some(src)) = (
-                field(args, "dest").and_then(Value::as_str),
-                field(args, "src").and_then(Value::as_str),
-            ) else {
-                continue;
-            };
-            // A drop-in refines a unit rather than being one, and the units
-            // these refine (navidrome's, icecast's, caddy's) are installed by
-            // apt, not templated by the role that budgets their memory.
-            if !dest.starts_with("/etc/systemd/system")
-                || dest
-                    .trim_start_matches("/etc/systemd/system/")
-                    .contains('/')
-            {
-                continue;
-            }
-            let items = strings(field(&task.body, "loop"));
-            let expansions: Vec<(String, String)> = if items.is_empty() {
-                vec![(dest.to_string(), src.to_string())]
-            } else {
-                items
-                    .iter()
-                    .map(|item| {
-                        (
-                            dest.replace("{{ item }}", item),
-                            src.replace("{{ item }}", item),
-                        )
-                    })
-                    .collect()
-            };
-            for (dest, src) in expansions {
-                let file = src.rsplit('/').next().expect("a src names a file");
-                let template = ["templates", "files"]
-                    .iter()
-                    .map(|dir| role_dir(role).join(dir).join(file))
-                    .find(|path| path.is_file())
-                    .unwrap_or_else(|| panic!("{role}: {file} is deployed but does not exist"));
-                let body = fs::read_to_string(template).expect("a found template must be readable");
-                units.push(Unit {
-                    name: unit_name(dest.rsplit('/').next().expect("a dest names a file")),
-                    runs: directive_paths(&body, vars),
-                    holds_the_artifact: !body.contains("Type=oneshot")
-                        || body.contains("RemainAfterExit"),
-                });
-            }
-        }
-    }
-    units
+/// Units the role deploys, out of the system manager's unit files the shared
+/// scan found.
+///
+/// Drop-ins are filtered out: one refines a unit installed by something else
+/// (apt's navidrome, icecast, caddy), and the artifact that unit runs is not in
+/// the repo to follow. A user-manager unit is out of the model for the same
+/// reason it always was -- hermes's is, and carries a declared notify edge in
+/// `DECLARED_ROLES` instead.
+fn units(installed: &[InstalledUnit], role: &str, vars: &BTreeMap<String, String>) -> Vec<Unit> {
+    installed
+        .iter()
+        .filter(|unit| unit.role == role && unit.scope == Scope::System && unit.dropin.is_none())
+        .map(|unit| Unit {
+            name: unit.name.clone(),
+            runs: directive_paths(unit, vars),
+            holds_the_artifact: unit.last_in("Service", "Type") != Some("oneshot")
+                || unit.last_in("Service", "RemainAfterExit").is_some(),
+        })
+        .collect()
 }
 
 /// The units each of the role's handlers restarts. Only `state: restarted`
@@ -216,11 +174,13 @@ fn restart_handlers(role: &str, vars: &BTreeMap<String, String>) -> BTreeMap<Str
             };
             let items = strings(field(handler, "loop"));
             let restarted: Vec<String> = if items.is_empty() {
-                vec![unit_name(&resolve(target, vars))]
+                vec![qualified_unit_name(&resolve(target, vars))]
             } else {
                 items
                     .iter()
-                    .map(|item| unit_name(&resolve(&target.replace("{{ item }}", item), vars)))
+                    .map(|item| {
+                        qualified_unit_name(&resolve(&target.replace("{{ item }}", item), vars))
+                    })
                     .collect()
             };
             handlers.insert(name.to_string(), restarted);
@@ -249,11 +209,13 @@ fn stopped_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<(String, Ve
             };
             let items = strings(field(&task.body, "loop"));
             let names: Vec<String> = if items.is_empty() {
-                vec![unit_name(&resolve(target, vars))]
+                vec![qualified_unit_name(&resolve(target, vars))]
             } else {
                 items
                     .iter()
-                    .map(|item| unit_name(&resolve(&target.replace("{{ item }}", item), vars)))
+                    .map(|item| {
+                        qualified_unit_name(&resolve(&target.replace("{{ item }}", item), vars))
+                    })
                     .collect()
             };
             for name in names {
@@ -337,10 +299,11 @@ fn on_the_version_bump_path(role: &str, guards: &[String], args: &Mapping, dest:
 }
 
 fn replacements() -> Vec<Replacement> {
+    let installed = fleet_units();
     let mut found = Vec::new();
     for role in all_roles() {
         let vars = defaults(&role);
-        let units = units(&role, &vars);
+        let units = units(&installed, &role, &vars);
         if units.is_empty() {
             continue;
         }
@@ -628,7 +591,7 @@ fn test_an_install_the_model_cannot_prove_is_declared_and_wired() {
 #[test]
 fn test_a_timer_driven_oneshot_is_not_left_running_anything() {
     let vars = defaults("colporteur");
-    let unit = units("colporteur", &vars)
+    let unit = units(&fleet_units(), "colporteur", &vars)
         .into_iter()
         .find(|unit| unit.name == "colporteur.service")
         .expect("colporteur deploys colporteur.service");

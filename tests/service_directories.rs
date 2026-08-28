@@ -19,15 +19,8 @@ use serde_yaml::Value;
 
 mod common;
 
-use common::{all_roles, defaults, field, playbooks_dir, resolve, role_dir, role_tasks, strings};
-
-fn unit_name(name: &str) -> String {
-    if name.contains('.') {
-        name.to_string()
-    } else {
-        format!("{name}.service")
-    }
-}
+use common::units::{InstalledUnit, Scope, fleet_units};
+use common::{all_roles, defaults, field, playbooks_dir, resolve, role_tasks, strings};
 
 /// A unit whose `ReadWritePaths` is the service's whole writable world --
 /// which is only true under `ProtectSystem=strict`, so only those units carry
@@ -41,85 +34,56 @@ struct StrictUnit {
     grants: Vec<String>,
 }
 
-fn strict_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<StrictUnit> {
+/// The role's strict units, out of the system manager's unit files the shared
+/// scan found.
+///
+/// Drop-ins are filtered out rather than merged: what a drop-in refines was
+/// installed by something else (apt's navidrome, icecast), and the sandbox it
+/// runs under is not in the repo. Every directive is read from `[Service]`,
+/// which is the only section systemd applies a sandbox from — a
+/// `ProtectSystem=` under `[Unit]` sandboxes nothing, and reading one as strict
+/// would have this fence assert grants against a unit that has none.
+fn strict_units(
+    installed: &[InstalledUnit],
+    role: &str,
+    vars: &BTreeMap<String, String>,
+) -> Vec<StrictUnit> {
     let mut units = Vec::new();
-    for task in role_tasks(role) {
-        for module in ["ansible.builtin.template", "ansible.builtin.copy"] {
-            let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
-                continue;
-            };
-            let (Some(dest), Some(src)) = (
-                field(args, "dest").and_then(Value::as_str),
-                field(args, "src").and_then(Value::as_str),
-            ) else {
-                continue;
-            };
-            // A drop-in refines a unit installed by something else (apt's
-            // navidrome, icecast); what it refines is outside this model.
-            if !dest.starts_with("/etc/systemd/system")
-                || dest
-                    .trim_start_matches("/etc/systemd/system/")
-                    .contains('/')
-            {
-                continue;
-            }
-            let items = strings(field(&task.body, "loop"));
-            let expansions: Vec<(String, String)> = if items.is_empty() {
-                vec![(dest.to_string(), src.to_string())]
-            } else {
-                items
-                    .iter()
-                    .map(|item| {
-                        (
-                            dest.replace("{{ item }}", item),
-                            src.replace("{{ item }}", item),
-                        )
-                    })
-                    .collect()
-            };
-            for (dest, src) in expansions {
-                let file = src.rsplit('/').next().expect("a src names a file");
-                let template = ["templates", "files"]
-                    .iter()
-                    .map(|dir| role_dir(role).join(dir).join(file))
-                    .find(|path| path.is_file())
-                    .unwrap_or_else(|| panic!("{role}: {file} is deployed but does not exist"));
-                let body = fs::read_to_string(template).expect("a found template must be readable");
-                let directive = |name: &str| -> Option<String> {
-                    body.lines()
-                        .filter_map(|line| line.strip_prefix(name))
-                        .next_back()
-                        .map(|value| resolve(value.trim(), vars))
-                };
-                if directive("ProtectSystem=").as_deref() != Some("strict") {
-                    continue;
-                }
-                let name = unit_name(dest.rsplit('/').next().expect("a dest names a file"));
-                let grants: Vec<String> = body
-                    .lines()
-                    .filter_map(|line| line.strip_prefix("ReadWritePaths="))
-                    .flat_map(|value| {
-                        resolve(value.trim(), vars)
-                            .split_whitespace()
-                            .map(str::to_string)
-                            .collect::<Vec<_>>()
-                    })
-                    .collect();
-                for grant in &grants {
-                    assert!(
-                        grant.starts_with('/'),
-                        "{role}: `{name}` grants `{grant}`, which the role's defaults \
-                         cannot resolve to a path; a grant this fence cannot see would \
-                         fail open, so it fails loud instead"
-                    );
-                }
-                units.push(StrictUnit {
-                    name,
-                    user: directive("User=").unwrap_or_else(|| "root".to_string()),
-                    grants,
-                });
-            }
+    for unit in installed
+        .iter()
+        .filter(|unit| unit.role == role && unit.scope == Scope::System && unit.dropin.is_none())
+    {
+        let directive = |key: &str| {
+            unit.last_in("Service", key)
+                .map(|value| resolve(value, vars))
+        };
+        if directive("ProtectSystem").as_deref() != Some("strict") {
+            continue;
         }
+        let name = unit.name.clone();
+        let grants: Vec<String> = unit
+            .all_in("Service", "ReadWritePaths")
+            .into_iter()
+            .flat_map(|value| {
+                resolve(value, vars)
+                    .split_whitespace()
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for grant in &grants {
+            assert!(
+                grant.starts_with('/'),
+                "{role}: `{name}` grants `{grant}`, which the role's defaults \
+                 cannot resolve to a path; a grant this fence cannot see would \
+                 fail open, so it fails loud instead"
+            );
+        }
+        units.push(StrictUnit {
+            name,
+            user: directive("User").unwrap_or_else(|| "root".to_string()),
+            grants,
+        });
     }
     units
 }
@@ -652,10 +616,11 @@ const RECIPE_ONLY_PATHS: &[RecipeOnlyPath] = &[
 /// by exactly what you cannot see).
 fn scanned_roles() -> Vec<(String, Vec<StrictUnit>, BTreeSet<String>)> {
     let recipes = recipes();
+    let installed = fleet_units();
     let mut domain = Vec::new();
     for role in all_roles() {
         let vars = defaults(&role);
-        let units = strict_units(&role, &vars);
+        let units = strict_units(&installed, &role, &vars);
         if units.is_empty() && !recipes.contains_key(&role) {
             continue;
         }

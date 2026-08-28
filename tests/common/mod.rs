@@ -69,6 +69,10 @@ use std::path::{Path, PathBuf};
 
 use serde_yaml::{Mapping, Sequence, Value};
 
+/// The systemd units this walk's tasks install, one layer over it. Five fences
+/// re-derived that layer from these primitives before #668 folded it.
+pub mod units;
+
 /// A task the walk reached, with every `when:` standing over it.
 pub struct Task {
     pub body: Mapping,
