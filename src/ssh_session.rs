@@ -167,3 +167,96 @@ impl<'a> SshSession<'a> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_host() -> Host {
+        Host {
+            name: "test".to_string(),
+            address: "192.0.2.1".to_string(),
+            user: "deploy".to_string(),
+            port: 2222,
+            ssh_key: None,
+            tags: vec![],
+            description: None,
+            python_interpreter: None,
+            become_method: "sudo".to_string(),
+            tailscale_ip: None,
+        }
+    }
+
+    fn strings(args: &[OsString]) -> Vec<String> {
+        args.iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn test_ssh_args_contains_mux_options() {
+        let host = test_host();
+        let key = Path::new("/home/user/.ssh/id_ed25519");
+        let session = SshSession::new(&host, key);
+        let strs = strings(&session.ssh_args());
+        assert!(strs.contains(&"ControlMaster=auto".to_string()));
+        assert!(strs.contains(&"ControlPath=/tmp/ssh-%r@%h:%p".to_string()));
+        assert!(strs.contains(&"ControlPersist=60s".to_string()));
+    }
+
+    #[test]
+    fn test_ssh_args_includes_key_port_user_host() {
+        let host = test_host();
+        let key = Path::new("/home/user/.ssh/id_ed25519");
+        let session = SshSession::new(&host, key);
+        let strs = strings(&session.ssh_args());
+        assert!(strs.contains(&"/home/user/.ssh/id_ed25519".to_string()));
+        assert!(strs.contains(&"2222".to_string()));
+        assert!(strs.contains(&"deploy@192.0.2.1".to_string()));
+    }
+
+    #[test]
+    fn test_scp_args_uses_uppercase_p_for_port() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshSession::new(&host, key);
+        let strs = strings(&session.scp_args());
+        assert!(strs.contains(&"-P".to_string()));
+        assert!(!strs.contains(&"-p".to_string()));
+    }
+
+    #[test]
+    fn test_rsync_e_arg_contains_mux_and_key() {
+        let host = test_host();
+        let key = Path::new("/home/user/.ssh/id_ed25519");
+        let e_arg = SshSession::new(&host, key).rsync_e_arg();
+        assert!(e_arg.starts_with("ssh "));
+        assert!(e_arg.contains("ControlMaster=auto"));
+        assert!(e_arg.contains("ControlPath=/tmp/ssh-%r@%h:%p"));
+        assert!(e_arg.contains("ControlPersist=60s"));
+        assert!(e_arg.contains("-i /home/user/.ssh/id_ed25519"));
+        assert!(e_arg.contains("-p 2222"));
+    }
+
+    #[test]
+    fn test_rsync_e_arg_escapes_spaces_in_key_path() {
+        let host = test_host();
+        let key = Path::new("/home/user/my keys/id_ed25519");
+        let e_arg = SshSession::new(&host, key).rsync_e_arg();
+        assert!(!e_arg.contains("-i /home/user/my keys/id_ed25519"));
+        assert!(e_arg.contains("'/home/user/my keys/id_ed25519'"));
+    }
+
+    #[test]
+    fn test_mux_args_pairs_options_correctly() {
+        let strs = strings(&SshSession::mux_args());
+        for (i, s) in strs.iter().enumerate() {
+            if s == "-o" {
+                assert!(
+                    strs[i + 1].contains('='),
+                    "option after -o should be key=value"
+                );
+            }
+        }
+    }
+}
