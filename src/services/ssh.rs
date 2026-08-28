@@ -191,6 +191,15 @@ impl<'a> LiveSshSession<'a> {
             host,
         }
     }
+
+    /// A session for a Host no trust is established with yet. See
+    /// [`transport::Reach::FirstContact`] for what it gives up and why.
+    pub fn first_contact(host: &'a Host, ssh_key: &'a Path) -> Self {
+        Self {
+            inner: SshTransport::first_contact(host, ssh_key),
+            host,
+        }
+    }
 }
 
 impl SshSession for LiveSshSession<'_> {

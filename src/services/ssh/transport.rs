@@ -26,14 +26,59 @@ const SSH_MUX_OPTIONS: &[(&str, &str)] = &[
     ("ControlPersist", "60s"),
 ];
 
+/// Whether a connection may share a multiplexed master, and whether it keeps
+/// the operator's terminal. One choice rather than two flags, because both
+/// settings move together and for the same reason: whether trust with the Host
+/// is already established.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reach {
+    /// Reuse a warm control socket, capture output. Every command that runs
+    /// against a Host the operator already manages.
+    Shared,
+    /// No multiplexing, and stdin left attached to the terminal.
+    ///
+    /// `ssh add-key` authorizes a key over a connection made with a key the
+    /// operator *named*, and a reused master authenticates with whatever key
+    /// opened it — silently discarding that choice. It is also the CLI's one
+    /// first-contact command: its target comes from `ansible/inventory.yml`, so
+    /// no `hosts.toml` alias block supplies `StrictHostKeyChecking accept-new`,
+    /// and ssh may still need to ask about an unknown host key, or for a
+    /// passphrase no agent holds. A captured run answers neither.
+    FirstContact,
+}
+
 pub struct SshTransport<'a> {
     pub host: &'a Host,
     ssh_key: &'a Path,
+    reach: Reach,
 }
 
 impl<'a> SshTransport<'a> {
     pub fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
-        Self { host, ssh_key }
+        Self {
+            host,
+            ssh_key,
+            reach: Reach::Shared,
+        }
+    }
+
+    pub fn first_contact(host: &'a Host, ssh_key: &'a Path) -> Self {
+        Self {
+            host,
+            ssh_key,
+            reach: Reach::FirstContact,
+        }
+    }
+
+    /// The connection-sharing options this reach wants. `ControlPath=none` is
+    /// spelled out rather than omitted: a user's own `~/.ssh/config` may set a
+    /// ControlPath, and `ControlMaster no` — the default — still *joins* an
+    /// existing socket.
+    fn sharing_args(&self) -> Vec<OsString> {
+        match self.reach {
+            Reach::Shared => Self::mux_args(),
+            Reach::FirstContact => vec!["-o".into(), "ControlPath=none".into()],
+        }
     }
 
     pub fn mux_args() -> Vec<OsString> {
@@ -44,7 +89,7 @@ impl<'a> SshTransport<'a> {
     }
 
     pub fn ssh_args(&self) -> Vec<OsString> {
-        let mut args = Self::mux_args();
+        let mut args = self.sharing_args();
         args.extend([
             "-i".into(),
             self.ssh_key.into(),
@@ -78,6 +123,9 @@ impl<'a> SshTransport<'a> {
     }
 
     pub fn run(&self, command: &str) -> Result<Output> {
+        if self.reach == Reach::FirstContact {
+            return self.run_attached(command);
+        }
         let out = Command::new("ssh")
             .args(self.ssh_args())
             .arg(command)
@@ -89,6 +137,25 @@ impl<'a> SshTransport<'a> {
             output::clear_subprocess_lines(lines);
         }
         Ok(out)
+    }
+
+    /// Streamed, with stdin inherited, so ssh can still prompt. `run_piped`
+    /// keeps only the stderr tail, which is what the caller's error reports;
+    /// stdout is not captured, and no [`Reach::FirstContact`] caller reads it.
+    fn run_attached(&self, command: &str) -> Result<Output> {
+        let result = output::run_piped(
+            "ssh",
+            Command::new("ssh").args(self.ssh_args()).arg(command),
+        )
+        .wrap_err("Failed to execute SSH command")?;
+        if result.status.success() {
+            output::clear_subprocess_lines(result.lines_written);
+        }
+        Ok(Output {
+            status: result.status,
+            stdout: Vec::new(),
+            stderr: result.last_stderr.into_bytes(),
+        })
     }
 
     pub fn run_raw(&self, args: &[&str]) -> Result<Output> {
@@ -117,7 +184,7 @@ impl<'a> SshTransport<'a> {
     }
 
     pub fn scp_args(&self) -> Vec<OsString> {
-        let mut args = Self::mux_args();
+        let mut args = self.sharing_args();
         args.extend([
             "-i".into(),
             self.ssh_key.into(),
@@ -303,6 +370,48 @@ mod tests {
         assert!(strs.contains(&"ControlMaster=auto".to_string()));
         assert!(strs.contains(&"ControlPersist=60s".to_string()));
         assert!(strs.contains(&"deploy@192.0.2.1".to_string()));
+    }
+
+    #[test]
+    fn test_first_contact_refuses_to_share_a_master() {
+        let host = test_host();
+        let key = Path::new("/tmp/chosen_key");
+        let strs = strings(&SshTransport::first_contact(&host, key).ssh_args());
+        assert!(strs.contains(&"ControlPath=none".to_string()), "{strs:?}");
+        assert!(
+            !strs.iter().any(|s| s.starts_with("ControlMaster")),
+            "{strs:?}"
+        );
+        assert!(
+            !strs.iter().any(|s| s.starts_with("ControlPersist")),
+            "{strs:?}"
+        );
+    }
+
+    #[test]
+    fn test_first_contact_still_names_the_key_the_operator_chose() {
+        let host = test_host();
+        let key = Path::new("/tmp/chosen_key");
+        let strs = strings(&SshTransport::first_contact(&host, key).ssh_args());
+        assert!(strs.contains(&"/tmp/chosen_key".to_string()), "{strs:?}");
+        assert!(strs.contains(&"deploy@192.0.2.1".to_string()), "{strs:?}");
+    }
+
+    #[test]
+    fn test_shared_reach_is_the_default_and_multiplexes() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let strs = strings(&SshTransport::new(&host, key).ssh_args());
+        assert!(strs.contains(&"ControlMaster=auto".to_string()), "{strs:?}");
+        assert!(!strs.contains(&"ControlPath=none".to_string()), "{strs:?}");
+    }
+
+    #[test]
+    fn test_first_contact_scp_args_do_not_share_either() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let strs = strings(&SshTransport::first_contact(&host, key).scp_args());
+        assert!(strs.contains(&"ControlPath=none".to_string()), "{strs:?}");
     }
 
     #[test]
