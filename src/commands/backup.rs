@@ -12,6 +12,7 @@ use crate::services::backup::session::{
     BackupSession, CreateOutcome, SessionOpts, restic_prune, restic_push,
 };
 use crate::services::backup::verify::{self, MaxAge, Status, Verdict, VerifyRequest};
+use crate::services::progress::{Progress, TerminalProgress};
 use crate::services::ssh::{CONNECT_TIMEOUT, LiveSshSession, SshSession, resolve_ssh_key_path};
 use chrono::Utc;
 use clap::Subcommand;
@@ -320,12 +321,69 @@ pub fn run_backup_create(
         parameters,
     };
     let ssh = LiveSshSession::new(&host, &ssh_key_path);
-    let session = BackupSession::new(&ssh, recipes, opts);
+    // `--verbose` renders every App's outcome in the results table below, so
+    // the streamed per-App line would report each one twice.
+    let stream_results = !output::is_verbose();
+    let session = BackupSession::new(&ssh, recipes, opts, move |app| {
+        let bar = TerminalProgress::new(&format!("Backing up {}", app));
+        if stream_results {
+            Box::new(bar)
+        } else {
+            Box::new(ResultsSuppressed(Box::new(bar))) as Box<dyn Progress>
+        }
+    });
     let outcome = session.create()?;
 
     render_create_outcome(&outcome, &backup_dest, &host.name, start_time);
 
     Ok(outcome)
+}
+
+/// A `Progress` that drops `success`, forwarding every other event.
+///
+/// Whether an App's result is streamed or tabled is the command's render
+/// policy, not the Backup Session's: the Session emits one `success` per App
+/// and does not know what renders it (ADR-0047).
+struct ResultsSuppressed(Box<dyn Progress>);
+
+impl Progress for ResultsSuppressed {
+    fn task_started(&mut self, name: &str) {
+        self.0.task_started(name);
+    }
+
+    fn task_done(&mut self) {
+        self.0.task_done();
+    }
+
+    fn bytes_transferred(&mut self, n: u64) {
+        self.0.bytes_transferred(n);
+    }
+
+    fn set_total(&mut self, n: Option<u64>) {
+        self.0.set_total(n);
+    }
+
+    fn info(&mut self, msg: &str) {
+        self.0.info(msg);
+    }
+
+    fn warn(&mut self, msg: &str) {
+        self.0.warn(msg);
+    }
+
+    fn success(&mut self, _msg: &str) {}
+
+    fn error(&mut self, msg: &str) {
+        self.0.error(msg);
+    }
+
+    fn line(&mut self, text: &str) {
+        self.0.line(text);
+    }
+
+    fn cancel(&mut self) {
+        self.0.cancel();
+    }
 }
 
 fn render_create_outcome(
@@ -1187,12 +1245,20 @@ pub fn run_backup_push(host_filter: Option<String>, backup_id: Option<String>) -
             )
         })?;
 
-    restic_push(&restic_repo, &restic_password, &backup_dir, &host)
+    let mut progress = TerminalProgress::new("");
+    restic_push(
+        &restic_repo,
+        &restic_password,
+        &backup_dir,
+        &host,
+        &mut progress,
+    )
 }
 
 pub fn run_backup_prune(dry_run: bool) -> Result<()> {
     let (restic_repo, restic_password) = load_restic_config()?;
-    restic_prune(&restic_repo, &restic_password, dry_run)
+    let mut progress = TerminalProgress::new("");
+    restic_prune(&restic_repo, &restic_password, dry_run, &mut progress)
 }
 
 pub struct VerifyOptions {
@@ -1582,6 +1648,39 @@ fn validate_cross_host_restore(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::progress::{MockProgress, ProgressEvent};
+
+    #[test]
+    fn results_suppressed_drops_success_and_forwards_the_rest() {
+        let recorder = MockProgress::new();
+        let mut progress = ResultsSuppressed(Box::new(recorder.share()));
+
+        progress.task_started("Stopping bichon");
+        progress.set_total(Some(1024));
+        progress.bytes_transferred(512);
+        progress.info("informational");
+        progress.warn("warning");
+        progress.line("verbatim");
+        progress.success("bichon (1.00 KB)");
+        progress.error("bichon backup failed: no route to host");
+        progress.task_done();
+        progress.cancel();
+
+        assert_eq!(
+            recorder.events(),
+            [
+                ProgressEvent::TaskStarted("Stopping bichon".to_string()),
+                ProgressEvent::SetTotal(Some(1024)),
+                ProgressEvent::BytesTransferred(512),
+                ProgressEvent::Info("informational".to_string()),
+                ProgressEvent::Warn("warning".to_string()),
+                ProgressEvent::Line("verbatim".to_string()),
+                ProgressEvent::Error("bichon backup failed: no route to host".to_string()),
+                ProgressEvent::TaskDone,
+                ProgressEvent::Cancel,
+            ]
+        );
+    }
 
     fn recipe_advising(advice: Option<&str>) -> BackupRecipe {
         BackupRecipe {
