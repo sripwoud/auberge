@@ -80,6 +80,21 @@ The survivor is `src/config.rs:37`. The five that leave are the five above.
 
 What `src/**` loses is 1060 functions, across 45 of the 53 `src/` files that database holds: the inline test bodies plus the fixtures and helpers beside them. No file leaves the database — the four `src/` rows sitting at zero functions are module declarations, and they read zero in both.
 
+### Nor could the PR that made the change
+
+codeql-action restricts a pull request's alerts to that PR's own diff — `Persisted 3 diff range(s) across 3 file(s)` in #699's rust leg — so that leg reported **0** results where master reported 6, and would have reported 0 whether or not the option parsed. A push run logs `No precomputed diff ranges found; skipping diff-informed analysis stage` and analyses everything. A PR's own leg is not an instrument for this count, and a reader checking this ADR against a green PR will find a number that means nothing.
+
+The push analysis of the merge, `dfdcd45`, is the one that counts: **6 results to 1**, the survivor `src/config.rs:37`, matching the local pair exactly. All six alerts stayed `dismissed` throughout, as predicted.
+
+What the PR leg did establish is the parse on the runner, and one thing the local databases could not — that CI's extraction covers what they covered. Its metric block beside master's, 84 files either way:
+
+|                                    | master (`[]`) | #699 (`["-test"]`) |
+| ---------------------------------- | ------------: | -----------------: |
+| Rust files extracted without error |            72 |                 74 |
+| Rust files extracted with errors   |            12 |                 10 |
+
+Two files that could not be extracted cleanly now can: what failed in them was `cfg(test)` code.
+
 ## Alternatives considered
 
 - **`paths-ignore` the test code.** Rejected: there is no file to exclude. Rust unit tests live inline in `src/*.rs`, so the only path that covers them is `src/**`, which would take every query off the entire CLI surface — the blast-radius arithmetic on which ADR-0011 rejected its own `paths-ignore` option. Its _other_ rejection, of per-path query suppression, does not transfer: that failed because `query-filters` carry no `paths` key, and its paths were perfectly nameable.
