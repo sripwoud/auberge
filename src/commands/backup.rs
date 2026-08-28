@@ -12,8 +12,8 @@ use crate::services::backup::session::{
     BackupSession, CreateOutcome, SessionOpts, restic_prune, restic_push,
 };
 use crate::services::backup::verify::{self, MaxAge, Status, Verdict, VerifyRequest};
-use crate::services::ssh::{LiveSshSession, resolve_ssh_key_path};
-use crate::ssh_session::SshSession;
+use crate::services::ssh::{CONNECT_TIMEOUT, LiveSshSession, SshSession, resolve_ssh_key_path};
+use crate::ssh_session::SshSession as SshTransport;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
@@ -22,7 +22,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::OnceLock;
 use std::time::Instant;
 use tabled::Tabled;
@@ -1058,7 +1057,7 @@ pub fn run_export_opml(
         user
     );
 
-    let session = SshSession::new(&host, &ssh_key_path);
+    let session = SshTransport::new(&host, &ssh_key_path);
     let opml_output = session.run(&remote_cmd)?;
 
     if !opml_output.status.success() {
@@ -1097,7 +1096,7 @@ pub fn run_import_opml(
     let remote_opml_path = format!("/tmp/freshrss_import_{}.opml", user);
 
     eprintln!("  Uploading OPML file...");
-    let session = SshSession::new(&host, &ssh_key_path);
+    let session = SshTransport::new(&host, &ssh_key_path);
     session
         .scp_to(&input, &remote_opml_path)
         .wrap_err("Failed to upload OPML file")?;
@@ -1457,12 +1456,12 @@ fn default_backup_dir() -> PathBuf {
 fn check_remote_unit_exists(host: &Host, ssh_key: &Path, unit: &str) -> Result<bool> {
     let unit_file = unit_file_name(unit);
     let output =
-        SshSession::new(host, ssh_key).run_raw(&["systemctl", "list-unit-files", &unit_file])?;
+        SshTransport::new(host, ssh_key).run_raw(&["systemctl", "list-unit-files", &unit_file])?;
     Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).contains(&unit_file))
 }
 
 fn check_remote_disk_space(host: &Host, ssh_key: &Path, path: &str) -> Result<u64> {
-    let output = SshSession::new(host, ssh_key)
+    let output = SshTransport::new(host, ssh_key)
         .run(&format!("df --output=avail {} | tail -1", path))
         .wrap_err("Failed to check disk space")?;
 
@@ -1487,34 +1486,8 @@ fn validate_cross_host_restore(
     eprintln!("\n--- Pre-flight Validation ---");
 
     eprintln!("  Checking SSH connectivity...");
-    let ssh_test = Command::new("ssh")
-        .arg("-o")
-        .arg("ConnectTimeout=10")
-        .arg("-o")
-        .arg("BatchMode=yes")
-        .arg("-i")
-        .arg(ssh_key)
-        .arg("-p")
-        .arg(host.port.to_string())
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg("echo")
-        .arg("ok")
-        .output();
-
-    match ssh_test {
-        Ok(out) if out.status.success() => {
-            let lines = output::subprocess_output("ssh", &String::from_utf8_lossy(&out.stderr));
-            output::clear_subprocess_lines(lines);
-            eprintln!("    ✓ SSH connection successful");
-        }
-        _ => {
-            eyre::bail!(
-                "Cannot connect to target host {}:{}. Check SSH key and network connectivity",
-                host.address,
-                host.port
-            );
-        }
-    }
+    LiveSshSession::new(host, ssh_key).reachable(CONNECT_TIMEOUT)?;
+    eprintln!("    ✓ SSH connection successful");
 
     eprintln!("  Checking services on target...");
     let playbooks_dir = assets_playbooks_dir().ok();

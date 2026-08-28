@@ -2,7 +2,7 @@ use crate::hosts::{Host, HostManager};
 use crate::output;
 use crate::output::OutputFormat;
 use crate::prompt::{Choice, confirm, select_item};
-use crate::services::ssh::{LiveSshSession, SshSession};
+use crate::services::ssh::{CONNECT_TIMEOUT, LiveSshSession, SshSession};
 use clap::Subcommand;
 use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::{Context, Result};
@@ -510,15 +510,7 @@ pub fn run_host_rename(old: String, new: String, yes: bool) -> Result<()> {
         })?;
 
     let session = LiveSshSession::new(&host, &ssh_key);
-    let probe = session.run("true")?;
-    if !probe.success {
-        eyre::bail!(
-            "SSH preflight to {}@{} failed: {}",
-            host.user,
-            host.address,
-            probe.stderr_str().trim()
-        );
-    }
+    session.reachable(CONNECT_TIMEOUT)?;
 
     if !confirm(
         &format!(

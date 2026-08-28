@@ -140,6 +140,12 @@ impl CommandResult {
     }
 }
 
+/// The bound every reachability probe uses. [`SshSession::reachable`] takes the
+/// timeout as a parameter because a caller may one day want a different bound;
+/// today all three want this one, and a shared const makes that visible rather
+/// than a coincidence three modules maintain separately.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// The only way to reach a Host. Every ssh, scp and rsync the CLI issues goes
 /// through an implementation of this trait, so a command that talks to a Host
 /// is testable against [`MockSshSession`] without one.

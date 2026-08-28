@@ -18,7 +18,7 @@ use crate::ansible_assets::AnsibleAssets;
 use crate::hosts::HostManager;
 use crate::playbook_meta::{OwnedUnit, UnitScope, load_all_metas};
 use crate::services::dependency_resolver::{PlaybookRun, parse_roster};
-use crate::services::ssh::{LiveSshSession, SshSession, resolve_ssh_key_path};
+use crate::services::ssh::{CONNECT_TIMEOUT, LiveSshSession, SshSession, resolve_ssh_key_path};
 use eyre::{Result, WrapErr};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -343,34 +343,13 @@ fn try_report(run: &PlaybookRun, host_name: &str, elapsed: Duration) -> Result<O
         return Ok(None);
     }
     let ssh_key = resolve_ssh_key_path(&host, None)?;
-    assert_reachable(&host, &ssh_key)?;
     let session = LiveSshSession::new(&host, &ssh_key);
+    // The probe runs against a Host whose deploy just failed — possibly
+    // because the Host went dark — and a bare ssh would hang for the TCP
+    // timeout, or block on a prompt, in front of an error that used to print
+    // instantly.
+    session.reachable(CONNECT_TIMEOUT)?;
     failure_report(&session, host_name, &units, elapsed).map(Some)
-}
-
-/// One bounded connect before the probe. The probe runs against a host whose
-/// deploy just failed — possibly because the host went dark — and a bare ssh
-/// would then hang for the TCP timeout, or block on a prompt, in front of an
-/// error message that used to print instantly. Carries the mux options so a
-/// success leaves a warm control socket for the probe commands to reuse.
-fn assert_reachable(host: &crate::hosts::Host, ssh_key: &Path) -> Result<()> {
-    let mut command = std::process::Command::new("ssh");
-    command.args(crate::ssh_session::SshSession::mux_args());
-    for option in ["ConnectTimeout=10", "BatchMode=yes"] {
-        command.args(["-o", option]);
-    }
-    let output = command
-        .arg("-i")
-        .arg(ssh_key)
-        .args(["-p", &host.port.to_string()])
-        .arg(format!("{}@{}", host.user, host.address))
-        .arg("true")
-        .output()
-        .wrap_err("Failed to execute ssh")?;
-    if !output.status.success() {
-        eyre::bail!("host {} is unreachable over ssh", host.name);
-    }
-    Ok(())
 }
 
 #[cfg(test)]
