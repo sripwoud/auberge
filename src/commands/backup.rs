@@ -13,7 +13,6 @@ use crate::services::backup::session::{
 };
 use crate::services::backup::verify::{self, MaxAge, Status, Verdict, VerifyRequest};
 use crate::services::ssh::{CONNECT_TIMEOUT, LiveSshSession, SshSession, resolve_ssh_key_path};
-use crate::ssh_session::SshSession as SshTransport;
 use chrono::Utc;
 use clap::Subcommand;
 use eyre::{Context, Result};
@@ -1057,15 +1056,10 @@ pub fn run_export_opml(
         user
     );
 
-    let session = SshTransport::new(&host, &ssh_key_path);
-    let opml_output = session.run(&remote_cmd)?;
+    let session = LiveSshSession::new(&host, &ssh_key_path);
+    let opml = export_opml(&session, &remote_cmd)?;
 
-    if !opml_output.status.success() {
-        let stderr = String::from_utf8_lossy(&opml_output.stderr);
-        eyre::bail!("OPML export failed: {}", stderr);
-    }
-
-    fs::write(&output, &opml_output.stdout)
+    fs::write(&output, &opml)
         .wrap_err_with(|| format!("Failed to write OPML to {}", output.display()))?;
 
     eprintln!("✓ OPML exported successfully");
@@ -1095,33 +1089,52 @@ pub fn run_import_opml(
 
     let remote_opml_path = format!("/tmp/freshrss_import_{}.opml", user);
 
-    eprintln!("  Uploading OPML file...");
-    let session = SshTransport::new(&host, &ssh_key_path);
-    session
-        .scp_to(&input, &remote_opml_path)
-        .wrap_err("Failed to upload OPML file")?;
-
-    eprintln!("  Importing feeds...");
     let import_cmd = format!(
         "cd /opt/freshrss && sudo -u freshrss ./cli/import-for-user.php --user {} --filename {} && rm {}",
         user, remote_opml_path, remote_opml_path
     );
 
-    let import_output = session
-        .run(&import_cmd)
-        .wrap_err("Failed to execute import command")?;
-
-    if !import_output.status.success() {
-        let stderr = String::from_utf8_lossy(&import_output.stderr);
-        eyre::bail!("OPML import failed: {}", stderr);
-    }
-
-    let stdout = String::from_utf8_lossy(&import_output.stdout);
+    let session = LiveSshSession::new(&host, &ssh_key_path);
+    let stdout = import_opml(&session, &input, &remote_opml_path, &import_cmd)?;
     eprintln!("{}", stdout);
 
     eprintln!("✓ OPML imported successfully");
 
     Ok(())
+}
+
+/// FreshRSS's own export CLI writes the OPML to stdout, so the export is the
+/// captured bytes of one remote command.
+fn export_opml(session: &dyn SshSession, remote_cmd: &str) -> Result<Vec<u8>> {
+    let out = session.run(remote_cmd)?;
+    if !out.success {
+        eyre::bail!("OPML export failed: {}", out.stderr_str());
+    }
+    Ok(out.stdout)
+}
+
+/// Upload, then import-and-delete. The remote copy is removed by the same
+/// command that consumes it, so a failed import leaves nothing behind under
+/// `/tmp` for the next run to import twice.
+fn import_opml(
+    session: &dyn SshSession,
+    local: &Path,
+    remote_opml_path: &str,
+    import_cmd: &str,
+) -> Result<String> {
+    eprintln!("  Uploading OPML file...");
+    session
+        .scp_to(local, remote_opml_path)
+        .wrap_err("Failed to upload OPML file")?;
+
+    eprintln!("  Importing feeds...");
+    let out = session
+        .run(import_cmd)
+        .wrap_err("Failed to execute import command")?;
+    if !out.success {
+        eyre::bail!("OPML import failed: {}", out.stderr_str());
+    }
+    Ok(out.stdout_str())
 }
 
 fn load_restic_config() -> Result<(String, String)> {
@@ -1453,23 +1466,25 @@ fn default_backup_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
 
-fn check_remote_unit_exists(host: &Host, ssh_key: &Path, unit: &str) -> Result<bool> {
+/// One argv rather than a shell line: a unit name reaching a remote shell
+/// would be re-split and glob-expanded.
+fn check_remote_unit_exists(session: &dyn SshSession, unit: &str) -> Result<bool> {
     let unit_file = unit_file_name(unit);
-    let output =
-        SshTransport::new(host, ssh_key).run_raw(&["systemctl", "list-unit-files", &unit_file])?;
-    Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).contains(&unit_file))
+    let output = session.run_raw(&["systemctl", "list-unit-files", &unit_file])?;
+    Ok(output.success && output.stdout_str().contains(&unit_file))
 }
 
-fn check_remote_disk_space(host: &Host, ssh_key: &Path, path: &str) -> Result<u64> {
-    let output = SshTransport::new(host, ssh_key)
+fn check_remote_disk_space(session: &dyn SshSession, path: &str) -> Result<u64> {
+    let output = session
         .run(&format!("df --output=avail {} | tail -1", path))
         .wrap_err("Failed to check disk space")?;
 
-    if !output.status.success() {
+    if !output.success {
         eyre::bail!("Failed to check disk space on remote host");
     }
 
-    let kb_available = String::from_utf8_lossy(&output.stdout)
+    let kb_available = output
+        .stdout_str()
         .trim()
         .parse::<u64>()
         .wrap_err("Failed to parse disk space output")?;
@@ -1485,8 +1500,12 @@ fn validate_cross_host_restore(
 ) -> Result<()> {
     eprintln!("\n--- Pre-flight Validation ---");
 
+    // One session for the whole pre-flight, so the socket the reachability
+    // probe warms is the one the service and disk checks reuse.
+    let session = LiveSshSession::new(host, ssh_key);
+
     eprintln!("  Checking SSH connectivity...");
-    LiveSshSession::new(host, ssh_key).reachable(CONNECT_TIMEOUT)?;
+    session.reachable(CONNECT_TIMEOUT)?;
     eprintln!("    ✓ SSH connection successful");
 
     eprintln!("  Checking services on target...");
@@ -1500,7 +1519,7 @@ fn validate_cross_host_restore(
             None => continue,
         };
         for service in &recipe.systemd_services {
-            match check_remote_unit_exists(host, ssh_key, service) {
+            match check_remote_unit_exists(&session, service) {
                 Ok(true) => {
                     eprintln!("    ✓ {} service exists", service);
                 }
@@ -1520,7 +1539,7 @@ fn validate_cross_host_restore(
     }
 
     eprintln!("  Checking disk space...");
-    match check_remote_disk_space(host, ssh_key, "/") {
+    match check_remote_disk_space(&session, "/") {
         Ok(available_bytes) => {
             let required_bytes = (backup_size_bytes as f64 * 1.2) as u64;
             eprintln!(
@@ -1712,6 +1731,134 @@ mod tests {
         let result = resolve_backup_dir(tmp.path(), Some("myserver"), Some("2026-01-01_00-00-00"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Backup not found"));
+    }
+
+    fn stdout_result(text: &str) -> crate::services::ssh::CommandResult {
+        crate::services::ssh::CommandResult {
+            success: true,
+            exit_code: Some(0),
+            stdout: text.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        }
+    }
+
+    fn failed_result(stderr: &str) -> crate::services::ssh::CommandResult {
+        crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    #[test]
+    fn check_remote_unit_exists_asks_systemctl_by_unit_file_name() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(stdout_result(
+            "UNIT FILE          STATE\nnavidrome.service  enabled\n",
+        ));
+        assert!(check_remote_unit_exists(&mock, "navidrome").unwrap());
+        assert_eq!(
+            mock.calls(),
+            vec![crate::services::ssh::SshOp::RunRaw(vec![
+                "systemctl".to_string(),
+                "list-unit-files".to_string(),
+                "navidrome.service".to_string(),
+            ])]
+        );
+    }
+
+    #[test]
+    fn check_remote_unit_exists_is_false_when_systemctl_lists_nothing() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(stdout_result("0 unit files listed.\n"));
+        assert!(!check_remote_unit_exists(&mock, "navidrome").unwrap());
+    }
+
+    #[test]
+    fn check_remote_unit_exists_keeps_a_timer_a_timer() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(stdout_result("bichon-archive.timer  enabled\n"));
+        assert!(check_remote_unit_exists(&mock, "bichon-archive.timer").unwrap());
+    }
+
+    #[test]
+    fn check_remote_disk_space_converts_dfs_kilobytes_to_bytes() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(stdout_result("  20971520\n"));
+        assert_eq!(
+            check_remote_disk_space(&mock, "/").unwrap(),
+            20_971_520 * 1024
+        );
+        assert_eq!(
+            mock.calls(),
+            vec![crate::services::ssh::SshOp::Run(
+                "df --output=avail / | tail -1".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn check_remote_disk_space_fails_on_unparsable_output() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(stdout_result("df: /nope: No such file\n"));
+        assert!(check_remote_disk_space(&mock, "/nope").is_err());
+    }
+
+    #[test]
+    fn export_opml_returns_the_remote_stdout_verbatim() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(stdout_result("<opml version=\"2.0\"/>"));
+        assert_eq!(
+            export_opml(&mock, "cd /opt/freshrss && ...").unwrap(),
+            b"<opml version=\"2.0\"/>".to_vec()
+        );
+    }
+
+    #[test]
+    fn export_opml_reports_the_remote_stderr() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(failed_result("User 'ghost' does not exist"));
+        let err = export_opml(&mock, "cd /opt/freshrss && ...").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "OPML export failed: User 'ghost' does not exist"
+        );
+    }
+
+    #[test]
+    fn import_opml_uploads_before_it_imports() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(stdout_result("12 feeds imported\n"));
+        let out = import_opml(
+            &mock,
+            Path::new("/tmp/feeds.opml"),
+            "/tmp/freshrss_import_me.opml",
+            "cd /opt/freshrss && ... && rm /tmp/freshrss_import_me.opml",
+        )
+        .unwrap();
+        assert_eq!(out, "12 feeds imported\n");
+        assert_eq!(
+            mock.calls(),
+            vec![
+                crate::services::ssh::SshOp::ScpTo {
+                    local: PathBuf::from("/tmp/feeds.opml"),
+                    remote: "/tmp/freshrss_import_me.opml".to_string(),
+                },
+                crate::services::ssh::SshOp::Run(
+                    "cd /opt/freshrss && ... && rm /tmp/freshrss_import_me.opml".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn import_opml_reports_the_remote_stderr() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(failed_result("malformed OPML"));
+        let err =
+            import_opml(&mock, Path::new("/tmp/feeds.opml"), "/tmp/x.opml", "import").unwrap_err();
+        assert_eq!(err.to_string(), "OPML import failed: malformed OPML");
     }
 
     fn test_host() -> Host {
