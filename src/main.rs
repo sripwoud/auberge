@@ -6,7 +6,7 @@ use auberge::commands::ansible::{AnsibleCommands, run_ansible_bootstrap, run_ans
 use auberge::commands::backup::{
     BackupCommands, RestoreOptions, VerifyOptions, create_parameters, run_backup_create,
     run_backup_list, run_backup_prune, run_backup_push, run_backup_restore, run_backup_sync,
-    run_backup_verify, run_export_opml, run_import_opml,
+    run_backup_verify,
 };
 use auberge::commands::bichon::{BichonCommands, run_bichon_command};
 use auberge::commands::config_cmd::{
@@ -26,6 +26,7 @@ use auberge::commands::host::{
     AddHostArgs, HostCommands, run_host_add, run_host_detect_tailscale_ip, run_host_edit,
     run_host_list, run_host_remove, run_host_rename, run_host_show,
 };
+use auberge::commands::opml::{OpmlCommands, run_export_opml, run_import_opml};
 use auberge::commands::select::{SelectCommands, run_select_host, run_select_playbook};
 use auberge::commands::ssh::{SshCommands, run_ssh_add_key, run_ssh_keygen};
 use auberge::commands::sync::{SyncCommands, run_sync_hermes, run_sync_music};
@@ -258,18 +259,20 @@ async fn main() -> Result<()> {
                 max_age,
                 format: output,
             })),
-            BackupCommands::ExportOpml {
-                host,
-                output,
-                ssh_key,
-                user,
-            } => run_export_opml(host, output, ssh_key, user),
-            BackupCommands::ImportOpml {
-                host,
-                input,
-                ssh_key,
-                user,
-            } => run_import_opml(host, input, ssh_key, user),
+            BackupCommands::Opml(cmd) => match cmd {
+                OpmlCommands::ExportOpml {
+                    host,
+                    output,
+                    ssh_key,
+                    user,
+                } => run_export_opml(host, output, ssh_key, user),
+                OpmlCommands::ImportOpml {
+                    host,
+                    input,
+                    ssh_key,
+                    user,
+                } => run_import_opml(host, input, ssh_key, user),
+            },
         },
         Commands::Ssh(cmd) => match cmd {
             SshCommands::Keygen { host, user, force } => run_ssh_keygen(host, user, force),
@@ -457,6 +460,103 @@ mod tests {
         assert!(
             script.contains("human json"),
             "bash completion misses --output enum values"
+        );
+    }
+
+    /// The OPML pair's CLI surface, read off the built `Command` tree rather
+    /// than the Rust enum it derives from. #673 moved those two variants into
+    /// their own module and flattened them back under `backup`, and a flatten
+    /// that lands them somewhere else — or quietly drops an alias, a short, or
+    /// a default — compiles clean and breaks only for whoever types it.
+    ///
+    /// `-o` here is a file path, not ADR-0004's `--output {human,json}`. That
+    /// collision predates the move and is pinned because #673 requires the
+    /// surface to be unchanged — pinned, not endorsed.
+    #[test]
+    fn the_opml_pair_stays_under_backup_with_its_surface() {
+        let cli = Cli::command();
+        let backup = cli
+            .get_subcommands()
+            .find(|sub| sub.get_name() == "backup")
+            .expect("auberge backup must exist");
+
+        for (name, alias, about, file_arg, file_short) in [
+            (
+                "export-opml",
+                "eo",
+                "Export FreshRSS feeds to OPML file",
+                "output",
+                'o',
+            ),
+            (
+                "import-opml",
+                "io",
+                "Import OPML file to FreshRSS",
+                "input",
+                'i',
+            ),
+        ] {
+            let cmd = backup
+                .get_subcommands()
+                .find(|sub| sub.get_name() == name)
+                .unwrap_or_else(|| panic!("auberge backup {name} must exist"));
+
+            assert_eq!(
+                cmd.get_visible_aliases().collect::<Vec<_>>(),
+                [alias],
+                "auberge backup {name} lost its visible alias"
+            );
+            assert_eq!(
+                cmd.get_about().map(|about| about.to_string()).as_deref(),
+                Some(about),
+                "auberge backup {name} lost its description"
+            );
+
+            let arg = |id: &str| {
+                cmd.get_arguments()
+                    .find(|arg| arg.get_id().as_str() == id)
+                    .unwrap_or_else(|| panic!("auberge backup {name} has no {id} argument"))
+            };
+            assert_eq!(arg("host").get_short(), Some('H'));
+            assert_eq!(arg("ssh_key").get_short(), Some('k'));
+            assert_eq!(arg(file_arg).get_short(), Some(file_short));
+
+            let user_default: Vec<_> = arg("user")
+                .get_default_values()
+                .iter()
+                .map(|value| value.to_string_lossy().into_owned())
+                .collect();
+            assert_eq!(
+                user_default,
+                ["admin"],
+                "auberge backup {name} --user lost its default"
+            );
+        }
+    }
+    /// The other direction: the pair is reachable under `auberge backup` and
+    /// nowhere else. A second `#[command(flatten)]`, or a promotion to top
+    /// level that forgot to drop the old one, leaves every assertion above
+    /// passing while `--help` grows a duplicate. ADR-0043's fences run both
+    /// ways for the same reason.
+    #[test]
+    fn the_opml_pair_is_reachable_nowhere_but_backup() {
+        fn walk(cmd: &clap::Command, prefix: &str, found: &mut Vec<String>) {
+            for sub in cmd.get_subcommands() {
+                let path = format!("{prefix} {}", sub.get_name());
+                if matches!(sub.get_name(), "export-opml" | "import-opml") {
+                    found.push(path.clone());
+                }
+                walk(sub, &path, found);
+            }
+        }
+
+        let mut found = Vec::new();
+        walk(&Cli::command(), "auberge", &mut found);
+        found.sort();
+        assert_eq!(
+            found,
+            ["auberge backup export-opml", "auberge backup import-opml"],
+            "the OPML pair is reachable somewhere other than `auberge backup`"
         );
     }
 }

@@ -1,3 +1,4 @@
+use crate::commands::opml::OpmlCommands;
 use crate::config::Config;
 use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg as hosts_select_or_arg};
 use crate::output;
@@ -192,36 +193,11 @@ pub enum BackupCommands {
         )]
         output: OutputFormat,
     },
-    #[command(visible_alias = "eo", about = "Export FreshRSS feeds to OPML file")]
-    ExportOpml {
-        #[arg(short = 'H', long, help = "Target host")]
-        host: Option<String>,
-        #[arg(short, long, help = "Output OPML file path")]
-        output: PathBuf,
-        #[arg(
-            short = 'k',
-            long,
-            help = "SSH private key (default: ~/.ssh/identities/{host}/{user})"
-        )]
-        ssh_key: Option<PathBuf>,
-        #[arg(long, default_value = "admin", help = "FreshRSS username")]
-        user: String,
-    },
-    #[command(visible_alias = "io", about = "Import OPML file to FreshRSS")]
-    ImportOpml {
-        #[arg(short = 'H', long, help = "Target host")]
-        host: Option<String>,
-        #[arg(short, long, help = "OPML file to import")]
-        input: PathBuf,
-        #[arg(
-            short = 'k',
-            long,
-            help = "SSH private key (default: ~/.ssh/identities/{host}/{user})"
-        )]
-        ssh_key: Option<PathBuf>,
-        #[arg(long, default_value = "admin", help = "FreshRSS username")]
-        user: String,
-    },
+    /// Data portability, not backup: freshrss's Backup Recipe already carries
+    /// the app's data directories. Flattened rather than moved so the surface
+    /// users type — `backup export-opml`, `eo`, `io` — is unchanged (#673).
+    #[command(flatten)]
+    Opml(OpmlCommands),
 }
 
 pub use crate::output::OutputFormat;
@@ -1102,108 +1078,6 @@ fn restore_app(host: &Host, target: &RestoreTarget, ssh_key: &Path) -> Result<()
     Ok(())
 }
 
-pub fn run_export_opml(
-    host_arg: Option<String>,
-    output: PathBuf,
-    ssh_key: Option<PathBuf>,
-    user: String,
-) -> Result<()> {
-    let host = get_host_or_select(host_arg)?;
-    let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
-    eprintln!("Using SSH key: {}", ssh_key_path.display());
-
-    eprintln!("Exporting OPML from FreshRSS");
-    eprintln!("  Host: {}", host.name);
-    eprintln!("  User: {}", user);
-    eprintln!("  Output: {}", output.display());
-
-    let remote_cmd = format!(
-        "cd /opt/freshrss && sudo -u freshrss ./cli/export-opml-for-user.php --user {}",
-        user
-    );
-
-    let session = LiveSshSession::new(&host, &ssh_key_path);
-    let opml = export_opml(&session, &remote_cmd)?;
-
-    fs::write(&output, &opml)
-        .wrap_err_with(|| format!("Failed to write OPML to {}", output.display()))?;
-
-    eprintln!("✓ OPML exported successfully");
-    eprintln!("  Saved to: {}", output.display());
-
-    Ok(())
-}
-
-pub fn run_import_opml(
-    host_arg: Option<String>,
-    input: PathBuf,
-    ssh_key: Option<PathBuf>,
-    user: String,
-) -> Result<()> {
-    let host = get_host_or_select(host_arg)?;
-    let ssh_key_path = resolve_ssh_key_path(&host, ssh_key)?;
-    eprintln!("Using SSH key: {}", ssh_key_path.display());
-
-    if !input.exists() {
-        eyre::bail!("OPML file not found: {}", input.display());
-    }
-
-    eprintln!("Importing OPML to FreshRSS");
-    eprintln!("  Host: {}", host.name);
-    eprintln!("  User: {}", user);
-    eprintln!("  Input: {}", input.display());
-
-    let remote_opml_path = format!("/tmp/freshrss_import_{}.opml", user);
-
-    let import_cmd = format!(
-        "cd /opt/freshrss && sudo -u freshrss ./cli/import-for-user.php --user {} --filename {} && rm {}",
-        user, remote_opml_path, remote_opml_path
-    );
-
-    let session = LiveSshSession::new(&host, &ssh_key_path);
-    let stdout = import_opml(&session, &input, &remote_opml_path, &import_cmd)?;
-    eprintln!("{}", stdout);
-
-    eprintln!("✓ OPML imported successfully");
-
-    Ok(())
-}
-
-/// FreshRSS's own export CLI writes the OPML to stdout, so the export is the
-/// captured bytes of one remote command.
-fn export_opml(session: &dyn SshSession, remote_cmd: &str) -> Result<Vec<u8>> {
-    let out = session.run(remote_cmd)?;
-    if !out.success {
-        eyre::bail!("OPML export failed: {}", out.stderr_str());
-    }
-    Ok(out.stdout)
-}
-
-/// Upload, then import. The remote copy is deleted by the tail of the import
-/// command itself, which is `&&`-chained — so it survives a failed import, and
-/// `/tmp/freshrss_import_<user>.opml` is overwritten rather than appended to by
-/// the next attempt.
-fn import_opml(
-    session: &dyn SshSession,
-    local: &Path,
-    remote_opml_path: &str,
-    import_cmd: &str,
-) -> Result<String> {
-    eprintln!("  Uploading OPML file...");
-    session
-        .scp_to(local, remote_opml_path)
-        .wrap_err("Failed to upload OPML file")?;
-
-    eprintln!("  Importing feeds...");
-    let out = session
-        .run(import_cmd)
-        .wrap_err("Failed to execute import command")?;
-    if !out.success {
-        eyre::bail!("OPML import failed: {}", out.stderr_str());
-    }
-    Ok(out.stdout_str())
-}
-
 fn load_restic_config() -> Result<(String, String)> {
     let config = Config::load()?;
     let missing = config.validate_required(&["restic_repository", "restic_password"]);
@@ -1964,70 +1838,6 @@ mod tests {
             "df: /nope: No such file\n",
         ));
         assert!(check_remote_disk_space(&mock, "/nope").is_err());
-    }
-
-    #[test]
-    fn export_opml_returns_the_remote_stdout_verbatim() {
-        let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
-            "<opml version=\"2.0\"/>",
-        ));
-        assert_eq!(
-            export_opml(&mock, "cd /opt/freshrss && ...").unwrap(),
-            b"<opml version=\"2.0\"/>".to_vec()
-        );
-    }
-
-    #[test]
-    fn export_opml_reports_the_remote_stderr() {
-        let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(crate::services::ssh::CommandResult::from_stderr(
-            "User 'ghost' does not exist",
-        ));
-        let err = export_opml(&mock, "cd /opt/freshrss && ...").unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "OPML export failed: User 'ghost' does not exist"
-        );
-    }
-
-    #[test]
-    fn import_opml_uploads_before_it_imports() {
-        let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
-            "12 feeds imported\n",
-        ));
-        let out = import_opml(
-            &mock,
-            Path::new("/tmp/feeds.opml"),
-            "/tmp/freshrss_import_me.opml",
-            "cd /opt/freshrss && ... && rm /tmp/freshrss_import_me.opml",
-        )
-        .unwrap();
-        assert_eq!(out, "12 feeds imported\n");
-        assert_eq!(
-            mock.calls(),
-            vec![
-                crate::services::ssh::SshOp::ScpTo {
-                    local: PathBuf::from("/tmp/feeds.opml"),
-                    remote: "/tmp/freshrss_import_me.opml".to_string(),
-                },
-                crate::services::ssh::SshOp::Run(
-                    "cd /opt/freshrss && ... && rm /tmp/freshrss_import_me.opml".to_string()
-                ),
-            ]
-        );
-    }
-
-    #[test]
-    fn import_opml_reports_the_remote_stderr() {
-        let mock = crate::services::ssh::MockSshSession::new();
-        mock.stage_run_result(crate::services::ssh::CommandResult::from_stderr(
-            "malformed OPML",
-        ));
-        let err =
-            import_opml(&mock, Path::new("/tmp/feeds.opml"), "/tmp/x.opml", "import").unwrap_err();
-        assert_eq!(err.to_string(), "OPML import failed: malformed OPML");
     }
 
     fn test_host() -> Host {
