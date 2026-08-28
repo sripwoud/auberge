@@ -1,8 +1,11 @@
 use crate::hosts::Host;
-use crate::ssh_session::SshSession as InnerSession;
+mod transport;
+
 use eyre::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
+use transport::SshTransport;
 
 pub fn default_ssh_key_path(user: &str, host: &str) -> Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
@@ -130,6 +133,30 @@ impl CommandResult {
         }
     }
 
+    /// A successful result carrying `text` on stdout — the shape almost every
+    /// staged result wants, and previously re-declared in each test mod that
+    /// needed it.
+    #[cfg(test)]
+    pub fn from_stdout(text: &str) -> Self {
+        Self {
+            success: true,
+            exit_code: Some(0),
+            stdout: text.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        }
+    }
+
+    /// A failed result carrying `stderr` — the other half of the pair.
+    #[cfg(test)]
+    pub fn from_stderr(stderr: &str) -> Self {
+        Self {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
     pub fn stdout_str(&self) -> String {
         String::from_utf8_lossy(&self.stdout).into_owned()
     }
@@ -139,8 +166,38 @@ impl CommandResult {
     }
 }
 
+/// The bound every reachability probe uses.
+///
+/// Two of the three probes this replaced carried ten seconds and the third
+/// carried none at all, so the const is what makes the agreement real rather
+/// than a coincidence maintained in three modules. The timeout stays a
+/// parameter of [`SshSession::reachable`] — that is the signature #669
+/// settled on — but no caller has yet wanted a different one.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The only way to reach a Host. Every ssh, scp and rsync the CLI issues goes
+/// through an implementation of this trait, so a command that talks to a Host
+/// is testable against [`MockSshSession`] without one.
 pub trait SshSession {
     fn run(&self, command: &str) -> Result<CommandResult>;
+    /// A command given as pieces rather than as one string the caller joined.
+    ///
+    /// This buys nothing on the *remote* side — ssh(1) appends its arguments
+    /// "separated by spaces, before it is sent to the server", so the remote
+    /// login shell parses the result either way, and a value carrying a space
+    /// or a glob is no safer here than in [`SshSession::run`]. What it saves is
+    /// the local `format!`, for the callers whose command is already a list.
+    fn run_raw(&self, args: &[&str]) -> Result<CommandResult>;
+    /// One bounded, non-interactive connect. Callers that are about to issue a
+    /// series of commands against a Host that may have gone dark use it so a
+    /// bare ssh cannot hang for the TCP timeout or block on a prompt in front
+    /// of them; a success leaves the mux socket warm for what follows.
+    fn reachable(&self, timeout: Duration) -> Result<()>;
+    /// The transport as rsync's `-e` argument, for the callers that must build
+    /// their own rsync — `sync hermes` needs `--dry-run`, which neither
+    /// [`SshSession::rsync_to`] nor [`SshSession::scp_to`] can express. Flags
+    /// stay at the caller; only reaching the Host comes from here.
+    fn rsync_e_arg(&self) -> String;
     fn systemctl(&self, action: &str, service: &str) -> Result<()>;
     fn scp_from(&self, remote: &str, local: &Path) -> Result<()>;
     fn scp_to(&self, local: &Path, remote: &str) -> Result<()>;
@@ -150,14 +207,23 @@ pub trait SshSession {
 }
 
 pub struct LiveSshSession<'a> {
-    inner: InnerSession<'a>,
+    inner: SshTransport<'a>,
     host: &'a Host,
 }
 
 impl<'a> LiveSshSession<'a> {
     pub fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
         Self {
-            inner: InnerSession::new(host, ssh_key),
+            inner: SshTransport::new(host, ssh_key),
+            host,
+        }
+    }
+
+    /// A session for a Host no trust is established with yet. See
+    /// [`transport::Reach::FirstContact`] for what it gives up and why.
+    pub fn first_contact(host: &'a Host, ssh_key: &'a Path) -> Self {
+        Self {
+            inner: SshTransport::first_contact(host, ssh_key),
             host,
         }
     }
@@ -166,6 +232,25 @@ impl<'a> LiveSshSession<'a> {
 impl SshSession for LiveSshSession<'_> {
     fn run(&self, command: &str) -> Result<CommandResult> {
         Ok(CommandResult::from_output(self.inner.run(command)?))
+    }
+
+    fn run_raw(&self, args: &[&str]) -> Result<CommandResult> {
+        Ok(CommandResult::from_output(self.inner.run_raw(args)?))
+    }
+
+    fn reachable(&self, timeout: Duration) -> Result<()> {
+        let out = self.inner.probe(timeout)?;
+        if out.status.success() {
+            return Ok(());
+        }
+        Err(unreachable_error(
+            self.host,
+            &String::from_utf8_lossy(&out.stderr),
+        ))
+    }
+
+    fn rsync_e_arg(&self) -> String {
+        self.inner.rsync_e_arg()
     }
 
     fn systemctl(&self, action: &str, service: &str) -> Result<()> {
@@ -240,6 +325,26 @@ impl SshSession for LiveSshSession<'_> {
     }
 }
 
+/// The one message a failed reachability probe produces. Three call sites used
+/// to word this three ways — and one of them, the cross-host restore's, was the
+/// only one that named the address and port a reader needs to check a firewall,
+/// so the union is kept rather than the shortest.
+fn unreachable_error(host: &Host, stderr: &str) -> eyre::Report {
+    let stderr = stderr.trim();
+    let detail = if stderr.is_empty() {
+        String::new()
+    } else {
+        format!(": {}", stderr)
+    };
+    eyre::eyre!(
+        "host {} is unreachable over ssh at {}:{}{}\nCheck the SSH key and network connectivity",
+        host.name,
+        host.address,
+        host.port,
+        detail
+    )
+}
+
 /// A trailing slash means "contents of" to rsync — required for directory
 /// sources, fatal for single-file sources (Backup Recipe paths can be either).
 fn rsync_source_arg(local: &Path) -> String {
@@ -254,6 +359,8 @@ fn rsync_source_arg(local: &Path) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SshOp {
     Run(String),
+    RunRaw(Vec<String>),
+    Reachable(Duration),
     Systemctl {
         action: String,
         service: String,
@@ -303,6 +410,38 @@ impl MockSshSession {
     pub fn calls(&self) -> Vec<SshOp> {
         self.calls.borrow().clone()
     }
+
+    fn next_result(&self) -> CommandResult {
+        self.run_results
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(CommandResult::ok)
+    }
+}
+
+/// What [`MockSshSession::rsync_e_arg`] answers: a fixed string, so a fence over
+/// a hand-built rsync asserts the `-e` came from the seam without asserting the
+/// live transport's argv, which has its own tests.
+#[cfg(test)]
+pub const MOCK_RSYNC_E_ARG: &str = "ssh <mock>";
+
+/// A stand-in Host for [`MockSshSession::reachable`] to word its failure
+/// against. The mock has no Host of its own, and the alternative — a second
+/// wording for the mock — is the thing [`unreachable_error`] exists to prevent.
+#[cfg(test)]
+fn mock_host() -> Host {
+    Host {
+        name: "mock".to_string(),
+        address: "192.0.2.9".to_string(),
+        user: "deploy".to_string(),
+        port: 22,
+        ssh_key: None,
+        tags: vec![],
+        description: None,
+        python_interpreter: None,
+        become_method: "sudo".to_string(),
+        tailscale_ip: None,
+    }
 }
 
 #[cfg(test)]
@@ -311,11 +450,27 @@ impl SshSession for MockSshSession {
         self.calls
             .borrow_mut()
             .push(SshOp::Run(command.to_string()));
-        Ok(self
-            .run_results
+        Ok(self.next_result())
+    }
+
+    fn run_raw(&self, args: &[&str]) -> Result<CommandResult> {
+        self.calls
             .borrow_mut()
-            .pop_front()
-            .unwrap_or_else(CommandResult::ok))
+            .push(SshOp::RunRaw(args.iter().map(|a| a.to_string()).collect()));
+        Ok(self.next_result())
+    }
+
+    fn reachable(&self, timeout: Duration) -> Result<()> {
+        self.calls.borrow_mut().push(SshOp::Reachable(timeout));
+        let result = self.next_result();
+        if result.success {
+            return Ok(());
+        }
+        Err(unreachable_error(&mock_host(), &result.stderr_str()))
+    }
+
+    fn rsync_e_arg(&self) -> String {
+        MOCK_RSYNC_E_ARG.to_string()
     }
 
     fn systemctl(&self, action: &str, service: &str) -> Result<()> {
@@ -414,16 +569,8 @@ mod tests {
 
     fn test_host() -> Host {
         Host {
-            name: "test".to_string(),
-            address: "192.0.2.1".to_string(),
-            user: "deploy".to_string(),
             port: 2222,
-            ssh_key: None,
-            tags: vec![],
-            description: None,
-            python_interpreter: None,
-            become_method: "sudo".to_string(),
-            tailscale_ip: None,
+            ..mock_host()
         }
     }
 
@@ -548,6 +695,83 @@ mod tests {
         let mock = MockSshSession::new();
         let result = mock.run("anything").unwrap();
         assert!(result.success);
+    }
+
+    #[test]
+    fn test_mock_records_run_raw_calls() {
+        let mock = MockSshSession::new();
+        let _ = mock
+            .run_raw(&["systemctl", "list-unit-files", "radio.service"])
+            .unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::RunRaw(vec![
+                "systemctl".to_string(),
+                "list-unit-files".to_string(),
+                "radio.service".to_string(),
+            ])]
+        );
+    }
+
+    #[test]
+    fn test_mock_records_reachable_with_the_timeout_it_was_given() {
+        let mock = MockSshSession::new();
+        mock.reachable(Duration::from_secs(10)).unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Reachable(Duration::from_secs(10))]
+        );
+    }
+
+    #[test]
+    fn test_reachable_fails_when_the_probe_does() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult {
+            success: false,
+            exit_code: Some(255),
+            stdout: Vec::new(),
+            stderr: b"Connection timed out".to_vec(),
+        });
+        let err = mock.reachable(Duration::from_secs(1)).unwrap_err();
+        assert!(err.to_string().contains("unreachable over ssh"), "{err}");
+    }
+
+    #[test]
+    fn test_unreachable_error_names_the_host_address_and_port() {
+        let host = Host {
+            name: "auberge".to_string(),
+            address: "203.0.113.7".to_string(),
+            port: 2222,
+            ..test_host()
+        };
+        let msg = unreachable_error(&host, "").to_string();
+        assert!(
+            msg.contains("host auberge is unreachable over ssh"),
+            "{msg}"
+        );
+        assert!(msg.contains("203.0.113.7:2222"), "{msg}");
+        assert!(
+            msg.contains("Check the SSH key and network connectivity"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn test_unreachable_error_carries_the_probe_stderr() {
+        let msg = unreachable_error(&test_host(), "  Permission denied (publickey).\n").to_string();
+        assert!(msg.contains(": Permission denied (publickey)."), "{msg}");
+    }
+
+    #[test]
+    fn test_unreachable_error_says_nothing_extra_when_stderr_is_empty() {
+        let msg = unreachable_error(&test_host(), "   ").to_string();
+        let first_line = msg.lines().next().unwrap();
+        assert!(first_line.ends_with("192.0.2.9:2222"), "{first_line}");
+    }
+
+    #[test]
+    fn test_mock_rsync_e_arg_is_the_fixed_seam_marker() {
+        assert_eq!(MockSshSession::new().rsync_e_arg(), MOCK_RSYNC_E_ARG);
     }
 
     #[test]

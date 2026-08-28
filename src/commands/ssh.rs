@@ -2,6 +2,7 @@ use crate::hosts::HOST_FLAG;
 use crate::output;
 use crate::prompt::{Choice, select_item};
 use crate::services::inventory::select_or_arg as inventory_select_or_arg;
+use crate::services::ssh::{LiveSshSession, SshSession};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use std::os::unix::fs::DirBuilderExt;
@@ -114,6 +115,32 @@ pub fn run_ssh_keygen(host_arg: Option<String>, user: String, force: bool) -> Re
     }
 }
 
+/// The remote side of `ssh add-key`: create `~/.ssh` if absent, append the
+/// public key, and leave both at the modes sshd requires — a group- or
+/// world-writable `~/.ssh` or `authorized_keys` makes sshd ignore the file
+/// entirely, so the chmods are part of authorizing, not tidying.
+fn authorize_key_command(pubkey: &str) -> String {
+    format!(
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys",
+        pubkey
+    )
+}
+
+fn authorize_key(session: &dyn SshSession, pubkey: &str) -> Result<()> {
+    let result = session
+        .run(&authorize_key_command(pubkey))
+        .wrap_err("Failed to execute SSH command")?;
+    if result.success {
+        return Ok(());
+    }
+    let stderr = result.stderr_str();
+    let stderr = stderr.trim();
+    if stderr.is_empty() {
+        eyre::bail!("Failed to add key to remote host");
+    }
+    eyre::bail!("Failed to add key to remote host: {}", stderr);
+}
+
 pub fn run_ssh_add_key(
     host_arg: Option<String>,
     connect_with: Option<std::path::PathBuf>,
@@ -209,29 +236,9 @@ pub fn run_ssh_add_key(
 
     output::info("Adding key to remote host");
 
-    let ssh_cmd = format!(
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo 'Key added successfully'",
-        pubkey_content.trim()
-    );
-
-    let result = output::run_piped(
-        "ssh",
-        Command::new("ssh")
-            .arg("-i")
-            .arg(&connect_key)
-            .arg("-p")
-            .arg(host.vars.ansible_port.to_string())
-            .arg(format!("{}@{}", user, host.vars.ansible_host))
-            .arg(ssh_cmd),
-    )
-    .wrap_err("Failed to execute SSH command")?;
-    if result.status.success() {
-        output::clear_subprocess_lines(result.lines_written);
-    }
-
-    if !result.status.success() {
-        return Err(result.error("Failed to add key to remote host"));
-    }
+    let target = host.ssh_target(&user);
+    let session = LiveSshSession::first_contact(&target, &connect_key);
+    authorize_key(&session, pubkey_content.trim())?;
 
     output::success(&format!(
         "Key authorized successfully on {}@{}",
@@ -292,6 +299,50 @@ fn scan_public_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn authorize_key_command_leaves_ssh_at_the_modes_sshd_requires() {
+        let cmd = authorize_key_command("ssh-ed25519 AAAA user@box");
+        assert!(cmd.contains("chmod 700 ~/.ssh"), "{cmd}");
+        assert!(cmd.contains("chmod 600 ~/.ssh/authorized_keys"), "{cmd}");
+    }
+
+    #[test]
+    fn authorize_key_command_appends_and_never_truncates() {
+        let cmd = authorize_key_command("ssh-ed25519 AAAA user@box");
+        assert!(cmd.contains(">> ~/.ssh/authorized_keys"), "{cmd}");
+        // The truncating form is a single `>` with a space before it; `>>`
+        // trivially contains `>`, so the space is what distinguishes them.
+        assert!(!cmd.contains(" > ~/.ssh/authorized_keys"), "{cmd}");
+    }
+
+    #[test]
+    fn authorize_key_sends_exactly_one_command() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        authorize_key(&mock, "ssh-ed25519 AAAA user@box").unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![crate::services::ssh::SshOp::Run(authorize_key_command(
+                "ssh-ed25519 AAAA user@box"
+            ))]
+        );
+    }
+
+    #[test]
+    fn authorize_key_reports_the_remote_stderr() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(255),
+            stdout: Vec::new(),
+            stderr: b"Permission denied (publickey).".to_vec(),
+        });
+        let err = authorize_key(&mock, "ssh-ed25519 AAAA user@box").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Failed to add key to remote host: Permission denied (publickey)."
+        );
+    }
 
     fn write_file(path: &std::path::Path, content: &str) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

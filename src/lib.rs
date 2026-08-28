@@ -28,5 +28,4 @@ pub mod prompt;
 pub mod services;
 pub mod signal;
 pub mod ssh_config;
-pub mod ssh_session;
 pub mod tool_versions;

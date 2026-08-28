@@ -1,0 +1,440 @@
+//! Every ssh and scp argv the CLI issues, and the processes that run them.
+//!
+//! Private to [`super`] on purpose. This type used to be `pub` and named
+//! `SshSession` — the same name as the trait one module up, which CONTEXT.md
+//! calls the Recipe Executor's only test seam — and four commands imported it
+//! past that trait, which is exactly how they became unmockable. The trait is
+//! now the only way to reach a Host, and Rust enforces it: nothing outside
+//! `services::ssh` can name this type (#669).
+//!
+//! Mux hygiene is deliberately left as it is: the control socket is never torn
+//! down, and `ControlPath` is a fixed `/tmp/ssh-%r@%h:%p`. `ControlPersist`
+//! expires the socket on its own, which covers the teardown. The path is the
+//! sharper edge — ssh_config(5) recommends a directory "not writable by other
+//! users", and `%r` is the *remote* username, so two local users reaching the
+//! same remote account collide on one name. Left because this CLI is
+//! single-operator by construction (`~/.ssh/identities/<host>/<user>` keys,
+//! a user-local `hosts.toml`), and narrowing it is a change to every session's
+//! socket path rather than to this refactor. `Reach::FirstContact` opts out
+//! entirely where the sharing would actually cost something.
+
+use crate::hosts::Host;
+use crate::output;
+use eyre::{Context, Result};
+use std::ffi::OsString;
+use std::path::Path;
+use std::process::{Command, Output};
+use std::time::Duration;
+
+const SSH_MUX_OPTIONS: &[(&str, &str)] = &[
+    ("ControlMaster", "auto"),
+    ("ControlPath", "/tmp/ssh-%r@%h:%p"),
+    ("ControlPersist", "60s"),
+];
+
+/// Whether a connection may share a multiplexed master, and whether it keeps
+/// the operator's terminal. One choice rather than two flags, because both
+/// settings move together and for the same reason: whether trust with the Host
+/// is already established.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reach {
+    /// Reuse a warm control socket, capture output. Every command that runs
+    /// against a Host the operator already manages.
+    Shared,
+    /// No multiplexing, and stdin left attached to the terminal.
+    ///
+    /// `ssh add-key` authorizes a key over a connection made with a key the
+    /// operator *named*, and a reused master authenticates with whatever key
+    /// opened it — silently discarding that choice. It is also the CLI's one
+    /// first-contact command: its target comes from `ansible/inventory.yml`, so
+    /// no `hosts.toml` alias block supplies `StrictHostKeyChecking accept-new`,
+    /// and ssh may still need to ask about an unknown host key, or for a
+    /// passphrase no agent holds. A captured run answers neither.
+    FirstContact,
+}
+
+pub struct SshTransport<'a> {
+    pub host: &'a Host,
+    ssh_key: &'a Path,
+    reach: Reach,
+}
+
+impl<'a> SshTransport<'a> {
+    pub fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
+        Self {
+            host,
+            ssh_key,
+            reach: Reach::Shared,
+        }
+    }
+
+    pub fn first_contact(host: &'a Host, ssh_key: &'a Path) -> Self {
+        Self {
+            host,
+            ssh_key,
+            reach: Reach::FirstContact,
+        }
+    }
+
+    /// The connection-sharing options this reach wants. `ControlPath=none` is
+    /// spelled out rather than omitted: a user's own `~/.ssh/config` may set a
+    /// ControlPath, and `ControlMaster no` — the default — still *joins* an
+    /// existing socket.
+    fn sharing_args(&self) -> Vec<OsString> {
+        match self.reach {
+            Reach::Shared => Self::mux_args(),
+            Reach::FirstContact => vec!["-o".into(), "ControlPath=none".into()],
+        }
+    }
+
+    pub fn mux_args() -> Vec<OsString> {
+        SSH_MUX_OPTIONS
+            .iter()
+            .flat_map(|(k, v)| [OsString::from("-o"), format!("{}={}", k, v).into()])
+            .collect()
+    }
+
+    pub fn ssh_args(&self) -> Vec<OsString> {
+        let mut args = self.sharing_args();
+        args.extend([
+            "-i".into(),
+            self.ssh_key.into(),
+            "-p".into(),
+            self.host.port.to_string().into(),
+            format!("{}@{}", self.host.user, self.host.address).into(),
+        ]);
+        args
+    }
+
+    /// argv for a bounded, non-interactive connect: the session's own options
+    /// plus `ConnectTimeout` and `BatchMode`. Carries the mux options, so a
+    /// successful probe leaves a warm control socket for whatever runs next.
+    pub fn probe_args(&self, timeout: Duration) -> Vec<OsString> {
+        let mut args = self.ssh_args();
+        for option in [
+            format!("ConnectTimeout={}", timeout.as_secs()),
+            "BatchMode=yes".to_string(),
+        ] {
+            args.extend([OsString::from("-o"), option.into()]);
+        }
+        args
+    }
+
+    pub fn probe(&self, timeout: Duration) -> Result<Output> {
+        let out = Command::new("ssh")
+            .args(self.probe_args(timeout))
+            .arg("true")
+            .output()
+            .wrap_err("Failed to execute ssh")?;
+        let lines = output::subprocess_output("ssh", &String::from_utf8_lossy(&out.stderr));
+        if out.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
+        Ok(out)
+    }
+
+    pub fn run(&self, command: &str) -> Result<Output> {
+        if self.reach == Reach::FirstContact {
+            return self.run_attached(command);
+        }
+        let out = Command::new("ssh")
+            .args(self.ssh_args())
+            .arg(command)
+            .output()
+            .wrap_err("Failed to execute SSH command")?;
+        let stderr_text = String::from_utf8_lossy(&out.stderr);
+        let lines = output::subprocess_output("ssh", &stderr_text);
+        if out.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
+        Ok(out)
+    }
+
+    /// Streamed, with stdin inherited, so ssh can still prompt. `run_piped`
+    /// keeps only the stderr tail, which is what the caller's error reports;
+    /// stdout is not captured, and no [`Reach::FirstContact`] caller reads it.
+    fn run_attached(&self, command: &str) -> Result<Output> {
+        let result = output::run_piped(
+            "ssh",
+            Command::new("ssh").args(self.ssh_args()).arg(command),
+        )
+        .wrap_err("Failed to execute SSH command")?;
+        if result.status.success() {
+            output::clear_subprocess_lines(result.lines_written);
+        }
+        Ok(Output {
+            status: result.status,
+            stdout: Vec::new(),
+            stderr: result.last_stderr.into_bytes(),
+        })
+    }
+
+    pub fn run_raw(&self, args: &[&str]) -> Result<Output> {
+        let mut cmd = Command::new("ssh");
+        cmd.args(self.ssh_args());
+        for arg in args {
+            cmd.arg(arg);
+        }
+        let out = cmd.output().wrap_err("Failed to execute SSH command")?;
+        let stderr_text = String::from_utf8_lossy(&out.stderr);
+        let lines = output::subprocess_output("ssh", &stderr_text);
+        if out.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
+        Ok(out)
+    }
+
+    pub fn rsync_e_arg(&self) -> String {
+        let mux = SSH_MUX_OPTIONS
+            .iter()
+            .map(|(k, v)| format!("-o {}={}", k, v))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let key = shell_escape::escape(self.ssh_key.display().to_string().into());
+        format!("ssh {} -i {} -p {}", mux, key, self.host.port)
+    }
+
+    pub fn scp_args(&self) -> Vec<OsString> {
+        let mut args = self.sharing_args();
+        args.extend([
+            "-i".into(),
+            self.ssh_key.into(),
+            "-P".into(),
+            self.host.port.to_string().into(),
+        ]);
+        args
+    }
+
+    pub fn scp_to(&self, local: &Path, remote: &str) -> Result<()> {
+        let out = Command::new("scp")
+            .args(self.scp_args())
+            .arg(local)
+            .arg(format!(
+                "{}@{}:{}",
+                self.host.user, self.host.address, remote
+            ))
+            .output()
+            .wrap_err("Failed to upload file via scp")?;
+        let stderr_text = String::from_utf8_lossy(&out.stderr);
+        let lines = output::subprocess_output("scp", &stderr_text);
+        if out.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
+        if !out.status.success() {
+            let stderr = stderr_text.trim();
+            if stderr.is_empty() {
+                eyre::bail!("scp to {}:{} failed", self.host.address, remote);
+            } else {
+                eyre::bail!("scp to {}:{} failed: {}", self.host.address, remote, stderr);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn scp_from(&self, remote: &str, local: &Path) -> Result<()> {
+        let out = Command::new("scp")
+            .args(self.scp_args())
+            .arg(format!(
+                "{}@{}:{}",
+                self.host.user, self.host.address, remote
+            ))
+            .arg(local)
+            .output()
+            .wrap_err("Failed to download file via scp")?;
+        let stderr_text = String::from_utf8_lossy(&out.stderr);
+        let lines = output::subprocess_output("scp", &stderr_text);
+        if out.status.success() {
+            output::clear_subprocess_lines(lines);
+        }
+        if !out.status.success() {
+            let stderr = stderr_text.trim();
+            if stderr.is_empty() {
+                eyre::bail!("scp from {}:{} failed", self.host.address, remote);
+            } else {
+                eyre::bail!(
+                    "scp from {}:{} failed: {}",
+                    self.host.address,
+                    remote,
+                    stderr
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub fn systemctl(&self, action: &str, service: &str) -> Result<()> {
+        let result = output::run_piped(
+            "systemctl",
+            Command::new("ssh")
+                .args(self.ssh_args())
+                .arg("sudo")
+                .arg("systemctl")
+                .arg(action)
+                .arg(service),
+        )
+        .wrap_err_with(|| format!("Failed to {} service {}", action, service))?;
+        if result.status.success() {
+            output::clear_subprocess_lines(result.lines_written);
+        }
+        if !result.status.success() {
+            return Err(result.error(format!("systemctl {} {} failed", action, service)));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_host() -> Host {
+        Host {
+            name: "test".to_string(),
+            address: "192.0.2.1".to_string(),
+            user: "deploy".to_string(),
+            port: 2222,
+            ssh_key: None,
+            tags: vec![],
+            description: None,
+            python_interpreter: None,
+            become_method: "sudo".to_string(),
+            tailscale_ip: None,
+        }
+    }
+
+    fn strings(args: &[OsString]) -> Vec<String> {
+        args.iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn test_ssh_args_contains_mux_options() {
+        let host = test_host();
+        let key = Path::new("/home/user/.ssh/id_ed25519");
+        let session = SshTransport::new(&host, key);
+        let strs = strings(&session.ssh_args());
+        assert!(strs.contains(&"ControlMaster=auto".to_string()));
+        assert!(strs.contains(&"ControlPath=/tmp/ssh-%r@%h:%p".to_string()));
+        assert!(strs.contains(&"ControlPersist=60s".to_string()));
+    }
+
+    #[test]
+    fn test_ssh_args_includes_key_port_user_host() {
+        let host = test_host();
+        let key = Path::new("/home/user/.ssh/id_ed25519");
+        let session = SshTransport::new(&host, key);
+        let strs = strings(&session.ssh_args());
+        assert!(strs.contains(&"/home/user/.ssh/id_ed25519".to_string()));
+        assert!(strs.contains(&"2222".to_string()));
+        assert!(strs.contains(&"deploy@192.0.2.1".to_string()));
+    }
+
+    #[test]
+    fn test_scp_args_uses_uppercase_p_for_port() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshTransport::new(&host, key);
+        let strs = strings(&session.scp_args());
+        assert!(strs.contains(&"-P".to_string()));
+        assert!(!strs.contains(&"-p".to_string()));
+    }
+
+    #[test]
+    fn test_rsync_e_arg_contains_mux_and_key() {
+        let host = test_host();
+        let key = Path::new("/home/user/.ssh/id_ed25519");
+        let e_arg = SshTransport::new(&host, key).rsync_e_arg();
+        assert!(e_arg.starts_with("ssh "));
+        assert!(e_arg.contains("ControlMaster=auto"));
+        assert!(e_arg.contains("ControlPath=/tmp/ssh-%r@%h:%p"));
+        assert!(e_arg.contains("ControlPersist=60s"));
+        assert!(e_arg.contains("-i /home/user/.ssh/id_ed25519"));
+        assert!(e_arg.contains("-p 2222"));
+    }
+
+    #[test]
+    fn test_rsync_e_arg_escapes_spaces_in_key_path() {
+        let host = test_host();
+        let key = Path::new("/home/user/my keys/id_ed25519");
+        let e_arg = SshTransport::new(&host, key).rsync_e_arg();
+        assert!(!e_arg.contains("-i /home/user/my keys/id_ed25519"));
+        assert!(e_arg.contains("'/home/user/my keys/id_ed25519'"));
+    }
+
+    #[test]
+    fn test_probe_args_bound_the_connect_and_forbid_prompts() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshTransport::new(&host, key);
+        let strs = strings(&session.probe_args(Duration::from_secs(10)));
+        assert!(strs.contains(&"ConnectTimeout=10".to_string()));
+        assert!(strs.contains(&"BatchMode=yes".to_string()));
+    }
+
+    #[test]
+    fn test_probe_args_keep_the_mux_options_so_the_socket_stays_warm() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshTransport::new(&host, key);
+        let strs = strings(&session.probe_args(Duration::from_secs(3)));
+        assert!(strs.contains(&"ControlMaster=auto".to_string()));
+        assert!(strs.contains(&"ControlPersist=60s".to_string()));
+        assert!(strs.contains(&"deploy@192.0.2.1".to_string()));
+    }
+
+    #[test]
+    fn test_first_contact_refuses_to_share_a_master() {
+        let host = test_host();
+        let key = Path::new("/tmp/chosen_key");
+        let strs = strings(&SshTransport::first_contact(&host, key).ssh_args());
+        assert!(strs.contains(&"ControlPath=none".to_string()), "{strs:?}");
+        assert!(
+            !strs.iter().any(|s| s.starts_with("ControlMaster")),
+            "{strs:?}"
+        );
+        assert!(
+            !strs.iter().any(|s| s.starts_with("ControlPersist")),
+            "{strs:?}"
+        );
+    }
+
+    #[test]
+    fn test_first_contact_still_names_the_key_the_operator_chose() {
+        let host = test_host();
+        let key = Path::new("/tmp/chosen_key");
+        let strs = strings(&SshTransport::first_contact(&host, key).ssh_args());
+        assert!(strs.contains(&"/tmp/chosen_key".to_string()), "{strs:?}");
+        assert!(strs.contains(&"deploy@192.0.2.1".to_string()), "{strs:?}");
+    }
+
+    #[test]
+    fn test_shared_reach_is_the_default_and_multiplexes() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let strs = strings(&SshTransport::new(&host, key).ssh_args());
+        assert!(strs.contains(&"ControlMaster=auto".to_string()), "{strs:?}");
+        assert!(!strs.contains(&"ControlPath=none".to_string()), "{strs:?}");
+    }
+
+    #[test]
+    fn test_first_contact_scp_args_do_not_share_either() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let strs = strings(&SshTransport::first_contact(&host, key).scp_args());
+        assert!(strs.contains(&"ControlPath=none".to_string()), "{strs:?}");
+    }
+
+    #[test]
+    fn test_mux_args_pairs_options_correctly() {
+        let strs = strings(&SshTransport::mux_args());
+        for (i, s) in strs.iter().enumerate() {
+            if s == "-o" {
+                assert!(
+                    strs[i + 1].contains('='),
+                    "option after -o should be key=value"
+                );
+            }
+        }
+    }
+}
