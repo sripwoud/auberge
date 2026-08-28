@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0](https://github.com/sripwoud/auberge/compare/v0.15.18...v0.16.0) - 2026-08-28
+
+### Added
+
+- *(backup)* declare restore advice in the Backup Recipe ([#691](https://github.com/sripwoud/auberge/pull/691))
+
+### Fixed
+
+- *(backup)* tell an unreachable host apart from a missing service ([#697](https://github.com/sripwoud/auberge/pull/697))
+- *(ansible)* answer two role variables no run could supply ([#689](https://github.com/sripwoud/auberge/pull/689))
+- *(config)* resolve required keys from the Playbook Metas ([#687](https://github.com/sripwoud/auberge/pull/687))
+- *(dns)* [**breaking**] report migrate's tailnet-only skips as data ([#685](https://github.com/sripwoud/auberge/pull/685))
+- *(dns)* emit a JSON body on set-all dry runs and cancelled runs ([#683](https://github.com/sripwoud/auberge/pull/683))
+- *(dns)* [**breaking**] reject --production on the subcommands that never read it ([#682](https://github.com/sripwoud/auberge/pull/682))
+
+### Other
+
+- *(backup)* give restore the session shape create has ([#700](https://github.com/sripwoud/auberge/pull/700))
+- exclude rust #[cfg(test)] code from codeql extraction ([#699](https://github.com/sripwoud/auberge/pull/699))
+- *(backup)* carve the freshrss opml pair into its own module ([#698](https://github.com/sripwoud/auberge/pull/698))
+- *(backup)* inject the Backup Session's Progress ([#695](https://github.com/sripwoud/auberge/pull/695))
+- *(ssh)* make the SshSession trait the only way to reach a Host ([#694](https://github.com/sripwoud/auberge/pull/694))
+- *(uv)* bump to 0.12.7 ([#690](https://github.com/sripwoud/auberge/pull/690))
+- stop the unit scan on the two shapes it cannot read
+- read the fleet's unit files through one scan, and fence it ([#692](https://github.com/sripwoud/auberge/pull/692))
+- *(cli)* add a library target the fences can import ([#688](https://github.com/sripwoud/auberge/pull/688))
+- read the crate's source through one walk, and fence it ([#684](https://github.com/sripwoud/auberge/pull/684))
+- *(ansible)* delete the wireguard role and its roster entry ([#681](https://github.com/sripwoud/auberge/pull/681))
+- *(dns)* reach cloudflare through a crate-local seam ([#675](https://github.com/sripwoud/auberge/pull/675))
+- *(hermes)* bump to v2026.8.27 ([#664](https://github.com/sripwoud/auberge/pull/664))
+
 ## [0.15.18](https://github.com/sripwoud/auberge/compare/v0.15.17...v0.15.18) - 2026-08-27
 
 ### Other
