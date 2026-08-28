@@ -15,13 +15,11 @@
 //! matched against the pairing by equality in both directions.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-
-use serde_yaml::Value;
 
 mod common;
 
-use common::{all_roles, defaults, field, resolve, role_dir, role_tasks, strings};
+use common::units::fleet_units as installed_units;
+use common::{defaults, resolve};
 
 /// A runtime that exits with a nonzero status on a clean shutdown, and the
 /// status it exits with. Keyed by the runtime rather than by the unit, so the
@@ -57,31 +55,6 @@ struct ServiceUnit {
     restart: String,
 }
 
-/// The unit name a `dest` installs, if that dest is a `.service` in a systemd
-/// unit directory this model reads — the system directory or a user's. A
-/// drop-in's dest lands under `<unit>.service.d/`, so it is excluded by the
-/// same test that admits a unit.
-///
-/// A file name that still carries an unresolved jinja expression is a hard
-/// stop: a var-driven `loop:` this scan cannot expand would otherwise fail the
-/// `.service` test and vanish from the domain silently, which is the one way a
-/// new unit could enter the fleet without entering the fence. An unresolved
-/// expression in the *directory* is not that case — hermes installs a user
-/// unit under an admin home the role's defaults do not name, and the unit it
-/// installs there is still named in full.
-fn service_installed_at(dest: &str) -> Option<&str> {
-    let (dir, file) = dest.rsplit_once('/')?;
-    if dir != "/etc/systemd/system" && !dir.ends_with("/.config/systemd/user") {
-        return None;
-    }
-    assert!(
-        !file.contains("{{"),
-        "`{dest}` installs into a systemd unit directory under a name that does \
-         not resolve; teach this test how to expand it before relying on it"
-    );
-    file.ends_with(".service").then_some(file)
-}
-
 /// argv[0]'s basename from an `ExecStart=` value. systemd's special prefixes
 /// (`-`, `@`, `+`, `!`) change what argv[0] means, and nothing in the fleet
 /// uses one, so meeting one is a hard stop rather than a silent misread.
@@ -103,94 +76,56 @@ fn runtime_of(role: &str, unit: &str, exec_start: &str) -> String {
         .to_string()
 }
 
-fn service_units(role: &str, vars: &BTreeMap<String, String>) -> Vec<ServiceUnit> {
-    let mut units = Vec::new();
-    for task in role_tasks(role) {
-        for module in ["ansible.builtin.template", "ansible.builtin.copy"] {
-            let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
-                continue;
-            };
-            let (Some(dest), Some(src)) = (
-                field(args, "dest").and_then(Value::as_str),
-                field(args, "src").and_then(Value::as_str),
-            ) else {
-                continue;
-            };
-            let items = strings(field(&task.body, "loop"));
-            let expansions: Vec<(String, String)> = if items.is_empty() {
-                vec![(dest.to_string(), src.to_string())]
-            } else {
-                items
-                    .iter()
-                    .map(|item| {
-                        (
-                            dest.replace("{{ item }}", item),
-                            src.replace("{{ item }}", item),
-                        )
-                    })
-                    .collect()
-            };
-            for (dest, src) in expansions {
-                let dest = resolve(&dest, vars);
-                let Some(name) = service_installed_at(&dest) else {
-                    continue;
-                };
-                let name = name.to_string();
-                let file = src.rsplit('/').next().expect("a src names a file");
-                let template = ["templates", "files"]
-                    .iter()
-                    .map(|dir| role_dir(role).join(dir).join(file))
-                    .find(|path| path.is_file())
-                    .unwrap_or_else(|| panic!("{role}: {file} is deployed but does not exist"));
-                let body = fs::read_to_string(template).expect("a found template must be readable");
-                let execs: Vec<&str> = body
-                    .lines()
-                    .filter_map(|line| line.strip_prefix("ExecStart="))
-                    .collect();
-                let [exec_start] = execs[..] else {
-                    panic!(
-                        "{role}: `{name}` declares {} ExecStart lines; one runtime \
-                         per unit is what this model reads, so teach it about the \
-                         rest before relying on it",
-                        execs.len()
-                    )
-                };
-                units.push(ServiceUnit {
-                    runtime: runtime_of(role, &name, &resolve(exec_start.trim(), vars)),
-                    restart: body
-                        .lines()
-                        .filter_map(|line| line.strip_prefix("Restart="))
-                        .next_back()
-                        .unwrap_or("no")
-                        .trim()
-                        .to_string(),
-                    declared: body
-                        .lines()
-                        .filter_map(|line| line.strip_prefix("SuccessExitStatus="))
-                        .flat_map(|value| {
-                            resolve(value.trim(), vars)
-                                .split([' ', '\t', ','])
-                                .filter(|token| !token.is_empty())
-                                .map(str::to_string)
-                                .collect::<Vec<_>>()
-                        })
-                        .collect(),
-                    role: role.to_string(),
-                    name,
-                });
-            }
-        }
-    }
-    units
-}
-
+/// The `.service` unit files the fleet installs, read through the shared scan.
+///
+/// Drop-ins are filtered out rather than merged: a drop-in refines a unit
+/// installed by something else, and the `ExecStart` it would be judged against
+/// is not in the repo at all. Every directive below is read from `[Service]`,
+/// where systemd reads it — a `Restart=` under `[Install]` configures nothing,
+/// and forgiving a status on the strength of one would be exactly the vacuous
+/// pass this fence exists to prevent.
 fn fleet_units() -> Vec<ServiceUnit> {
-    let mut units: Vec<ServiceUnit> = all_roles()
-        .iter()
-        .flat_map(|role| service_units(role, &defaults(role)))
-        .collect();
-    units.sort_by(|a, b| (&a.role, &a.name).cmp(&(&b.role, &b.name)));
-    units
+    let mut vars_by_role: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    installed_units()
+        .into_iter()
+        .filter(|unit| unit.dropin.is_none() && unit.name.ends_with(".service"))
+        .map(|unit| {
+            let vars = vars_by_role
+                .entry(unit.role.clone())
+                .or_insert_with(|| defaults(&unit.role));
+            let execs = unit.all_in("Service", "ExecStart");
+            let [exec_start] = execs[..] else {
+                panic!(
+                    "{}: `{}` declares {} ExecStart lines under `[Service]`; one \
+                     runtime per unit is what this model reads, so teach it about \
+                     the rest before relying on it",
+                    unit.role,
+                    unit.name,
+                    execs.len()
+                )
+            };
+            ServiceUnit {
+                runtime: runtime_of(&unit.role, &unit.name, &resolve(exec_start, vars)),
+                restart: unit
+                    .last_in("Service", "Restart")
+                    .unwrap_or("no")
+                    .to_string(),
+                declared: unit
+                    .all_in("Service", "SuccessExitStatus")
+                    .into_iter()
+                    .flat_map(|value| {
+                        resolve(value, vars)
+                            .split([' ', '\t', ','])
+                            .filter(|token| !token.is_empty())
+                            .map(str::to_string)
+                            .collect::<Vec<_>>()
+                    })
+                    .collect(),
+                role: unit.role.clone(),
+                name: unit.name.clone(),
+            }
+        })
+        .collect()
 }
 
 fn declared_for(runtime: &str) -> Option<&'static CleanShutdownExit> {

@@ -25,12 +25,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
-use auberge::playbook_meta::{UNIT_TYPE_SUFFIXES, qualified_unit_name};
+use auberge::playbook_meta::qualified_unit_name;
 use serde_yaml::{Mapping, Value};
 
 mod common;
 
-use common::{all_roles, defaults, field, playbooks_dir, resolve, role_dir, role_tasks, strings};
+use common::units::{Scope, fleet_units};
+use common::{all_roles, field, playbooks_dir, role_dir};
 
 /// A unit an App declares that no role installs a file for, and why the scan
 /// cannot compute it. Each entry is checked to stay underivable: the day a
@@ -47,92 +48,17 @@ const DECLARED_WITHOUT_FILE: &[(&str, &str, &str)] = &[(
 struct Owned {
     app: String,
     unit: String,
-    user_scope: bool,
+    scope: Scope,
 }
 
 impl Owned {
     fn id(&self) -> String {
-        let scope = if self.user_scope { " (user)" } else { "" };
+        let scope = match self.scope {
+            Scope::System => "",
+            Scope::User => " (user)",
+        };
         format!("{}/{}{}", self.app, self.unit, scope)
     }
-}
-
-/// The unit a `dest` reveals, if it lands in a systemd unit directory this
-/// model reads — the system directory or a user's — either as the unit file
-/// itself or as a drop-in under `<unit>.<type>.d/`, which names the unit it
-/// refines just as well. Returns the unit and whether it is user-scoped.
-fn unit_configured_at(dest: &str) -> Option<(String, bool)> {
-    let (dir, file) = dest.rsplit_once('/')?;
-    let scope_of = |path: &str| -> Option<bool> {
-        if path == "/etc/systemd/system" {
-            Some(false)
-        } else if path.ends_with("/.config/systemd/user") {
-            Some(true)
-        } else {
-            None
-        }
-    };
-
-    let (unit, user_scope) = if let Some(user_scope) = scope_of(dir) {
-        (file.to_string(), user_scope)
-    } else {
-        let (parent, unit_dir) = dir.rsplit_once('/')?;
-        let unit = unit_dir.strip_suffix(".d")?;
-        let user_scope = scope_of(parent)?;
-        if !file.ends_with(".conf") {
-            return None;
-        }
-        (unit.to_string(), user_scope)
-    };
-
-    // Asserted before the suffix test: an unresolved name would fail that
-    // test and drop out of the domain silently, the one way a new unit could
-    // enter the fleet without entering this fence.
-    assert!(
-        !unit.contains("{{"),
-        "`{dest}` configures a systemd unit whose name does not resolve; teach \
-         this test how to expand it before relying on it"
-    );
-    if !UNIT_TYPE_SUFFIXES
-        .iter()
-        .any(|suffix| unit.ends_with(suffix))
-    {
-        return None;
-    }
-    Some((unit, user_scope))
-}
-
-/// Every unit a role's own tasks reveal, through the file it installs or the
-/// drop-in it lays over a packaged one. Unlike the fences that read a unit
-/// file's directives, this one needs only the name, so a `dest` reveals its
-/// unit whether the body comes from `src` or inline `content:`.
-fn units_installed_by(role: &str, vars: &BTreeMap<String, String>) -> BTreeSet<(String, bool)> {
-    let mut out = BTreeSet::new();
-    for task in role_tasks(role) {
-        for module in ["ansible.builtin.template", "ansible.builtin.copy"] {
-            let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
-                continue;
-            };
-            let Some(dest) = field(args, "dest").and_then(Value::as_str) else {
-                continue;
-            };
-            let items = strings(field(&task.body, "loop"));
-            let expansions: Vec<String> = if items.is_empty() {
-                vec![dest.to_string()]
-            } else {
-                items
-                    .iter()
-                    .map(|item| dest.replace("{{ item }}", item))
-                    .collect()
-            };
-            for dest in expansions {
-                if let Some(found) = unit_configured_at(&resolve(&dest, vars)) {
-                    out.insert(found);
-                }
-            }
-        }
-    }
-    out
 }
 
 /// The App each role answers as: the role's own name where a Meta of that
@@ -222,13 +148,21 @@ fn playbook_roles(path: &PathBuf) -> Vec<String> {
 
 /// Every unit the fleet's own tasks reveal, keyed by the App that must
 /// declare it.
+///
+/// The widest slice of the shared scan: every unit type, both managers, and
+/// drop-ins included, since a drop-in names the unit it refines just as well as
+/// a unit file does. The unit file and its drop-ins collapse to one name here —
+/// this fence asks who owns the unit, not what any one file says about it.
 fn computed_units() -> BTreeSet<Owned> {
+    let mut by_role: BTreeMap<String, BTreeSet<(String, Scope)>> = BTreeMap::new();
+    for unit in fleet_units() {
+        by_role
+            .entry(unit.role.clone())
+            .or_default()
+            .insert((unit.name, unit.scope));
+    }
     let mut out = BTreeSet::new();
-    for role in all_roles() {
-        let installed = units_installed_by(&role, &defaults(&role));
-        if installed.is_empty() {
-            continue;
-        }
+    for (role, installed) in by_role {
         let app = app_of(&role, &mut BTreeSet::new()).unwrap_or_else(|| {
             panic!(
                 "{role} installs systemd units but maps to no Playbook Meta; \
@@ -236,11 +170,11 @@ fn computed_units() -> BTreeSet<Owned> {
                  declared"
             )
         });
-        for (unit, user_scope) in installed {
+        for (unit, scope) in installed {
             out.insert(Owned {
                 app: app.clone(),
                 unit,
-                user_scope,
+                scope,
             });
         }
     }
@@ -290,9 +224,9 @@ fn declared_units() -> BTreeSet<Owned> {
                 // placeholder is what DECLARED_WITHOUT_FILE names syncthing's
                 // unit by.
                 unit: qualified_unit_name(&name),
-                user_scope: match scope.as_str() {
-                    "system" => false,
-                    "user" => true,
+                scope: match scope.as_str() {
+                    "system" => Scope::System,
+                    "user" => Scope::User,
                     other => panic!("{app}: `{other}` is not a unit scope"),
                 },
             });

@@ -18,13 +18,10 @@
 //! matched against the regime's by equality in both directions.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-
-use serde_yaml::Value;
 
 mod common;
 
-use common::{all_roles, defaults, field, resolve, role_dir, role_tasks, strings};
+use common::units::{InstalledUnit, fleet_units as installed_units};
 
 /// What systemd does with a unit that cannot start.
 enum Limiter {
@@ -139,42 +136,6 @@ const RESTART_VALUES: &[&str] = &[
 /// systemd's own default when a unit sets `Restart=` and no `RestartSec=`.
 const DEFAULT_RESTART_SEC_MS: u64 = 100;
 
-/// What a `dest` configures, if anything this model reads: the unit it is or the
-/// unit it refines. Drop-ins are in the domain here, unlike in ADR-0038's scan,
-/// because a drop-in is how the repo reaches a unit it does not template — and
-/// the fleet has one such unit that restarts.
-///
-/// A unit name still carrying an unresolved jinja expression is a hard stop: a
-/// var-driven `loop:` this scan cannot expand would otherwise fail the
-/// `.service` test and vanish from the domain silently, which is the one way a
-/// new restarting unit could enter the fleet without entering the fence.
-fn unit_configured_at(dest: &str) -> Option<(String, Option<String>)> {
-    let (dir, file) = dest.rsplit_once('/')?;
-    let in_unit_dir =
-        |path: &str| path == "/etc/systemd/system" || path.ends_with("/.config/systemd/user");
-
-    let (unit, dropin) = if in_unit_dir(dir) {
-        (file.to_string(), None)
-    } else {
-        let (parent, unit_dir) = dir.rsplit_once('/')?;
-        let unit = unit_dir.strip_suffix(".d")?;
-        if !in_unit_dir(parent) || !file.ends_with(".conf") {
-            return None;
-        }
-        (unit.to_string(), Some(file.to_string()))
-    };
-
-    if !unit.ends_with(".service") {
-        return None;
-    }
-    assert!(
-        !unit.contains("{{"),
-        "`{dest}` configures a systemd unit whose name does not resolve; teach \
-         this test how to expand it before relying on it"
-    );
-    Some((unit, dropin))
-}
-
 /// A systemd time span in milliseconds. The default unit for the settings this
 /// test reads is seconds, and a span may be written as several components
 /// (`1min 30s`). An unrecognised suffix is a hard stop: reading `5min` as 5
@@ -210,18 +171,16 @@ fn timespan_ms(unit: &str, key: &str, raw: &str) -> u64 {
     total
 }
 
-/// One assignment the repo makes for a unit: the section it is under, the key,
-/// the value, and the file it came from.
-struct Directive {
-    section: String,
-    key: String,
-    value: String,
-    file: String,
-}
-
-/// A unit the repo configures, and every assignment it makes for it — the unit
-/// file first where the repo writes one, then drop-ins in the order systemd
-/// loads them, so the last assignment is the effective one.
+/// A unit the repo configures, and every file it configures it through — the
+/// unit file first where the repo writes one, then drop-ins in the order
+/// systemd loads them, so the last assignment is the effective one.
+///
+/// This is the one fence that wants systemd's *effective* view rather than one
+/// file's, so it is the one that merges the shared scan's per-file units. The
+/// files stay separate underneath because which file an assignment is in is a
+/// claim this fence makes:
+/// `test_an_adopted_units_dropin_pins_the_restart_delay_it_is_judged_against`
+/// is about the drop-in and nothing else.
 struct Unit {
     role: String,
     name: String,
@@ -229,7 +188,7 @@ struct Unit {
     /// over is packaged elsewhere, so its `Restart=` and `RestartSec=` are not
     /// in the repo to read.
     templated: bool,
-    directives: Vec<Directive>,
+    files: Vec<InstalledUnit>,
 }
 
 impl Unit {
@@ -238,23 +197,26 @@ impl Unit {
     }
 
     /// The value systemd would use: for the single-value settings this test
-    /// reads, the last assignment in the named section wins.
+    /// reads, the last assignment in the named section wins — across the unit
+    /// file and its drop-ins, in the order systemd loads them.
     fn last_in(&self, section: &str, key: &str) -> Option<&str> {
-        self.directives
+        self.files
             .iter()
-            .filter(|d| d.section == section && d.key == key)
-            .map(|d| d.value.as_str())
-            .next_back()
+            .flat_map(|file| file.all_in(section, key))
+            .last()
     }
 
     /// Every `(file, section)` the key is assigned at, so a setting written
     /// where systemd does not read it can be named rather than silently
     /// believed.
     fn assignments_of(&self, key: &str) -> Vec<(&str, &str)> {
-        self.directives
+        self.files
             .iter()
-            .filter(|d| d.key == key)
-            .map(|d| (d.file.as_str(), d.section.as_str()))
+            .flat_map(|file| {
+                file.sections_assigning(key)
+                    .into_iter()
+                    .map(|section| (file.file(), section))
+            })
             .collect()
     }
 
@@ -300,129 +262,39 @@ impl Unit {
     }
 }
 
-/// A unit file or drop-in parsed into its assignments. Comments and blank lines
-/// are what an operator sees; only assignments matter here.
-fn directives(body: &str, file: &str) -> Vec<Directive> {
-    let mut section = String::new();
-    let mut out = Vec::new();
-    for line in body.lines() {
-        let line = line.trim();
-        if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
-            section = name.to_string();
-            continue;
-        }
-        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
-            continue;
-        }
-        if let Some((key, value)) = line.split_once('=') {
-            out.push(Directive {
-                section: section.clone(),
-                key: key.trim().to_string(),
-                value: value.trim().to_string(),
-                file: file.to_string(),
-            });
-        }
-    }
-    out
-}
-
-/// One file the repo installs for a unit: the unit itself, or a drop-in over it.
-struct InstalledFile {
-    unit: String,
-    /// The drop-in's file name; `None` when the file is the unit itself.
-    dropin: Option<String>,
-    directives: Vec<Directive>,
-}
-
-/// Every unit file and drop-in the role installs.
-fn installed_by(role: &str, vars: &BTreeMap<String, String>) -> Vec<InstalledFile> {
-    let mut out = Vec::new();
-    for task in role_tasks(role) {
-        for module in ["ansible.builtin.template", "ansible.builtin.copy"] {
-            let Some(args) = field(&task.body, module).and_then(Value::as_mapping) else {
-                continue;
-            };
-            let dest = field(args, "dest").and_then(Value::as_str);
-            let Some(src) = field(args, "src").and_then(Value::as_str) else {
-                // A task with no `src` writes inline `content:`. Harmless for
-                // anything but a unit, and a silent domain hole for a unit.
-                if let Some(dest) = dest {
-                    assert!(
-                        unit_configured_at(&resolve(dest, vars)).is_none(),
-                        "{role}: `{dest}` configures a systemd unit from inline \
-                         `content:` rather than from a file; this scan reads \
-                         `src` only, so teach it about the task before relying \
-                         on it"
-                    );
-                }
-                continue;
-            };
-            let Some(dest) = dest else {
-                continue;
-            };
-            let items = strings(field(&task.body, "loop"));
-            let expansions: Vec<(String, String)> = if items.is_empty() {
-                vec![(dest.to_string(), src.to_string())]
-            } else {
-                items
-                    .iter()
-                    .map(|item| {
-                        (
-                            dest.replace("{{ item }}", item),
-                            src.replace("{{ item }}", item),
-                        )
-                    })
-                    .collect()
-            };
-            for (dest, src) in expansions {
-                let dest = resolve(&dest, vars);
-                let Some((unit, dropin)) = unit_configured_at(&dest) else {
-                    continue;
-                };
-                let file = src.rsplit('/').next().expect("a src names a file");
-                let source = ["templates", "files"]
-                    .iter()
-                    .map(|dir| role_dir(role).join(dir).join(file))
-                    .find(|path| path.is_file())
-                    .unwrap_or_else(|| panic!("{role}: {file} is deployed but does not exist"));
-                let body = fs::read_to_string(source).expect("a found source must be readable");
-                let label = dropin.clone().unwrap_or_else(|| unit.clone());
-                out.push(InstalledFile {
-                    directives: directives(&body, &label),
-                    unit,
-                    dropin,
-                });
-            }
-        }
-    }
-    out
-}
-
-fn units_of(role: &str) -> Vec<Unit> {
-    let mut grouped: BTreeMap<String, Vec<InstalledFile>> = BTreeMap::new();
-    for file in installed_by(role, &defaults(role)) {
-        grouped.entry(file.unit.clone()).or_default().push(file);
+/// Every `.service` the repo configures, unit file and drop-ins merged, out of
+/// the shared scan.
+///
+/// `.service` is the whole domain because `Restart=` is a `[Service]` setting:
+/// a `.timer` or `.socket` here would be a unit this fence can only ever pass
+/// on. Drop-ins are *in* it, unlike in the fences over what a unit runs —
+/// a drop-in is how the repo reaches a unit it does not template, and the fleet
+/// has one such unit that restarts.
+fn fleet_units() -> Vec<Unit> {
+    let mut grouped: BTreeMap<(String, String), Vec<InstalledUnit>> = BTreeMap::new();
+    for file in installed_units()
+        .into_iter()
+        .filter(|file| file.name.ends_with(".service"))
+    {
+        grouped
+            .entry((file.role.clone(), file.name.clone()))
+            .or_default()
+            .push(file);
     }
     grouped
         .into_iter()
-        .map(|(name, mut files)| {
+        .map(|((role, name), mut files)| {
             // The unit file first, then drop-ins as systemd loads them: lexical
             // by file name, so the last assignment for a key is the live one.
             files.sort_by(|a, b| a.dropin.cmp(&b.dropin));
             Unit {
-                role: role.to_string(),
+                role,
                 name,
                 templated: files.iter().any(|file| file.dropin.is_none()),
-                directives: files.into_iter().flat_map(|file| file.directives).collect(),
+                files,
             }
         })
         .collect()
-}
-
-fn fleet_units() -> Vec<Unit> {
-    let mut units: Vec<Unit> = all_roles().iter().flat_map(|role| units_of(role)).collect();
-    units.sort_by(|a, b| (&a.role, &a.name).cmp(&(&b.role, &b.name)));
-    units
 }
 
 fn declared() -> BTreeMap<&'static str, &'static Regime> {
