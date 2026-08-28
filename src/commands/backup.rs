@@ -1113,9 +1113,10 @@ fn export_opml(session: &dyn SshSession, remote_cmd: &str) -> Result<Vec<u8>> {
     Ok(out.stdout)
 }
 
-/// Upload, then import-and-delete. The remote copy is removed by the same
-/// command that consumes it, so a failed import leaves nothing behind under
-/// `/tmp` for the next run to import twice.
+/// Upload, then import. The remote copy is deleted by the tail of the import
+/// command itself, which is `&&`-chained — so it survives a failed import, and
+/// `/tmp/freshrss_import_<user>.opml` is overwritten rather than appended to by
+/// the next attempt.
 fn import_opml(
     session: &dyn SshSession,
     local: &Path,
@@ -1466,8 +1467,11 @@ fn default_backup_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("~/.local/share/auberge/backups"))
 }
 
-/// One argv rather than a shell line: a unit name reaching a remote shell
-/// would be re-split and glob-expanded.
+/// The answer is the unit file name appearing in systemctl's own output, not
+/// the exit code: `list-unit-files` prints a header and "0 unit files listed."
+/// for a name it does not know, so a non-empty stdout proves nothing, and its
+/// exit code for that case is systemd-version-dependent. The exit code is
+/// and-ed in to reject a transport failure, not to answer the question.
 fn check_remote_unit_exists(session: &dyn SshSession, unit: &str) -> Result<bool> {
     let unit_file = unit_file_name(unit);
     let output = session.run_raw(&["systemctl", "list-unit-files", &unit_file])?;

@@ -153,8 +153,13 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// is testable against [`MockSshSession`] without one.
 pub trait SshSession {
     fn run(&self, command: &str) -> Result<CommandResult>;
-    /// One argv, no shell — for a command whose arguments must not be re-split
-    /// or glob-expanded by the remote shell.
+    /// A command given as pieces rather than as one string the caller joined.
+    ///
+    /// This buys nothing on the *remote* side — ssh(1) appends its arguments
+    /// "separated by spaces, before it is sent to the server", so the remote
+    /// login shell parses the result either way, and a value carrying a space
+    /// or a glob is no safer here than in [`SshSession::run`]. What it saves is
+    /// the local `format!`, for the callers whose command is already a list.
     fn run_raw(&self, args: &[&str]) -> Result<CommandResult>;
     /// One bounded, non-interactive connect. Callers that are about to issue a
     /// series of commands against a Host that may have gone dark use it so a
