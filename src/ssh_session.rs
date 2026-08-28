@@ -4,6 +4,7 @@ use eyre::{Context, Result};
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::{Command, Output};
+use std::time::Duration;
 
 const SSH_MUX_OPTIONS: &[(&str, &str)] = &[
     ("ControlMaster", "auto"),
@@ -38,6 +39,28 @@ impl<'a> SshSession<'a> {
             format!("{}@{}", self.host.user, self.host.address).into(),
         ]);
         args
+    }
+
+    /// argv for a bounded, non-interactive connect: the session's own options
+    /// plus `ConnectTimeout` and `BatchMode`. Carries the mux options, so a
+    /// successful probe leaves a warm control socket for whatever runs next.
+    pub fn probe_args(&self, timeout: Duration) -> Vec<OsString> {
+        let mut args = self.ssh_args();
+        for option in [
+            format!("ConnectTimeout={}", timeout.as_secs()),
+            "BatchMode=yes".to_string(),
+        ] {
+            args.extend([OsString::from("-o"), option.into()]);
+        }
+        args
+    }
+
+    pub fn probe(&self, timeout: Duration) -> Result<Output> {
+        Command::new("ssh")
+            .args(self.probe_args(timeout))
+            .arg("true")
+            .output()
+            .wrap_err("Failed to execute ssh")
     }
 
     pub fn run(&self, command: &str) -> Result<Output> {
@@ -245,6 +268,27 @@ mod tests {
         let e_arg = SshSession::new(&host, key).rsync_e_arg();
         assert!(!e_arg.contains("-i /home/user/my keys/id_ed25519"));
         assert!(e_arg.contains("'/home/user/my keys/id_ed25519'"));
+    }
+
+    #[test]
+    fn test_probe_args_bound_the_connect_and_forbid_prompts() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshSession::new(&host, key);
+        let strs = strings(&session.probe_args(Duration::from_secs(10)));
+        assert!(strs.contains(&"ConnectTimeout=10".to_string()));
+        assert!(strs.contains(&"BatchMode=yes".to_string()));
+    }
+
+    #[test]
+    fn test_probe_args_keep_the_mux_options_so_the_socket_stays_warm() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshSession::new(&host, key);
+        let strs = strings(&session.probe_args(Duration::from_secs(3)));
+        assert!(strs.contains(&"ControlMaster=auto".to_string()));
+        assert!(strs.contains(&"ControlPersist=60s".to_string()));
+        assert!(strs.contains(&"deploy@192.0.2.1".to_string()));
     }
 
     #[test]
