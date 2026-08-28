@@ -6,6 +6,7 @@ pub mod deploy;
 pub mod dns;
 pub mod headscale;
 pub mod host;
+pub mod opml;
 pub mod select;
 pub mod ssh;
 pub mod sync;
