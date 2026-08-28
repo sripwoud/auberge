@@ -12,17 +12,18 @@ pub trait Progress {
     fn task_done(&mut self);
     fn bytes_transferred(&mut self, n: u64);
     fn set_total(&mut self, n: Option<u64>);
-    #[allow(dead_code)]
     fn info(&mut self, msg: &str);
     #[allow(dead_code)]
     fn warn(&mut self, msg: &str);
-    /// An item finished. Rendered like `output::success`, and suppressed by
-    /// `--quiet` the same way.
+    /// An item finished.
     fn success(&mut self, msg: &str);
-    /// An item failed, and the run carries on without it.
+    /// An item failed and the run carried on without it. Reaches the terminal
+    /// under `--quiet`: a failure is the only account of why a run stopped
+    /// short, which is why the `eprintln!` it replaced was ungated too.
     fn error(&mut self, msg: &str);
-    /// A subprocess's own report, verbatim: the thing the command was run to
-    /// produce, which decorating would corrupt.
+    /// A subprocess's own report, verbatim, because decorating it would corrupt
+    /// the thing the command was run to produce. Ungated for the same reason
+    /// stdout is: it is data, not chrome.
     fn line(&mut self, text: &str);
     #[allow(dead_code)]
     fn cancel(&mut self);
@@ -54,6 +55,19 @@ impl TerminalProgress {
             pb,
             has_total: false,
         }
+    }
+
+    /// A decoration line above the bar, unless `--quiet`.
+    ///
+    /// One gate for the three events that carry chrome, because
+    /// `output::success`, `output::info` and `output::warn` each open with the
+    /// same check and this renderer stands in for all three. Gating two of the
+    /// three is how `backup push`'s opening line gets to escape `--quiet`.
+    fn chrome(&self, line: String) {
+        if is_quiet() {
+            return;
+        }
+        self.pb.println(line);
     }
 }
 
@@ -89,19 +103,15 @@ impl Progress for TerminalProgress {
     }
 
     fn info(&mut self, msg: &str) {
-        self.pb.println(format_info_line(msg, should_use_colors()));
+        self.chrome(format_info_line(msg, should_use_colors()));
     }
 
     fn warn(&mut self, msg: &str) {
-        self.pb.println(format_warn_line(msg, should_use_colors()));
+        self.chrome(format_warn_line(msg, should_use_colors()));
     }
 
     fn success(&mut self, msg: &str) {
-        if is_quiet() {
-            return;
-        }
-        self.pb
-            .println(format_success_line(msg, should_use_colors()));
+        self.chrome(format_success_line(msg, should_use_colors()));
     }
 
     fn error(&mut self, msg: &str) {
@@ -234,19 +244,16 @@ impl MockProgress {
     pub fn events(&self) -> Vec<ProgressEvent> {
         self.events.borrow().clone()
     }
+
+    fn record(&self, event: ProgressEvent) {
+        self.events.borrow_mut().push(event);
+    }
 }
 
 #[cfg(test)]
 impl Default for MockProgress {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-impl MockProgress {
-    fn record(&self, event: ProgressEvent) {
-        self.events.borrow_mut().push(event);
     }
 }
 
