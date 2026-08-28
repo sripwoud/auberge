@@ -17,6 +17,15 @@ jobs:
       contents: read
       security-events: write
       actions: read
+    env:
+      # The Rust extractor enables the `test` cfg atom unless told otherwise, so
+      # literals that exist only to drive a unit test raise findings — three of
+      # ours on production lines that cannot reach them; `-` disables an atom.
+      # codeql-action exposes no extractor-option input, and this variable is the
+      # extractor's own config channel. Job-level: `build-mode: none` extracts
+      # under `analyze`, not `init`. Inert on the actions and python legs, which
+      # never spawn this extractor. See ADR-0048.
+      CODEQL_EXTRACTOR_RUST_OPTION_CARGO_CFG_OVERRIDES: "-test"
     strategy:
       fail-fast: false
       matrix:

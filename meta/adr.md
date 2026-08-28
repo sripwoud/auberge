@@ -55,6 +55,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0045 | [Required config keys are declared in Playbook Meta](./adr/0045-required-keys-are-declared-in-playbook-meta.md)                                                |
 | 0046 | [A fence imports the crate it fences](./adr/0046-a-fence-imports-the-crate-it-fences.md)                                                                       |
 | 0047 | [A test seam is injected, never a compile-time `cfg`](./adr/0047-a-test-seam-is-injected-not-a-cfg.md)                                                         |
+| 0048 | [CodeQL extracts the crate that ships, not the test binary](./adr/0048-codeql-extracts-the-crate-that-ships.md)                                                |
 
 ## Native systemd by default
 
