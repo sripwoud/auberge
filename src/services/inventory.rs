@@ -50,6 +50,31 @@ pub struct Host {
     pub groups: Vec<String>,
 }
 
+impl Host {
+    /// This Host as the SshSession seam names one. The two representations
+    /// carry the same three facts under different names, and only the Inventory
+    /// side is reachable from a command that resolved its target from
+    /// `ansible/inventory.yml`.
+    ///
+    /// `user` is a parameter rather than `bootstrap_user`: a command may be
+    /// connecting as someone other than the user the Inventory would bootstrap
+    /// as, and `ssh add-key` is exactly that case.
+    pub fn ssh_target(&self, user: &str) -> crate::hosts::Host {
+        crate::hosts::Host {
+            name: self.name.clone(),
+            address: self.vars.ansible_host.clone(),
+            user: user.to_string(),
+            port: self.vars.ansible_port,
+            ssh_key: None,
+            tags: self.groups.clone(),
+            description: None,
+            python_interpreter: None,
+            become_method: "sudo".to_string(),
+            tailscale_ip: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct InventoryGroup {
     #[serde(default)]
@@ -322,6 +347,26 @@ pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<PathBuf>> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn ssh_target_carries_address_port_and_groups_across() {
+        let mut inventory_host = host("auberge", "203.0.113.7");
+        inventory_host.vars.ansible_port = 2222;
+        inventory_host.groups = vec!["vps".to_string()];
+
+        let target = inventory_host.ssh_target("ansible");
+        assert_eq!(target.name, "auberge");
+        assert_eq!(target.address, "203.0.113.7");
+        assert_eq!(target.port, 2222);
+        assert_eq!(target.tags, vec!["vps".to_string()]);
+    }
+
+    #[test]
+    fn ssh_target_takes_the_user_it_is_given_not_the_bootstrap_user() {
+        let inventory_host = host("auberge", "203.0.113.7");
+        assert_eq!(inventory_host.vars.bootstrap_user, "root");
+        assert_eq!(inventory_host.ssh_target("sripwoud").user, "sripwoud");
+    }
 
     fn host(name: &str, address: &str) -> Host {
         Host {

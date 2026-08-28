@@ -2,6 +2,7 @@ use crate::hosts::HOST_FLAG;
 use crate::output;
 use crate::prompt::{Choice, select_item};
 use crate::services::inventory::select_or_arg as inventory_select_or_arg;
+use crate::services::ssh::{LiveSshSession, SshSession};
 use clap::Subcommand;
 use eyre::{Result, WrapErr};
 use std::os::unix::fs::DirBuilderExt;
@@ -214,23 +215,18 @@ pub fn run_ssh_add_key(
         pubkey_content.trim()
     );
 
-    let result = output::run_piped(
-        "ssh",
-        Command::new("ssh")
-            .arg("-i")
-            .arg(&connect_key)
-            .arg("-p")
-            .arg(host.vars.ansible_port.to_string())
-            .arg(format!("{}@{}", user, host.vars.ansible_host))
-            .arg(ssh_cmd),
-    )
-    .wrap_err("Failed to execute SSH command")?;
-    if result.status.success() {
-        output::clear_subprocess_lines(result.lines_written);
-    }
+    let target = host.ssh_target(&user);
+    let result = LiveSshSession::new(&target, &connect_key)
+        .run(&ssh_cmd)
+        .wrap_err("Failed to execute SSH command")?;
 
-    if !result.status.success() {
-        return Err(result.error("Failed to add key to remote host"));
+    if !result.success {
+        let stderr = result.stderr_str();
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            eyre::bail!("Failed to add key to remote host");
+        }
+        eyre::bail!("Failed to add key to remote host: {}", stderr);
     }
 
     output::success(&format!(
