@@ -1,3 +1,17 @@
+//! Every ssh and scp argv the CLI issues, and the processes that run them.
+//!
+//! Private to [`super`] on purpose. This type used to be `pub` and named
+//! `SshSession` — the same name as the trait one module up that CONTEXT.md
+//! calls the only test seam — and four commands imported it past that trait,
+//! which is exactly how they became unmockable. The trait is now the only way
+//! to reach a Host, and Rust enforces it: nothing outside `services::ssh` can
+//! name this type (#669).
+//!
+//! Mux hygiene is deliberately left as it is. The control socket is never torn
+//! down and its path is fixed under `/tmp`: `ControlPersist` expires it on its
+//! own, and ssh refuses a socket owned by another user, so neither is a leak
+//! worth code to close.
+
 use crate::hosts::Host;
 use crate::output;
 use eyre::{Context, Result};
@@ -12,12 +26,12 @@ const SSH_MUX_OPTIONS: &[(&str, &str)] = &[
     ("ControlPersist", "60s"),
 ];
 
-pub struct SshSession<'a> {
+pub struct SshTransport<'a> {
     pub host: &'a Host,
     ssh_key: &'a Path,
 }
 
-impl<'a> SshSession<'a> {
+impl<'a> SshTransport<'a> {
     pub fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
         Self { host, ssh_key }
     }
@@ -220,7 +234,7 @@ mod tests {
     fn test_ssh_args_contains_mux_options() {
         let host = test_host();
         let key = Path::new("/home/user/.ssh/id_ed25519");
-        let session = SshSession::new(&host, key);
+        let session = SshTransport::new(&host, key);
         let strs = strings(&session.ssh_args());
         assert!(strs.contains(&"ControlMaster=auto".to_string()));
         assert!(strs.contains(&"ControlPath=/tmp/ssh-%r@%h:%p".to_string()));
@@ -231,7 +245,7 @@ mod tests {
     fn test_ssh_args_includes_key_port_user_host() {
         let host = test_host();
         let key = Path::new("/home/user/.ssh/id_ed25519");
-        let session = SshSession::new(&host, key);
+        let session = SshTransport::new(&host, key);
         let strs = strings(&session.ssh_args());
         assert!(strs.contains(&"/home/user/.ssh/id_ed25519".to_string()));
         assert!(strs.contains(&"2222".to_string()));
@@ -242,7 +256,7 @@ mod tests {
     fn test_scp_args_uses_uppercase_p_for_port() {
         let host = test_host();
         let key = Path::new("/tmp/key");
-        let session = SshSession::new(&host, key);
+        let session = SshTransport::new(&host, key);
         let strs = strings(&session.scp_args());
         assert!(strs.contains(&"-P".to_string()));
         assert!(!strs.contains(&"-p".to_string()));
@@ -252,7 +266,7 @@ mod tests {
     fn test_rsync_e_arg_contains_mux_and_key() {
         let host = test_host();
         let key = Path::new("/home/user/.ssh/id_ed25519");
-        let e_arg = SshSession::new(&host, key).rsync_e_arg();
+        let e_arg = SshTransport::new(&host, key).rsync_e_arg();
         assert!(e_arg.starts_with("ssh "));
         assert!(e_arg.contains("ControlMaster=auto"));
         assert!(e_arg.contains("ControlPath=/tmp/ssh-%r@%h:%p"));
@@ -265,7 +279,7 @@ mod tests {
     fn test_rsync_e_arg_escapes_spaces_in_key_path() {
         let host = test_host();
         let key = Path::new("/home/user/my keys/id_ed25519");
-        let e_arg = SshSession::new(&host, key).rsync_e_arg();
+        let e_arg = SshTransport::new(&host, key).rsync_e_arg();
         assert!(!e_arg.contains("-i /home/user/my keys/id_ed25519"));
         assert!(e_arg.contains("'/home/user/my keys/id_ed25519'"));
     }
@@ -274,7 +288,7 @@ mod tests {
     fn test_probe_args_bound_the_connect_and_forbid_prompts() {
         let host = test_host();
         let key = Path::new("/tmp/key");
-        let session = SshSession::new(&host, key);
+        let session = SshTransport::new(&host, key);
         let strs = strings(&session.probe_args(Duration::from_secs(10)));
         assert!(strs.contains(&"ConnectTimeout=10".to_string()));
         assert!(strs.contains(&"BatchMode=yes".to_string()));
@@ -284,7 +298,7 @@ mod tests {
     fn test_probe_args_keep_the_mux_options_so_the_socket_stays_warm() {
         let host = test_host();
         let key = Path::new("/tmp/key");
-        let session = SshSession::new(&host, key);
+        let session = SshTransport::new(&host, key);
         let strs = strings(&session.probe_args(Duration::from_secs(3)));
         assert!(strs.contains(&"ControlMaster=auto".to_string()));
         assert!(strs.contains(&"ControlPersist=60s".to_string()));
@@ -293,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_mux_args_pairs_options_correctly() {
-        let strs = strings(&SshSession::mux_args());
+        let strs = strings(&SshTransport::mux_args());
         for (i, s) in strs.iter().enumerate() {
             if s == "-o" {
                 assert!(

@@ -1,9 +1,11 @@
 use crate::hosts::Host;
-use crate::ssh_session::SshSession as InnerSession;
+mod transport;
+
 use eyre::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
+use transport::SshTransport;
 
 pub fn default_ssh_key_path(user: &str, host: &str) -> Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
@@ -173,14 +175,14 @@ pub trait SshSession {
 }
 
 pub struct LiveSshSession<'a> {
-    inner: InnerSession<'a>,
+    inner: SshTransport<'a>,
     host: &'a Host,
 }
 
 impl<'a> LiveSshSession<'a> {
     pub fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
         Self {
-            inner: InnerSession::new(host, ssh_key),
+            inner: SshTransport::new(host, ssh_key),
             host,
         }
     }

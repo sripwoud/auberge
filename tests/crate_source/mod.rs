@@ -92,11 +92,11 @@ pub const CRATE_MODULES: &[&str] = &[
     "src/services/required_keys.rs",
     "src/services/rsync.rs",
     "src/services/ssh.rs",
+    "src/services/ssh/transport.rs",
     "src/services/ssh_include.rs",
     "src/services/unit_state.rs",
     "src/signal.rs",
     "src/ssh_config.rs",
-    "src/ssh_session.rs",
     "src/tool_versions.rs",
 ];
 
