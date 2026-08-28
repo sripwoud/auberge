@@ -328,31 +328,14 @@ pub fn run_host_show(name: Option<String>) -> Result<()> {
 pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
     let host = crate::hosts::select_or_arg(name_arg, crate::hosts::HOST_POSITIONAL)?;
     let ssh_key = resolve_ssh_key(&host)?;
-    let session = crate::ssh_session::SshSession::new(&host, &ssh_key);
+    let session = LiveSshSession::new(&host, &ssh_key);
 
     output::info(&format!(
         "Querying Tailscale IPv4 on {}@{}…",
         host.user, host.address
     ));
 
-    let out = session.run("tailscale ip -4")?;
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let stderr = stderr.trim();
-        if stderr.is_empty() {
-            eyre::bail!("`tailscale ip -4` failed on {}", host.name);
-        }
-        eyre::bail!("`tailscale ip -4` failed on {}: {}", host.name, stderr);
-    }
-
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let detected = parse_tailscale_cgnat_ipv4(&stdout).ok_or_else(|| {
-        eyre::eyre!(
-            "No Tailscale CGNAT IPv4 found in `tailscale ip -4` output for {}: {:?}",
-            host.name,
-            stdout.trim()
-        )
-    })?;
+    let detected = detect_tailscale_ip(&session, &host.name)?;
 
     let mut updated = host.clone();
     updated.tailscale_ip = Some(detected.clone());
@@ -398,6 +381,28 @@ fn resolve_ssh_key(host: &Host) -> Result<PathBuf> {
         );
     }
     Ok(key)
+}
+
+/// The Host's own Tailscale CGNAT address, as `tailscale ip -4` reports it.
+fn detect_tailscale_ip(session: &dyn SshSession, host_name: &str) -> Result<String> {
+    let out = session.run("tailscale ip -4")?;
+    if !out.success {
+        let stderr = out.stderr_str();
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            eyre::bail!("`tailscale ip -4` failed on {}", host_name);
+        }
+        eyre::bail!("`tailscale ip -4` failed on {}: {}", host_name, stderr);
+    }
+
+    let stdout = out.stdout_str();
+    parse_tailscale_cgnat_ipv4(&stdout).ok_or_else(|| {
+        eyre::eyre!(
+            "No Tailscale CGNAT IPv4 found in `tailscale ip -4` output for {}: {:?}",
+            host_name,
+            stdout.trim()
+        )
+    })
 }
 
 fn parse_tailscale_cgnat_ipv4(stdout: &str) -> Option<String> {
@@ -985,6 +990,55 @@ mod tests {
         let script = etc_hosts_sed_script("auberge", "relais");
         let input = "10.0.0.2 vieille-auberge auberge-next\n";
         assert_eq!(run_etc_hosts_sed(&script, input), input);
+    }
+
+    fn stdout_result(text: &str) -> crate::services::ssh::CommandResult {
+        crate::services::ssh::CommandResult {
+            success: true,
+            exit_code: Some(0),
+            stdout: text.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn detect_tailscale_ip_asks_the_host_for_its_v4_address() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(stdout_result("100.101.255.46\n"));
+        assert_eq!(
+            detect_tailscale_ip(&mock, "auberge").unwrap(),
+            "100.101.255.46"
+        );
+        assert_eq!(
+            mock.calls(),
+            vec![crate::services::ssh::SshOp::Run(
+                "tailscale ip -4".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn detect_tailscale_ip_rejects_a_non_cgnat_answer() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(stdout_result("192.168.1.10\n"));
+        let err = detect_tailscale_ip(&mock, "auberge").unwrap_err();
+        assert!(err.to_string().contains("No Tailscale CGNAT IPv4"), "{err}");
+    }
+
+    #[test]
+    fn detect_tailscale_ip_reports_the_remote_stderr() {
+        let mock = crate::services::ssh::MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(127),
+            stdout: Vec::new(),
+            stderr: b"tailscale: command not found".to_vec(),
+        });
+        let err = detect_tailscale_ip(&mock, "auberge").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "`tailscale ip -4` failed on auberge: tailscale: command not found"
+        );
     }
 
     #[test]
