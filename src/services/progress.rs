@@ -1,7 +1,12 @@
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
-use crate::output::{CYAN, RESET, YELLOW, should_use_colors};
+use crate::output::{CYAN, GREEN, RESET, YELLOW, is_quiet, should_use_colors};
 
+/// The event stream a runner reports through.
+///
+/// Every message a runner emits is one of these, so its whole output is
+/// observable from a test. A runner that reaches `eprintln!` or `output::*`
+/// directly has an output path no `MockProgress` can see (ADR-0047).
 pub trait Progress {
     fn task_started(&mut self, name: &str);
     fn task_done(&mut self);
@@ -11,6 +16,14 @@ pub trait Progress {
     fn info(&mut self, msg: &str);
     #[allow(dead_code)]
     fn warn(&mut self, msg: &str);
+    /// An item finished. Rendered like `output::success`, and suppressed by
+    /// `--quiet` the same way.
+    fn success(&mut self, msg: &str);
+    /// An item failed, and the run carries on without it.
+    fn error(&mut self, msg: &str);
+    /// A subprocess's own report, verbatim: the thing the command was run to
+    /// produce, which decorating would corrupt.
+    fn line(&mut self, text: &str);
     #[allow(dead_code)]
     fn cancel(&mut self);
 }
@@ -83,6 +96,22 @@ impl Progress for TerminalProgress {
         self.pb.println(format_warn_line(msg, should_use_colors()));
     }
 
+    fn success(&mut self, msg: &str) {
+        if is_quiet() {
+            return;
+        }
+        self.pb
+            .println(format_success_line(msg, should_use_colors()));
+    }
+
+    fn error(&mut self, msg: &str) {
+        self.pb.println(format_error_line(msg));
+    }
+
+    fn line(&mut self, text: &str) {
+        self.pb.println(text);
+    }
+
     fn cancel(&mut self) {
         self.pb.finish_and_clear();
     }
@@ -94,6 +123,21 @@ fn format_info_line(msg: &str, use_colors: bool) -> String {
     } else {
         format!("\u{2192} {msg}")
     }
+}
+
+fn format_success_line(msg: &str, use_colors: bool) -> String {
+    if use_colors {
+        format!("{GREEN}\u{2713}{RESET} {msg}")
+    } else {
+        format!("\u{2713} {msg}")
+    }
+}
+
+// Uncoloured where `success` is green, because that is what the raw
+// `eprintln!` this replaced printed, and the failure it reports is already
+// repeated in the results table with the same glyph.
+fn format_error_line(msg: &str) -> String {
+    format!("\u{2717} {msg}")
 }
 
 fn format_warn_line(msg: &str, use_colors: bool) -> String {
@@ -156,22 +200,39 @@ pub enum ProgressEvent {
     SetTotal(Option<u64>),
     Info(String),
     Warn(String),
+    Success(String),
+    Error(String),
+    Line(String),
     Cancel,
 }
 
 #[cfg(test)]
 pub struct MockProgress {
-    events: Vec<ProgressEvent>,
+    events: std::rc::Rc<std::cell::RefCell<Vec<ProgressEvent>>>,
 }
 
 #[cfg(test)]
 impl MockProgress {
     pub fn new() -> Self {
-        Self { events: Vec::new() }
+        Self {
+            events: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+        }
     }
 
-    pub fn events(&self) -> &[ProgressEvent] {
-        &self.events
+    /// A second handle on the same event list.
+    ///
+    /// A Progress factory hands its `Box<dyn Progress>` to the runner, which
+    /// drops it when the item is done; a list owned by the box would go with
+    /// it. Sharing lets a test hold one recorder across every box a run asks
+    /// for, and read the whole stream afterwards in the order it was emitted.
+    pub fn share(&self) -> Self {
+        Self {
+            events: std::rc::Rc::clone(&self.events),
+        }
+    }
+
+    pub fn events(&self) -> Vec<ProgressEvent> {
+        self.events.borrow().clone()
     }
 }
 
@@ -183,34 +244,52 @@ impl Default for MockProgress {
 }
 
 #[cfg(test)]
+impl MockProgress {
+    fn record(&self, event: ProgressEvent) {
+        self.events.borrow_mut().push(event);
+    }
+}
+
+#[cfg(test)]
 impl Progress for MockProgress {
     fn task_started(&mut self, name: &str) {
-        self.events
-            .push(ProgressEvent::TaskStarted(name.to_string()));
+        self.record(ProgressEvent::TaskStarted(name.to_string()));
     }
 
     fn task_done(&mut self) {
-        self.events.push(ProgressEvent::TaskDone);
+        self.record(ProgressEvent::TaskDone);
     }
 
     fn bytes_transferred(&mut self, n: u64) {
-        self.events.push(ProgressEvent::BytesTransferred(n));
+        self.record(ProgressEvent::BytesTransferred(n));
     }
 
     fn set_total(&mut self, n: Option<u64>) {
-        self.events.push(ProgressEvent::SetTotal(n));
+        self.record(ProgressEvent::SetTotal(n));
     }
 
     fn info(&mut self, msg: &str) {
-        self.events.push(ProgressEvent::Info(msg.to_string()));
+        self.record(ProgressEvent::Info(msg.to_string()));
     }
 
     fn warn(&mut self, msg: &str) {
-        self.events.push(ProgressEvent::Warn(msg.to_string()));
+        self.record(ProgressEvent::Warn(msg.to_string()));
+    }
+
+    fn success(&mut self, msg: &str) {
+        self.record(ProgressEvent::Success(msg.to_string()));
+    }
+
+    fn error(&mut self, msg: &str) {
+        self.record(ProgressEvent::Error(msg.to_string()));
+    }
+
+    fn line(&mut self, text: &str) {
+        self.record(ProgressEvent::Line(text.to_string()));
     }
 
     fn cancel(&mut self) {
-        self.events.push(ProgressEvent::Cancel);
+        self.record(ProgressEvent::Cancel);
     }
 }
 
@@ -271,6 +350,43 @@ mod tests {
     }
 
     #[test]
+    fn mock_records_results_and_verbatim_lines() {
+        let mut p = MockProgress::new();
+        p.success("baikal (1.20 MB)");
+        p.error("paperless backup failed: connection refused");
+        p.line("remove 2 snapshots");
+
+        assert_eq!(
+            p.events(),
+            [
+                ProgressEvent::Success("baikal (1.20 MB)".to_string()),
+                ProgressEvent::Error("paperless backup failed: connection refused".to_string()),
+                ProgressEvent::Line("remove 2 snapshots".to_string()),
+            ]
+        );
+    }
+
+    // A per-item factory hands each box away and the runner drops it, so a
+    // recorder that did not share would see only the last item's events.
+    #[test]
+    fn mock_handles_record_into_one_ordered_list() {
+        let recorder = MockProgress::new();
+
+        for app in ["baikal", "bichon"] {
+            let mut handed_away: Box<dyn Progress> = Box::new(recorder.share());
+            handed_away.success(app);
+        }
+
+        assert_eq!(
+            recorder.events(),
+            [
+                ProgressEvent::Success("baikal".to_string()),
+                ProgressEvent::Success("bichon".to_string()),
+            ]
+        );
+    }
+
+    #[test]
     fn mock_records_cancel() {
         let mut p = MockProgress::new();
         p.task_started("rsync");
@@ -293,7 +409,11 @@ mod tests {
         p.set_total(None);
         p.info("informational");
         p.warn("warning");
+        p.success("done");
+        p.error("failed");
+        p.line("verbatim");
         p.task_done();
+        p.line("after the bar is cleared");
     }
 
     #[test]
@@ -317,6 +437,26 @@ mod tests {
     fn format_info_line_wraps_glyph_in_cyan_when_enabled() {
         let line = format_info_line("hello", true);
         assert_eq!(line, format!("{CYAN}\u{2192}{RESET} hello"));
+    }
+
+    #[test]
+    fn format_success_line_omits_color_when_disabled() {
+        let line = format_success_line("baikal (1.20 MB)", false);
+        assert_eq!(line, "\u{2713} baikal (1.20 MB)");
+        assert!(!line.contains('\x1b'));
+    }
+
+    #[test]
+    fn format_success_line_wraps_glyph_in_green_when_enabled() {
+        let line = format_success_line("baikal (1.20 MB)", true);
+        assert_eq!(line, format!("{GREEN}\u{2713}{RESET} baikal (1.20 MB)"));
+    }
+
+    #[test]
+    fn format_error_line_is_uncoloured() {
+        let line = format_error_line("baikal backup failed: no route to host");
+        assert_eq!(line, "\u{2717} baikal backup failed: no route to host");
+        assert!(!line.contains('\x1b'));
     }
 
     #[test]
