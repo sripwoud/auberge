@@ -1,11 +1,11 @@
 //! The crate's own source, as the fences read it.
 //!
-//! Two fences ask a question of `src/**/*.rs` — which call sites discard an
-//! `AnsibleAssets` guard, which modules name a vendor crate — and each carried
-//! its own copy of the walk that answers it. The walk is the shared premise
-//! underneath both, and a premise that quietly stops reaching somewhere does
-//! not fail. It shrinks the domain, and every fence over it goes on passing,
-//! vacuously. `tests/common/mod.rs` is the same lesson learned on the ansible
+//! Three fences ask a question of `src/**/*.rs` — which call sites discard an
+//! `AnsibleAssets` guard, which modules name a vendor crate, which modules
+//! carry a compile-time seam — and the first two each carried its own copy of
+//! the walk that answers it. The walk is the shared premise underneath all
+//! three, and a premise that quietly stops reaching somewhere does not fail. It
+//! shrinks the domain, and every fence over it goes on passing, vacuously. `tests/common/mod.rs` is the same lesson learned on the ansible
 //! tree, where six copies had already diverged far enough that two fences
 //! asking the same question of the same tree got answers 83 tasks apart (#654).
 //! That module is scoped to `ansible/`; this one is the crate's own source, so
@@ -31,9 +31,13 @@
 //! file, `src/playbook_meta.rs`, as *text*, string-splitting on Rust syntax to
 //! recover the unit-type list declared there (#656). #667 gave the crate a
 //! library target, so that fence imports the `const` instead and reads no
-//! source at all. The two fences here are the whole set again — and the reason
-//! the third one left is worth keeping: a fence that wants one crate *item*
-//! should `use` it, and this walk is for the questions asked of source as text.
+//! source at all, which is why it is not the third reader here. That place went
+//! to `seams_are_injected.rs`, which asks two textual questions — where a
+//! `not(test)` predicate sits, and where a `TerminalProgress` is constructed
+//! (#670) — and inherits the reach rather than walking again. The reason the
+//! unit-type fence left is worth keeping either way: a fence that wants one
+//! crate *item* should `use` it, and this walk is for the questions asked of
+//! source as text.
 
 use std::collections::BTreeSet;
 use std::fs;

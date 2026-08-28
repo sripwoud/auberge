@@ -30,17 +30,23 @@ use crate_source::modules;
 /// same fork spelled longer, and both contain this.
 const PRODUCTION_ONLY_CFG: &str = "not(test)";
 
-/// The lines of `source` that fork on the harness.
+/// The 1-indexed lines of `source` that hold `needle`, outside comments.
 ///
-/// Comment lines are skipped so prose may name the shape it forbids — this
-/// file's own module doc does, and an ADR reference in a doc comment is not a
-/// fork. Block comments are not skipped; the crate uses none.
-fn forking_lines(source: &str) -> Vec<(usize, &str)> {
+/// Comments are skipped so prose may name the shapes this file forbids — its
+/// own module doc names both, and an ADR reference in a doc comment is neither
+/// a fork nor a construction. Block comments are not skipped; the crate uses
+/// none.
+///
+/// One scanner for both questions rather than one each: two copies of a scan
+/// over the same tree is the shape `tests/common/mod.rs` exists to have
+/// deleted, where six of them had diverged far enough that two fences asking
+/// the same question got answers 83 tasks apart (#654).
+fn lines_containing<'a>(source: &'a str, needle: &str) -> Vec<(usize, &'a str)> {
     source
         .lines()
         .enumerate()
         .filter(|(_, line)| !line.trim_start().starts_with("//"))
-        .filter(|(_, line)| line.contains(PRODUCTION_ONLY_CFG))
+        .filter(|(_, line)| line.contains(needle))
         .map(|(index, line)| (index + 1, line.trim()))
         .collect()
 }
@@ -50,7 +56,7 @@ fn no_module_forks_production_away_from_its_tests() {
     let mut offenders: Vec<String> = Vec::new();
 
     for module in modules() {
-        for (line_number, line) in forking_lines(&module.source) {
+        for (line_number, line) in lines_containing(&module.source, PRODUCTION_ONLY_CFG) {
             offenders.push(format!("  {}:{line_number}: {line}", module.repo_relative));
         }
     }
@@ -70,10 +76,13 @@ fn no_module_forks_production_away_from_its_tests() {
 #[test]
 fn the_scan_finds_the_fork_it_looks_for() {
     let forked = "#[cfg(not(test))]\nfn live() {}\n#[cfg(test)]\nfn faked() {}\n";
-    assert_eq!(forking_lines(forked), vec![(1, "#[cfg(not(test))]")]);
+    assert_eq!(
+        lines_containing(forked, PRODUCTION_ONLY_CFG),
+        vec![(1, "#[cfg(not(test))]")]
+    );
 
     let longer = "#[cfg_attr(not(test), inline)]\n#[cfg(all(not(test), unix))]\n";
-    assert_eq!(forking_lines(longer).len(), 2);
+    assert_eq!(lines_containing(longer, PRODUCTION_ONLY_CFG).len(), 2);
 }
 
 #[test]
@@ -86,31 +95,18 @@ fn the_scan_passes_over_test_only_items_and_prose() {
         "#[cfg(not(feature = \"tokio\"))]\n",
         "fn blocking() {}\n",
     );
-    assert!(forking_lines(benign).is_empty());
+    assert!(lines_containing(benign, PRODUCTION_ONLY_CFG).is_empty());
 }
 
 /// The renderer only a command may build.
 const TERMINAL_PROGRESS: &str = "TerminalProgress::";
 
 /// Modules allowed to name it: every command, plus the renderer's own module,
-/// whose tests construct the hidden variant.
+/// whose tests construct the hidden variant. `Progress` the trait and
+/// `MockProgress` are not matched — the needle carries the concrete type's full
+/// name and its `::`.
 fn may_build_terminal_progress(module: &str) -> bool {
     module.starts_with("src/commands/") || module == "src/services/progress.rs"
-}
-
-/// Lines of `source` that construct the terminal renderer.
-///
-/// Comment lines are skipped for the same reason as above — this file's own
-/// doc names the type. `Progress` the trait and `MockProgress` are not matched:
-/// the needle carries the concrete type's full name and its `::`.
-fn constructing_lines(source: &str) -> Vec<(usize, &str)> {
-    source
-        .lines()
-        .enumerate()
-        .filter(|(_, line)| !line.trim_start().starts_with("//"))
-        .filter(|(_, line)| line.contains(TERMINAL_PROGRESS))
-        .map(|(index, line)| (index + 1, line.trim()))
-        .collect()
 }
 
 #[test]
@@ -121,14 +117,14 @@ fn only_a_command_builds_the_terminal_progress() {
         if may_build_terminal_progress(&module.repo_relative) {
             continue;
         }
-        for (line_number, line) in constructing_lines(&module.source) {
+        for (line_number, line) in lines_containing(&module.source, TERMINAL_PROGRESS) {
             offenders.push(format!("  {}:{line_number}: {line}", module.repo_relative));
         }
     }
 
     assert!(
         offenders.is_empty(),
-        "a runner built its own Progress instead of taking one \u{2014} accept a          `&mut dyn Progress`, or a factory if it reports about many things, and          let the command construct it (ADR-0047):\n{}",
+        "a runner built its own Progress instead of taking one \u{2014} accept a `&mut dyn Progress`, or a factory if it reports about many things, and let the command construct it (ADR-0047):\n{}",
         offenders.join("\n")
     );
 }
@@ -143,12 +139,12 @@ fn the_command_layer_still_builds_one() {
     let building: Vec<&str> = walked
         .iter()
         .filter(|module| module.repo_relative.starts_with("src/commands/"))
-        .filter(|module| !constructing_lines(&module.source).is_empty())
+        .filter(|module| !lines_containing(&module.source, TERMINAL_PROGRESS).is_empty())
         .map(|module| module.repo_relative.as_str())
         .collect();
 
     assert!(
         !building.is_empty(),
-        "no command constructs a TerminalProgress \u{2014} either the needle          `{TERMINAL_PROGRESS}` no longer matches the code, or the terminal          renderer moved and this fence is scanning for nothing"
+        "no command constructs a TerminalProgress \u{2014} either the needle `{TERMINAL_PROGRESS}` no longer matches the code, or the terminal renderer moved and this fence is scanning for nothing"
     );
 }
