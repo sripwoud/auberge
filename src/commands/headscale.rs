@@ -288,9 +288,11 @@ fn validate_username(name: &str) -> Result<()> {
 /// headscale's own `validateTag` — `tag:` prefix, lowercase, no spaces —
 /// applied before the SSH round trip: on add-user a server-side rejection
 /// would land after `users create` has already mutated the store, the
-/// half-done state #707 was about. The rule is deliberately the server's, not
-/// a tighter one, so nothing headscale would take is refused here; the shell
-/// defense is [`quote`], not this.
+/// half-done state #707 was about. Two local tightenings on top of the
+/// server's rule: a bare `tag:` (which 0.29.3 accepts) names nothing and can
+/// only be a mistake, and a comma would be re-split by the remote cobra
+/// `StringSlice` into tags nobody passed. The shell defense is [`quote`], not
+/// this.
 fn validate_tag(tag: &str) -> Result<()> {
     let Some(name) = tag.strip_prefix("tag:") else {
         eyre::bail!("Tag '{}' must start with 'tag:'", tag);
@@ -303,6 +305,16 @@ fn validate_tag(tag: &str) -> Result<()> {
     }
     if tag.chars().any(|c| c.is_whitespace()) {
         eyre::bail!("Tag '{}' must not contain whitespace", tag);
+    }
+    if tag.contains(',') {
+        eyre::bail!("Tag '{}' must not contain commas", tag);
+    }
+    Ok(())
+}
+
+fn validate_tags(tags: &[String]) -> Result<()> {
+    for tag in tags {
+        validate_tag(tag)?;
     }
     Ok(())
 }
@@ -500,22 +512,12 @@ fn add_user(
     Ok((user, key))
 }
 
-/// The add-key sequence (#711): a key for a user that already exists, which is
-/// what `add_user` refuses — the second and third device under the one #510
-/// user had no CLI path.
-///
-/// Like `add_user`, the whole remote sequence lives below the [`SshSession`]
-/// seam so the name → id threading is test-reachable (ADR-0047). The name is
-/// resolved against `users list` *locally* and reaches no command line, so
-/// unlike `remove-user` it needs neither [`validate_username`] nor [`quote`];
-/// only the listing's `u64` id is interpolated.
-fn add_key(
-    session: &dyn SshSession,
-    username: &str,
-    expiration: &str,
-    tags: &[String],
-) -> Result<(HeadscaleUser, String)> {
-    let user = list_users(session)?
+/// Resolves a username against `users list` — *locally*: the name reaches no
+/// command line, so unlike `remove-user` it needs neither
+/// [`validate_username`] nor [`quote`]. Only the listing's `u64` id is ever
+/// interpolated, which is #707's lesson carried by the type.
+fn find_user(session: &dyn SshSession, username: &str) -> Result<HeadscaleUser> {
+    list_users(session)?
         .into_iter()
         .find(|u| u.name == username)
         .ok_or_else(|| {
@@ -523,16 +525,12 @@ fn add_key(
                 "No headscale user named '{}' — `auberge headscale add-user` creates one",
                 username
             )
-        })?;
-
-    output::info(&format!(
-        "Generating pre-auth key for '{}' (id {})...",
-        user.name, user.id
-    ));
-    let key = mint_preauth_key(session, user.id, expiration, tags)?;
-    Ok((user, key))
+        })
 }
 
+/// A key for a user that already exists, which is what `add-user` refuses
+/// (#711) — the second and third device under the one #510 user had no CLI
+/// path.
 pub fn run_headscale_add_key(
     user: Option<String>,
     expiration: Option<String>,
@@ -544,30 +542,34 @@ pub fn run_headscale_add_key(
 
     let is_tty = std::io::stdin().is_terminal();
 
-    let username = match user {
-        Some(name) => name,
+    // Either path lists once and mints against the id that one listing
+    // carried — the picker's displayed id is the minted id, with no second
+    // round trip for a rename to slip between.
+    let user = match user {
+        Some(name) => find_user(&session, &name)?,
         None if is_tty => {
             let users = list_users(&session)?;
-            let selected = select_item(
+            select_item(
                 &users,
                 |u| format!("{} (id: {})", u.name, u.id),
                 Choice::new("user")
                     .with_prompt("Select user to mint a key for")
                     .resolved_by("--user <name>")
                     .populated_by("auberge headscale add-user"),
-            )?;
-            selected.name
+            )?
         }
         None => eyre::bail!("Username is required (pass --user or run interactively)"),
     };
 
     let exp = resolve_expiration(expiration, is_tty)?;
     validate_expiration(&exp)?;
-    for tag in &tags {
-        validate_tag(tag)?;
-    }
+    validate_tags(&tags)?;
 
-    let (_user, key) = add_key(&session, &username, &exp, &tags)?;
+    output::info(&format!(
+        "Generating pre-auth key for '{}' (id {})...",
+        user.name, user.id
+    ));
+    let key = mint_preauth_key(&session, user.id, &exp, &tags)?;
 
     print_enrollment_instructions(&key)?;
 
@@ -598,9 +600,7 @@ pub fn run_headscale_add_user(
 
     validate_username(&username)?;
     validate_expiration(&exp)?;
-    for tag in &tags {
-        validate_tag(tag)?;
-    }
+    validate_tags(&tags)?;
 
     let (_user, key) = add_user(&session, &username, &exp, &tags)?;
 
@@ -914,15 +914,16 @@ mod tests {
 
     /// #711's threading, the same shape #707 broke: the id reaching
     /// `preauthkeys create` is the one the *listing* carried for the given
-    /// name, and the name itself appears in no command line.
+    /// name, the name itself appears in no command line, and the tags ride
+    /// along.
     #[test]
     fn add_key_mints_against_the_id_the_listing_carried() {
         let mock = MockSshSession::new();
         mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_JSON));
         mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
 
-        let (user, key) = add_key(&mock, "bob", "48h", &[]).unwrap();
-        assert_eq!(user.id, 2);
+        let user = find_user(&mock, "bob").unwrap();
+        let key = mint_preauth_key(&mock, user.id, "48h", &["tag:server".to_string()]).unwrap();
         assert_eq!(key, "abcdef123456");
 
         assert_eq!(
@@ -930,7 +931,8 @@ mod tests {
             vec![
                 SshOp::Run("sudo headscale users list -o json".to_string()),
                 SshOp::Run(
-                    "sudo headscale preauthkeys create --user 2 --expiration 48h -o json"
+                    "sudo headscale preauthkeys create --user 2 --expiration 48h \
+                     --tags 'tag:server' -o json"
                         .to_string()
                 ),
             ]
@@ -940,12 +942,11 @@ mod tests {
     /// add-key mutates nothing, so a name the store does not carry stops the
     /// sequence at the listing — and points at the command that creates users.
     #[test]
-    fn add_key_refuses_a_name_the_listing_does_not_carry() {
+    fn find_user_refuses_a_name_the_listing_does_not_carry() {
         let mock = MockSshSession::new();
         mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_JSON));
-        let err = add_key(&mock, "ghost", "24h", &[]).unwrap_err();
+        let err = find_user(&mock, "ghost").unwrap_err();
         assert!(err.to_string().contains("add-user"), "{err}");
-        assert_eq!(mock.calls().len(), 1, "nothing may run after the miss");
     }
 
     /// A name auberge never validated — the picker takes it from headscale's
@@ -1036,6 +1037,7 @@ mod tests {
         assert!(validate_tag("tag:Server").is_err());
         assert!(validate_tag("tag:a b").is_err());
         assert!(validate_tag("tag:").is_err());
+        assert!(validate_tag("tag:a,b").is_err());
     }
 
     /// `--user` is a `uint` on 0.29.3, so a username there is a value cobra
