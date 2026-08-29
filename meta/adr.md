@@ -57,6 +57,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0047 | [A test seam is injected, never a compile-time `cfg`](./adr/0047-a-test-seam-is-injected-not-a-cfg.md)                                                         |
 | 0048 | [CodeQL extracts the crate that ships, not the test binary](./adr/0048-codeql-extracts-the-crate-that-ships.md)                                                |
 | 0049 | [The tailnet control plane is self-hosted, not Tailscale SaaS](./adr/0049-the-tailnet-control-plane-is-self-hosted.md)                                         |
+| 0050 | [A remote CLI's contract is pinned to the release it was verified against](./adr/0050-a-remote-cli-contract-is-pinned-to-a-release.md)                         |
 | 0051 | [The headscale deploy gate is real, and config alone answers it](./adr/0051-the-headscale-gate-is-real-and-config-owned.md)                                    |
 
 ## Native systemd by default

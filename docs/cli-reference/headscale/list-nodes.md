@@ -26,22 +26,24 @@ auberge headscale list-nodes --host myserver --output json
 ```json
 [{
   "id": 1,
-  "name": "laptop",
-  "user": "default",
-  "ips": ["100.64.0.1", "fd7a:115c:a1e0::1"],
-  "online": true,
-  "last_seen": "2024-01-20T15:00:00Z"
+  "given_name": "laptop",
+  "ip_addresses": ["100.64.0.1", "fd7a:115c:a1e0::1"],
+  "user": { "name": "default" },
+  "last_seen": { "seconds": 1705762800, "nanos": 0 },
+  "online": true
 }]
 ```
 
-| Field       | Type     | Description            |
-| ----------- | -------- | ---------------------- |
-| `id`        | number   | Headscale node ID      |
-| `name`      | string   | Node hostname          |
-| `user`      | string   | Headscale user         |
-| `ips`       | string[] | Assigned Tailscale IPs |
-| `online`    | boolean  | Currently connected    |
-| `last_seen` | string   | ISO 8601 UTC timestamp |
+| Field          | Type     | Description                                          |
+| -------------- | -------- | ---------------------------------------------------- |
+| `id`           | number   | Headscale node ID                                    |
+| `given_name`   | string   | Node hostname                                        |
+| `user`         | object   | Owning user, `{ "name": … }`                         |
+| `ip_addresses` | string[] | Assigned Tailscale IPs                               |
+| `online`       | boolean  | Currently connected                                  |
+| `last_seen`    | object   | `google.protobuf.Timestamp`, or `null` if never seen |
+
+A subset of headscale's own node record, re-emitted under its field names. Fields headscale sends but auberge does not read — `machine_key`, `node_key`, `expiry`, `created_at`, `register_method`, `tags`, the route lists — are dropped, and `user` is reduced to its name. The human table renames and flattens what remains.
 
 JSON goes to stdout; human-format chrome goes to stderr.
 
