@@ -62,14 +62,14 @@ auberge headscale list-users --host myserver --output json
 ]
 ```
 
-`created_at` is headscale's own `google.protobuf.Timestamp`, passed through as it arrives. The human table renders it as UTC.
+A subset of headscale's own user record, re-emitted under its field names — `created_at` stays the `google.protobuf.Timestamp` headscale sends rather than an ISO string. The human table renders it as UTC.
 
 JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr.
 
 **Schema**
 
-| Field   | Type   | Description                       |
-| ------- | ------ | --------------------------------- |
-| id      | number | Headscale user ID                 |
-| name    | string | User name                         |
-| created | string | ISO 8601 creation timestamp (UTC) |
+| Field        | Type   | Description                            |
+| ------------ | ------ | -------------------------------------- |
+| `id`         | number | Headscale user ID                      |
+| `name`       | string | User name                              |
+| `created_at` | object | `google.protobuf.Timestamp`, or `null` |

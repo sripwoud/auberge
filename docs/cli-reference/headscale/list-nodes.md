@@ -34,16 +34,16 @@ auberge headscale list-nodes --host myserver --output json
 }]
 ```
 
-| Field          | Type     | Description                  |
-| -------------- | -------- | ---------------------------- |
-| `id`           | number   | Headscale node ID            |
-| `given_name`   | string   | Node hostname                |
-| `user`         | object   | Owning user, `{ "name": … }` |
-| `ip_addresses` | string[] | Assigned Tailscale IPs       |
-| `online`       | boolean  | Currently connected          |
-| `last_seen`    | object   | `google.protobuf.Timestamp`  |
+| Field          | Type     | Description                                          |
+| -------------- | -------- | ---------------------------------------------------- |
+| `id`           | number   | Headscale node ID                                    |
+| `given_name`   | string   | Node hostname                                        |
+| `user`         | object   | Owning user, `{ "name": … }`                         |
+| `ip_addresses` | string[] | Assigned Tailscale IPs                               |
+| `online`       | boolean  | Currently connected                                  |
+| `last_seen`    | object   | `google.protobuf.Timestamp`, or `null` if never seen |
 
-Field names are headscale's own, passed through as they arrive; the human table renames and flattens them.
+A subset of headscale's own node record, re-emitted under its field names. Fields headscale sends but auberge does not read — `machine_key`, `node_key`, `expiry`, `created_at`, `register_method`, `tags`, the route lists — are dropped, and `user` is reduced to its name. The human table renames and flattens what remains.
 
 JSON goes to stdout; human-format chrome goes to stderr.
 

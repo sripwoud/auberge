@@ -36,7 +36,15 @@ Three breaking changes to one contract, none of them noticed, because Renovate w
 
 It cannot verify a flag. Moving the const is a human reading `--help`; the fence only refuses to let that step be skipped.
 
-What it pairs with is the seam. Every remote call now goes through a `&dyn SshSession` function — `create_user`, `mint_preauth_key`, `list_users`, `list_nodes`, `destroy_user` — so the exact command line reaching the Host is an assertion (ADR-0047: the seam is a runtime argument). The parse tests are fed **verbatim 0.29.3 output**, tabs and `omitempty` gaps included, rather than JSON written from the shape the code wanted. Reverting each of the three defects fails a test, which is the property that was missing: the previous fixtures were hand-written in protojson's dialect and so agreed with the bug.
+What it pairs with is the seam. Every remote call now goes through a `&dyn SshSession` function — `create_user`, `mint_preauth_key`, `list_users`, `list_nodes`, `destroy_user` — so the exact command line reaching the Host is an assertion (ADR-0047: the seam is a runtime argument).
+
+One of those is the _sequence_, not a call: `add_user` runs create-then-mint, because the defect was never in either call but in the value threaded between them, and the entry point holding that threading builds its own `LiveSshSession` and can never be reached from a test. `mint_preauth_key`'s `u64` already makes the original regression a type error; the sequence makes it a test failure too, including for a future signature that stopped being a `u64`. The parse tests are fed **verbatim 0.29.3 output**, tabs and `omitempty` gaps included, rather than JSON written from the shape the code wanted. Reverting each of the three defects fails a test, which is the property that was missing: the previous fixtures were hand-written in protojson's dialect and so agreed with the bug.
+
+### A guard applied on one of two paths is not applied
+
+The audit turned up one defect that is not a version contract at all. `remove-user` validates the username it is _given_ and could not validate the one it is _told_: the interactive picker takes a name from headscale's own store — where an OIDC claim or `users rename` can put anything — and handed it straight to a `sudo` command line the remote login shell parses.
+
+Fixed by quoting at the command builder rather than by widening `validate_username`, because the two disagree about what a legal name is and the store's answer is the one that binds: an OIDC-provisioned `alice@example.com` is a real user the charset guard would have made unremovable. Validation stays where it belongs — rejecting bad input auberge is asked to _create_ — and quoting covers every interpolation regardless of provenance.
 
 ### Why the id comes from `users create`, not a second `users list`
 
