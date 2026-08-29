@@ -18,6 +18,9 @@ headscale_base_domain: "ts.{{ domain }}"
 headscale_derp_enabled: true
 headscale_derp_region_id: 999
 headscale_derp_region_name: "self-hosted"
+headscale_derp_urls:
+  - "https://controlplane.tailscale.com/derpmap/default"
+headscale_derp_update_frequency: 24h
 headscale_log_level: info
 headscale_split_dns_target_ip: ""
 headscale_release_url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/headscale_{{ headscale_version }}_linux_amd64"
