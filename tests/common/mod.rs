@@ -304,10 +304,9 @@ pub fn yml_files(dir: &Path) -> Vec<PathBuf> {
 ///
 /// A Playbook Meta carries the CLI's own metadata — an App's version, its
 /// units, its backup order — and runs nothing, so a fence reading plays or
-/// tasks must not see it. Three fences want the other half of this directory
+/// tasks must not see it. Two fences want the other half of this directory
 /// and each enumerates the metas itself (`version_annotations.rs`,
-/// `unit_ownership.rs`, `service_directories.rs`); that is the next leftover,
-/// not this one.
+/// `service_directories.rs`); that is the next leftover, not this one.
 ///
 /// Empty is a hard stop, and it is the reason this is not just a `yml_files`
 /// call at each site. Every caller loops over the result, so a directory that

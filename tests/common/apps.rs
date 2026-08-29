@@ -30,11 +30,7 @@ pub struct OwnedUnit {
 
 impl OwnedUnit {
     pub fn id(&self) -> String {
-        let scope = match self.scope {
-            Scope::System => "",
-            Scope::User => " (user)",
-        };
-        format!("{}/{}{}", self.app, self.unit, scope)
+        format!("{}/{}{}", self.app, self.unit, self.scope.id_suffix())
     }
 }
 
@@ -83,16 +79,18 @@ fn role_dependencies(role: &str) -> Vec<String> {
     let Some(deps) = field(&parsed, "dependencies").and_then(Value::as_sequence) else {
         return Vec::new();
     };
-    deps.iter()
-        .filter_map(|entry| {
-            entry.as_str().map(str::to_string).or_else(|| {
-                entry
-                    .get("role")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            })
-        })
-        .collect()
+    deps.iter().filter_map(role_name).collect()
+}
+
+/// A roles-list entry, in either form ansible accepts: a bare name, or a
+/// mapping whose `role:` names it.
+fn role_name(entry: &Value) -> Option<String> {
+    entry.as_str().map(str::to_string).or_else(|| {
+        entry
+            .get("role")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    })
 }
 
 fn playbook_roles(path: &Path) -> Vec<String> {
@@ -105,17 +103,7 @@ fn playbook_roles(path: &Path) -> Vec<String> {
         let Some(list) = play.get("roles").and_then(Value::as_sequence) else {
             continue;
         };
-        for entry in list {
-            let name = entry.as_str().map(str::to_string).or_else(|| {
-                entry
-                    .get("role")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            });
-            if let Some(name) = name {
-                roles.push(name);
-            }
-        }
+        roles.extend(list.iter().filter_map(role_name));
     }
     roles
 }
@@ -133,16 +121,18 @@ pub fn declared_units() -> BTreeSet<OwnedUnit> {
         };
         for decl in units {
             let (name, scope) = match decl {
-                Value::String(name) => (name.clone(), "system".to_string()),
+                Value::String(name) => (name.clone(), Scope::System),
                 Value::Mapping(scoped) => (
                     field(scoped, "name")
                         .and_then(Value::as_str)
                         .unwrap_or_else(|| panic!("{app}: a scoped unit declares `name`"))
                         .to_string(),
-                    field(scoped, "scope")
-                        .and_then(Value::as_str)
-                        .unwrap_or_else(|| panic!("{app}: a scoped unit declares `scope`"))
-                        .to_string(),
+                    match field(scoped, "scope").and_then(Value::as_str) {
+                        Some("system") => Scope::System,
+                        Some("user") => Scope::User,
+                        Some(other) => panic!("{app}: `{other}` is not a unit scope"),
+                        None => panic!("{app}: a scoped unit declares `scope`"),
+                    },
                 ),
                 other => panic!("{app}: {other:?} is not a unit declaration"),
             };
@@ -154,11 +144,7 @@ pub fn declared_units() -> BTreeSet<OwnedUnit> {
                 // placeholder is what DECLARED_WITHOUT_FILE names syncthing's
                 // unit by.
                 unit: qualified_unit_name(&name),
-                scope: match scope.as_str() {
-                    "system" => Scope::System,
-                    "user" => Scope::User,
-                    other => panic!("{app}: `{other}` is not a unit scope"),
-                },
+                scope,
             });
         }
     }

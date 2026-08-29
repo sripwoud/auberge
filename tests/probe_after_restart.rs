@@ -117,6 +117,12 @@ const NOT_YET_PROBED: &[(&str, &str)] = &[
 /// DECLARED_WITHOUT_FILE treatment (tests/unit_ownership.rs): each entry is
 /// checked to stay underivable, so the day a role starts templating the unit
 /// file, its own `[Install]` section takes over and the entry must go.
+///
+/// Serving is the only classification an entry can carry: a fileless
+/// `.service` that is *not* Serving has no way to say so here and hard-stops
+/// in [`serving_apps`] instead — deliberately, since misreading one as
+/// Serving demands a probe it may not need, while the reverse passes over a
+/// unit nothing reads.
 const SERVING_WITHOUT_FILE: &[(&str, &str, &str)] = &[
     (
         "navidrome",
@@ -388,8 +394,8 @@ fn serving_apps() -> BTreeSet<String> {
                         BOOT_TARGETS.contains(&target.as_str())
                             || NON_BOOT_TARGETS.contains(&target.as_str()),
                         "{}: `WantedBy={target}` is a target this classifier does \
-                         not know; decide whether it is a boot target before \
-                         trusting the verdict",
+                         not know; add it to BOOT_TARGETS or NON_BOOT_TARGETS \
+                         before trusting the verdict",
                         owned.id()
                     );
                 }
@@ -516,8 +522,9 @@ fn test_a_timer_job_is_not_a_serving_unit() {
     for app in ["baikal", "cockpit", "colporteur"] {
         assert!(
             !serving.contains(app),
-            "{app} was deliberately outside the presence domain; revisit the \
-             Serving Unit classifier before enrolling it"
+            "{app} entered the presence domain; if it genuinely gained a \
+             Serving Unit, drop it from this pin and give it a probe or a \
+             NOT_YET_PROBED entry — if it did not, the classifier broke"
         );
     }
 }
