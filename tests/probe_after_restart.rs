@@ -201,7 +201,14 @@ fn probes_by_role() -> BTreeMap<String, Vec<String>> {
 #[test]
 fn test_the_scan_sees_the_probe_in_every_role_that_has_one() {
     let probing = probes_by_role();
-    for role in ["grimmory", "baikal", "blocky", "ssh", "syncthing"] {
+    for role in [
+        "grimmory",
+        "baikal",
+        "blocky",
+        "headscale",
+        "ssh",
+        "syncthing",
+    ] {
         assert!(
             probing.contains_key(role),
             "{role} reads its own service and must be scanned; found {probing:?}"
