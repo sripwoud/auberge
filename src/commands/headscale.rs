@@ -53,6 +53,29 @@ pub enum HeadscaleCommands {
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
+    #[command(
+        visible_alias = "ak",
+        about = "Mint a pre-auth key for an existing user"
+    )]
+    AddKey {
+        #[arg(
+            short,
+            long,
+            help = "Existing username (prompts from users list when omitted)"
+        )]
+        user: Option<String>,
+        #[arg(short, long, help = "Pre-auth key expiration (e.g. 1h, 24h, 48h, 7d)")]
+        expiration: Option<String>,
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            help = "ACL tags to stamp on the pre-auth key (e.g. tag:server)"
+        )]
+        tags: Vec<String>,
+        #[arg(short = 'H', long, help = "Target host running headscale")]
+        host: Option<String>,
+    },
     #[command(visible_alias = "lu", about = "List registered users")]
     ListUsers {
         #[arg(
@@ -477,6 +500,81 @@ fn add_user(
     Ok((user, key))
 }
 
+/// The add-key sequence (#711): a key for a user that already exists, which is
+/// what `add_user` refuses — the second and third device under the one #510
+/// user had no CLI path.
+///
+/// Like `add_user`, the whole remote sequence lives below the [`SshSession`]
+/// seam so the name → id threading is test-reachable (ADR-0047). The name is
+/// resolved against `users list` *locally* and reaches no command line, so
+/// unlike `remove-user` it needs neither [`validate_username`] nor [`quote`];
+/// only the listing's `u64` id is interpolated.
+fn add_key(
+    session: &dyn SshSession,
+    username: &str,
+    expiration: &str,
+    tags: &[String],
+) -> Result<(HeadscaleUser, String)> {
+    let user = list_users(session)?
+        .into_iter()
+        .find(|u| u.name == username)
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "No headscale user named '{}' — `auberge headscale add-user` creates one",
+                username
+            )
+        })?;
+
+    output::info(&format!(
+        "Generating pre-auth key for '{}' (id {})...",
+        user.name, user.id
+    ));
+    let key = mint_preauth_key(session, user.id, expiration, tags)?;
+    Ok((user, key))
+}
+
+pub fn run_headscale_add_key(
+    user: Option<String>,
+    expiration: Option<String>,
+    tags: Vec<String>,
+    host: Option<String>,
+) -> Result<()> {
+    let (host_info, ssh_key) = resolve_headscale_host(host)?;
+    let session = LiveSshSession::new(&host_info, &ssh_key);
+
+    let is_tty = std::io::stdin().is_terminal();
+
+    let username = match user {
+        Some(name) => name,
+        None if is_tty => {
+            let users = list_users(&session)?;
+            let selected = select_item(
+                &users,
+                |u| format!("{} (id: {})", u.name, u.id),
+                Choice::new("user")
+                    .with_prompt("Select user to mint a key for")
+                    .resolved_by("--user <name>")
+                    .populated_by("auberge headscale add-user"),
+            )?;
+            selected.name
+        }
+        None => eyre::bail!("Username is required (pass --user or run interactively)"),
+    };
+
+    let exp = resolve_expiration(expiration, is_tty)?;
+    validate_expiration(&exp)?;
+    for tag in &tags {
+        validate_tag(tag)?;
+    }
+
+    let (_user, key) = add_key(&session, &username, &exp, &tags)?;
+
+    print_enrollment_instructions(&key)?;
+
+    output::success("Done");
+    Ok(())
+}
+
 pub fn run_headscale_add_user(
     name: Option<String>,
     expiration: Option<String>,
@@ -812,6 +910,42 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// #711's threading, the same shape #707 broke: the id reaching
+    /// `preauthkeys create` is the one the *listing* carried for the given
+    /// name, and the name itself appears in no command line.
+    #[test]
+    fn add_key_mints_against_the_id_the_listing_carried() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_JSON));
+        mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
+
+        let (user, key) = add_key(&mock, "bob", "48h", &[]).unwrap();
+        assert_eq!(user.id, 2);
+        assert_eq!(key, "abcdef123456");
+
+        assert_eq!(
+            mock.calls(),
+            vec![
+                SshOp::Run("sudo headscale users list -o json".to_string()),
+                SshOp::Run(
+                    "sudo headscale preauthkeys create --user 2 --expiration 48h -o json"
+                        .to_string()
+                ),
+            ]
+        );
+    }
+
+    /// add-key mutates nothing, so a name the store does not carry stops the
+    /// sequence at the listing — and points at the command that creates users.
+    #[test]
+    fn add_key_refuses_a_name_the_listing_does_not_carry() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_JSON));
+        let err = add_key(&mock, "ghost", "24h", &[]).unwrap_err();
+        assert!(err.to_string().contains("add-user"), "{err}");
+        assert_eq!(mock.calls().len(), 1, "nothing may run after the miss");
     }
 
     /// A name auberge never validated — the picker takes it from headscale's
