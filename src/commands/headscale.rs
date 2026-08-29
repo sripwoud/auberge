@@ -366,6 +366,55 @@ fn destroy_user(session: &dyn SshSession, username: &str) -> Result<()> {
     Ok(())
 }
 
+/// The expiration for a key about to be minted: the flag when given, a picker
+/// on a terminal, `24h` otherwise.
+fn resolve_expiration(expiration: Option<String>, is_tty: bool) -> Result<String> {
+    match expiration {
+        Some(e) => Ok(e),
+        None if is_tty => {
+            let options = vec!["1h", "24h", "48h", "7d"];
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Key expiration")
+                .items(&options)
+                .default(1)
+                .interact()?;
+            Ok(options[selection].to_string())
+        }
+        None => Ok("24h".to_string()),
+    }
+}
+
+/// The enrollment hand-off every minted key ends in: the bare key on stdout so
+/// a script can capture it, the shareable instructions on stderr.
+fn print_enrollment_instructions(key: &str) -> Result<()> {
+    let config = Config::load()?;
+    let subdomain = config
+        .get("headscale_subdomain")
+        .unwrap_or_else(|| "hs".to_string());
+    let domain = config
+        .get("domain")
+        .unwrap_or_else(|| "example.com".to_string());
+    let login_server = format!("https://{}.{}", subdomain, domain);
+
+    println!("{}", key);
+
+    eprintln!();
+    eprintln!("Share these instructions:");
+    eprintln!("─────────────────────────────────────");
+    eprintln!("1. Install Tailscale (App Store / Play Store / tailscale.com)");
+    eprintln!("2. Set custom control server to: {}", login_server);
+    eprintln!("   iOS: long-press ⋯ menu before signing in");
+    eprintln!("   Android: top menu > Use another server");
+    eprintln!("   CLI: tailscale up --login-server {}", login_server);
+    eprintln!("3. Use pre-auth key: {}", key);
+    eprintln!(
+        "   CLI: tailscale up --login-server {} --authkey {}",
+        login_server, key
+    );
+    eprintln!("─────────────────────────────────────");
+    Ok(())
+}
+
 /// The whole enrollment mutation, as the one remote sequence it is.
 ///
 /// The step that broke was not either call but the value threaded *between*
@@ -406,50 +455,14 @@ pub fn run_headscale_add_user(
         None => eyre::bail!("Username is required (pass as argument or run interactively)"),
     };
 
-    let exp = match expiration {
-        Some(e) => e,
-        None if is_tty => {
-            let options = vec!["1h", "24h", "48h", "7d"];
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt("Key expiration")
-                .items(&options)
-                .default(1)
-                .interact()?;
-            options[selection].to_string()
-        }
-        None => "24h".to_string(),
-    };
+    let exp = resolve_expiration(expiration, is_tty)?;
 
     validate_username(&username)?;
     validate_expiration(&exp)?;
 
     let (_user, key) = add_user(&session, &username, &exp)?;
 
-    let config = Config::load()?;
-    let subdomain = config
-        .get("headscale_subdomain")
-        .unwrap_or_else(|| "hs".to_string());
-    let domain = config
-        .get("domain")
-        .unwrap_or_else(|| "example.com".to_string());
-    let login_server = format!("https://{}.{}", subdomain, domain);
-
-    println!("{}", key);
-
-    eprintln!();
-    eprintln!("Share these instructions:");
-    eprintln!("─────────────────────────────────────");
-    eprintln!("1. Install Tailscale (App Store / Play Store / tailscale.com)");
-    eprintln!("2. Set custom control server to: {}", login_server);
-    eprintln!("   iOS: long-press ⋯ menu before signing in");
-    eprintln!("   Android: top menu > Use another server");
-    eprintln!("   CLI: tailscale up --login-server {}", login_server);
-    eprintln!("3. Use pre-auth key: {}", key);
-    eprintln!(
-        "   CLI: tailscale up --login-server {} --authkey {}",
-        login_server, key
-    );
-    eprintln!("─────────────────────────────────────");
+    print_enrollment_instructions(&key)?;
 
     output::success("Done");
     Ok(())
