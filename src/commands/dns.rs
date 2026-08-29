@@ -123,7 +123,7 @@ pub enum DnsCommands {
             short = 'H',
             long,
             value_name = "HOST",
-            help = "Target host (auberge, auberge-old, vibecoder)"
+            help = "Target host (omit to be prompted)"
         )]
         host: Option<String>,
         #[arg(
@@ -761,22 +761,43 @@ fn print_summary(plan: &SetAllPlan, outcome: &SetAllOutcome, target_ip: &str) {
 fn resolve_target_ip(host: Option<String>, ip: Option<String>, strict: bool) -> Result<String> {
     use crate::services::inventory::discover_hosts_with_ips;
     match (host, ip) {
-        (Some(host_name), None) => {
-            let hosts = discover_hosts_with_ips(None)?;
-            hosts.get(&host_name).cloned().ok_or_else(|| {
-                eyre::eyre!(
-                    "Host '{}' not found in inventory. Available: {}",
-                    host_name,
-                    hosts.keys().cloned().collect::<Vec<_>>().join(", ")
-                )
-            })
-        }
         (None, Some(ip_addr)) => Ok(ip_addr),
         (None, None) if strict => {
             eyre::bail!("Either --host or --ip must be specified in strict mode")
         }
-        (None, None) => eyre::bail!("Either --host or --ip must be specified"),
+        (host, None) => target_ip_from_inventory(host, discover_hosts_with_ips(None)?),
         (Some(_), Some(_)) => unreachable!("clap declares --ip conflicts_with --host"),
+    }
+}
+
+/// The Inventory half of resolving `set-all`'s one logical input, the address
+/// records point at: an explicit Host name is looked up, no name prompts over
+/// the Inventory (#704). `--ip` never reaches here — it is the escape hatch
+/// for an address not in the Inventory, resolved before the Inventory is read.
+fn target_ip_from_inventory(
+    host: Option<String>,
+    hosts: std::collections::HashMap<String, String>,
+) -> Result<String> {
+    match host {
+        Some(host_name) => hosts.get(&host_name).cloned().ok_or_else(|| {
+            let mut available: Vec<&str> = hosts.keys().map(String::as_str).collect();
+            available.sort_unstable();
+            eyre::eyre!(
+                "Host '{}' not found in inventory. Available: {}",
+                host_name,
+                available.join(", ")
+            )
+        }),
+        None => {
+            let mut candidates: Vec<(String, String)> = hosts.into_iter().collect();
+            candidates.sort();
+            let (_, ip) = select_item(
+                &candidates,
+                |(name, ip): &(String, String)| format!("{} ({})", name, ip),
+                crate::hosts::host_choice(&format!("{} (or -i <ip>)", crate::hosts::HOST_FLAG)),
+            )?;
+            Ok(ip)
+        }
     }
 }
 
@@ -1345,6 +1366,70 @@ mod tests {
         assert_eq!(set_all_exit_code(refused), 2);
     }
 
+    fn inventory(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(name, ip)| ((*name).to_string(), (*ip).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn target_ip_from_inventory_resolves_an_explicit_host() {
+        let hosts = inventory(&[("auberge", "203.0.113.10"), ("hermes", "198.51.100.7")]);
+        assert_eq!(
+            target_ip_from_inventory(Some("hermes".to_string()), hosts).unwrap(),
+            "198.51.100.7"
+        );
+    }
+
+    #[test]
+    fn target_ip_from_inventory_rejects_an_unknown_host_naming_the_inventory() {
+        let hosts = inventory(&[
+            ("vibecoder", "192.0.2.30"),
+            ("auberge", "203.0.113.10"),
+            ("hermes", "198.51.100.7"),
+        ]);
+        let err = target_ip_from_inventory(Some("ghost".to_string()), hosts).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Host 'ghost' not found in inventory. Available: auberge, hermes, vibecoder"
+        );
+    }
+
+    // `cargo test` runs without a TTY, so this is the scripted path: no
+    // picker can be drawn, and the error must name both flags because either
+    // one resolves the input (--ip being the not-in-inventory escape hatch).
+    #[test]
+    fn target_ip_from_inventory_names_both_flags_when_it_cannot_prompt() {
+        let hosts = inventory(&[("auberge", "203.0.113.10"), ("hermes", "198.51.100.7")]);
+        let err = target_ip_from_inventory(None, hosts).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "2 hosts to choose from and stdin is not a terminal — pass -H <host> (or -i <ip>)"
+        );
+    }
+
+    // One candidate is not a choice (select_item semantics). Safe here: the
+    // plan preview and the `Proceed?` gate still stand between this and any
+    // Cloudflare write, and confirm() refuses off-terminal without --yes.
+    #[test]
+    fn target_ip_from_inventory_auto_selects_a_lone_host() {
+        let hosts = inventory(&[("auberge", "203.0.113.10")]);
+        assert_eq!(
+            target_ip_from_inventory(None, hosts).unwrap(),
+            "203.0.113.10"
+        );
+    }
+
+    #[test]
+    fn target_ip_from_inventory_says_how_to_populate_an_empty_inventory() {
+        let err = target_ip_from_inventory(None, inventory(&[])).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "No hosts configured — run `auberge host add`"
+        );
+    }
+
     #[test]
     fn resolve_target_ip_prefers_an_explicit_ip() {
         assert_eq!(
@@ -1353,11 +1438,11 @@ mod tests {
         );
     }
 
+    // --strict documents itself as non-interactive, so it bails before the
+    // Inventory is even read: no picker, no lone-host auto-select.
     #[test]
-    fn resolve_target_ip_requires_a_host_or_an_ip() {
-        let err = resolve_target_ip(None, None, false).unwrap_err();
-        assert!(err.to_string().contains("--host or --ip"));
-        let strict = resolve_target_ip(None, None, true).unwrap_err();
-        assert!(strict.to_string().contains("strict mode"));
+    fn resolve_target_ip_strict_never_prompts() {
+        let err = resolve_target_ip(None, None, true).unwrap_err();
+        assert!(err.to_string().contains("strict mode"));
     }
 }
