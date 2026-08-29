@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, 2026-05-05.
+Accepted, 2026-05-05. Its first decision bullet is superseded by [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md) on 2026-08-29 — headscale pushes Blocky as the tailnet's `global` nameserver, not behind a split route. Everything else here stands, including the ordering caveat below, which [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md) widens.
 
 ## Context
 
@@ -18,7 +18,7 @@ Three problems accumulated:
 
 ## Decision
 
-- Headscale pushes Blocky as the resolver for `*.{{ domain }}` via split-DNS (`nameservers.split`); all other queries continue to use `1.1.1.1`.
+- Headscale pushes Blocky as the resolver for `*.{{ domain }}` via split-DNS (`nameservers.split`); all other queries continue to use `1.1.1.1`. **Superseded by [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md)**: Blocky is the `global` nameserver, and no public resolver stands beside it.
 - Tailnet-only Apps publish DNS exclusively via Blocky's `customDNS` map. They do not create Cloudflare A records.
 - Public Apps continue to publish a Cloudflare A record via the `dns_record` role.
 - The Blocky `customDNS` list is derived at run-time inside the Blocky role from `tailnet_only: true` declarations in playbook meta files. There is no parallel hand-maintained list.
@@ -36,13 +36,13 @@ Three problems accumulated:
 **Negative:**
 
 - Tailnet members who deliberately set `tailscale set --accept-dns=false` no longer auto-resolve internal apps; they must manually point at Blocky. Acceptable: it's a deliberate opt-out from magic-DNS.
-- Blocky becomes load-bearing for `*.{{ domain }}` resolution on the tailnet. Mitigated by split-DNS keeping general internet DNS on `1.1.1.1` — Blocky outage doesn't break browsing, only internal apps.
+- Blocky becomes load-bearing for `*.{{ domain }}` resolution on the tailnet. Mitigated by split-DNS keeping general internet DNS on `1.1.1.1` — Blocky outage doesn't break browsing, only internal apps. **[ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md) removes that mitigation**: Blocky is load-bearing for every query.
 - Existing Cloudflare A records for `cockpit` and `paperless` become stale and must be deleted as a one-time cutover.
 
 ## Alternatives considered
 
 - **Keep `1.1.1.1` as tailnet resolver.** Forces Cloudflare A → Tailscale IP for every tailnet-only app; preserves status-quo brittleness (manual DoT on each device, paperless-style two-truth split). Rejected: doesn't deliver "on tailnet → automatic Blocky."
-- **Headscale-side global Blocky push (no split-DNS).** Strongest filtering coverage but makes Blocky a single point of failure for _all_ DNS resolution including external sites. Rejected: blast radius of a Blocky outage too large.
+- **Headscale-side global Blocky push (no split-DNS).** Strongest filtering coverage but makes Blocky a single point of failure for _all_ DNS resolution including external sites. Rejected: blast radius of a Blocky outage too large. **Adopted instead by [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md)** — the SaaS tailnet had been running this shape all along, so the rejection was pricing a cost the operator had already chosen.
 - **Cloudflare A → Tailscale IP for tailnet-only apps (pattern A) with split-DNS.** Reachable, no two-truth problem after `blocky_tailscale_bound_domains` retirement. Rejected: still publishes the existence of tailnet-only services in public DNS, which contradicts what "tailnet-only" claims.
 - **CLI-derived Blocky list.** `auberge deploy` injects the list via `--extra-vars`. Rejected: breaks direct `ansible-playbook` invocations without surprise; auberge's CONTEXT positions the CLI as canonical but Ansible as not hidden.
 - **Compile-time test for DNS publication invariants.** A Rust test that parses every role's tasks. Rejected: parser fragility outweighs the benefit in a single-operator homelab where deploys happen frequently and the runtime check fires within minutes of any regression.

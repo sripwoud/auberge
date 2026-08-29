@@ -22,5 +22,8 @@ headscale_derp_urls:
 headscale_derp_update_frequency: 24h
 headscale_log_level: info
 headscale_split_dns_target_ip: ""
+headscale_fallback_nameservers:
+  - 1.1.1.1
+  - 1.0.0.1
 headscale_release_url: "https://github.com/juanfont/headscale/releases/download/v{{ headscale_version }}/headscale_{{ headscale_version }}_linux_amd64"
 headscale_release_checksum: "sha256:8dc183758024ed7095cf610fedea0790233613c71353bc8be2715d82ba29b92c"

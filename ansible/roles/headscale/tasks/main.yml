@@ -81,21 +81,56 @@
         state: absent
       when: headscale_installed_version != headscale_version
 
-    - name: Get Tailscale status for split-DNS target IP detection
+    - name: Get Tailscale status for tailnet IP discovery
       ansible.builtin.command: tailscale status --json
       register: headscale_tailscale_status_raw
       changed_when: false
       failed_when: false
-      when: headscale_split_dns_target_ip | length == 0
 
-    - name: Auto-derive headscale_split_dns_target_ip from local Tailscale interface
+    - name: Set the host's Tailscale IPv4 fact
       ansible.builtin.set_fact:
-        headscale_split_dns_target_ip: "{{ (headscale_tailscale_status_raw.stdout | from_json).Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
+        headscale_tailscale_ipv4: "{{ (headscale_tailscale_status_raw.stdout | from_json).Self.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
       when:
-        - headscale_split_dns_target_ip | length == 0
         - headscale_tailscale_status_raw.rc is defined
         - headscale_tailscale_status_raw.rc == 0
         - (headscale_tailscale_status_raw.stdout | from_json).BackendState == "Running"
+
+    - name: Check deployed headscale configuration
+      ansible.builtin.stat:
+        path: "{{ headscale_config_dir }}/config.yaml"
+      register: headscale_config_stat
+
+    - name: Read deployed headscale configuration
+      ansible.builtin.slurp:
+        src: "{{ headscale_config_dir }}/config.yaml"
+      register: headscale_deployed_config
+      when: headscale_config_stat.stat.exists
+
+    - name: Set deployed global nameserver fact
+      ansible.builtin.set_fact:
+        headscale_deployed_global_nameserver: "{{ (headscale_deployed_config.content | b64decode | from_yaml).dns.nameservers.global | first }}"
+      when: headscale_config_stat.stat.exists
+
+    - name: Refuse to downgrade the tailnet to an unfiltered resolver
+      ansible.builtin.fail:
+        msg: >-
+          tailscale status reports no tailnet IPv4 for this host, but
+          {{ headscale_config_dir }}/config.yaml already serves
+          {{ headscale_deployed_global_nameserver }} as the tailnet's global
+          resolver. Rendering the public fallback over it would leave every
+          enrolled client unfiltered. Repair tailscaled here, then redeploy.
+      when:
+        - headscale_tailscale_ipv4 is not defined
+        - headscale_deployed_global_nameserver is defined
+        - headscale_deployed_global_nameserver not in headscale_fallback_nameservers
+
+    - name: Auto-derive headscale_split_dns_target_ip from the discovered Tailscale IPv4
+      ansible.builtin.set_fact:
+        headscale_split_dns_target_ip: "{{ headscale_tailscale_ipv4 }}"
+      when:
+        - headscale_split_dns_target_ip | length == 0
+        - headscale_tailscale_ipv4 is defined
+        - headscale_tailscale_ipv4 | length > 0
 
     - name: Deploy headscale configuration
       ansible.builtin.template:
