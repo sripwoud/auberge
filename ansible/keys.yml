@@ -125,7 +125,7 @@ keys:
 
   headscale_subdomain:
     secret: false
-    doc: "Subdomain for the Headscale control server"
+    doc: "Subdomain for the Headscale control server; unset means Headscale is not deployed"
 
   hermes_exa_api_key:
     secret: true

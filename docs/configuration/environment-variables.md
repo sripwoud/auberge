@@ -20,7 +20,7 @@ All values live in `~/.config/auberge/config.toml`. Manage with `auberge config 
 | `bichon_tailscale_ip`      | Optional | Tailscale IP; makes subdomain tailnet-only (see below)                                     |
 | `blocky_subdomain`         | Optional | Subdomain for Blocky                                                                       |
 | `freshrss_subdomain`       | Optional | Subdomain for FreshRSS                                                                     |
-| `headscale_subdomain`      | Optional | Subdomain for Headscale                                                                    |
+| `headscale_subdomain`      | Optional | Subdomain for Headscale; unset means Headscale is not deployed                             |
 | `navidrome_subdomain`      | Optional | Subdomain for Navidrome                                                                    |
 | `paperless_subdomain`      | Optional | Subdomain for Paperless                                                                    |
 | `paperless_tailscale_ip`   | Optional | Tailscale IP; makes subdomain tailnet-only                                                 |

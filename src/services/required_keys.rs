@@ -364,6 +364,28 @@ mod tests {
         let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
         assert!(set.contains("blocky_subdomain"), "{keys:?}");
         assert!(set.contains("tailscale_authkey"), "{keys:?}");
+        assert!(
+            !set.contains("headscale_subdomain"),
+            "untagged infrastructure must not demand the guarded role's key: {keys:?}"
+        );
+    }
+
+    /// The gate reads `headscale_subdomain` from config alone (#710), so a run
+    /// that names the tag without the key would skip every task it asked for.
+    /// Naming the tag is the operator asserting the role runs, and then they
+    /// are asked. Any selecting tag counts, category tags included — ADR-0045's
+    /// selection rule, pinned here so a change to it is deliberate.
+    #[test]
+    fn test_repo_headscale_tag_demands_the_gate_key() {
+        for tag in ["headscale", "vpn"] {
+            let tags = vec![tag.to_string()];
+            let keys =
+                required_keys_for(&repo_ansible_dir(), "infrastructure.yml", Some(&tags)).unwrap();
+            assert!(
+                keys.iter().any(|k| k == "headscale_subdomain"),
+                "-t {tag} must demand headscale_subdomain: {keys:?}"
+            );
+        }
     }
 
     #[test]
