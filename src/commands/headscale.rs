@@ -43,6 +43,13 @@ pub enum HeadscaleCommands {
         name: Option<String>,
         #[arg(short, long, help = "Pre-auth key expiration (e.g. 1h, 24h, 48h, 7d)")]
         expiration: Option<String>,
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            help = "ACL tags to stamp on the pre-auth key (e.g. tag:server)"
+        )]
+        tags: Vec<String>,
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
@@ -255,6 +262,28 @@ fn validate_username(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// headscale's own `validateTag` — `tag:` prefix, lowercase, no spaces —
+/// applied before the SSH round trip: on add-user a server-side rejection
+/// would land after `users create` has already mutated the store, the
+/// half-done state #707 was about. The rule is deliberately the server's, not
+/// a tighter one, so nothing headscale would take is refused here; the shell
+/// defense is [`quote`], not this.
+fn validate_tag(tag: &str) -> Result<()> {
+    let Some(name) = tag.strip_prefix("tag:") else {
+        eyre::bail!("Tag '{}' must start with 'tag:'", tag);
+    };
+    if name.is_empty() {
+        eyre::bail!("Tag '{}' names nothing after 'tag:'", tag);
+    }
+    if tag.to_lowercase() != tag {
+        eyre::bail!("Tag '{}' must be lowercase", tag);
+    }
+    if tag.chars().any(|c| c.is_whitespace()) {
+        eyre::bail!("Tag '{}' must not contain whitespace", tag);
+    }
+    Ok(())
+}
+
 fn validate_expiration(exp: &str) -> Result<()> {
     if !exp
         .chars()
@@ -328,12 +357,22 @@ fn create_user(session: &dyn SshSession, username: &str) -> Result<HeadscaleUser
 /// The id comes from the `users create` response, which carries the user it
 /// just made, rather than from a second `users list` round trip: nothing can
 /// then fail *between* the mutation and the key that mutation exists to mint.
-fn mint_preauth_key(session: &dyn SshSession, user_id: u64, expiration: &str) -> Result<String> {
+fn mint_preauth_key(
+    session: &dyn SshSession,
+    user_id: u64,
+    expiration: &str,
+    tags: &[String],
+) -> Result<String> {
+    let tags_flag = if tags.is_empty() {
+        String::new()
+    } else {
+        format!(" --tags {}", quote(&tags.join(",")))
+    };
     let raw = run_headscale_cmd(
         session,
         &format!(
-            "preauthkeys create --user {} --expiration {} -o json",
-            user_id, expiration
+            "preauthkeys create --user {} --expiration {}{} -o json",
+            user_id, expiration, tags_flag
         ),
     )?;
     let key: HeadscalePreAuthKey =
@@ -427,19 +466,21 @@ fn add_user(
     session: &dyn SshSession,
     username: &str,
     expiration: &str,
+    tags: &[String],
 ) -> Result<(HeadscaleUser, String)> {
     output::info(&format!("Creating user '{}'...", username));
     let user = create_user(session, username)?;
     output::success(&format!("User '{}' created (id {})", user.name, user.id));
 
     output::info("Generating pre-auth key...");
-    let key = mint_preauth_key(session, user.id, expiration)?;
+    let key = mint_preauth_key(session, user.id, expiration, tags)?;
     Ok((user, key))
 }
 
 pub fn run_headscale_add_user(
     name: Option<String>,
     expiration: Option<String>,
+    tags: Vec<String>,
     host: Option<String>,
 ) -> Result<()> {
     let (host_info, ssh_key) = resolve_headscale_host(host)?;
@@ -459,8 +500,11 @@ pub fn run_headscale_add_user(
 
     validate_username(&username)?;
     validate_expiration(&exp)?;
+    for tag in &tags {
+        validate_tag(tag)?;
+    }
 
-    let (_user, key) = add_user(&session, &username, &exp)?;
+    let (_user, key) = add_user(&session, &username, &exp, &tags)?;
 
     print_enrollment_instructions(&key)?;
 
@@ -754,7 +798,7 @@ mod tests {
         mock.stage_run_result(CommandResult::from_stdout(USER_CREATED_JSON));
         mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
 
-        let (user, key) = add_user(&mock, "sripwoud", "24h").unwrap();
+        let (user, key) = add_user(&mock, "sripwoud", "24h", &[]).unwrap();
         assert_eq!(user.id, 7);
         assert_eq!(key, "abcdef123456");
 
@@ -793,13 +837,80 @@ mod tests {
         assert_eq!(quote("bob-123_x"), "bob-123_x");
     }
 
+    /// `--tags` on 0.29.3 is a cobra `StringSlice`, so one comma-joined value
+    /// carries them all — and `:` is outside shell-escape's whitelist, so the
+    /// value rides the command line quoted.
+    #[test]
+    fn add_user_stamps_tags_on_the_minted_key() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(USER_CREATED_JSON));
+        mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
+
+        let tags = vec!["tag:server".to_string(), "tag:exit-node".to_string()];
+        add_user(&mock, "sripwoud", "24h", &tags).unwrap();
+
+        assert_eq!(
+            mock.calls()[1],
+            SshOp::Run(
+                "sudo headscale preauthkeys create --user 7 --expiration 24h \
+                 --tags 'tag:server,tag:exit-node' -o json"
+                    .to_string()
+            )
+        );
+    }
+
+    /// No tags means no `--tags` at all: an empty `StringSlice` value is not
+    /// the same thing as an absent flag.
+    #[test]
+    fn the_tags_flag_is_absent_when_no_tags_were_given() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
+        mint_preauth_key(&mock, 7, "24h", &[]).unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run(
+                "sudo headscale preauthkeys create --user 7 --expiration 24h -o json".to_string()
+            )]
+        );
+    }
+
+    /// `validateTag` on the server accepts `tag:$(whoami)` — lowercase, no
+    /// spaces — so validation cannot be the shell defense; quoting is.
+    #[test]
+    fn a_hostile_tag_cannot_break_out_of_the_command_line() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
+        mint_preauth_key(&mock, 7, "24h", &["tag:$(whoami)".to_string()]).unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run(
+                "sudo headscale preauthkeys create --user 7 --expiration 24h \
+                 --tags 'tag:$(whoami)' -o json"
+                    .to_string()
+            )]
+        );
+    }
+
+    /// The rule is headscale's own `validateTag`, applied before the SSH round
+    /// trip: a server-side rejection on add-user would land after `users
+    /// create` has already mutated the store.
+    #[test]
+    fn validate_tag_mirrors_headscales_rule() {
+        assert!(validate_tag("tag:server").is_ok());
+        assert!(validate_tag("tag:exit-node").is_ok());
+        assert!(validate_tag("server").is_err());
+        assert!(validate_tag("tag:Server").is_err());
+        assert!(validate_tag("tag:a b").is_err());
+        assert!(validate_tag("tag:").is_err());
+    }
+
     /// `--user` is a `uint` on 0.29.3, so a username there is a value cobra
     /// rejects — after the user has already been created.
     #[test]
     fn the_preauthkey_command_never_carries_a_username() {
         let mock = MockSshSession::new();
         mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
-        mint_preauth_key(&mock, 7, "24h").unwrap();
+        mint_preauth_key(&mock, 7, "24h", &[]).unwrap();
         let SshOp::Run(command) = &mock.calls()[0] else {
             panic!("preauthkeys create must reach the Host as a run");
         };

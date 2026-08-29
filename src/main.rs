@@ -129,8 +129,9 @@ async fn main() -> Result<()> {
             HeadscaleCommands::AddUser {
                 name,
                 expiration,
+                tags,
                 host,
-            } => run_headscale_add_user(name, expiration, host),
+            } => run_headscale_add_user(name, expiration, tags, host),
             HeadscaleCommands::ListUsers { output, host } => run_headscale_list_users(output, host),
             HeadscaleCommands::ListNodes { output, host } => run_headscale_list_nodes(output, host),
             HeadscaleCommands::RemoveUser { name, yes, host } => {

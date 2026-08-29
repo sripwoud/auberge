@@ -20,11 +20,12 @@ When run without arguments, prompts interactively for username and expiration.
 
 ## Options
 
-| Option             | Description                                | Default            |
-| ------------------ | ------------------------------------------ | ------------------ |
-| `[NAME]`           | Username to create                         | Interactive prompt |
-| `-e, --expiration` | Pre-auth key expiration (1h, 24h, 48h, 7d) | 24h                |
-| `--host HOST`      | Target host running headscale              | Interactive prompt |
+| Option             | Description                                       | Default            |
+| ------------------ | ------------------------------------------------- | ------------------ |
+| `[NAME]`           | Username to create                                | Interactive prompt |
+| `-e, --expiration` | Pre-auth key expiration (1h, 24h, 48h, 7d)        | 24h                |
+| `-t, --tags`       | ACL tags to stamp on the pre-auth key (`tag:...`) | None               |
+| `--host HOST`      | Target host running headscale                     | Interactive prompt |
 
 ## Examples
 
@@ -34,6 +35,9 @@ auberge hs au
 
 # Create user with all args
 auberge hs au alice --expiration 48h --host myserver
+
+# Stamp the key so the enrolling node comes up tagged
+auberge hs au sripwoud --tags tag:server
 ```
 
 ## Output
