@@ -49,10 +49,20 @@ auberge headscale list-users --host myserver --output json
 
 ```json
 [
-  { "id": 1, "name": "default", "created": "2024-01-15T10:00:00Z" },
-  { "id": 2, "name": "mobile", "created": "2024-01-20T14:30:00Z" }
+  {
+    "id": 1,
+    "name": "default",
+    "created_at": { "seconds": 1705312800, "nanos": 0 }
+  },
+  {
+    "id": 2,
+    "name": "mobile",
+    "created_at": { "seconds": 1705760400, "nanos": 0 }
+  }
 ]
 ```
+
+`created_at` is headscale's own `google.protobuf.Timestamp`, passed through as it arrives. The human table renders it as UTC.
 
 JSON goes to stdout; human-format chrome (banners, info messages) goes to stderr.
 
