@@ -49,11 +49,11 @@ Apps whose playbook meta declares `tailnet_only: true` (currently `bichon`, `coc
 
 Follow the Backup Verdict convention, so a script can branch on which of the three happened:
 
-| Code | Meaning                                                                                                        |
-| ---- | -------------------------------------------------------------------------------------------------------------- |
-| `0`  | Every planned record written — including a run with nothing to do, a `--dry-run`, and a cancelled confirmation |
-| `1`  | At least one write failed; the failures are in the `failed` array                                              |
-| `2`  | Operational error — no `--host`/`--ip`, host absent from inventory, a tailnet-only app named in `--subdomains` |
+| Code | Meaning                                                                                                                                                                                     |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Every planned record written — including a run with nothing to do, a `--dry-run`, and a cancelled confirmation                                                                              |
+| `1`  | At least one write failed; the failures are in the `failed` array                                                                                                                           |
+| `2`  | Operational error — `--strict` without `--host`/`--ip`, no Host pickable (several off-terminal, or none configured), host absent from inventory, a tailnet-only app named in `--subdomains` |
 
 Under `--output json`, every path the run can end on emits a body (ADR-0044) — a failed write before exiting `1`, a dry run, and a declined confirmation alike:
 
