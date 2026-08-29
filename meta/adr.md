@@ -60,6 +60,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0050 | [A remote CLI's contract is pinned to the release it was verified against](./adr/0050-a-remote-cli-contract-is-pinned-to-a-release.md)                         |
 | 0051 | [The headscale deploy gate is real, and config alone answers it](./adr/0051-the-headscale-gate-is-real-and-config-owned.md)                                    |
 | 0052 | [The tailnet's global resolver is the Host's own Blocky](./adr/0052-the-tailnets-global-resolver-is-the-hosts-blocky.md)                                       |
+| 0053 | [A Serving Unit is probed, or named in the ratchet](./adr/0053-a-serving-unit-is-probed-or-named-in-the-ratchet.md)                                            |
 
 ## Native systemd by default
 

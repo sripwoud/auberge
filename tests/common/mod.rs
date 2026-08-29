@@ -69,6 +69,10 @@ use std::path::{Path, PathBuf};
 
 use serde_yaml::{Mapping, Sequence, Value};
 
+/// The App layer over this walk: which App answers for a role, and the Unit
+/// Ownership each App declares. Two fences read it since #720 folded it out
+/// of `unit_ownership.rs`.
+pub mod apps;
 /// The systemd units this walk's tasks install, one layer over it. Five fences
 /// re-derived that layer from these primitives before #668 folded it.
 pub mod units;
@@ -300,10 +304,9 @@ pub fn yml_files(dir: &Path) -> Vec<PathBuf> {
 ///
 /// A Playbook Meta carries the CLI's own metadata — an App's version, its
 /// units, its backup order — and runs nothing, so a fence reading plays or
-/// tasks must not see it. Three fences want the other half of this directory
+/// tasks must not see it. Two fences want the other half of this directory
 /// and each enumerates the metas itself (`version_annotations.rs`,
-/// `unit_ownership.rs`, `service_directories.rs`); that is the next leftover,
-/// not this one.
+/// `service_directories.rs`); that is the next leftover, not this one.
 ///
 /// Empty is a hard stop, and it is the reason this is not just a `yml_files`
 /// call at each site. Every caller loops over the result, so a directory that
@@ -329,10 +332,12 @@ pub fn playbook_files() -> Vec<PathBuf> {
 /// with the App name it declares for, sorted by name.
 ///
 /// [`playbook_files`] filters these out; a fence over the declarations wants
-/// exactly them. `version_annotations.rs`, `unit_ownership.rs` and
-/// `service_directories.rs` still enumerate the metas with a `read_dir` of
-/// their own — folding those three is #658's remit, not this accessor's, and
-/// they are named here so their absence does not read as coverage.
+/// exactly them. `version_annotations.rs` and `service_directories.rs` still
+/// enumerate the metas with a `read_dir` of their own — folding those two is
+/// #658's remit, not this accessor's, and they are named here so their
+/// absence does not read as coverage. `unit_ownership.rs` read the metas
+/// itself too, until #720 moved its declaration reader into [`apps`], which
+/// reads them through here.
 ///
 /// Empty is a hard stop for [`playbook_files`]'s reason: every caller loops the
 /// result, so a directory that moved would leave each of them iterating nothing

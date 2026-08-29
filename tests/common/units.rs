@@ -57,6 +57,18 @@ pub enum Scope {
     User,
 }
 
+impl Scope {
+    /// How an id renders the manager: nothing for the system manager's units,
+    /// ` (user)` for a user's — the system manager is the unmarked case
+    /// everywhere the fences print one.
+    pub fn id_suffix(self) -> &'static str {
+        match self {
+            Scope::System => "",
+            Scope::User => " (user)",
+        }
+    }
+}
+
 /// One assignment a unit file or drop-in makes.
 ///
 /// The section is carried rather than discarded because systemd reads a key
@@ -98,10 +110,7 @@ impl InstalledUnit {
     /// pin needs; a fence keyed by the *unit* spells `<role>/<name>` itself,
     /// because the two that do carry a merged view of their own.
     pub fn file_id(&self) -> String {
-        let scope = match self.scope {
-            Scope::System => "",
-            Scope::User => " (user)",
-        };
+        let scope = self.scope.id_suffix();
         match &self.dropin {
             Some(conf) => format!("{}/{}.d/{conf}{scope}", self.role, self.name),
             None => format!("{}/{}{scope}", self.role, self.name),

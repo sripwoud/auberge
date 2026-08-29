@@ -22,16 +22,11 @@
 //! every PHP transition.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::PathBuf;
-
-use auberge::playbook_meta::qualified_unit_name;
-use serde_yaml::{Mapping, Value};
 
 mod common;
 
+use common::apps::{OwnedUnit, app_of, declared_units};
 use common::units::{Scope, fleet_units};
-use common::{all_roles, field, playbooks_dir, role_dir};
 
 /// A unit an App declares that no role installs a file for, and why the scan
 /// cannot compute it. Each entry is checked to stay underivable: the day a
@@ -43,109 +38,6 @@ const DECLARED_WITHOUT_FILE: &[(&str, &str, &str)] = &[(
      file to install, so no task reveals it",
 )];
 
-/// One unit an App owns: its `systemctl` name and the manager it lives in.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Owned {
-    app: String,
-    unit: String,
-    scope: Scope,
-}
-
-impl Owned {
-    fn id(&self) -> String {
-        let scope = match self.scope {
-            Scope::System => "",
-            Scope::User => " (user)",
-        };
-        format!("{}/{}{}", self.app, self.unit, scope)
-    }
-}
-
-/// The App each role answers as: the role's own name where a Meta of that
-/// name exists, otherwise the playbook that runs the role, otherwise the App
-/// of a role that depends on it — claude_code_remote deploys as a dependency
-/// of the vibecoder role, through vibecoder.yml, so its Meta is vibecoder's.
-/// A role that installs units and maps to no Meta is a hard stop: its units
-/// would have nowhere to be declared.
-fn app_of(role: &str, visited: &mut BTreeSet<String>) -> Option<String> {
-    if !visited.insert(role.to_string()) {
-        return None;
-    }
-    let meta_exists = |name: &str| playbooks_dir().join(format!("{name}.meta.yml")).is_file();
-    if meta_exists(role) {
-        return Some(role.to_string());
-    }
-    for entry in fs::read_dir(playbooks_dir()).expect("playbooks dir must exist") {
-        let path = entry
-            .expect("a playbooks dir entry must be readable")
-            .path();
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if stem.ends_with(".meta") || path.extension().is_none_or(|ext| ext != "yml") {
-            continue;
-        }
-        if playbook_roles(&path).iter().any(|r| r == role) && meta_exists(stem) {
-            return Some(stem.to_string());
-        }
-    }
-    for dependent in all_roles() {
-        if role_dependencies(&dependent).iter().any(|dep| dep == role)
-            && let Some(app) = app_of(&dependent, visited)
-        {
-            return Some(app);
-        }
-    }
-    None
-}
-
-/// The roles a role's `meta/main.yml` pulls in as dependencies.
-fn role_dependencies(role: &str) -> Vec<String> {
-    let path = role_dir(role).join("meta/main.yml");
-    let Ok(raw) = fs::read_to_string(&path) else {
-        return Vec::new();
-    };
-    let parsed: Mapping =
-        serde_yaml::from_str(&raw).unwrap_or_else(|e| panic!("{} must parse: {e}", path.display()));
-    let Some(deps) = field(&parsed, "dependencies").and_then(Value::as_sequence) else {
-        return Vec::new();
-    };
-    deps.iter()
-        .filter_map(|entry| {
-            entry.as_str().map(str::to_string).or_else(|| {
-                entry
-                    .get("role")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            })
-        })
-        .collect()
-}
-
-fn playbook_roles(path: &PathBuf) -> Vec<String> {
-    let raw = fs::read_to_string(path).expect("a playbook must be readable");
-    let docs: Vec<Value> =
-        serde_yaml::from_str(&raw).unwrap_or_else(|e| panic!("{} must parse: {e}", path.display()));
-    let mut roles = Vec::new();
-    for doc in &docs {
-        let Some(list) = doc.get("roles").and_then(Value::as_sequence) else {
-            continue;
-        };
-        for entry in list {
-            let name = entry.as_str().map(str::to_string).or_else(|| {
-                entry
-                    .get("role")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            });
-            if let Some(name) = name {
-                roles.push(name);
-            }
-        }
-    }
-    roles
-}
-
 /// Every unit the fleet's own tasks reveal, keyed by the App that must
 /// declare it.
 ///
@@ -153,7 +45,7 @@ fn playbook_roles(path: &PathBuf) -> Vec<String> {
 /// drop-ins included, since a drop-in names the unit it refines just as well as
 /// a unit file does. The unit file and its drop-ins collapse to one name here —
 /// this fence asks who owns the unit, not what any one file says about it.
-fn computed_units() -> BTreeSet<Owned> {
+fn computed_units() -> BTreeSet<OwnedUnit> {
     let mut by_role: BTreeMap<String, BTreeSet<(String, Scope)>> = BTreeMap::new();
     for unit in fleet_units() {
         by_role
@@ -163,7 +55,9 @@ fn computed_units() -> BTreeSet<Owned> {
     }
     let mut out = BTreeSet::new();
     for (role, installed) in by_role {
-        let app = app_of(&role, &mut BTreeSet::new()).unwrap_or_else(|| {
+        // A role that installs units and maps to no Meta is a hard stop: its
+        // units would have nowhere to be declared.
+        let app = app_of(&role).unwrap_or_else(|| {
             panic!(
                 "{role} installs systemd units but maps to no Playbook Meta; \
                  create `<app>.meta.yml` so the units have somewhere to be \
@@ -171,7 +65,7 @@ fn computed_units() -> BTreeSet<Owned> {
             )
         });
         for (unit, scope) in installed {
-            out.insert(Owned {
+            out.insert(OwnedUnit {
                 app: app.clone(),
                 unit,
                 scope,
@@ -181,62 +75,8 @@ fn computed_units() -> BTreeSet<Owned> {
     out
 }
 
-/// Every `units:` declaration across the committed Playbook Metas.
-fn declared_units() -> BTreeSet<Owned> {
-    let mut out = BTreeSet::new();
-    for entry in fs::read_dir(playbooks_dir()).expect("playbooks dir must exist") {
-        let path = entry
-            .expect("a playbooks dir entry must be readable")
-            .path();
-        let Some(app) = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .and_then(|n| n.strip_suffix(".meta.yml"))
-        else {
-            continue;
-        };
-        let raw = fs::read_to_string(&path).expect("a Meta must be readable");
-        let meta: Mapping = serde_yaml::from_str(&raw)
-            .unwrap_or_else(|e| panic!("{} must parse: {e}", path.display()));
-        let Some(units) = field(&meta, "units").and_then(Value::as_sequence) else {
-            continue;
-        };
-        for decl in units {
-            let (name, scope) = match decl {
-                Value::String(name) => (name.clone(), "system".to_string()),
-                Value::Mapping(scoped) => (
-                    field(scoped, "name")
-                        .and_then(Value::as_str)
-                        .unwrap_or_else(|| panic!("{app}: a scoped unit declares `name`"))
-                        .to_string(),
-                    field(scoped, "scope")
-                        .and_then(Value::as_str)
-                        .unwrap_or_else(|| panic!("{app}: a scoped unit declares `scope`"))
-                        .to_string(),
-                ),
-                other => panic!("{app}: {other:?} is not a unit declaration"),
-            };
-            out.insert(Owned {
-                app: app.to_string(),
-                // The crate's own qualifier, not a copy of its rule. Called
-                // without the `{admin_user}` substitution `owned_units` does
-                // first, so the comparison stays host-independent — the
-                // placeholder is what DECLARED_WITHOUT_FILE names syncthing's
-                // unit by.
-                unit: qualified_unit_name(&name),
-                scope: match scope.as_str() {
-                    "system" => Scope::System,
-                    "user" => Scope::User,
-                    other => panic!("{app}: `{other}` is not a unit scope"),
-                },
-            });
-        }
-    }
-    out
-}
-
-fn ids(units: &BTreeSet<Owned>) -> BTreeSet<String> {
-    units.iter().map(Owned::id).collect()
+fn ids(units: &BTreeSet<OwnedUnit>) -> BTreeSet<String> {
+    units.iter().map(OwnedUnit::id).collect()
 }
 
 /// Computed -> declared. A role that installs or drops in over a unit has
