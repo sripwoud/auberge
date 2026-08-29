@@ -148,6 +148,7 @@
             Config: {{ headscale_config_dir }}/config.yaml
             Data: {{ headscale_data_dir }}
             DERP: {{ 'embedded (region ' ~ headscale_derp_region_id ~ ')' if headscale_derp_enabled else 'disabled' }}
+            Relay fallback: {{ headscale_derp_urls | length }} remote DERP map(s)
             Status: systemctl status headscale
           Next steps:
             1. headscale users create default

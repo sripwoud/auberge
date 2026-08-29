@@ -3,7 +3,7 @@
 Self-hosted Tailscale coordination server. Keeps device metadata on your own infrastructure. [Upstream docs](https://headscale.net).
 
 - **URL**: `hs.{domain}` (must be public — clients contact it before joining the tailnet)
-- **STUN**: 3478/udp (embedded DERP relay)
+- **STUN**: 3478/udp (embedded DERP relay, region 999)
 - **Data**: `/var/lib/headscale` (SQLite DB + noise keys)
 
 ## Deploy
@@ -31,6 +31,17 @@ auberge ansible run --tags tailscale                 # roll nodes onto Headscale
 ```
 
 ?> Existing tailnet services (Paperless, Bichon, Cockpit) keep working unchanged — same Tailscale client, same WireGuard data plane.
+
+## Relay
+
+Peers that cannot reach each other directly relay through a DERP node. The embedded server on this Host is region 999; Tailscale's public DERP map is merged in beside it so relayed traffic survives this Host going down. Clients pick their home region by measured latency (`tailscale netcheck`), so the self-hosted one wins where it is closest rather than by configuration. Relay traffic is end-to-end encrypted WireGuard; a DERP node forwards it without being able to read it.
+
+| Role var                          | Default                                                  | Purpose                                          |
+| --------------------------------- | -------------------------------------------------------- | ------------------------------------------------ |
+| `headscale_derp_urls`             | `["https://controlplane.tailscale.com/derpmap/default"]` | Remote DERP maps merged with the embedded region |
+| `headscale_derp_update_frequency` | `24h`                                                    | How often to re-fetch them                       |
+
+!> Headscale fetches these URLs at startup and **refuses to start if one fails** — it stops at the first failure, with no per-URL tolerance. Refreshes after startup are retried with backoff and are not fatal. To fall back to the embedded region alone, empty `headscale_derp_urls`; like `headscale_derp_enabled` beside it, that is a role default edited in the repo, not a `config.toml` key.
 
 ## Migration from Tailscale SaaS
 

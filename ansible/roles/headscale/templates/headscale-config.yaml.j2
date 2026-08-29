@@ -17,8 +17,17 @@ derp:
     region_name: {{ headscale_derp_region_name }}
     stun_listen_addr: 0.0.0.0:{{ headscale_stun_port }}
     private_key_path: {{ headscale_data_dir }}/derp_private.key
+{% if headscale_derp_urls | length > 0 %}
+  urls:
+{% for url in headscale_derp_urls %}
+    - {{ url }}
+{% endfor %}
+  auto_update_enabled: true
+  update_frequency: {{ headscale_derp_update_frequency }}
+{% else %}
   urls: []
   auto_update_enabled: false
+{% endif %}
 database:
   type: sqlite
   sqlite:
