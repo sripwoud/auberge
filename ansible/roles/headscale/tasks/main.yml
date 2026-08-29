@@ -150,6 +150,22 @@
         mode: "0644"
       notify: Restart headscale
 
+    - name: Enable and start headscale service
+      ansible.builtin.systemd_service:
+        name: headscale
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Flush handlers so a pending headscale restart lands before the probe
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for headscale to listen on its loopback port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ headscale_port }}"
+        timeout: 30
+
     - name: Deploy Caddy site configuration for headscale
       ansible.builtin.template:
         src: headscale.caddyfile.j2
@@ -158,13 +174,6 @@
         group: root
         mode: "0644"
       notify: Restart caddy
-
-    - name: Enable and start headscale service
-      ansible.builtin.systemd_service:
-        name: headscale
-        enabled: true
-        state: started
-        daemon_reload: true
 
     - name: Write installed headscale version
       ansible.builtin.copy:
