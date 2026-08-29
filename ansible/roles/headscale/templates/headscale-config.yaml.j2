@@ -38,8 +38,13 @@ dns:
   base_domain: {{ headscale_base_domain }}
   nameservers:
     global:
-      - 1.1.1.1
-      - 1.0.0.1
+{% if headscale_tailscale_ipv4 is defined and headscale_tailscale_ipv4 | length > 0 %}
+      - {{ headscale_tailscale_ipv4 }}
+{% else %}
+{% for nameserver in headscale_fallback_nameservers %}
+      - {{ nameserver }}
+{% endfor %}
+{% endif %}
 {% if headscale_split_dns_target_ip | length > 0 %}
     split:
       "{{ domain }}":

@@ -43,9 +43,31 @@ Peers that cannot reach each other directly relay through a DERP node. The embed
 
 !> Headscale fetches these URLs at startup and **refuses to start if one fails** — it stops at the first failure, with no per-URL tolerance. Refreshes after startup are retried with backoff and are not fatal. To fall back to the embedded region alone, empty `headscale_derp_urls`; like `headscale_derp_enabled` beside it, that is a role default edited in the repo, not a `config.toml` key.
 
+## Tailnet DNS
+
+Headscale pushes the host's [Blocky](applications/networking/blocky.md) as the tailnet's **global** nameserver, so every query from every enrolled device is filtered — not just `*.{domain}`. The address is discovered at deploy time from the host's own `tailscale status`; before the host is enrolled there is nothing to discover and the config falls back to `1.1.1.1`/`1.0.0.1`.
+
+A deploy that finds no tailnet IPv4 on a Host whose config already serves one **fails** rather than rendering the public fallback over it — an unreachable `tailscaled` must not silently unfilter every enrolled client.
+
+Verify from any node:
+
+```bash
+tailscale dns status        # Resolver should be the host's tailnet IP
+```
+
+`headscale_split_dns_target_ip` stays available for pointing one domain at a different resolver — set it in inventory or via extra-vars; it is not a `config.toml` key. It is not how filtering reaches a client.
+
+?> Blocky is load-bearing for **all** tailnet DNS under this design, not only internal apps — see [ADR-0052](https://github.com/sripwoud/auberge/blob/master/meta/adr/0052-the-tailnets-global-resolver-is-the-hosts-blocky.md).
+
 ## Migration from Tailscale SaaS
 
 On each node: `tailscale logout`, then re-run `auberge ansible run --tags tailscale`. Verify with `tailscale status`.
+
+!> The host's own tailnet IP changes when it re-enrols, and both Blocky's bind address and the nameserver Headscale pushes were rendered from the **old** one. Run the infrastructure play once more after the host has re-enrolled, or tailnet DNS stays pointed at an address that no longer answers:
+
+```bash
+auberge ansible run --tags infrastructure
+```
 
 ## Backup
 
