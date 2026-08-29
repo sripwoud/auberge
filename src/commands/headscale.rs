@@ -1,3 +1,15 @@
+//! `auberge headscale` — the slice of headscale's own CLI auberge drives over
+//! ssh.
+//!
+//! Everything below the [`SshSession`] seam speaks headscale's *command line*,
+//! and a command line is a contract with one release. [`VERIFIED_CLI_VERSION`]
+//! names the release every command string and every JSON shape in this file was
+//! read off, and `tests/headscale_cli_contract.rs` fails the build when the App
+//! Version the Playbook Meta pins moves past it — because that is precisely how
+//! this file broke: Renovate walked headscale 0.25 → 0.29 while `preauthkeys
+//! create --user` changed from a username to a `uint` id, and nothing here
+//! noticed (#707).
+
 use crate::config::Config;
 use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg};
 use crate::output;
@@ -8,10 +20,17 @@ use clap::Subcommand;
 use dialoguer::{Input, Select, theme::ColorfulTheme};
 use eyre::{Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use tabled::Tabled;
+
+/// The headscale release this module's command lines and JSON shapes were read
+/// off, and the version `ansible/playbooks/headscale.meta.yml` must pin.
+///
+/// Stated here rather than in the fence so the claim sits next to the code
+/// making it: a reader who changes a command string below is looking at the
+/// version it is true of.
+pub const VERIFIED_CLI_VERSION: &str = "0.29.3";
 
 #[derive(Subcommand)]
 pub enum HeadscaleCommands {
@@ -64,6 +83,13 @@ pub enum HeadscaleCommands {
     },
 }
 
+/// A headscale user, as its `-o json` renders one.
+///
+/// headscale serialises its protobuf types with Go's `encoding/json` over the
+/// generated struct tags, not with protojson — so the keys are the *proto*
+/// field names (`created_at`, not `createdAt`) and a `uint64` id is a JSON
+/// number, not a string. Every generated tag carries `omitempty`, so a zero
+/// value is an absent key rather than a zero one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct HeadscaleUser {
     id: u64,
@@ -71,8 +97,12 @@ struct HeadscaleUser {
     created_at: Option<ProtoTimestamp>,
 }
 
+/// A `google.protobuf.Timestamp`, which `encoding/json` renders as its two
+/// numeric fields. Both are `omitempty`, and both zero values are reachable —
+/// nanos routinely, seconds at the epoch itself.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProtoTimestamp {
+    #[serde(default)]
     seconds: i64,
     #[serde(default)]
     nanos: i32,
@@ -86,15 +116,17 @@ impl ProtoTimestamp {
     }
 }
 
+/// A headscale node. Field names are the proto ones for the reason
+/// [`HeadscaleUser`] documents: the camelCase spellings this carried until
+/// #707 are protojson's, and headscale does not use protojson — every node
+/// listing failed to parse on `missing field givenName`.
 #[derive(Debug, Serialize, Deserialize)]
 struct HeadscaleNode {
     id: u64,
-    #[serde(rename = "givenName")]
     given_name: String,
-    #[serde(rename = "ipAddresses", default)]
+    #[serde(default)]
     ip_addresses: Vec<String>,
     user: HeadscaleNodeUser,
-    #[serde(rename = "lastSeen")]
     last_seen: Option<ProtoTimestamp>,
     #[serde(default)]
     online: bool,
@@ -105,6 +137,8 @@ struct HeadscaleNodeUser {
     name: String,
 }
 
+/// The `preauthkeys create` response. Only the key itself is read; the object
+/// also carries the owning user, an id, the expiration and the ACL tags.
 #[derive(Debug, Deserialize)]
 struct HeadscalePreAuthKey {
     key: String,
@@ -256,6 +290,67 @@ fn run_headscale_cmd(session: &dyn SshSession, args: &str) -> Result<String> {
     Ok(strip_ssh_banner(&out.stdout_str()).to_string())
 }
 
+/// A headscale list, which is `null` rather than `[]` when it is empty:
+/// `printListOutput` hands `encoding/json` a nil Go slice, and a nil slice
+/// marshals to `null`. Both listings go through here so only one of them can
+/// forget — `users list` was the one that had (#707).
+fn parse_list<T: serde::de::DeserializeOwned>(raw: &str, what: &str) -> Result<Vec<T>> {
+    let parsed: Option<Vec<T>> = serde_json::from_str(raw.trim())
+        .wrap_err_with(|| format!("Failed to parse headscale {}", what))?;
+    Ok(parsed.unwrap_or_default())
+}
+
+fn create_user(session: &dyn SshSession, username: &str) -> Result<HeadscaleUser> {
+    let raw = run_headscale_cmd(session, &format!("users create {} -o json", username))?;
+    serde_json::from_str(raw.trim()).wrap_err("Failed to parse headscale users create response")
+}
+
+/// `preauthkeys create --user` takes the user's **ID**, a `uint`. Handing it
+/// the username makes cobra reject the flag value — after `users create` has
+/// already run, so the user exists and the enrollment instructions never print
+/// (#707).
+///
+/// The id comes from the `users create` response, which carries the user it
+/// just made, rather than from a second `users list` round trip: nothing can
+/// then fail *between* the mutation and the key that mutation exists to mint.
+fn mint_preauth_key(session: &dyn SshSession, user_id: u64, expiration: &str) -> Result<String> {
+    let raw = run_headscale_cmd(
+        session,
+        &format!(
+            "preauthkeys create --user {} --expiration {} -o json",
+            user_id, expiration
+        ),
+    )?;
+    let key: HeadscalePreAuthKey =
+        serde_json::from_str(raw.trim()).wrap_err("Failed to parse pre-auth key response")?;
+    Ok(key.key)
+}
+
+fn list_users(session: &dyn SshSession) -> Result<Vec<HeadscaleUser>> {
+    parse_list(
+        &run_headscale_cmd(session, "users list -o json")?,
+        "users list",
+    )
+}
+
+fn list_nodes(session: &dyn SshSession) -> Result<Vec<HeadscaleNode>> {
+    parse_list(
+        &run_headscale_cmd(session, "nodes list -o json")?,
+        "nodes list",
+    )
+}
+
+/// `users destroy` still resolves a user by `--name` on 0.29.3, unlike
+/// `preauthkeys create`; `--force` is the global flag that answers its
+/// confirmation prompt.
+fn destroy_user(session: &dyn SshSession, username: &str) -> Result<()> {
+    run_headscale_cmd(
+        session,
+        &format!("users destroy --name {} --force", username),
+    )?;
+    Ok(())
+}
+
 pub fn run_headscale_add_user(
     name: Option<String>,
     expiration: Option<String>,
@@ -292,20 +387,11 @@ pub fn run_headscale_add_user(
     validate_expiration(&exp)?;
 
     output::info(&format!("Creating user '{}'...", username));
-    run_headscale_cmd(&session, &format!("users create {}", username))?;
-    output::success(&format!("User '{}' created", username));
+    let user = create_user(&session, &username)?;
+    output::success(&format!("User '{}' created (id {})", user.name, user.id));
 
     output::info("Generating pre-auth key...");
-    let key_output = run_headscale_cmd(
-        &session,
-        &format!(
-            "preauthkeys create --user {} --expiration {} -o json",
-            username, exp
-        ),
-    )?;
-
-    let key: HeadscalePreAuthKey = serde_json::from_str(key_output.trim())
-        .wrap_err("Failed to parse pre-auth key response")?;
+    let key = mint_preauth_key(&session, user.id, &exp)?;
 
     let config = Config::load()?;
     let subdomain = config
@@ -316,7 +402,7 @@ pub fn run_headscale_add_user(
         .unwrap_or_else(|| "example.com".to_string());
     let login_server = format!("https://{}.{}", subdomain, domain);
 
-    println!("{}", key.key);
+    println!("{}", key);
 
     eprintln!();
     eprintln!("Share these instructions:");
@@ -326,10 +412,10 @@ pub fn run_headscale_add_user(
     eprintln!("   iOS: long-press ⋯ menu before signing in");
     eprintln!("   Android: top menu > Use another server");
     eprintln!("   CLI: tailscale up --login-server {}", login_server);
-    eprintln!("3. Use pre-auth key: {}", key.key);
+    eprintln!("3. Use pre-auth key: {}", key);
     eprintln!(
         "   CLI: tailscale up --login-server {} --authkey {}",
-        login_server, key.key
+        login_server, key
     );
     eprintln!("─────────────────────────────────────");
 
@@ -341,9 +427,7 @@ pub fn run_headscale_list_users(output_fmt: OutputFormat, host: Option<String>) 
     let (host_info, ssh_key) = resolve_headscale_host(host)?;
     let session = LiveSshSession::new(&host_info, &ssh_key);
 
-    let raw = run_headscale_cmd(&session, "users list -o json")?;
-    let users: Vec<HeadscaleUser> =
-        serde_json::from_str(raw.trim()).wrap_err("Failed to parse headscale users list")?;
+    let users = list_users(&session)?;
 
     match output_fmt {
         OutputFormat::Json => {
@@ -365,14 +449,7 @@ pub fn run_headscale_list_nodes(output_fmt: OutputFormat, host: Option<String>) 
     let (host_info, ssh_key) = resolve_headscale_host(host)?;
     let session = LiveSshSession::new(&host_info, &ssh_key);
 
-    let raw = run_headscale_cmd(&session, "nodes list -o json")?;
-    let parsed: Value =
-        serde_json::from_str(raw.trim()).wrap_err("Failed to parse headscale nodes list")?;
-    let nodes: Vec<HeadscaleNode> = if parsed.is_null() {
-        Vec::new()
-    } else {
-        serde_json::from_value(parsed).wrap_err("Failed to parse headscale nodes list")?
-    };
+    let nodes = list_nodes(&session)?;
 
     match output_fmt {
         OutputFormat::Json => {
@@ -410,9 +487,7 @@ pub fn run_headscale_remove_user(
             n
         }
         None if is_tty => {
-            let raw = run_headscale_cmd(&session, "users list -o json")?;
-            let users: Vec<HeadscaleUser> =
-                serde_json::from_str(raw.trim()).wrap_err("Failed to parse users list")?;
+            let users = list_users(&session)?;
             if users.is_empty() {
                 eyre::bail!("No users to remove");
             }
@@ -433,10 +508,7 @@ pub fn run_headscale_remove_user(
         return Ok(());
     }
 
-    run_headscale_cmd(
-        &session,
-        &format!("users destroy --name {} --force", username),
-    )?;
+    destroy_user(&session, &username)?;
     output::success(&format!("User '{}' removed", username));
     Ok(())
 }
@@ -500,59 +572,184 @@ mod tests {
         assert_eq!(err.to_string(), "headscale nodes list failed");
     }
 
+    /// What `headscale users list -o json` prints on 0.29.3: proto field names,
+    /// a numeric id, and `omitempty` dropping the zero `nanos`.
+    const USERS_LIST_JSON: &str = r#"[
+	{
+		"id": 1,
+		"name": "alice",
+		"created_at": {
+			"seconds": 1735689600
+		}
+	},
+	{
+		"id": 2,
+		"name": "bob",
+		"created_at": {
+			"seconds": 1738368000
+		}
+	}
+]"#;
+
+    /// What `headscale nodes list -o json` prints on 0.29.3. The user is the
+    /// full `User` message, not a bare name, and `online: false` would be
+    /// absent rather than `false`.
+    const NODES_LIST_JSON: &str = r#"[
+	{
+		"id": 1,
+		"machine_key": "mkey:aa",
+		"node_key": "nodekey:bb",
+		"ip_addresses": [
+			"100.64.0.1",
+			"fd7a:115c:a1e0::1"
+		],
+		"name": "phone",
+		"user": {
+			"id": 1,
+			"name": "alice",
+			"created_at": {
+				"seconds": 1735689600
+			}
+		},
+		"last_seen": {
+			"seconds": 1712919600
+		},
+		"created_at": {
+			"seconds": 1712919000
+		},
+		"register_method": 2,
+		"given_name": "phone",
+		"online": true
+	}
+]"#;
+
+    /// What `headscale users create <name> -o json` prints on 0.29.3: the one
+    /// `User` it just made, id included.
+    const USER_CREATED_JSON: &str = r#"{
+	"id": 7,
+	"name": "sripwoud",
+	"created_at": {
+		"seconds": 1776019755
+	}
+}"#;
+
+    /// What `headscale preauthkeys create -o json` prints on 0.29.3.
+    const PREAUTHKEY_JSON: &str = r#"{
+	"user": {
+		"id": 7,
+		"name": "sripwoud",
+		"created_at": {
+			"seconds": 1776019755
+		}
+	},
+	"id": 1,
+	"key": "abcdef123456",
+	"expiration": {
+		"seconds": 1776023355
+	},
+	"created_at": {
+		"seconds": 1776019755
+	}
+}"#;
+
     #[test]
-    fn parse_users_list_json() {
-        let json = r#"[
-            {"id": 1, "name": "alice", "created_at": {"seconds": 1735689600, "nanos": 0}},
-            {"id": 2, "name": "bob", "created_at": {"seconds": 1738368000, "nanos": 0}}
-        ]"#;
-        let users: Vec<HeadscaleUser> = serde_json::from_str(json).unwrap();
+    fn list_users_reads_the_shape_0_29_3_prints() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_JSON));
+        let users = list_users(&mock).unwrap();
         assert_eq!(users.len(), 2);
         assert_eq!(users[0].name, "alice");
         assert_eq!(users[1].id, 2);
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run("sudo headscale users list -o json".to_string())]
+        );
+    }
+
+    /// `printListOutput` marshals a nil Go slice, so an empty listing is `null`
+    /// — `users list` used to fail to parse it, which made every interactive
+    /// `remove-user` on a fresh instance an error instead of "no users" (#707).
+    #[test]
+    fn list_users_reads_an_empty_listing_as_no_users() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout("null\n"));
+        assert!(list_users(&mock).unwrap().is_empty());
     }
 
     #[test]
-    fn parse_users_list_json_empty() {
-        let json = "[]";
-        let users: Vec<HeadscaleUser> = serde_json::from_str(json).unwrap();
-        assert!(users.is_empty());
-    }
-
-    #[test]
-    fn parse_nodes_list_json() {
-        let json = r#"[{
-            "id": 1,
-            "givenName": "phone",
-            "ipAddresses": ["100.64.0.1", "fd7a:115c:a1e0::1"],
-            "user": {"name": "alice"},
-            "lastSeen": {"seconds": 1712919600, "nanos": 0},
-            "online": true
-        }]"#;
-        let nodes: Vec<HeadscaleNode> = serde_json::from_str(json).unwrap();
+    fn list_nodes_reads_the_shape_0_29_3_prints() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(NODES_LIST_JSON));
+        let nodes = list_nodes(&mock).unwrap();
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0].given_name, "phone");
+        assert_eq!(nodes[0].user.name, "alice");
         assert_eq!(nodes[0].ip_addresses.len(), 2);
         assert!(nodes[0].online);
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run("sudo headscale nodes list -o json".to_string())]
+        );
     }
 
     #[test]
-    fn parse_nodes_null_is_empty() {
-        let parsed: Value = serde_json::from_str("null").unwrap();
-        assert!(parsed.is_null());
+    fn list_nodes_reads_an_empty_listing_as_no_nodes() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout("null\n"));
+        assert!(list_nodes(&mock).unwrap().is_empty());
+    }
+
+    /// The bug this file was rewritten for: the key is minted against the id
+    /// the create response carried, and the username appears nowhere in the
+    /// `preauthkeys` command line.
+    #[test]
+    fn add_user_mints_the_key_against_the_new_users_id() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(USER_CREATED_JSON));
+        mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
+
+        let user = create_user(&mock, "sripwoud").unwrap();
+        assert_eq!(user.id, 7);
+        assert_eq!(
+            mint_preauth_key(&mock, user.id, "24h").unwrap(),
+            "abcdef123456"
+        );
+
+        assert_eq!(
+            mock.calls(),
+            vec![
+                SshOp::Run("sudo headscale users create sripwoud -o json".to_string()),
+                SshOp::Run(
+                    "sudo headscale preauthkeys create --user 7 --expiration 24h -o json"
+                        .to_string()
+                ),
+            ]
+        );
+    }
+
+    /// `--user` is a `uint` on 0.29.3, so a username there is a value cobra
+    /// rejects — after the user has already been created.
+    #[test]
+    fn the_preauthkey_command_never_carries_a_username() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
+        mint_preauth_key(&mock, 7, "24h").unwrap();
+        let SshOp::Run(command) = &mock.calls()[0] else {
+            panic!("preauthkeys create must reach the Host as a run");
+        };
+        assert!(!command.contains("sripwoud"), "{command}");
     }
 
     #[test]
-    fn parse_preauthkey_json() {
-        let json = r#"{
-            "user": "alice",
-            "id": "1",
-            "key": "abcdef123456",
-            "expiration": {"seconds": 1776023355, "nanos": 0},
-            "created_at": {"seconds": 1776019755, "nanos": 0}
-        }"#;
-        let key: HeadscalePreAuthKey = serde_json::from_str(json).unwrap();
-        assert_eq!(key.key, "abcdef123456");
+    fn destroy_user_resolves_by_name_and_answers_the_prompt() {
+        let mock = MockSshSession::new();
+        destroy_user(&mock, "alice").unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run(
+                "sudo headscale users destroy --name alice --force".to_string()
+            )]
+        );
     }
 
     #[test]
