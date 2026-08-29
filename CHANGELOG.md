@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1](https://github.com/sripwoud/auberge/compare/v0.16.0...v0.16.1) - 2026-08-29
+
+### Added
+
+- *(headscale)* add-key mints a pre-auth key for an existing user ([#719](https://github.com/sripwoud/auberge/pull/719))
+- *(headscale)* push blocky as the tailnet's global nameserver ([#715](https://github.com/sripwoud/auberge/pull/715))
+- *(headscale)* add the tailscale derp map as relay fallback ([#717](https://github.com/sripwoud/auberge/pull/717))
+
+### Fixed
+
+- *(headscale)* fail the deploy when the service cannot start ([#721](https://github.com/sripwoud/auberge/pull/721))
+- *(headscale)* correct the CLI contract for the 0.29.3 the Host runs ([#714](https://github.com/sripwoud/auberge/pull/714))
+- *(ansible)* make the headscale deploy gate real ([#718](https://github.com/sripwoud/auberge/pull/718))
+- *(dns)* prompt with a host picker when set-all gets no --host/--ip ([#705](https://github.com/sripwoud/auberge/pull/705))
+
+### Other
+
+- *(ansible)* demand a probe of every app with a serving unit ([#722](https://github.com/sripwoud/auberge/pull/722))
+- *(yourls)* bump to 1.10.5 ([#703](https://github.com/sripwoud/auberge/pull/703))
+- *(adr)* record the self-hosted tailnet control-plane decision ([#713](https://github.com/sripwoud/auberge/pull/713))
+- *(adr)* record why a PR's codeql leg cannot show the count change ([#702](https://github.com/sripwoud/auberge/pull/702))
+
 ## [0.16.0](https://github.com/sripwoud/auberge/compare/v0.15.18...v0.16.0) - 2026-08-28
 
 ### Added
