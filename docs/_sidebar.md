@@ -52,6 +52,7 @@
     - [add-key](cli-reference/ssh/add-key.md)
   - Headscale
     - [add-user](cli-reference/headscale/add-user.md)
+    - [add-key](cli-reference/headscale/add-key.md)
     - [list-users](cli-reference/headscale/list-users.md)
     - [list-nodes](cli-reference/headscale/list-nodes.md)
     - [remove-user](cli-reference/headscale/remove-user.md)

@@ -19,8 +19,8 @@ use auberge::commands::dns::{
     run_dns_set_all, run_dns_status,
 };
 use auberge::commands::headscale::{
-    HeadscaleCommands, run_headscale_add_user, run_headscale_list_nodes, run_headscale_list_users,
-    run_headscale_remove_user,
+    HeadscaleCommands, run_headscale_add_key, run_headscale_add_user, run_headscale_list_nodes,
+    run_headscale_list_users, run_headscale_remove_user,
 };
 use auberge::commands::host::{
     AddHostArgs, HostCommands, run_host_add, run_host_detect_tailscale_ip, run_host_edit,
@@ -129,8 +129,15 @@ async fn main() -> Result<()> {
             HeadscaleCommands::AddUser {
                 name,
                 expiration,
+                tags,
                 host,
-            } => run_headscale_add_user(name, expiration, host),
+            } => run_headscale_add_user(name, expiration, tags, host),
+            HeadscaleCommands::AddKey {
+                user,
+                expiration,
+                tags,
+                host,
+            } => run_headscale_add_key(user, expiration, tags, host),
             HeadscaleCommands::ListUsers { output, host } => run_headscale_list_users(output, host),
             HeadscaleCommands::ListNodes { output, host } => run_headscale_list_nodes(output, host),
             HeadscaleCommands::RemoveUser { name, yes, host } => {
