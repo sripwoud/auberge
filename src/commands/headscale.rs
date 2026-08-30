@@ -359,16 +359,43 @@ fn strip_ssh_banner(output: &str) -> &str {
     trimmed
 }
 
+/// A `headscale` invocation that exited non-zero, carrying its stderr as a
+/// field rather than only as rendered text.
+///
+/// A caller that wants to recognise one specific remote failure — `register`
+/// is the only one, and only for the registration cache (#729) — reads
+/// `stderr` off this through `err.chain()`, the way `is_retryable` reads a
+/// status off `BichonApiHttpError`. Matching `Report::to_string()` instead
+/// would match a *rendering*: it returns the outermost context only, so it
+/// happens to carry the stderr solely because this `Display` inlines it, and
+/// a later `wrap_err` anywhere below would end the coupling silently.
+#[derive(Debug)]
+struct HeadscaleCmdError {
+    args: String,
+    stderr: String,
+}
+
+impl std::fmt::Display for HeadscaleCmdError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.stderr.is_empty() {
+            write!(f, "headscale {} failed", self.args)
+        } else {
+            write!(f, "headscale {} failed: {}", self.args, self.stderr)
+        }
+    }
+}
+
+impl std::error::Error for HeadscaleCmdError {}
+
 fn run_headscale_cmd(session: &dyn SshSession, args: &str) -> Result<String> {
     let cmd = format!("sudo headscale {}", args);
     let out = session.run(&cmd)?;
     if !out.success {
-        let cleaned = strip_ssh_banner(&out.stderr_str()).to_string();
-        if cleaned.is_empty() {
-            eyre::bail!("headscale {} failed", args);
-        } else {
-            eyre::bail!("headscale {} failed: {}", args, cleaned);
+        return Err(HeadscaleCmdError {
+            args: args.to_string(),
+            stderr: strip_ssh_banner(&out.stderr_str()).to_string(),
         }
+        .into());
     }
     Ok(strip_ssh_banner(&out.stdout_str()).to_string())
 }
@@ -488,6 +515,12 @@ fn parse_auth_id(input: &str) -> Result<String> {
 /// The miss headscale reports when the auth-id names no pending enrollment.
 /// Matched as a substring: it arrives wrapped in gRPC framing
 /// (`registering node: rpc error: code = Unknown desc = …`).
+///
+/// Prose, not a flag — so no `--help` shows it, and a reworded release would
+/// end the translation with every test still green. It rides the same
+/// [`VERIFIED_CLI_VERSION`] contract as the command lines, and
+/// `tests/headscale_cli_contract.rs` names it among what to re-read when the
+/// pin moves.
 const REGISTRATION_CACHE_MISS: &str = "node not found in registration cache";
 
 /// What that miss means, and what to do about it.
@@ -501,12 +534,10 @@ const REGISTRATION_CACHE_MISS: &str = "node not found in registration cache";
 /// answers an auth-id that was never issued, and [`parse_auth_id`] only
 /// shape-checks. The remedy is the same either way, so the message leads with
 /// it rather than with a cause auberge cannot tell apart.
-const REGISTRATION_CACHE_MISS_REMEDY: &str = concat!(
-    "No pending enrollment under this auth-id: headscale holds one for 15 minutes ",
-    "and drops all of them when it restarts. Restart the login on the device and ",
-    "re-run with the fresh link — the /register/ page keeps serving after the ",
-    "enrollment is gone, so reloading it proves nothing",
-);
+const REGISTRATION_CACHE_MISS_REMEDY: &str = "No pending enrollment under this auth-id: \
+     headscale holds one for 15 minutes and drops all of them when it restarts. Restart \
+     the login on the device and re-run with the fresh link — the /register/ page keeps \
+     serving after the enrollment is gone, so reloading it proves nothing";
 
 /// `auth register` approves the pending interactive enrollment the auth-id
 /// names. `--user` is a string on this subcommand in 0.29.3 — the
@@ -530,7 +561,11 @@ fn register_node(session: &dyn SshSession, auth_id: &str, username: &str) -> Res
         ),
     )
     .map_err(|err| {
-        if err.to_string().contains(REGISTRATION_CACHE_MISS) {
+        let missed_the_cache = err
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<HeadscaleCmdError>())
+            .is_some_and(|failed| failed.stderr.contains(REGISTRATION_CACHE_MISS));
+        if missed_the_cache {
             err.wrap_err(REGISTRATION_CACHE_MISS_REMEDY)
         } else {
             err
@@ -1240,6 +1275,49 @@ mod tests {
         assert!(
             chain.contains("headscale auth register"),
             "the command that failed must survive too: {chain}"
+        );
+    }
+
+    /// The translation lives in `register_node` and nowhere below it. The
+    /// registration cache belongs to the `auth register` flow, while
+    /// [`run_headscale_cmd`] carries eight other command lines — a remedy
+    /// naming a login on a device is nonsense under `users destroy`.
+    ///
+    /// Without this the placement is guarded only by a doc comment: moving the
+    /// `map_err` down into the generic runner leaves every other test green.
+    #[test]
+    fn the_generic_runner_translates_nothing_the_register_flow_owns() {
+        let cache_miss = b"Error: node not found in registration cache";
+
+        let direct = MockSshSession::new();
+        direct.stage_run_result(CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: cache_miss.to_vec(),
+        });
+        let err = run_headscale_cmd(&direct, "users destroy ghost --force").unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("node not found in registration cache"),
+            "the runner still reports what headscale said: {chain}"
+        );
+        assert!(
+            !chain.contains("15 minutes"),
+            "the runner must not carry register's remedy: {chain}"
+        );
+
+        let through_caller = MockSshSession::new();
+        through_caller.stage_run_result(CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: cache_miss.to_vec(),
+        });
+        let err = destroy_user(&through_caller, "ghost").unwrap_err();
+        assert!(
+            !format!("{err:#}").contains("15 minutes"),
+            "nor may a sibling caller inherit it: {err:#}"
         );
     }
 
