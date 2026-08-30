@@ -40,6 +40,14 @@ What it pairs with is the seam. Every remote call now goes through a `&dyn SshSe
 
 One of those is the _sequence_, not a call: `add_user` runs create-then-mint, because the defect was never in either call but in the value threaded between them, and the entry point holding that threading builds its own `LiveSshSession` and can never be reached from a test. `mint_preauth_key`'s `u64` already makes the original regression a type error; the sequence makes it a test failure too, including for a future signature that stopped being a `u64`. The parse tests are fed **verbatim 0.29.3 output**, tabs and `omitempty` gaps included, rather than JSON written from the shape the code wanted. Reverting each of the three defects fails a test, which is the property that was missing: the previous fixtures were hand-written in protojson's dialect and so agreed with the bug.
 
+### The prose is a third coupling, and the weakest one
+
+Amended 2026-08-30 (#729). The contract above was written over two couplings: the command lines auberge spells and the JSON they print. `register` added a third — auberge matches `node not found in registration cache` in headscale's stderr to tell an aged-out enrollment from a real failure, and quotes `registerCacheExpiration`'s 15 minutes back to the operator.
+
+It is the weakest of the three because it is the only one no `--help` shows and no `-o json` prints. A flag that changes breaks loudly: cobra rejects it and the command fails. Reworded prose breaks silently in the safe direction — the translation stops firing, the operator gets the raw text back, and every test stays green, because the mocks stage the string the code already believes in. **A mock pins the caller, never the callee** holds here with nothing to soften it.
+
+So the pin is what carries it: `REGISTRATION_CACHE_MISS` and `registerCacheExpiration` are named in the fence's message alongside the `--help` surfaces, and moving `VERIFIED_CLI_VERSION` means re-reading all three kinds. What is deliberately not built is a fallback — an unrecognised stderr surfaces verbatim rather than under a guess, so the failure mode of a reword is a worse message, never a wrong one.
+
 ### A guard applied on one of two paths is not applied
 
 The audit turned up one defect that is not a version contract at all. `remove-user` validates the username it is _given_ and could not validate the one it is _told_: the interactive picker takes a name from headscale's own store — where an OIDC claim or `users rename` can put anything — and handed it straight to a `sudo` command line the remote login shell parses.
