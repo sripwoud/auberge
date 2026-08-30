@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.4](https://github.com/sripwoud/auberge/compare/v0.16.3...v0.16.4) - 2026-08-30
+
+### Fixed
+
+- *(headscale)* name the 15-minute window when register misses the cache ([#731](https://github.com/sripwoud/auberge/pull/731))
+
 ## [0.16.3](https://github.com/sripwoud/auberge/compare/v0.16.2...v0.16.3) - 2026-08-30
 
 ### Fixed
