@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.2](https://github.com/sripwoud/auberge/compare/v0.16.1...v0.16.2) - 2026-08-30
+
+### Added
+
+- *(headscale)* register approves a pending interactive enrollment ([#726](https://github.com/sripwoud/auberge/pull/726))
+
+### Other
+
+- *(yourls)* bump to 1.10.6 ([#723](https://github.com/sripwoud/auberge/pull/723))
+
 ## [0.16.1](https://github.com/sripwoud/auberge/compare/v0.16.0...v0.16.1) - 2026-08-29
 
 ### Added
