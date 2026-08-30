@@ -453,7 +453,8 @@ fn list_nodes(session: &dyn SshSession) -> Result<Vec<HeadscaleNode>> {
 /// or fragment appended by a share sheet is tolerated) or the bare
 /// `hskey-authreq-…` id. Anything else is rejected *here*, locally, before
 /// an SSH round trip could carry it to a `sudo` command line — and the shape
-/// this admits (prefix + ASCII alphanumerics) contains no shell metacharacter,
+/// this admits (prefix + the raw-URL-safe base64 alphabet headscale mints
+/// ids from: ASCII alphanumerics, `-`, `_`) contains no shell metacharacter,
 /// though [`quote`] still wraps it downstream.
 fn parse_auth_id(input: &str) -> Result<String> {
     let trimmed = input.trim();
@@ -469,7 +470,10 @@ fn parse_auth_id(input: &str) -> Result<String> {
     let is_auth_id = candidate
         .strip_prefix("hskey-authreq-")
         .is_some_and(|suffix| {
-            !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_alphanumeric())
+            !suffix.is_empty()
+                && suffix
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         });
     if !is_auth_id {
         eyre::bail!(
@@ -1067,6 +1071,18 @@ mod tests {
             parse_auth_id("https://hs.example.com/register/hskey-authreq-x7K9m2P4qL8wN3vB5tR6yH1z")
                 .unwrap(),
             "hskey-authreq-x7K9m2P4qL8wN3vB5tR6yH1z"
+        );
+    }
+
+    /// headscale mints the suffix with raw-URL-safe base64 (`A-Za-z0-9-_`),
+    /// so roughly half of real 24-char ids carry a `-` or `_` — an
+    /// alphanumerics-only validator rejects them.
+    #[test]
+    fn parse_auth_id_accepts_base64url_hyphen_and_underscore() {
+        assert_eq!(
+            parse_auth_id("https://hs.example.com/register/hskey-authreq-SvQJJKDl7-MMF_Zokgzck2PJ")
+                .unwrap(),
+            "hskey-authreq-SvQJJKDl7-MMF_Zokgzck2PJ"
         );
     }
 
