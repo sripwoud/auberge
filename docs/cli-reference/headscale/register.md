@@ -44,6 +44,6 @@ Prints headscale's registration response and a success line naming the user the 
 
 ## Troubleshooting
 
-**Auth-id unknown or expired**: headscale keeps a pending enrollment in its registration cache for ~15 minutes. Restart the login on the enrolling device to get a fresh URL.
+**No pending enrollment under this auth-id**: headscale keeps a pending enrollment in an in-memory cache for 15 minutes, and drops all of them when it restarts, so an older link — or an id that was never issued — misses. Restart the login on the enrolling device and paste the fresh URL. The `/register/…` page keeps serving after the enrollment is gone; reloading it is not a liveness check.
 
 **No user with that name**: `register` never creates users — run `auberge headscale add-user` first, or check the spelling against `auberge headscale list-users`.

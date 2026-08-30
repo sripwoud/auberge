@@ -485,12 +485,41 @@ fn parse_auth_id(input: &str) -> Result<String> {
     Ok(candidate.to_string())
 }
 
+/// The miss headscale reports when the auth-id names no pending enrollment.
+/// Matched as a substring: it arrives wrapped in gRPC framing
+/// (`registering node: rpc error: code = Unknown desc = …`).
+const REGISTRATION_CACHE_MISS: &str = "node not found in registration cache";
+
+/// What that miss means, and what to do about it.
+///
+/// Like every command string in this file, the 15 minutes is a claim about
+/// [`VERIFIED_CLI_VERSION`]: `registerCacheExpiration = time.Minute * 15` in
+/// headscale's `hscontrol/state/state.go`, over an in-memory LRU — so a
+/// restart empties it early, and the figure moves when that const does.
+///
+/// It does not say *expired*, though that is the usual cause: the same miss
+/// answers an auth-id that was never issued, and [`parse_auth_id`] only
+/// shape-checks. The remedy is the same either way, so the message leads with
+/// it rather than with a cause auberge cannot tell apart.
+const REGISTRATION_CACHE_MISS_REMEDY: &str = concat!(
+    "No pending enrollment under this auth-id: headscale holds one for 15 minutes ",
+    "and drops all of them when it restarts. Restart the login on the device and ",
+    "re-run with the fresh link — the /register/ page keeps serving after the ",
+    "enrollment is gone, so reloading it proves nothing",
+);
+
 /// `auth register` approves the pending interactive enrollment the auth-id
 /// names. `--user` is a string on this subcommand in 0.29.3 — the
 /// `preauthkeys create` uint trap (#707) does not apply (verified live during
 /// the #712 flag day). Both interpolated values are text reaching a `sudo`
 /// command line: the username comes from headscale's own store (the
 /// `remove-user` lesson), the auth-id from a pasted URL, so both ride quoted.
+///
+/// One failure is translated here and nowhere else (#729). The registration
+/// cache is this flow's alone, while [`run_headscale_cmd`] carries eight other
+/// command lines, so the miss is recognised at the seam that knows what it
+/// means. Everything else headscale says still reaches the operator as
+/// headscale wrote it, under a wrapper rather than in place of one.
 fn register_node(session: &dyn SshSession, auth_id: &str, username: &str) -> Result<String> {
     run_headscale_cmd(
         session,
@@ -500,6 +529,13 @@ fn register_node(session: &dyn SshSession, auth_id: &str, username: &str) -> Res
             quote(username)
         ),
     )
+    .map_err(|err| {
+        if err.to_string().contains(REGISTRATION_CACHE_MISS) {
+            err.wrap_err(REGISTRATION_CACHE_MISS_REMEDY)
+        } else {
+            err
+        }
+    })
 }
 
 /// `users destroy` still resolves a user by `--name` on 0.29.3, unlike
@@ -1176,23 +1212,64 @@ mod tests {
         );
     }
 
-    /// An expired or unknown auth-id (headscale's registration cache lives
-    /// ~15 min) surfaces headscale's stderr verbatim and fails.
+    /// The one `auth register` failure auberge translates (#729): headscale
+    /// names the data structure it missed in, which reads like a bad auth-id
+    /// or a bad user when it is neither. The window and the remedy lead;
+    /// headscale's own text stays under them as the source.
     #[test]
-    fn register_reports_headscales_error_when_the_auth_id_is_unknown() {
+    fn register_names_the_window_when_the_registration_cache_has_no_such_enrollment() {
         let mock = MockSshSession::new();
         mock.stage_run_result(CommandResult {
             success: false,
             exit_code: Some(1),
             stdout: Vec::new(),
-            stderr: b"node not found in registration cache".to_vec(),
+            stderr: b"Error: registering node: rpc error: code = Unknown desc = \
+                      node not found in registration cache"
+                .to_vec(),
         });
+
         let err = register_node(&mock, "hskey-authreq-abc123", "alice").unwrap_err();
+        let chain = format!("{err:#}");
+
+        assert!(chain.contains("15 minutes"), "{chain}");
+        assert!(chain.contains("Restart the login on the device"), "{chain}");
         assert!(
-            err.to_string()
-                .contains("node not found in registration cache"),
-            "{err}"
+            chain.contains("node not found in registration cache"),
+            "headscale's own text must survive as the source: {chain}"
         );
+        assert!(
+            chain.contains("headscale auth register"),
+            "the command that failed must survive too: {chain}"
+        );
+    }
+
+    /// Only that one string is translated. Every other `auth register` failure
+    /// reaches the operator as headscale wrote it — a guess about a failure
+    /// auberge has not read is worse than the raw text.
+    #[test]
+    fn register_passes_every_other_headscale_failure_through_verbatim() {
+        for stderr in [
+            "Error: user not found",
+            "Error: failed to connect to headscale: connection refused",
+            "Error: registering node: rpc error: code = Unknown desc = node already registered",
+        ] {
+            let mock = MockSshSession::new();
+            mock.stage_run_result(CommandResult {
+                success: false,
+                exit_code: Some(1),
+                stdout: Vec::new(),
+                stderr: stderr.as_bytes().to_vec(),
+            });
+
+            let err = register_node(&mock, "hskey-authreq-abc123", "alice").unwrap_err();
+            let chain = format!("{err:#}");
+
+            assert!(chain.contains(stderr), "{stderr:?}: {chain}");
+            assert!(
+                !chain.contains("15 minutes"),
+                "{stderr:?} is not a cache miss: {chain}"
+            );
+        }
     }
 
     /// add-key mutates nothing, so a name the store does not carry stops the

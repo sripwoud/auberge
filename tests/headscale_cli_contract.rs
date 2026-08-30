@@ -49,7 +49,8 @@ fn the_verified_cli_version_is_the_one_the_playbook_pins() {
          Read the new release's CLI surface before moving the const — \
          `headscale users create --help`, `preauthkeys create --help`, \
          `users destroy --help`, `auth register --help` — plus the JSON its \
-         `-o json` prints, and update \
+         `-o json` prints and `registerCacheExpiration` in \
+         `hscontrol/state/state.go`, which register's error message quotes, and update \
          src/commands/headscale.rs to match. This is the check that was missing \
          when 0.25 → 0.29 broke add-user (#707)."
     );
