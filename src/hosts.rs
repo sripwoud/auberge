@@ -59,6 +59,27 @@ pub fn serving_hosts<'a>(
         .collect()
 }
 
+impl Host {
+    /// A roster entry with only the two fields the gate lookups read, so a
+    /// unit test elsewhere in the crate does not restate the other eight.
+    /// Test-only, like `Config::from_toml_str`.
+    #[cfg(test)]
+    pub fn fixture(name: &str, tailscale_ip: Option<&str>) -> Self {
+        Self {
+            name: name.to_string(),
+            address: "203.0.113.10".to_string(),
+            user: "admin".to_string(),
+            port: 22,
+            ssh_key: None,
+            tags: vec![],
+            description: None,
+            python_interpreter: None,
+            become_method: "sudo".to_string(),
+            tailscale_ip: tailscale_ip.map(str::to_string),
+        }
+    }
+}
+
 pub struct HostManager;
 
 impl HostManager {
@@ -203,28 +224,13 @@ mod tests {
     use super::*;
     use crate::config::Config;
 
-    fn gated_host(name: &str) -> Host {
-        Host {
-            name: name.to_string(),
-            address: "203.0.113.10".to_string(),
-            user: "admin".to_string(),
-            port: 22,
-            ssh_key: None,
-            tags: vec![],
-            description: None,
-            python_interpreter: None,
-            become_method: "sudo".to_string(),
-            tailscale_ip: None,
-        }
-    }
-
     fn names<'a>(hosts: &[&'a Host]) -> Vec<&'a str> {
         hosts.iter().map(|h| h.name.as_str()).collect()
     }
 
     #[test]
     fn serving_hosts_counts_every_host_a_fleet_wide_answer_reaches() {
-        let hosts = [gated_host("auberge"), gated_host("ruche")];
+        let hosts = [Host::fixture("auberge", None), Host::fixture("ruche", None)];
         let config = Config::from_toml_str(r#"blocky_subdomain = "dns""#).unwrap();
         assert_eq!(
             names(&serving_hosts(&hosts, &config, "blocky_subdomain")),
@@ -234,7 +240,7 @@ mod tests {
 
     #[test]
     fn serving_hosts_drops_a_host_that_blanked_the_gate() {
-        let hosts = [gated_host("auberge"), gated_host("ruche")];
+        let hosts = [Host::fixture("auberge", None), Host::fixture("ruche", None)];
         let config = Config::from_toml_str(
             r#"
 blocky_subdomain = "dns"
@@ -252,7 +258,7 @@ blocky_subdomain = ""
 
     #[test]
     fn serving_hosts_counts_a_host_that_answers_only_in_its_own_table() {
-        let hosts = [gated_host("auberge"), gated_host("ruche")];
+        let hosts = [Host::fixture("auberge", None), Host::fixture("ruche", None)];
         let config = Config::from_toml_str(
             r#"
 [hosts.ruche]
@@ -268,7 +274,7 @@ blocky_subdomain = "dns"
 
     #[test]
     fn serving_hosts_is_empty_when_nothing_answers_the_gate() {
-        let hosts = [gated_host("auberge")];
+        let hosts = [Host::fixture("auberge", None)];
         let config = Config::from_toml_str(r#"domain = "example.com""#).unwrap();
         assert!(serving_hosts(&hosts, &config, "blocky_subdomain").is_empty());
     }

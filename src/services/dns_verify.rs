@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::hosts::{Host, serving_hosts};
 use crate::services::dns::is_tailscale_ip;
 use eyre::Result;
 use std::net::IpAddr;
@@ -136,8 +137,15 @@ impl TailnetResolver {
     /// Every way of not knowing is a reason, never a silent fallback: an
     /// address guessed here would be verified against, and a check that passes
     /// against the wrong resolver says nothing at all.
-    pub fn locate(hosts: &[crate::hosts::Host], config: &Config) -> Self {
-        let serving = crate::hosts::serving_hosts(hosts, config, BLOCKY_GATE);
+    pub fn locate(hosts: &[Host], config: &Config) -> Self {
+        if hosts.is_empty() {
+            return Self::Unlocatable(
+                "hosts.toml lists no Host, so there is nothing to run the tailnet's resolver"
+                    .to_string(),
+            );
+        }
+
+        let serving = serving_hosts(hosts, config, BLOCKY_GATE);
         let host = match serving.as_slice() {
             [only] => only,
             [] => {
@@ -164,11 +172,11 @@ impl TailnetResolver {
         {
             Some(ip) if is_tailscale_ip(ip) => Self::At(ip.to_string()),
             Some(ip) => Self::Unlocatable(format!(
-                "host '{}' serves Blocky but its recorded tailscale_ip '{ip}' is not a Tailscale address",
+                "Host '{}' serves Blocky but its recorded tailscale_ip '{ip}' is not a Tailscale address",
                 host.name
             )),
             None => Self::Unlocatable(format!(
-                "host '{name}' serves Blocky but hosts.toml records no tailscale_ip for it; \
+                "Host '{name}' serves Blocky but hosts.toml records no tailscale_ip for it; \
                  run `auberge host detect-tailscale-ip {name}`",
                 name = host.name
             )),
@@ -371,21 +379,6 @@ mod tests {
 
     // ── TailnetResolver::locate ───────────────────────────────────────────────
 
-    fn roster_host(name: &str, tailscale_ip: Option<&str>) -> crate::hosts::Host {
-        crate::hosts::Host {
-            name: name.to_string(),
-            address: "203.0.113.10".to_string(),
-            user: "admin".to_string(),
-            port: 22,
-            ssh_key: None,
-            tags: vec![],
-            description: None,
-            python_interpreter: None,
-            become_method: "sudo".to_string(),
-            tailscale_ip: tailscale_ip.map(str::to_string),
-        }
-    }
-
     fn unlocatable(resolver: &TailnetResolver) -> &str {
         match resolver {
             TailnetResolver::At(ip) => panic!("expected Unlocatable, got At({ip})"),
@@ -396,8 +389,8 @@ mod tests {
     #[test]
     fn test_locate_reads_the_gated_hosts_cached_address() {
         let hosts = [
-            roster_host("auberge", Some("100.64.0.1")),
-            roster_host("ruche", Some("100.64.0.9")),
+            Host::fixture("auberge", Some("100.64.0.1")),
+            Host::fixture("ruche", Some("100.64.0.9")),
         ];
         let config = make_config(
             r#"
@@ -414,8 +407,15 @@ blocky_subdomain = ""
     }
 
     #[test]
+    fn test_locate_unlocatable_when_the_roster_is_empty() {
+        let config = make_config(r#"blocky_subdomain = "dns""#);
+        let resolver = TailnetResolver::locate(&[], &config);
+        assert!(unlocatable(&resolver).contains("hosts.toml"));
+    }
+
+    #[test]
     fn test_locate_unlocatable_when_no_host_answers_the_gate() {
-        let hosts = [roster_host("auberge", Some("100.64.0.1"))];
+        let hosts = [Host::fixture("auberge", Some("100.64.0.1"))];
         let config = make_config(r#"domain = "example.com""#);
         let why = TailnetResolver::locate(&hosts, &config);
         assert!(unlocatable(&why).contains("blocky_subdomain"), "{why:?}");
@@ -424,8 +424,8 @@ blocky_subdomain = ""
     #[test]
     fn test_locate_unlocatable_when_several_hosts_answer_the_gate() {
         let hosts = [
-            roster_host("auberge", Some("100.64.0.1")),
-            roster_host("ruche", Some("100.64.0.9")),
+            Host::fixture("auberge", Some("100.64.0.1")),
+            Host::fixture("ruche", Some("100.64.0.9")),
         ];
         let config = make_config(r#"blocky_subdomain = "dns""#);
         let resolver = TailnetResolver::locate(&hosts, &config);
@@ -436,7 +436,7 @@ blocky_subdomain = ""
 
     #[test]
     fn test_locate_unlocatable_when_the_gated_host_has_no_cached_address() {
-        let hosts = [roster_host("auberge", None)];
+        let hosts = [Host::fixture("auberge", None)];
         let config = make_config(r#"blocky_subdomain = "dns""#);
         let resolver = TailnetResolver::locate(&hosts, &config);
         let why = unlocatable(&resolver);
@@ -446,7 +446,7 @@ blocky_subdomain = ""
 
     #[test]
     fn test_locate_unlocatable_when_the_cached_address_is_not_a_tailnet_one() {
-        let hosts = [roster_host("auberge", Some("192.168.1.10"))];
+        let hosts = [Host::fixture("auberge", Some("192.168.1.10"))];
         let config = make_config(r#"blocky_subdomain = "dns""#);
         let resolver = TailnetResolver::locate(&hosts, &config);
         assert!(unlocatable(&resolver).contains("192.168.1.10"));
