@@ -273,7 +273,13 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
             } else {
                 Some(run.tags.as_slice())
             };
-            crate::services::required_keys::preflight_for(&config, assets.ansible_dir(), name, tags)
+            crate::services::required_keys::preflight_for(
+                &config,
+                assets.ansible_dir(),
+                name,
+                tags,
+                &host.name,
+            )
         })
         .collect::<Result<_>>()?;
 

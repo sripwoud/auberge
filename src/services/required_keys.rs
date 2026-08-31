@@ -109,8 +109,9 @@ pub fn preflight_for(
     ansible_dir: &Path,
     playbook: &str,
     tags: Option<&[String]>,
+    host: &str,
 ) -> Result<Preflight> {
-    config.preflight_with_keys(&required_keys_for(ansible_dir, playbook, tags)?)
+    config.preflight_with_keys(&required_keys_for(ansible_dir, playbook, tags)?, Some(host))
 }
 
 #[cfg(test)]
