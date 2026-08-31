@@ -65,6 +65,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0055 | [The tailnet runs a tag-based ACL policy](./adr/0055-the-tailnet-runs-a-tag-based-acl-policy.md)                                                               |
 | 0056 | [The GitHub machine user's access is CLI-provisioned from declared config](./adr/0056-github-machine-user-access-is-cli-provisioned.md)                        |
 | 0057 | [A Host's name is its remote hostname](./adr/0057-a-hosts-name-is-its-remote-hostname.md)                                                                      |
+| 0058 | [Config answers per Host](./adr/0058-config-answers-per-host.md)                                                                                               |
 
 ## Native systemd by default
 

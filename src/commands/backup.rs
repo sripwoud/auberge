@@ -892,6 +892,7 @@ fn run_apps_playbook(host: &Host, apps: &[String]) -> Result<AnsibleResult> {
                 assets.ansible_dir(),
                 "apps.yml",
                 Some(apps),
+                &host.name,
             )
         })
         .wrap_err("config validation failed")?;
@@ -1041,7 +1042,7 @@ fn declared_restore_advice(plan: &[RestoreTarget]) -> Vec<(&str, &str)> {
 
 fn load_restic_config() -> Result<(String, String)> {
     let config = Config::load()?;
-    let missing = config.validate_required(&["restic_repository", "restic_password"]);
+    let missing = config.validate_required(&["restic_repository", "restic_password"], None);
     if !missing.is_empty() {
         eyre::bail!(
             "Missing restic config: {}. Set with `auberge config set <key> <value>`",

@@ -6,6 +6,10 @@ use std::path::PathBuf;
 
 const SENSITIVE_SUFFIXES: &[&str] = &["password", "key", "token", "secret", "cookie", "signature"];
 
+/// Reserved top-level table holding per-Host overrides: `[hosts.<name>]`
+/// answers a key for that Host only (ADR-0058). Never flattened fleet-wide.
+pub const HOSTS_TABLE: &str = "hosts";
+
 const DEFAULT_TTL: u32 = 300;
 
 /// A validated snapshot of config variables ready for an Ansible run.
@@ -109,6 +113,68 @@ impl Config {
         }
     }
 
+    // ── Host-scoped view (ADR-0058) ───────────────────────────────────────────
+
+    /// The `[hosts.<name>]` override table for one Host, when config carries one.
+    fn host_overrides(&self, host: &str) -> Option<&toml::Table> {
+        self.values
+            .get(HOSTS_TABLE)?
+            .as_table()?
+            .get(host)?
+            .as_table()
+    }
+
+    /// The value `key` takes for `host`: the Host's override when its table
+    /// carries the key — a blank override is how a Host withdraws a fleet-wide
+    /// answer — else the top-level value. `None` is the fleet-wide view.
+    fn effective(&self, key: &str, host: Option<&str>) -> Option<&toml::Value> {
+        if let Some(h) = host
+            && let Some(v) = self.host_overrides(h).and_then(|t| t.get(key))
+        {
+            return Some(v);
+        }
+        self.values.get(key)
+    }
+
+    pub fn get_for_host(&self, key: &str, host: Option<&str>) -> Option<String> {
+        self.effective(key, host).and_then(value_to_string)
+    }
+
+    /// The Host names the reserved table carries. A name no host answers to is
+    /// a fail-open typo — Preflight checks these against the roster.
+    pub fn host_override_names(&self) -> Vec<String> {
+        self.values
+            .get(HOSTS_TABLE)
+            .and_then(|v| v.as_table())
+            .map(|t| t.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Move `[hosts.<old>]` to `[hosts.<new>]` so a host rename does not
+    /// orphan the per-Host answers keyed on the name. `Ok(false)` when there
+    /// is nothing to move — the already-moved state a rerun converges through
+    /// (ADR-0024). Both existing is a conflict the caller must resolve.
+    pub fn rename_host_overrides(&mut self, old: &str, new: &str) -> Result<bool> {
+        let Some(tables) = self
+            .values
+            .get_mut(HOSTS_TABLE)
+            .and_then(|v| v.as_table_mut())
+        else {
+            return Ok(false);
+        };
+        if tables.contains_key(old) && tables.contains_key(new) {
+            eyre::bail!(
+                "config.toml holds both [hosts.{old}] and [hosts.{new}]; merge them before renaming"
+            );
+        }
+        let Some(entry) = tables.remove(old) else {
+            return Ok(false);
+        };
+        tables.insert(new.to_string(), entry);
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn bichon_extra_excluded_folders(&self, account_email: &str) -> Vec<String> {
         self.values
             .get("bichon")
@@ -147,12 +213,33 @@ impl Config {
     // ── Mutation ──────────────────────────────────────────────────────────────
 
     pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
+        if key == HOSTS_TABLE {
+            eyre::bail!(
+                "'{key}' is the reserved per-Host override table (ADR-0058); \
+                 edit {} directly.",
+                self.path.display()
+            );
+        }
+        if key.contains('.') {
+            eyre::bail!(
+                "'{key}' looks like a nested key, which `set` cannot write. \
+                 Edit {} directly (e.g. a [hosts.<name>] table).",
+                self.path.display()
+            );
+        }
         self.values
             .insert(key.to_string(), toml::Value::String(value.to_string()));
         self.save()
     }
 
     pub fn remove(&mut self, key: &str) -> Result<bool> {
+        if key == HOSTS_TABLE {
+            eyre::bail!(
+                "'{key}' is the reserved per-Host override table (ADR-0058); \
+                 removing it would drop every host's overrides. Edit {} directly.",
+                self.path.display()
+            );
+        }
         if self.values.remove(key).is_none() {
             return Ok(false);
         }
@@ -165,17 +252,21 @@ impl Config {
     pub fn keys_redacted(&self) -> Vec<(String, String)> {
         let mut result = Vec::new();
         for (key, val) in &self.values {
-            let is_sensitive = SENSITIVE_SUFFIXES.iter().any(|s| key.contains(s));
-            let display = if is_sensitive {
-                match val {
-                    toml::Value::String(s) if s.is_empty() => "(empty)".to_string(),
-                    toml::Value::String(_) => "****".to_string(),
-                    other => value_to_string(other).unwrap_or_default(),
+            if key == HOSTS_TABLE {
+                let Some(tables) = val.as_table() else {
+                    continue;
+                };
+                for (host, overrides) in tables {
+                    let Some(entries) = overrides.as_table() else {
+                        continue;
+                    };
+                    for (k, v) in entries {
+                        result.push((format!("hosts.{host}.{k}"), redacted_display(k, v)));
+                    }
                 }
-            } else {
-                value_to_string(val).unwrap_or_default()
-            };
-            result.push((key.clone(), display));
+                continue;
+            }
+            result.push((key.clone(), redacted_display(key, val)));
         }
         result
     }
@@ -183,9 +274,9 @@ impl Config {
     // ── Validation ────────────────────────────────────────────────────────────
 
     /// Returns the list of keys that are missing or empty.
-    pub fn validate_required(&self, keys: &[&str]) -> Vec<String> {
+    pub fn validate_required(&self, keys: &[&str], host: Option<&str>) -> Vec<String> {
         keys.iter()
-            .filter(|&&key| match self.values.get(key) {
+            .filter(|&&key| match self.effective(key, host) {
                 None => true,
                 Some(toml::Value::String(s)) => s.trim().is_empty(),
                 _ => false,
@@ -194,21 +285,58 @@ impl Config {
             .collect()
     }
 
-    pub fn validate_required_resolved(&self, keys: &[&str]) -> Result<()> {
-        let missing = self.validate_required(keys);
+    pub fn validate_required_resolved(&self, keys: &[&str], host: Option<&str>) -> Result<()> {
+        let missing = self.validate_required(keys, host);
         if !missing.is_empty() {
             eyre::bail!("Missing required config values: {}", missing.join(", "));
         }
         for &key in keys {
-            self.get_resolved(key)?;
+            if let Some(value) = self.get_for_host(key, host) {
+                resolve_value(&value)
+                    .wrap_err_with(|| format!("Failed to resolve config key '{key}'"))?;
+            }
         }
         Ok(())
     }
 
     // ── Ansible integration ───────────────────────────────────────────────────
 
-    pub fn flatten_for_ansible(&self) -> HashMap<String, String> {
-        flatten_toml(&self.values)
+    /// Every config value as a flat `name -> value` map for one Host's run:
+    /// the top level minus the reserved `hosts` table, with the Host's
+    /// `[hosts.<name>]` overrides merged on top (ADR-0058).
+    ///
+    /// Top-level values that fail to resolve are dropped (the run may never
+    /// read them); an override that fails is an error — dropping it would
+    /// silently fall back to the fleet-wide value the Host meant to replace.
+    pub fn flatten_for_ansible(&self, host: Option<&str>) -> Result<HashMap<String, String>> {
+        let mut flat = HashMap::new();
+        for (key, value) in &self.values {
+            if key == HOSTS_TABLE {
+                continue;
+            }
+            flatten_entry(key, value, &mut flat);
+        }
+        let Some(h) = host else {
+            return Ok(flat);
+        };
+        let Some(overrides) = self.host_overrides(h) else {
+            return Ok(flat);
+        };
+        for (key, value) in overrides {
+            match value {
+                toml::Value::Table(inner) => flat.extend(flatten_toml(inner)),
+                other => {
+                    let raw = value_to_string(other).ok_or_else(|| {
+                        eyre::eyre!("[hosts.{h}] override '{key}' is not a scalar value")
+                    })?;
+                    let resolved = resolve_value(&raw).wrap_err_with(|| {
+                        format!("[hosts.{h}] override '{key}' failed to resolve")
+                    })?;
+                    flat.insert(key.clone(), resolved);
+                }
+            }
+        }
+        Ok(flat)
     }
 
     /// Build a [`Preflight`] from the keys a run's Playbook Metas declare.
@@ -218,11 +346,15 @@ impl Config {
     /// unlocks `AnsibleRunner`. Callers resolve the keys through
     /// [`crate::services::required_keys::preflight_for`], which reads the
     /// declarations off the Metas.
-    pub fn preflight_with_keys(&self, required_keys: &[String]) -> Result<Preflight> {
+    pub fn preflight_with_keys(
+        &self,
+        required_keys: &[String],
+        host: Option<&str>,
+    ) -> Result<Preflight> {
         let keys: Vec<&str> = required_keys.iter().map(String::as_str).collect();
-        self.validate_required_resolved(&keys)?;
+        self.validate_required_resolved(&keys, host)?;
         Ok(Preflight {
-            flat_vars: self.flatten_for_ansible(),
+            flat_vars: self.flatten_for_ansible(host)?,
         })
     }
 
@@ -254,6 +386,18 @@ impl Config {
             values,
         })
     }
+}
+
+fn redacted_display(key: &str, val: &toml::Value) -> String {
+    let is_sensitive = SENSITIVE_SUFFIXES.iter().any(|s| key.contains(s));
+    if is_sensitive {
+        return match val {
+            toml::Value::String(s) if s.is_empty() => "(empty)".to_string(),
+            toml::Value::String(_) => "****".to_string(),
+            other => value_to_string(other).unwrap_or_default(),
+        };
+    }
+    value_to_string(val).unwrap_or_default()
 }
 
 fn value_to_string(v: &toml::Value) -> Option<String> {
@@ -301,18 +445,22 @@ fn resolve_value(v: &str) -> Result<String> {
 fn flatten_toml(table: &toml::Table) -> HashMap<String, String> {
     let mut result = HashMap::new();
     for (key, value) in table {
-        match value {
-            toml::Value::Table(inner) => result.extend(flatten_toml(inner)),
-            other => {
-                if let Some(s) = value_to_string(other)
-                    && let Ok(resolved) = resolve_value(&s)
-                {
-                    result.insert(key.clone(), resolved);
-                }
+        flatten_entry(key, value, &mut result);
+    }
+    result
+}
+
+fn flatten_entry(key: &str, value: &toml::Value, result: &mut HashMap<String, String>) {
+    match value {
+        toml::Value::Table(inner) => result.extend(flatten_toml(inner)),
+        other => {
+            if let Some(s) = value_to_string(other)
+                && let Ok(resolved) = resolve_value(&s)
+            {
+                result.insert(key.to_string(), resolved);
             }
         }
     }
-    result
 }
 
 #[cfg(test)]
@@ -446,14 +594,14 @@ mod tests {
             ssh_port = 22022
         "#,
         );
-        let missing = config.validate_required(&["domain", "admin_user_name", "ssh_port"]);
+        let missing = config.validate_required(&["domain", "admin_user_name", "ssh_port"], None);
         assert_eq!(missing, vec!["admin_user_name"]);
     }
 
     #[test]
     fn test_validate_required_catches_missing_keys() {
         let config = make_config(r#"domain = "example.com""#);
-        let missing = config.validate_required(&["domain", "admin_user_name"]);
+        let missing = config.validate_required(&["domain", "admin_user_name"], None);
         assert_eq!(missing, vec!["admin_user_name"]);
     }
 
@@ -466,7 +614,7 @@ mod tests {
             ssh_port = 22022
         "#,
         );
-        let missing = config.validate_required(&["domain", "admin_user_name", "ssh_port"]);
+        let missing = config.validate_required(&["domain", "admin_user_name", "ssh_port"], None);
         assert_eq!(missing, vec!["domain", "admin_user_name"]);
     }
 
@@ -478,7 +626,7 @@ mod tests {
             admin_user_name = "alice"
         "#,
         );
-        let missing = config.validate_required(&["domain", "admin_user_name"]);
+        let missing = config.validate_required(&["domain", "admin_user_name"], None);
         assert!(missing.is_empty());
     }
 
@@ -492,7 +640,7 @@ mod tests {
         );
         assert!(
             config
-                .validate_required_resolved(&["domain", "admin_user_name"])
+                .validate_required_resolved(&["domain", "admin_user_name"], None)
                 .is_ok()
         );
     }
@@ -501,7 +649,7 @@ mod tests {
     fn test_validate_required_resolved_fails_on_missing_key() {
         let config = make_config(r#"domain = "example.com""#);
         let err = config
-            .validate_required_resolved(&["domain", "admin_user_name"])
+            .validate_required_resolved(&["domain", "admin_user_name"], None)
             .unwrap_err();
         assert!(err.to_string().contains("admin_user_name"));
     }
@@ -516,7 +664,7 @@ mod tests {
         "#,
         );
         let err = config
-            .validate_required_resolved(&["domain", "bot_token"])
+            .validate_required_resolved(&["domain", "bot_token"], None)
             .unwrap_err();
         assert!(err.to_string().contains("bot_token"));
     }
@@ -547,7 +695,7 @@ mod tests {
             baikal_admin_password = "secret"
         "#,
         );
-        let flat = config.flatten_for_ansible();
+        let flat = config.flatten_for_ansible(None).unwrap();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "secret");
@@ -562,7 +710,7 @@ mod tests {
             baikal_admin_password = "!echo cmdpassword"
         "#,
         );
-        let flat = config.flatten_for_ansible();
+        let flat = config.flatten_for_ansible(None).unwrap();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "cmdpassword");
     }
@@ -575,7 +723,7 @@ mod tests {
             baikal_admin_password = "!!literal"
         "#,
         );
-        let flat = config.flatten_for_ansible();
+        let flat = config.flatten_for_ansible(None).unwrap();
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "!literal");
     }
 
@@ -588,7 +736,7 @@ mod tests {
             broken_key = "!false"
         "#,
         );
-        let flat = config.flatten_for_ansible();
+        let flat = config.flatten_for_ansible(None).unwrap();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert!(flat.get("broken_key").is_none());
     }
@@ -769,7 +917,7 @@ ssh_port = 22022
         "#,
         );
         let keys = vec!["admin_user_name".to_string(), "domain".to_string()];
-        let preflight = config.preflight_with_keys(&keys).unwrap();
+        let preflight = config.preflight_with_keys(&keys, None).unwrap();
         assert_eq!(preflight.flat_vars().get("domain").unwrap(), "example.com");
     }
 
@@ -782,7 +930,7 @@ ssh_port = 22022
         "#,
         );
         let err = config
-            .preflight_with_keys(&["tailscale_authkey".to_string()])
+            .preflight_with_keys(&["tailscale_authkey".to_string()], None)
             .unwrap_err();
         assert!(
             err.to_string().contains("tailscale_authkey"),
@@ -799,7 +947,7 @@ ssh_port = 22022
         "#,
         );
         let err = config
-            .preflight_with_keys(&["tailscale_authkey".to_string()])
+            .preflight_with_keys(&["tailscale_authkey".to_string()], None)
             .unwrap_err();
         assert!(
             err.to_string().contains("tailscale_authkey"),
@@ -810,7 +958,7 @@ ssh_port = 22022
     #[test]
     fn test_preflight_with_no_keys_accepts_an_empty_config() {
         let config = make_config("");
-        assert!(config.preflight_with_keys(&[]).is_ok());
+        assert!(config.preflight_with_keys(&[], None).is_ok());
     }
 
     #[test]
@@ -822,7 +970,9 @@ ssh_port = 22022
             ssh_port = 22022
         "#,
         );
-        let preflight = config.preflight_with_keys(&["domain".to_string()]).unwrap();
+        let preflight = config
+            .preflight_with_keys(&["domain".to_string()], None)
+            .unwrap();
         let flat = preflight.flat_vars();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
@@ -836,11 +986,120 @@ ssh_port = 22022
         "#,
         );
         let preflight = config
-            .preflight_with_keys(&["tailscale_authkey".to_string()])
+            .preflight_with_keys(&["tailscale_authkey".to_string()], None)
             .unwrap();
         assert_eq!(
             preflight.flat_vars().get("tailscale_authkey").unwrap(),
             "tskey-supersecret"
         );
+    }
+
+    // ── Host-scoped view (ADR-0058) ───────────────────────────────────────────
+
+    const HOST_SCOPED: &str = r#"
+        domain = "example.com"
+        headscale_subdomain = "hs"
+
+        [hosts.ruche]
+        headscale_subdomain = ""
+
+        [hosts.staging]
+        domain = "staging.example.com"
+        extra_key = "only-here"
+    "#;
+
+    #[test]
+    fn test_host_override_wins_for_that_hosts_flat_vars() {
+        let config = make_config(HOST_SCOPED);
+        let flat = config.flatten_for_ansible(Some("staging")).unwrap();
+        assert_eq!(flat.get("domain").unwrap(), "staging.example.com");
+        assert_eq!(flat.get("extra_key").unwrap(), "only-here");
+    }
+
+    #[test]
+    fn test_other_hosts_and_fleet_view_ignore_an_override() {
+        let config = make_config(HOST_SCOPED);
+        for host in [Some("auberge"), None] {
+            let flat = config.flatten_for_ansible(host).unwrap();
+            assert_eq!(flat.get("domain").unwrap(), "example.com", "{host:?}");
+            assert_eq!(flat.get("headscale_subdomain").unwrap(), "hs", "{host:?}");
+            assert!(!flat.contains_key("extra_key"), "{host:?}");
+        }
+    }
+
+    /// The reserved table must never flatten wholesale: `flatten_toml` hoists
+    /// nested leaves under their leaf names, which would leak one Host's
+    /// overrides into every other Host's run.
+    #[test]
+    fn test_hosts_table_never_leaks_into_flat_vars() {
+        let config = make_config(HOST_SCOPED);
+        let flat = config.flatten_for_ansible(Some("ruche")).unwrap();
+        assert!(!flat.contains_key("extra_key"));
+        assert!(!flat.contains_key("hosts"));
+    }
+
+    /// A blank override must reach Ansible as an empty string, not vanish: the
+    /// ADR-0051 gate expression reads defined-but-empty as "does not serve".
+    #[test]
+    fn test_blank_override_reaches_flat_vars_as_empty() {
+        let config = make_config(HOST_SCOPED);
+        let flat = config.flatten_for_ansible(Some("ruche")).unwrap();
+        assert_eq!(flat.get("headscale_subdomain").unwrap(), "");
+    }
+
+    /// Naming a guarded role's tag against a Host that blanked its gate fails
+    /// loudly (ADR-0045): the blank counts as missing for that Host only.
+    #[test]
+    fn test_blank_override_fails_preflight_for_that_host_only() {
+        let config = make_config(HOST_SCOPED);
+        let keys = vec!["headscale_subdomain".to_string()];
+        let err = config
+            .preflight_with_keys(&keys, Some("ruche"))
+            .unwrap_err();
+        assert!(err.to_string().contains("headscale_subdomain"), "{err}");
+        assert!(config.preflight_with_keys(&keys, Some("auberge")).is_ok());
+        assert!(config.preflight_with_keys(&keys, None).is_ok());
+    }
+
+    #[test]
+    fn test_override_satisfies_a_key_missing_at_top_level() {
+        let config = make_config(HOST_SCOPED);
+        let keys = vec!["extra_key".to_string()];
+        assert!(config.preflight_with_keys(&keys, Some("staging")).is_ok());
+        let err = config
+            .preflight_with_keys(&keys, Some("ruche"))
+            .unwrap_err();
+        assert!(err.to_string().contains("extra_key"), "{err}");
+    }
+
+    #[test]
+    fn test_get_for_host_prefers_the_hosts_table() {
+        let config = make_config(HOST_SCOPED);
+        assert_eq!(
+            config.get_for_host("domain", Some("staging")).unwrap(),
+            "staging.example.com"
+        );
+        assert_eq!(
+            config.get_for_host("domain", Some("ruche")).unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            config
+                .get_for_host("headscale_subdomain", Some("ruche"))
+                .unwrap(),
+            ""
+        );
+        assert_eq!(config.get_for_host("domain", None).unwrap(), "example.com");
+    }
+
+    /// `set` writes flat top-level keys only; a dotted key would land as a
+    /// literal name no run can read. Host tables are edited in the file.
+    #[test]
+    fn test_set_rejects_nested_keys() {
+        let mut config = make_config("");
+        let err = config
+            .set("hosts.ruche.headscale_subdomain", "x")
+            .unwrap_err();
+        assert!(err.to_string().contains("nested"), "{err}");
     }
 }

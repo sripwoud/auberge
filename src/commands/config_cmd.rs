@@ -77,7 +77,8 @@ fn key_choice(prompt: &str) -> Choice {
 }
 
 fn select_key(config: &Config, prompt: &str) -> Result<String> {
-    let keys = config.keys();
+    let mut keys = config.keys();
+    keys.retain(|k| k != crate::config::HOSTS_TABLE);
     if keys.is_empty() {
         eyre::bail!("No config keys found");
     }

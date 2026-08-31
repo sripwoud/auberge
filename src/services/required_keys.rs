@@ -109,8 +109,29 @@ pub fn preflight_for(
     ansible_dir: &Path,
     playbook: &str,
     tags: Option<&[String]>,
+    host: &str,
 ) -> Result<Preflight> {
-    config.preflight_with_keys(&required_keys_for(ansible_dir, playbook, tags)?)
+    let known: Vec<String> = crate::services::inventory::get_hosts(None, None)?
+        .into_iter()
+        .map(|h| h.name)
+        .collect();
+    assert_host_overrides_known(config, &known)?;
+    config.preflight_with_keys(&required_keys_for(ansible_dir, playbook, tags)?, Some(host))
+}
+
+/// Every `[hosts.<name>]` table must name a Host the roster knows: a typoed
+/// name is a fail-open — the run proceeds on the fleet-wide answers the table
+/// meant to withdraw (ADR-0058).
+pub(crate) fn assert_host_overrides_known(config: &Config, known: &[String]) -> Result<()> {
+    for name in config.host_override_names() {
+        if !known.contains(&name) {
+            eyre::bail!(
+                "[hosts.{name}] in config.toml names no known host (known: {})",
+                known.join(", ")
+            );
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -357,17 +378,20 @@ mod tests {
         );
     }
 
-    /// `headscale` carries infrastructure's only `when:`.
+    /// `blocky` and `headscale` carry infrastructure's `when:` gates
+    /// (ADR-0051, ADR-0058): whether they run is the target Host's answer, so
+    /// an untagged run cannot demand their keys.
     #[test]
-    fn test_repo_untagged_infrastructure_run_skips_the_guarded_role() {
+    fn test_repo_untagged_infrastructure_run_skips_the_guarded_roles() {
         let keys = required_keys_for(&repo_ansible_dir(), "infrastructure.yml", None).unwrap();
         let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
-        assert!(set.contains("blocky_subdomain"), "{keys:?}");
         assert!(set.contains("tailscale_authkey"), "{keys:?}");
-        assert!(
-            !set.contains("headscale_subdomain"),
-            "untagged infrastructure must not demand the guarded role's key: {keys:?}"
-        );
+        for gate in ["blocky_subdomain", "headscale_subdomain"] {
+            assert!(
+                !set.contains(gate),
+                "untagged infrastructure must not demand a guarded role's key: {keys:?}"
+            );
+        }
     }
 
     /// The gate reads `headscale_subdomain` from config alone (#710), so a run
@@ -384,6 +408,19 @@ mod tests {
             assert!(
                 keys.iter().any(|k| k == "headscale_subdomain"),
                 "-t {tag} must demand headscale_subdomain: {keys:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_repo_blocky_tag_demands_the_gate_key() {
+        for tag in ["blocky", "dns"] {
+            let tags = vec![tag.to_string()];
+            let keys =
+                required_keys_for(&repo_ansible_dir(), "infrastructure.yml", Some(&tags)).unwrap();
+            assert!(
+                keys.iter().any(|k| k == "blocky_subdomain"),
+                "-t {tag} must demand blocky_subdomain: {keys:?}"
             );
         }
     }
@@ -535,5 +572,28 @@ mod tests {
     fn test_repo_hardening_requires_nothing() {
         let keys = required_keys_for(&repo_ansible_dir(), "hardening.yml", None).unwrap();
         assert!(keys.is_empty(), "{keys:?}");
+    }
+
+    #[test]
+    fn test_host_override_tables_must_name_known_hosts() {
+        let config = Config::from_toml_str(
+            r#"
+            [hosts.agentbox]
+            headscale_subdomain = ""
+        "#,
+        )
+        .unwrap();
+        let known = vec!["auberge".to_string(), "agent-box".to_string()];
+        let err = assert_host_overrides_known(&config, &known).unwrap_err();
+        assert!(err.to_string().contains("agentbox"), "{err}");
+
+        let config = Config::from_toml_str(
+            r#"
+            [hosts.agent-box]
+            headscale_subdomain = ""
+        "#,
+        )
+        .unwrap();
+        assert!(assert_host_overrides_known(&config, &known).is_ok());
     }
 }

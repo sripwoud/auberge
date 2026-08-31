@@ -254,10 +254,31 @@ impl From<&HeadscaleNode> for NodeDisplay {
     }
 }
 
+/// The only Host whose config answers the headscale serving gate
+/// (ADR-0058), when exactly one does. Zero or several answers mean the
+/// caller has to ask.
+fn only_serving_host(hosts: &[Host], config: &Config) -> Option<Host> {
+    let mut serving = hosts.iter().filter(|h| {
+        config
+            .get_for_host("headscale_subdomain", Some(&h.name))
+            .is_some_and(|v| !v.trim().is_empty())
+    });
+    match (serving.next(), serving.next()) {
+        (Some(only), None) => Some(only.clone()),
+        _ => None,
+    }
+}
+
 fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
     let host = match host_arg {
         Some(name) => HostManager::get_host(&name)?,
-        None => select_or_arg(None, HOST_FLAG)?,
+        None => {
+            let config = Config::load()?;
+            match only_serving_host(&HostManager::load_hosts()?, &config) {
+                Some(host) => host,
+                None => select_or_arg(None, HOST_FLAG)?,
+            }
+        }
     };
 
     let ssh_key = match &host.ssh_key {
@@ -1572,5 +1593,69 @@ mod tests {
     fn validate_expiration_rejects_invalid() {
         assert!(validate_expiration("; rm -rf /").is_err());
         assert!(validate_expiration("24h; whoami").is_err());
+    }
+
+    fn named_host(name: &str) -> Host {
+        Host {
+            name: name.to_string(),
+            address: "203.0.113.1".to_string(),
+            user: "admin".to_string(),
+            port: 22,
+            ssh_key: None,
+            tags: vec![],
+            description: None,
+            python_interpreter: None,
+            become_method: "sudo".to_string(),
+            tailscale_ip: None,
+        }
+    }
+
+    #[test]
+    fn only_serving_host_picks_the_host_whose_config_answers_the_gate() {
+        let config = Config::from_toml_str(
+            r#"
+            headscale_subdomain = "hs"
+
+            [hosts.ruche]
+            headscale_subdomain = ""
+
+            [hosts.vieille]
+            headscale_subdomain = ""
+        "#,
+        )
+        .unwrap();
+        let hosts = [
+            named_host("auberge"),
+            named_host("ruche"),
+            named_host("vieille"),
+        ];
+        assert_eq!(only_serving_host(&hosts, &config).unwrap().name, "auberge");
+    }
+
+    #[test]
+    fn only_serving_host_is_none_while_several_hosts_answer() {
+        let config = Config::from_toml_str(r#"headscale_subdomain = "hs""#).unwrap();
+        let hosts = [named_host("auberge"), named_host("ruche")];
+        assert!(only_serving_host(&hosts, &config).is_none());
+    }
+
+    #[test]
+    fn only_serving_host_is_none_when_no_host_answers() {
+        let config = Config::from_toml_str(r#"domain = "example.com""#).unwrap();
+        let hosts = [named_host("auberge")];
+        assert!(only_serving_host(&hosts, &config).is_none());
+    }
+
+    #[test]
+    fn only_serving_host_reads_a_host_scoped_answer() {
+        let config = Config::from_toml_str(
+            r#"
+            [hosts.auberge]
+            headscale_subdomain = "hs"
+        "#,
+        )
+        .unwrap();
+        let hosts = [named_host("auberge"), named_host("ruche")];
+        assert_eq!(only_serving_host(&hosts, &config).unwrap().name, "auberge");
     }
 }

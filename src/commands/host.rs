@@ -501,6 +501,15 @@ pub fn run_host_rename(old: String, new: String, yes: bool) -> Result<()> {
     let hosts = HostManager::load_hosts()?;
     let host = preflight_names(&hosts, &old, &new)?;
     preflight_identities(&identities, &old, &new)?;
+    let mut config = load_config_if_present()?;
+    if let Some(config) = &config
+        && config.host_override_names().contains(&old.to_string())
+        && config.host_override_names().contains(&new.to_string())
+    {
+        eyre::bail!(
+            "config.toml holds both [hosts.{old}] and [hosts.{new}]; merge them before renaming"
+        );
+    }
 
     let ssh_key = rename_key_candidates(&host, &home, &new)
         .into_iter()
@@ -531,12 +540,30 @@ pub fn run_host_rename(old: String, new: String, yes: bool) -> Result<()> {
     rename_remote(&session, &old, &new)?;
 
     let updated = rename_local(&identities, hosts, &old, &new, &home)?;
+    if let Some(config) = &mut config
+        && config.rename_host_overrides(&old, &new)?
+    {
+        output::info(&format!(
+            "config.toml: moved [hosts.{old}] to [hosts.{new}]"
+        ));
+    }
     HostManager::save_hosts(&updated)?;
 
     output::success(&format!("Host '{}' renamed to '{}'", old, new));
     sync_ssh_include()?;
     print_rename_follow_ups(&old, &new);
     Ok(())
+}
+
+/// The config file is optional for a rename — a fleet without one has no
+/// override tables to carry — but a present-and-unreadable one must stop the
+/// rename rather than silently orphan its `[hosts.<name>]` answers.
+fn load_config_if_present() -> Result<Option<crate::config::Config>> {
+    match crate::config::Config::load() {
+        Ok(config) => Ok(Some(config)),
+        Err(_) if !crate::config::Config::path()?.exists() => Ok(None),
+        Err(err) => Err(err),
+    }
 }
 
 fn validate_rename_name(name: &str) -> Result<()> {
