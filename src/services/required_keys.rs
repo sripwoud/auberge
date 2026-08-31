@@ -111,7 +111,27 @@ pub fn preflight_for(
     tags: Option<&[String]>,
     host: &str,
 ) -> Result<Preflight> {
+    let known: Vec<String> = crate::services::inventory::get_hosts(None, None)?
+        .into_iter()
+        .map(|h| h.name)
+        .collect();
+    assert_host_overrides_known(config, &known)?;
     config.preflight_with_keys(&required_keys_for(ansible_dir, playbook, tags)?, Some(host))
+}
+
+/// Every `[hosts.<name>]` table must name a Host the roster knows: a typoed
+/// name is a fail-open — the run proceeds on the fleet-wide answers the table
+/// meant to withdraw (ADR-0057).
+pub(crate) fn assert_host_overrides_known(config: &Config, known: &[String]) -> Result<()> {
+    for name in config.host_override_names() {
+        if !known.contains(&name) {
+            eyre::bail!(
+                "[hosts.{name}] in config.toml names no known host (known: {})",
+                known.join(", ")
+            );
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -552,5 +572,28 @@ mod tests {
     fn test_repo_hardening_requires_nothing() {
         let keys = required_keys_for(&repo_ansible_dir(), "hardening.yml", None).unwrap();
         assert!(keys.is_empty(), "{keys:?}");
+    }
+
+    #[test]
+    fn test_host_override_tables_must_name_known_hosts() {
+        let config = Config::from_toml_str(
+            r#"
+            [hosts.agentbox]
+            headscale_subdomain = ""
+        "#,
+        )
+        .unwrap();
+        let known = vec!["auberge".to_string(), "agent-box".to_string()];
+        let err = assert_host_overrides_known(&config, &known).unwrap_err();
+        assert!(err.to_string().contains("agentbox"), "{err}");
+
+        let config = Config::from_toml_str(
+            r#"
+            [hosts.agent-box]
+            headscale_subdomain = ""
+        "#,
+        )
+        .unwrap();
+        assert!(assert_host_overrides_known(&config, &known).is_ok());
     }
 }

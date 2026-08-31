@@ -140,6 +140,41 @@ impl Config {
         self.effective(key, host).and_then(value_to_string)
     }
 
+    /// The Host names the reserved table carries. A name no host answers to is
+    /// a fail-open typo — Preflight checks these against the roster.
+    pub fn host_override_names(&self) -> Vec<String> {
+        self.values
+            .get(HOSTS_TABLE)
+            .and_then(|v| v.as_table())
+            .map(|t| t.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Move `[hosts.<old>]` to `[hosts.<new>]` so a host rename does not
+    /// orphan the per-Host answers keyed on the name. `Ok(false)` when there
+    /// is nothing to move — the already-moved state a rerun converges through
+    /// (ADR-0024). Both existing is a conflict the caller must resolve.
+    pub fn rename_host_overrides(&mut self, old: &str, new: &str) -> Result<bool> {
+        let Some(tables) = self
+            .values
+            .get_mut(HOSTS_TABLE)
+            .and_then(|v| v.as_table_mut())
+        else {
+            return Ok(false);
+        };
+        if tables.contains_key(old) && tables.contains_key(new) {
+            eyre::bail!(
+                "config.toml holds both [hosts.{old}] and [hosts.{new}]; merge them before renaming"
+            );
+        }
+        let Some(entry) = tables.remove(old) else {
+            return Ok(false);
+        };
+        tables.insert(new.to_string(), entry);
+        self.save()?;
+        Ok(true)
+    }
+
     pub fn bichon_extra_excluded_folders(&self, account_email: &str) -> Vec<String> {
         self.values
             .get("bichon")
@@ -178,6 +213,13 @@ impl Config {
     // ── Mutation ──────────────────────────────────────────────────────────────
 
     pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
+        if key == HOSTS_TABLE {
+            eyre::bail!(
+                "'{key}' is the reserved per-Host override table (ADR-0057); \
+                 edit {} directly.",
+                self.path.display()
+            );
+        }
         if key.contains('.') {
             eyre::bail!(
                 "'{key}' looks like a nested key, which `set` cannot write. \
@@ -191,6 +233,13 @@ impl Config {
     }
 
     pub fn remove(&mut self, key: &str) -> Result<bool> {
+        if key == HOSTS_TABLE {
+            eyre::bail!(
+                "'{key}' is the reserved per-Host override table (ADR-0057); \
+                 removing it would drop every host's overrides. Edit {} directly.",
+                self.path.display()
+            );
+        }
         if self.values.remove(key).is_none() {
             return Ok(false);
         }
@@ -203,17 +252,21 @@ impl Config {
     pub fn keys_redacted(&self) -> Vec<(String, String)> {
         let mut result = Vec::new();
         for (key, val) in &self.values {
-            let is_sensitive = SENSITIVE_SUFFIXES.iter().any(|s| key.contains(s));
-            let display = if is_sensitive {
-                match val {
-                    toml::Value::String(s) if s.is_empty() => "(empty)".to_string(),
-                    toml::Value::String(_) => "****".to_string(),
-                    other => value_to_string(other).unwrap_or_default(),
+            if key == HOSTS_TABLE {
+                let Some(tables) = val.as_table() else {
+                    continue;
+                };
+                for (host, overrides) in tables {
+                    let Some(entries) = overrides.as_table() else {
+                        continue;
+                    };
+                    for (k, v) in entries {
+                        result.push((format!("hosts.{host}.{k}"), redacted_display(k, v)));
+                    }
                 }
-            } else {
-                value_to_string(val).unwrap_or_default()
-            };
-            result.push((key.clone(), display));
+                continue;
+            }
+            result.push((key.clone(), redacted_display(key, val)));
         }
         result
     }
@@ -250,8 +303,12 @@ impl Config {
 
     /// Every config value as a flat `name -> value` map for one Host's run:
     /// the top level minus the reserved `hosts` table, with the Host's
-    /// `[hosts.<name>]` overrides merged on top (ADR-0056).
-    pub fn flatten_for_ansible(&self, host: Option<&str>) -> HashMap<String, String> {
+    /// `[hosts.<name>]` overrides merged on top (ADR-0057).
+    ///
+    /// Top-level values that fail to resolve are dropped (the run may never
+    /// read them); an override that fails is an error — dropping it would
+    /// silently fall back to the fleet-wide value the Host meant to replace.
+    pub fn flatten_for_ansible(&self, host: Option<&str>) -> Result<HashMap<String, String>> {
         let mut flat = HashMap::new();
         for (key, value) in &self.values {
             if key == HOSTS_TABLE {
@@ -259,10 +316,27 @@ impl Config {
             }
             flatten_entry(key, value, &mut flat);
         }
-        if let Some(overrides) = host.and_then(|h| self.host_overrides(h)) {
-            flat.extend(flatten_toml(overrides));
+        let Some(h) = host else {
+            return Ok(flat);
+        };
+        let Some(overrides) = self.host_overrides(h) else {
+            return Ok(flat);
+        };
+        for (key, value) in overrides {
+            match value {
+                toml::Value::Table(inner) => flat.extend(flatten_toml(inner)),
+                other => {
+                    let raw = value_to_string(other).ok_or_else(|| {
+                        eyre::eyre!("[hosts.{h}] override '{key}' is not a scalar value")
+                    })?;
+                    let resolved = resolve_value(&raw).wrap_err_with(|| {
+                        format!("[hosts.{h}] override '{key}' failed to resolve")
+                    })?;
+                    flat.insert(key.clone(), resolved);
+                }
+            }
         }
-        flat
+        Ok(flat)
     }
 
     /// Build a [`Preflight`] from the keys a run's Playbook Metas declare.
@@ -280,7 +354,7 @@ impl Config {
         let keys: Vec<&str> = required_keys.iter().map(String::as_str).collect();
         self.validate_required_resolved(&keys, host)?;
         Ok(Preflight {
-            flat_vars: self.flatten_for_ansible(host),
+            flat_vars: self.flatten_for_ansible(host)?,
         })
     }
 
@@ -312,6 +386,18 @@ impl Config {
             values,
         })
     }
+}
+
+fn redacted_display(key: &str, val: &toml::Value) -> String {
+    let is_sensitive = SENSITIVE_SUFFIXES.iter().any(|s| key.contains(s));
+    if is_sensitive {
+        return match val {
+            toml::Value::String(s) if s.is_empty() => "(empty)".to_string(),
+            toml::Value::String(_) => "****".to_string(),
+            other => value_to_string(other).unwrap_or_default(),
+        };
+    }
+    value_to_string(val).unwrap_or_default()
 }
 
 fn value_to_string(v: &toml::Value) -> Option<String> {
@@ -609,7 +695,7 @@ mod tests {
             baikal_admin_password = "secret"
         "#,
         );
-        let flat = config.flatten_for_ansible(None);
+        let flat = config.flatten_for_ansible(None).unwrap();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("ssh_port").unwrap(), "22022");
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "secret");
@@ -624,7 +710,7 @@ mod tests {
             baikal_admin_password = "!echo cmdpassword"
         "#,
         );
-        let flat = config.flatten_for_ansible(None);
+        let flat = config.flatten_for_ansible(None).unwrap();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "cmdpassword");
     }
@@ -637,7 +723,7 @@ mod tests {
             baikal_admin_password = "!!literal"
         "#,
         );
-        let flat = config.flatten_for_ansible(None);
+        let flat = config.flatten_for_ansible(None).unwrap();
         assert_eq!(flat.get("baikal_admin_password").unwrap(), "!literal");
     }
 
@@ -650,7 +736,7 @@ mod tests {
             broken_key = "!false"
         "#,
         );
-        let flat = config.flatten_for_ansible(None);
+        let flat = config.flatten_for_ansible(None).unwrap();
         assert_eq!(flat.get("domain").unwrap(), "example.com");
         assert!(flat.get("broken_key").is_none());
     }
@@ -925,7 +1011,7 @@ ssh_port = 22022
     #[test]
     fn test_host_override_wins_for_that_hosts_flat_vars() {
         let config = make_config(HOST_SCOPED);
-        let flat = config.flatten_for_ansible(Some("staging"));
+        let flat = config.flatten_for_ansible(Some("staging")).unwrap();
         assert_eq!(flat.get("domain").unwrap(), "staging.example.com");
         assert_eq!(flat.get("extra_key").unwrap(), "only-here");
     }
@@ -934,7 +1020,7 @@ ssh_port = 22022
     fn test_other_hosts_and_fleet_view_ignore_an_override() {
         let config = make_config(HOST_SCOPED);
         for host in [Some("auberge"), None] {
-            let flat = config.flatten_for_ansible(host);
+            let flat = config.flatten_for_ansible(host).unwrap();
             assert_eq!(flat.get("domain").unwrap(), "example.com", "{host:?}");
             assert_eq!(flat.get("headscale_subdomain").unwrap(), "hs", "{host:?}");
             assert!(!flat.contains_key("extra_key"), "{host:?}");
@@ -947,7 +1033,7 @@ ssh_port = 22022
     #[test]
     fn test_hosts_table_never_leaks_into_flat_vars() {
         let config = make_config(HOST_SCOPED);
-        let flat = config.flatten_for_ansible(Some("ruche"));
+        let flat = config.flatten_for_ansible(Some("ruche")).unwrap();
         assert!(!flat.contains_key("extra_key"));
         assert!(!flat.contains_key("hosts"));
     }
@@ -957,7 +1043,7 @@ ssh_port = 22022
     #[test]
     fn test_blank_override_reaches_flat_vars_as_empty() {
         let config = make_config(HOST_SCOPED);
-        let flat = config.flatten_for_ansible(Some("ruche"));
+        let flat = config.flatten_for_ansible(Some("ruche")).unwrap();
         assert_eq!(flat.get("headscale_subdomain").unwrap(), "");
     }
 
