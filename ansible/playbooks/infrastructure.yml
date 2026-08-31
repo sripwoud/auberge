@@ -18,6 +18,7 @@
       tags: [infrastructure, web, proxy, caddy]
     - role: blocky
       tags: [infrastructure, network, dns, blocky]
+      when: blocky_subdomain is defined and blocky_subdomain | length > 0
     - role: headscale
       tags: [infrastructure, network, vpn, headscale]
       when: headscale_subdomain is defined and headscale_subdomain | length > 0

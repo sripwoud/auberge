@@ -224,13 +224,16 @@ mod tests {
     }
 
     /// The `guarded` flag decides whether an untagged run demands a role's
-    /// config keys (ADR-0045), so the two roles that carry a `when:` are pinned
+    /// config keys (ADR-0045), so the roles that carry a `when:` are pinned
     /// against the rest of the roster.
     #[test]
     fn test_parse_roster_marks_only_the_when_guarded_roles() {
         let assets = AnsibleAssets::prepare().unwrap();
         let playbooks_dir = assets.playbooks_dir();
-        for (playbook, expected) in [("apps.yml", "hermes"), ("infrastructure.yml", "headscale")] {
+        for (playbook, expected) in [
+            ("apps.yml", vec!["hermes"]),
+            ("infrastructure.yml", vec!["blocky", "headscale"]),
+        ] {
             let path = std::fs::canonicalize(playbooks_dir.join(playbook)).unwrap();
             let guarded: Vec<String> = parse_roster(&path)
                 .unwrap()
@@ -238,7 +241,7 @@ mod tests {
                 .filter(|role| role.guarded)
                 .map(|role| role.name)
                 .collect();
-            assert_eq!(guarded, vec![expected.to_string()], "{playbook}");
+            assert_eq!(guarded, expected, "{playbook}");
         }
     }
 

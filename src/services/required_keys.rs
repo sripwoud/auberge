@@ -358,17 +358,20 @@ mod tests {
         );
     }
 
-    /// `headscale` carries infrastructure's only `when:`.
+    /// `blocky` and `headscale` carry infrastructure's `when:` gates
+    /// (ADR-0051, ADR-0057): whether they run is the target Host's answer, so
+    /// an untagged run cannot demand their keys.
     #[test]
-    fn test_repo_untagged_infrastructure_run_skips_the_guarded_role() {
+    fn test_repo_untagged_infrastructure_run_skips_the_guarded_roles() {
         let keys = required_keys_for(&repo_ansible_dir(), "infrastructure.yml", None).unwrap();
         let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
-        assert!(set.contains("blocky_subdomain"), "{keys:?}");
         assert!(set.contains("tailscale_authkey"), "{keys:?}");
-        assert!(
-            !set.contains("headscale_subdomain"),
-            "untagged infrastructure must not demand the guarded role's key: {keys:?}"
-        );
+        for gate in ["blocky_subdomain", "headscale_subdomain"] {
+            assert!(
+                !set.contains(gate),
+                "untagged infrastructure must not demand a guarded role's key: {keys:?}"
+            );
+        }
     }
 
     /// The gate reads `headscale_subdomain` from config alone (#710), so a run
@@ -385,6 +388,19 @@ mod tests {
             assert!(
                 keys.iter().any(|k| k == "headscale_subdomain"),
                 "-t {tag} must demand headscale_subdomain: {keys:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_repo_blocky_tag_demands_the_gate_key() {
+        for tag in ["blocky", "dns"] {
+            let tags = vec![tag.to_string()];
+            let keys =
+                required_keys_for(&repo_ansible_dir(), "infrastructure.yml", Some(&tags)).unwrap();
+            assert!(
+                keys.iter().any(|k| k == "blocky_subdomain"),
+                "-t {tag} must demand blocky_subdomain: {keys:?}"
             );
         }
     }
