@@ -146,8 +146,15 @@ pub struct DiscoveredSubdomains {
 
 /// Walks the playbooks directory once and returns App subdomains partitioned
 /// by ADR-0003 publication channel:
-/// - `public`     — Cloudflare A records (subject to per-app `_tailscale_ip` override)
+/// - `public`     — Cloudflare A records
 /// - `tailnet_only` — Blocky `customDNS` map (no Cloudflare A record ever)
+///
+/// Both channels read the same per-App `<app>_tailscale_ip` override into
+/// `ip_override`, because both publish an address and neither one's address is
+/// a property of the Host the publisher runs on (ADR-0059). The tailnet-only
+/// half hardcoded `None` while only one Host existed, which read as "a
+/// tailnet-only App has no address of its own" rather than as the assumption
+/// it was.
 ///
 /// Metas with an empty/missing `subdomain` are silently dropped; the integrity
 /// test in this module (`test_every_app_meta_has_subdomain_unless_tailnet_only_or_excluded`)
@@ -188,27 +195,22 @@ pub fn discover_all_subdomains() -> DiscoveredSubdomains {
             continue;
         };
 
-        if meta.tailnet_only {
-            tailnet_only.insert(
-                app.to_string(),
-                SubdomainEntry {
-                    subdomain,
-                    ip_override: None,
-                },
-            );
+        let ip_override = config.as_ref().and_then(|c| {
+            let key = format!("{}_tailscale_ip", app);
+            c.get(&key).filter(|v| !v.is_empty())
+        });
+        let channel = if meta.tailnet_only {
+            &mut tailnet_only
         } else {
-            let ip_override = config.as_ref().and_then(|c| {
-                let key = format!("{}_tailscale_ip", app);
-                c.get(&key).filter(|v| !v.is_empty())
-            });
-            public.insert(
-                app.to_string(),
-                SubdomainEntry {
-                    subdomain,
-                    ip_override,
-                },
-            );
-        }
+            &mut public
+        };
+        channel.insert(
+            app.to_string(),
+            SubdomainEntry {
+                subdomain,
+                ip_override,
+            },
+        );
     }
 
     DiscoveredSubdomains {
@@ -689,6 +691,40 @@ mod tests {
                 "public app '{app}' must not appear in tailnet-only partition"
             );
         }
+    }
+
+    // The defect #755 closes, read off the live tree: a Tailnet-only App's
+    // address is the App's, not the Blocky Host's. Asserted through the same
+    // config key the Public half reads, so the two channels cannot drift into
+    // disagreeing about what `<app>_tailscale_ip` means.
+    #[test]
+    fn discover_all_subdomains_honors_a_tailnet_only_apps_ip_override() {
+        use crate::output::EnvVarGuard;
+        let _guard = crate::output::TEST_LOCK.lock().unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("auberge/config.toml");
+        std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &config_path,
+            "domain = \"example.com\"\npaperless_tailscale_ip = \"100.64.0.9\"\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", dir.path());
+
+        let discovered = discover_all_subdomains();
+        assert_eq!(
+            discovered.tailnet_only["paperless"].ip_override.as_deref(),
+            Some("100.64.0.9"),
+            "a tailnet-only App declaring `<app>_tailscale_ip` publishes that address"
+        );
+        assert_eq!(
+            discovered.tailnet_only["bichon"].ip_override, None,
+            "a tailnet-only App declaring no override carries none"
+        );
     }
 
     // ── Crate-local record types ──────────────────────────────────────────────

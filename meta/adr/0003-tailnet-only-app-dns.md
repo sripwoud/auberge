@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, 2026-05-05. Its first decision bullet is superseded by [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md) on 2026-08-29 — headscale pushes Blocky as the tailnet's `global` nameserver, not behind a split route. Everything else here stands, including the ordering caveat below, which [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md) widens.
+Accepted, 2026-05-05. Its first decision bullet is superseded by [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md) on 2026-08-29 — headscale pushes Blocky as the tailnet's `global` nameserver, not behind a split route. Its fourth decision bullet is amended by [ADR-0059](./0059-a-tailnet-only-apps-address-is-per-app.md) on 2026-08-31 — the `customDNS` list is a map of FQDN to address, one per App, because the fleet stopped being one Host. Everything else here stands, including the ordering caveat below, which [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md) widens.
 
 ## Context
 
@@ -21,7 +21,7 @@ Three problems accumulated:
 - Headscale pushes Blocky as the resolver for `*.{{ domain }}` via split-DNS (`nameservers.split`); all other queries continue to use `1.1.1.1`. **Superseded by [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md)**: Blocky is the `global` nameserver, and no public resolver stands beside it.
 - Tailnet-only Apps publish DNS exclusively via Blocky's `customDNS` map. They do not create Cloudflare A records.
 - Public Apps continue to publish a Cloudflare A record via the `dns_record` role.
-- The Blocky `customDNS` list is derived at run-time inside the Blocky role from `tailnet_only: true` declarations in playbook meta files. There is no parallel hand-maintained list.
+- The Blocky `customDNS` list is derived at run-time inside the Blocky role from `tailnet_only: true` declarations in playbook meta files. There is no parallel hand-maintained list. **Amended by [ADR-0059](./0059-a-tailnet-only-apps-address-is-per-app.md)**: it is a map of FQDN to address, each App's own, falling back to the Blocky Host's.
 - `auberge deploy` performs a runtime DNS-resolution check at the end of each app's deploy (Blocky for tailnet-only; `1.1.1.1` for public) and fails the deploy if the record doesn't resolve correctly.
 
 ## Consequences

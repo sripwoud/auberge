@@ -17,16 +17,18 @@ All values live in `~/.config/auberge/config.toml`. Manage with `auberge config 
 | `actual_subdomain`         | Optional | Subdomain for Actual Budget (default: `actual`; always tailnet-only)                       |
 | `baikal_subdomain`         | Optional | Subdomain for Baïkal                                                                       |
 | `bichon_subdomain`         | Optional | Subdomain for Bichon                                                                       |
-| `bichon_tailscale_ip`      | Optional | Tailscale IP; makes subdomain tailnet-only (see below)                                     |
+| `bichon_tailscale_ip`      | Optional | Tailnet address Blocky publishes for Bichon (see below)                                    |
 | `blocky_subdomain`         | Optional | Subdomain for Blocky                                                                       |
 | `freshrss_subdomain`       | Optional | Subdomain for FreshRSS                                                                     |
 | `headscale_subdomain`      | Optional | Subdomain for Headscale; unset means Headscale is not deployed                             |
 | `navidrome_subdomain`      | Optional | Subdomain for Navidrome                                                                    |
 | `paperless_subdomain`      | Optional | Subdomain for Paperless                                                                    |
-| `paperless_tailscale_ip`   | Optional | Tailscale IP; makes subdomain tailnet-only                                                 |
+| `paperless_tailscale_ip`   | Optional | Tailnet address Blocky publishes for Paperless (see below)                                 |
 | `gokapi_subdomain`         | Optional | Subdomain for Gokapi (default: `share`)                                                    |
 | `yourls_subdomain`         | Optional | Subdomain for YOURLS                                                                       |
 
-?> **Tailnet-only subdomains**: setting `<app>_tailscale_ip` causes `dns set-all` to point that subdomain's A record at the Tailscale CGNAT IP (`100.64.0.0/10`) instead of the public server IP. Public internet cannot route CGNAT addresses, so no firewall rules are needed. `dns migrate` skips records whose current IP is in the CGNAT range.
+?> **`<app>_tailscale_ip` for a tailnet-only app** — one whose playbook meta declares `tailnet_only: true` — is the address Blocky's `customDNS` answers with. Leave it unset and Blocky answers with its own host's tailnet address, which is right whenever the app runs on the host running Blocky ([ADR-0059](https://github.com/sripwoud/auberge/blob/master/meta/adr/0059-a-tailnet-only-apps-address-is-per-app.md)). Set it only for an app on another host, and set it at the **top level** of `config.toml`: Blocky builds the whole fleet's map in one run against its own host, so a [`[hosts.<name>]`](configuration/host-scoped-config.md) answer scoped to the app's own host never reaches that run.
+
+?> **`<app>_tailscale_ip` for a public app** is the address `dns set-all` writes as the A record instead of the public server IP. Public internet cannot route CGNAT addresses (`100.64.0.0/10`), so no firewall rules are needed; `dns migrate` skips records already holding one.
 
 ?> All values support `!` command syntax to fetch secrets from a password manager: `auberge config set restic_password '!pass show auberge/restic'`. See [Secrets Management](configuration/secrets.md#password-commands).

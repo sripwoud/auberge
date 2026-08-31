@@ -184,20 +184,23 @@
   loop: "{{ blocky_meta_files_found.files }}"
   register: blocky_meta_slurped
 
-- name: Initialize blocky_tailscale_bound_domains
+- name: Initialize blocky_tailscale_domain_addresses
   run_once: true
   ansible.builtin.set_fact:
-    blocky_tailscale_bound_domains: []
+    blocky_tailscale_domain_addresses: {}
 
-- name: Append tailnet-only FQDN per meta with operator-override resolution
+- name: Map each tailnet-only FQDN to the address its App declares
   run_once: true
   vars:
     parsed: "{{ item.content | b64decode | from_yaml }}"
     app_name: "{{ item.source | basename | regex_replace('\\.meta\\.yml$', '') }}"
     override_var: "{{ app_name + '_subdomain' }}"
+    address_var: "{{ app_name + '_tailscale_ip' }}"
     effective_subdomain: "{{ lookup('vars', override_var, default=parsed.subdomain | default('')) }}"
+    app_fqdn: "{{ effective_subdomain + '.' + domain }}"
+    app_address: "{{ lookup('vars', address_var, default='') }}"
   ansible.builtin.set_fact:
-    blocky_tailscale_bound_domains: "{{ blocky_tailscale_bound_domains + [effective_subdomain + '.' + domain] }}"
+    blocky_tailscale_domain_addresses: "{{ blocky_tailscale_domain_addresses | combine({app_fqdn: app_address}) }}"
   when:
     - parsed.tailnet_only | default(false)
     - effective_subdomain | length > 0
