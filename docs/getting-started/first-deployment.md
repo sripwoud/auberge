@@ -33,7 +33,7 @@ auberge config set ssh_port 22022
 !> Configure your VPS provider's firewall to allow your custom SSH port **before** running bootstrap, or you will lose SSH access.
 
 ```bash
-auberge ansible bootstrap --host my-vps --ip 203.0.113.10
+auberge ansible bootstrap my-vps --ip 203.0.113.10
 ```
 
 Bootstrap names the server after your `hosts.toml` entry (`my-vps`), creates an admin user, disables root SSH login, and changes the SSH port.
