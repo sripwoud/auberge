@@ -9,7 +9,7 @@ blocky_archive_url: "https://github.com/0xERR0R/blocky/releases/download/v{{ blo
 blocky_checksums_url: "https://github.com/0xERR0R/blocky/releases/download/v{{ blocky_version }}/blocky_checksums.txt"
 
 # renovate: datasource=github-releases depName=go-acme/lego extractVersion=^v(?<version>.+)$
-blocky_lego_version: "5.4.0"
+blocky_lego_version: "5.4.1"
 blocky_lego_url: "https://github.com/go-acme/lego/releases/download/v{{ blocky_lego_version }}/lego_v{{ blocky_lego_version }}_linux_amd64.tar.gz"
 blocky_lego_sha256: "d3adf89392d606ce84d485c1cc20832edd42ace6ff9ced9dd3670d9d8b8aca38"
 # --dns.propagation.disable-rns drops lego's recursive-nameserver propagation
