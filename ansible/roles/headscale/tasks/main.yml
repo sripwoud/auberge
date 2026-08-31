@@ -132,6 +132,15 @@
         - headscale_tailscale_ipv4 is defined
         - headscale_tailscale_ipv4 | length > 0
 
+    - name: Deploy headscale ACL policy
+      ansible.builtin.copy:
+        src: policy.hujson
+        dest: "{{ headscale_policy_path }}"
+        owner: root
+        group: "{{ headscale_sys_group }}"
+        mode: "0640"
+      notify: Restart headscale
+
     - name: Deploy headscale configuration
       ansible.builtin.template:
         src: headscale-config.yaml.j2

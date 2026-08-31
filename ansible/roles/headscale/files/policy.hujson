@@ -1,0 +1,44 @@
+// Tailnet ACL policy — ADR-0055.
+//
+// The presence of this file flips headscale from default-allow to
+// default-deny: only the flows below are permitted, everything else is
+// dropped. Trust is expressed as tags; which node carries which tag is stamped
+// on its pre-auth key by `auberge headscale add-key -t tag:...`, not here, so
+// this file is the same on every tailnet regardless of node names.
+//
+// Owner lists are empty on purpose: only an admin (the CLI that mints the
+// keys) may apply these tags, so the policy needs no operator-specific
+// username to validate.
+{
+  "tagOwners": {
+    "tag:trusted": [],
+    "tag:data": [],
+    "tag:agent": [],
+    "tag:standby": [],
+  },
+
+  "acls": [
+    // tag:trusted (e.g. lechuck, pixel-9a) reaches everything on the tailnet.
+    { "action": "accept", "src": ["tag:trusted"], "dst": ["*:*"] },
+
+    // Every node reaches the tailnet's global resolver: the data host's Blocky
+    // on 53 (ADR-0052). This is the only tailnet path open to tag:agent.
+    { "action": "accept", "src": ["*"], "dst": ["tag:data:53"] },
+
+    // tag:data (e.g. auberge) initiates only to the tiers it serves and
+    // replicates to — never toward tag:agent.
+    {
+      "action": "accept",
+      "src": ["tag:data"],
+      "dst": ["tag:trusted:*", "tag:data:*", "tag:standby:*"],
+    },
+
+    // tag:standby (e.g. vieille-auberge) keeps the data host's reach: the
+    // rollback surface behaves as it did before the policy, minus tag:agent.
+    {
+      "action": "accept",
+      "src": ["tag:standby"],
+      "dst": ["tag:trusted:*", "tag:data:*", "tag:standby:*"],
+    },
+  ],
+}
