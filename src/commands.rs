@@ -4,6 +4,7 @@ pub mod bichon;
 pub mod config_cmd;
 pub mod deploy;
 pub mod dns;
+pub mod github;
 pub mod headscale;
 pub mod host;
 pub mod opml;

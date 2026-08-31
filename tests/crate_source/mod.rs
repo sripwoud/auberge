@@ -65,6 +65,7 @@ pub const CRATE_MODULES: &[&str] = &[
     "src/commands/config_cmd.rs",
     "src/commands/deploy.rs",
     "src/commands/dns.rs",
+    "src/commands/github.rs",
     "src/commands/headscale.rs",
     "src/commands/host.rs",
     "src/commands/opml.rs",

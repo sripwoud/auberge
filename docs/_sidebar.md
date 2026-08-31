@@ -11,6 +11,7 @@
   - [SSH Keys](configuration/ssh-keys.md)
   - [Environment Variables](configuration/environment-variables.md)
   - [Secrets](configuration/secrets.md)
+  - [Fleet GitHub Identity](configuration/fleet-github-identity.md)
   - [Ansible Inventory](configuration/ansible-inventory.md)
   - [Cloudflare Setup](dns/cloudflare-setup.md)
 
