@@ -122,14 +122,19 @@ pub fn app_verify_config(
     domain: &str,
     ansible_host: &str,
     config: &Config,
+    host: Option<&str>,
     verify_public: bool,
 ) -> Option<AppVerifyConfig> {
     let subdomain_key = format!("{}_subdomain", app);
-    let subdomain = config.get(&subdomain_key).filter(|v| !v.is_empty())?;
+    let subdomain = config
+        .get_for_host(&subdomain_key, host)
+        .filter(|v| !v.is_empty())?;
     let fqdn = format!("{}.{}", subdomain, domain);
 
     let tailscale_key = format!("{}_tailscale_ip", app);
-    if let Some(tailscale_ip) = config.get(&tailscale_key).filter(|v| !v.is_empty())
+    if let Some(tailscale_ip) = config
+        .get_for_host(&tailscale_key, host)
+        .filter(|v| !v.is_empty())
         && is_tailscale_ip(&tailscale_ip)
     {
         return Some(AppVerifyConfig {
@@ -297,7 +302,8 @@ paperless_subdomain = "paperless"
 paperless_tailscale_ip = "100.64.1.2"
 "#,
         );
-        let vc = app_verify_config("paperless", "example.com", "1.2.3.4", &config, false).unwrap();
+        let vc =
+            app_verify_config("paperless", "example.com", "1.2.3.4", &config, None, false).unwrap();
         assert_eq!(vc.fqdn, "paperless.example.com");
         assert_eq!(vc.resolver_ip, "100.64.1.2");
         assert_eq!(vc.expected_ip, "100.64.1.2");
@@ -312,8 +318,15 @@ domain = "example.com"
 freshrss_subdomain = "rss"
 "#,
         );
-        let vc =
-            app_verify_config("freshrss", "example.com", "203.0.113.10", &config, true).unwrap();
+        let vc = app_verify_config(
+            "freshrss",
+            "example.com",
+            "203.0.113.10",
+            &config,
+            None,
+            true,
+        )
+        .unwrap();
         assert_eq!(vc.fqdn, "rss.example.com");
         assert_eq!(vc.resolver_ip, "1.1.1.1");
         assert_eq!(vc.expected_ip, "203.0.113.10");
@@ -330,14 +343,24 @@ freshrss_subdomain = "rss"
         );
         // verify_public = false → None for public apps
         assert!(
-            app_verify_config("freshrss", "example.com", "203.0.113.10", &config, false).is_none()
+            app_verify_config(
+                "freshrss",
+                "example.com",
+                "203.0.113.10",
+                &config,
+                None,
+                false
+            )
+            .is_none()
         );
     }
 
     #[test]
     fn test_app_verify_config_no_subdomain() {
         let config = make_config(r#"domain = "example.com""#);
-        assert!(app_verify_config("paperless", "example.com", "1.2.3.4", &config, true).is_none());
+        assert!(
+            app_verify_config("paperless", "example.com", "1.2.3.4", &config, None, true).is_none()
+        );
     }
 
     // ── format_dns_error ──────────────────────────────────────────────────────

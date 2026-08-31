@@ -172,14 +172,22 @@ fn run_dns_checks_for_run(
         return Ok(());
     }
 
-    let domain = config.domain();
+    let domain = config
+        .get_for_host("domain", Some(&host.name))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
     let ansible_host = &host.vars.ansible_host;
     let mut errors: Vec<String> = Vec::new();
 
     for tag in &run.tags {
-        let Some(vc): Option<AppVerifyConfig> =
-            app_verify_config(tag, &domain, ansible_host, config, verify_public)
-        else {
+        let Some(vc): Option<AppVerifyConfig> = app_verify_config(
+            tag,
+            &domain,
+            ansible_host,
+            config,
+            Some(&host.name),
+            verify_public,
+        ) else {
             continue;
         };
 
