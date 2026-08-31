@@ -8,10 +8,10 @@ auberge headscale list-nodes [OPTIONS]
 
 ## Options
 
-| Option                | Description            | Default     |
-| --------------------- | ---------------------- | ----------- |
-| `--host HOST`         | Host running headscale | Interactive |
-| `-o, --output FORMAT` | `human` or `json`      | `human`     |
+| Option                | Description            | Default                                                            |
+| --------------------- | ---------------------- | ------------------------------------------------------------------ |
+| `--host HOST`         | Host running headscale | The host whose config sets `headscale_subdomain`; else interactive |
+| `-o, --output FORMAT` | `human` or `json`      | `human`                                                            |
 
 ## Examples
 

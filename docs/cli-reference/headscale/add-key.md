@@ -20,12 +20,12 @@ When run without `--user`, prompts with a picker over `list-users`. The pre-auth
 
 ## Options
 
-| Option             | Description                                       | Default            |
-| ------------------ | ------------------------------------------------- | ------------------ |
-| `-u, --user`       | Existing username                                 | Interactive prompt |
-| `-e, --expiration` | Pre-auth key expiration (1h, 24h, 48h, 7d)        | 24h                |
-| `-t, --tags`       | ACL tags to stamp on the pre-auth key (`tag:...`) | None               |
-| `--host HOST`      | Target host running headscale                     | Interactive prompt |
+| Option             | Description                                       | Default                   |
+| ------------------ | ------------------------------------------------- | ------------------------- |
+| `-u, --user`       | Existing username                                 | Interactive prompt        |
+| `-e, --expiration` | Pre-auth key expiration (1h, 24h, 48h, 7d)        | 24h                       |
+| `-t, --tags`       | ACL tags to stamp on the pre-auth key (`tag:...`) | None                      |
+| `--host HOST`      | Target host running headscale                     | Serving host, else prompt |
 
 ## Examples
 

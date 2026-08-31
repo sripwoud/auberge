@@ -22,11 +22,11 @@ When run without `--user`, prompts with a picker over `list-users`.
 
 ## Options
 
-| Option             | Description                               | Default            |
-| ------------------ | ----------------------------------------- | ------------------ |
-| `<URL_OR_AUTH_ID>` | Register URL or bare `hskey-authreq-…` id | Required           |
-| `-u, --user`       | Existing username                         | Interactive prompt |
-| `--host HOST`      | Target host running headscale             | Interactive prompt |
+| Option             | Description                               | Default                   |
+| ------------------ | ----------------------------------------- | ------------------------- |
+| `<URL_OR_AUTH_ID>` | Register URL or bare `hskey-authreq-…` id | Required                  |
+| `-u, --user`       | Existing username                         | Interactive prompt        |
+| `--host HOST`      | Target host running headscale             | Serving host, else prompt |
 
 ## Examples
 

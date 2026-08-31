@@ -18,10 +18,10 @@ Lists all users registered on the target Headscale instance.
 
 ## Options
 
-| Option                | Description                     | Default            |
-| --------------------- | ------------------------------- | ------------------ |
-| `--host HOST`         | Target host running headscale   | Interactive prompt |
-| `-o, --output FORMAT` | Output format (`human`, `json`) | `human`            |
+| Option                | Description                     | Default                   |
+| --------------------- | ------------------------------- | ------------------------- |
+| `--host HOST`         | Target host running headscale   | Serving host, else prompt |
+| `-o, --output FORMAT` | Output format (`human`, `json`) | `human`                   |
 
 ## Examples
 

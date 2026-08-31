@@ -3,11 +3,13 @@
   - [Quick Start](getting-started/quick-start.md)
   - [Installation](getting-started/installation.md)
   - [First Deployment](getting-started/first-deployment.md)
+  - [Second Host](getting-started/second-host.md)
   - [Architecture](core-concepts/architecture.md)
 
 - Configuration
   - [Hosts & Inventory](core-concepts/hosts-vs-inventory.md)
   - [hosts.toml](configuration/hosts.md)
+  - [Host-scoped Config](configuration/host-scoped-config.md)
   - [SSH Keys](configuration/ssh-keys.md)
   - [Environment Variables](configuration/environment-variables.md)
   - [Secrets](configuration/secrets.md)

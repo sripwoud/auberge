@@ -18,11 +18,11 @@ Removes a user from the target Headscale instance. All nodes belonging to the us
 
 ## Options
 
-| Option        | Description                   | Default            |
-| ------------- | ----------------------------- | ------------------ |
-| `[NAME]`      | Username to remove            | Interactive prompt |
-| `--host HOST` | Target host running headscale | Interactive prompt |
-| `-y, --yes`   | Skip confirmation prompt      | false              |
+| Option        | Description                   | Default                   |
+| ------------- | ----------------------------- | ------------------------- |
+| `[NAME]`      | Username to remove            | Interactive prompt        |
+| `--host HOST` | Target host running headscale | Serving host, else prompt |
+| `-y, --yes`   | Skip confirmation prompt      | false                     |
 
 ## Examples
 
