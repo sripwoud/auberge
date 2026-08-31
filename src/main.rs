@@ -18,6 +18,7 @@ use auberge::commands::dns::{
     DnsCommands, SetAllOptions, run_dns_delete, run_dns_list, run_dns_migrate, run_dns_set,
     run_dns_set_all, run_dns_status,
 };
+use auberge::commands::github::{GithubCommands, run_github_invite, run_github_verify};
 use auberge::commands::headscale::{
     HeadscaleCommands, run_headscale_add_key, run_headscale_add_user, run_headscale_list_nodes,
     run_headscale_list_users, run_headscale_register, run_headscale_remove_user,
@@ -101,6 +102,8 @@ enum Commands {
     Config(ConfigCommands),
     #[command(subcommand, about = "Manage Bichon email archive behavior")]
     Bichon(BichonCommands),
+    #[command(subcommand, about = "Provision the GitHub machine user (ADR-0054)")]
+    Github(GithubCommands),
     #[command(
         visible_alias = "v",
         about = "Report declared App and Tool Versions and upstream drift"
@@ -347,6 +350,10 @@ async fn main() -> Result<()> {
                 })
                 .await,
             ),
+        },
+        Commands::Github(cmd) => match cmd {
+            GithubCommands::Invite => run_github_invite(),
+            GithubCommands::Verify { output } => std::process::exit(run_github_verify(output)?),
         },
         Commands::Config(cmd) => match cmd {
             ConfigCommands::Init(args) => run_config_init(args),

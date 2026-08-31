@@ -392,10 +392,7 @@ mod tests {
     fn test_repo_bootstrap_keys_come_from_its_meta() {
         let keys = required_keys_for(&repo_ansible_dir(), "bootstrap.yml", None).unwrap();
         let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
-        assert_eq!(
-            set,
-            HashSet::from(["admin_user_name", "ssh_port", "hostname"])
-        );
+        assert_eq!(set, HashSet::from(["admin_user_name", "ssh_port"]));
     }
 
     /// Every key the audit in ADR-0045 found an App role to hard-require: an

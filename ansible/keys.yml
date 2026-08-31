@@ -95,6 +95,18 @@ keys:
     secret: false
     doc: "Subdomain for the FreshRSS feed reader"
 
+  github_bot_login:
+    secret: false
+    doc: "GitHub machine-user handle the fleet commits as (ADR-0054); target of `auberge github invite|verify`"
+
+  github_bot_repos:
+    secret: false
+    doc: "Space-separated owner/repo allowlist the machine user gets push access to via `auberge github invite`"
+
+  github_bot_token:
+    secret: true
+    doc: "Fine-grained PAT for the GitHub machine user (all-repositories, Contents+Pull-requests RW); e.g. !pa show fleet/github-pat"
+
   gokapi_admin_password:
     secret: true
     doc: "Password for the Gokapi admin account (entered manually in /setup wizard on first deploy)"
@@ -146,10 +158,6 @@ keys:
   hermes_telegram_bot_token:
     secret: true
     doc: "Telegram bot token for the Hermes bot"
-
-  hostname:
-    secret: false
-    doc: "Hostname to set on the remote server during bootstrap"
 
   immich_b2_application_key:
     secret: true

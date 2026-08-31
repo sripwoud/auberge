@@ -23,7 +23,6 @@ Key is written to `~/.ssh/identities/my-vps/root`.
 
 ```bash
 auberge config init --output "$(auberge config path)"
-auberge config set hostname my-vps
 auberge config set admin_user_name yourname
 auberge config set admin_user_email you@example.com
 auberge config set ssh_port 22022
@@ -37,7 +36,7 @@ auberge config set ssh_port 22022
 auberge ansible bootstrap --host my-vps --ip 203.0.113.10
 ```
 
-Bootstrap creates an admin user, disables root SSH login, and changes the SSH port.
+Bootstrap names the server after your `hosts.toml` entry (`my-vps`), creates an admin user, disables root SSH login, and changes the SSH port.
 
 ## Step 5: Configure remaining keys
 

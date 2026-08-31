@@ -63,6 +63,8 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0053 | [A Serving Unit is probed, or named in the ratchet](./adr/0053-a-serving-unit-is-probed-or-named-in-the-ratchet.md)                                            |
 | 0054 | [Agent workloads run on a dedicated disposable Host](./adr/0054-agent-workloads-run-on-a-dedicated-disposable-host.md)                                         |
 | 0055 | [The tailnet runs a tag-based ACL policy](./adr/0055-the-tailnet-runs-a-tag-based-acl-policy.md)                                                               |
+| 0056 | [The GitHub machine user's access is CLI-provisioned from declared config](./adr/0056-github-machine-user-access-is-cli-provisioned.md)                        |
+| 0057 | [A Host's name is its remote hostname](./adr/0057-a-hosts-name-is-its-remote-hostname.md)                                                                      |
 
 ## Native systemd by default
 
