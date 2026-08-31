@@ -67,6 +67,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0057 | [A Host's name is its remote hostname](./adr/0057-a-hosts-name-is-its-remote-hostname.md)                                                                      |
 | 0058 | [Config answers per Host](./adr/0058-config-answers-per-host.md)                                                                                               |
 | 0059 | [DNS Publication resolves a Tailnet-only App's address per App](./adr/0059-a-tailnet-only-apps-address-is-per-app.md)                                          |
+| 0060 | [The tailnet DNS check queries the resolver's Host, not the App's](./adr/0060-the-tailnet-dns-check-queries-the-resolver-host.md)                              |
 
 ## Native systemd by default
 

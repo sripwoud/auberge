@@ -53,13 +53,19 @@ auberge ansible run -t blocky
 
 After each app's playbook run (not in `--check`):
 
-- **Tailnet-only apps** (apps declaring `{app}_tailscale_ip`): verified automatically against Blocky on the tailnet IP (UDP/53).
+- **Tailnet-only apps** (apps declaring `{app}_tailscale_ip`): the tailnet's Blocky is queried on UDP/53 and must answer with the app's own address. Blocky is the host whose config answers [`blocky_subdomain`](configuration/host-scoped-config.md), at the `tailscale_ip` that [`auberge host detect-tailscale-ip`](cli-reference/host/detect-tailscale-ip.md) cached for it — a different host from the app's as soon as the fleet grows.
 - **Public apps**: opt-in via `--verify-public-dns`. `1.1.1.1` is queried; the A record must match `ansible_host`. Opt-in because Cloudflare propagation can lag.
 
 A mismatch aborts the deploy:
 
 ```
-DNS mismatch for paperless.example.com: queried 100.64.1.2, expected 100.64.1.2, got [1.2.3.4]
+DNS mismatch for essaim.example.com: queried 100.64.0.1, expected 100.64.0.9, got [100.64.0.1]
+```
+
+So does not knowing which host answers for the tailnet — a tailnet-only app's records live in that Blocky or nowhere, so an unanswerable check is a failed one:
+
+```
+Cannot verify essaim.example.com on the tailnet: 2 Hosts answer `blocky_subdomain` (auberge, ruche), but the tailnet has one resolver (ADR-0052); withdraw the gate on the others with `[hosts.<name>] blocky_subdomain = ""`
 ```
 
 ?> App names are derived from roles in `apps.yml`. Run `auberge deploy` without args to see the multi-select list. Roles declared in `infrastructure.yml` are rejected with a pointer to [`auberge ansible run`](cli-reference/ansible/run.md) `-t <role>`.
