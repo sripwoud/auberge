@@ -22,7 +22,6 @@ Without `--ip`, bootstrap prompts for the target IP. When the host's configured 
 
 ```bash
 auberge host add my-vps 203.0.113.10 --user ansible
-auberge config set hostname my-vps
 auberge config set admin_user_name yourname
 auberge config set ssh_port 22022
 auberge config set admin_user_password your-password    # optional, for Cockpit web login

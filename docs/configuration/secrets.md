@@ -24,7 +24,6 @@ auberge config set SECRET_NAME value
 **Required values:**
 
 ```bash
-auberge config set hostname yourserver
 auberge config set admin_user_name yourname
 auberge config set admin_user_email you@example.com
 auberge config set domain example.com

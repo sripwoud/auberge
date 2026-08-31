@@ -112,7 +112,6 @@ mod tests {
         for key in &[
             "admin_user_name",
             "ssh_port",
-            "hostname",
             "domain",
             "tailscale_authkey",
             "cloudflare_dns_api_token",
@@ -159,7 +158,6 @@ mod tests {
         let public_keys = [
             "admin_user_name",
             "domain",
-            "hostname",
             "ssh_port",
             "hermes_llm_provider",
         ];

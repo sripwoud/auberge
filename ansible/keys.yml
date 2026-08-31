@@ -159,10 +159,6 @@ keys:
     secret: true
     doc: "Telegram bot token for the Hermes bot"
 
-  hostname:
-    secret: false
-    doc: "Hostname to set on the remote server during bootstrap"
-
   immich_b2_application_key:
     secret: true
     doc: "B2 application key the Immich Host backs up with — crippled, created without deleteFiles so a compromised box can add but never destroy (#558)"
