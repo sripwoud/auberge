@@ -11,5 +11,5 @@
 	@notFile not file {path}
 	rewrite @notFile /yourls-loader.php
 
-	php_fastcgi unix//var/run/php/php{{ yourls_php_fpm_version }}-fpm.sock
+	php_fastcgi unix/{{ yourls_fpm_socket }}
 }

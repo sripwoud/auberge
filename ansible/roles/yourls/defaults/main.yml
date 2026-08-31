@@ -1,6 +1,7 @@
 yourls_install_path: /var/www/yourls
 yourls_sys_user: www-data
 yourls_sys_group: www-data
+yourls_fpm_socket: /var/run/php/yourls-fpm.sock
 yourls_domain: "{{ yourls_subdomain }}.{{ domain }}"
 
 yourls_db_name: yourls
