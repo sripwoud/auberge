@@ -61,6 +61,8 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0051 | [The headscale deploy gate is real, and config alone answers it](./adr/0051-the-headscale-gate-is-real-and-config-owned.md)                                    |
 | 0052 | [The tailnet's global resolver is the Host's own Blocky](./adr/0052-the-tailnets-global-resolver-is-the-hosts-blocky.md)                                       |
 | 0053 | [A Serving Unit is probed, or named in the ratchet](./adr/0053-a-serving-unit-is-probed-or-named-in-the-ratchet.md)                                            |
+| 0054 | [Agent workloads run on a dedicated disposable Host](./adr/0054-agent-workloads-run-on-a-dedicated-disposable-host.md)                                         |
+| 0055 | [The tailnet runs a tag-based ACL policy](./adr/0055-the-tailnet-runs-a-tag-based-acl-policy.md)                                                               |
 
 ## Native systemd by default
 

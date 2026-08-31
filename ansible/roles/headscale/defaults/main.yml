@@ -8,6 +8,7 @@ headscale_config_dir: /etc/headscale
 headscale_data_dir: /var/lib/headscale
 headscale_binary_path: /usr/local/bin/headscale
 headscale_db_path: /var/lib/headscale/db.sqlite
+headscale_policy_path: "{{ headscale_config_dir }}/policy.hujson"
 headscale_domain: "{{ headscale_subdomain }}.{{ domain }}"
 headscale_server_url: "https://{{ headscale_domain }}"
 headscale_ip_prefix_v4: "100.64.0.0/10"

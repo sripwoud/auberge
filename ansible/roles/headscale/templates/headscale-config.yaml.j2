@@ -50,6 +50,9 @@ dns:
       "{{ domain }}":
         - {{ headscale_split_dns_target_ip }}
 {% endif %}
+policy:
+  mode: file
+  path: {{ headscale_policy_path }}
 log:
   level: {{ headscale_log_level }}
 logtail:

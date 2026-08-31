@@ -59,6 +59,29 @@ tailscale dns status        # Resolver should be the host's tailnet IP
 
 ?> Blocky is load-bearing for **all** tailnet DNS under this design, not only internal apps — see [ADR-0052](https://github.com/sripwoud/auberge/blob/master/meta/adr/0052-the-tailnets-global-resolver-is-the-hosts-blocky.md).
 
+## Tailnet ACL policy
+
+The tailnet runs a tag-based, default-deny policy ([ADR-0055](https://github.com/sripwoud/auberge/blob/master/meta/adr/0055-the-tailnet-runs-a-tag-based-acl-policy.md)). The role deploys `policy.hujson` beside `config.yaml` and points headscale at it with `policy.mode: file` — repo-owned, not a `headscale policy set` into the DB. Its presence flips the tailnet from allow-all to deny-by-default.
+
+Trust is a tag; which node carries which is stamped on its pre-auth key by `auberge headscale add-key -t tag:...`, so the policy names tiers, never nodes.
+
+| Tag           | Example nodes     | May initiate to                         |
+| ------------- | ----------------- | --------------------------------------- |
+| `tag:trusted` | lechuck, pixel-9a | everything                              |
+| `tag:data`    | auberge           | trusted/data/standby; never `tag:agent` |
+| `tag:agent`   | ruche             | the global resolver on 53 only          |
+| `tag:standby` | vieille-auberge   | trusted/data/standby; never `tag:agent` |
+
+Every tag reaches the host's [Blocky](applications/networking/blocky.md) global resolver on 53 (ADR-0052) — the one tailnet path open to `tag:agent`. `tagOwners` lists are empty: only the admin CLI that mints the keys may apply these tags, so the policy carries no operator-specific username.
+
+!> Deploying the first policy is a **flag day** — flows never inventoried can break. Verify existing flows (syncthing lechuck↔auberge, laptop backup pulls, SSH, tailnet-only app vhosts) before and after, and enroll a `tag:agent` node only once the policy is live.
+
+Enroll a node into a tier:
+
+```bash
+auberge headscale add-key -t tag:agent      # mint a key stamped tag:agent
+```
+
 ## Migration from Tailscale SaaS
 
 On each node: `tailscale logout`, then re-run `auberge ansible run --tags tailscale`. Verify with `tailscale status`.
