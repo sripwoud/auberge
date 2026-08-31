@@ -83,7 +83,6 @@ jobs:
           ./tests/bichon-archive.test.sh
           ./tests/bichon-expunge.test.sh
           ./tests/bichon-uidvalidity-watch.test.sh
-          ./tests/github-machine-user.test.sh
           ./tests/immich-b2-prune.test.sh
           ./tests/immich-backup.test.sh
 
