@@ -30,6 +30,17 @@ Naming a gated role's tag asserts it runs, so asking for it on a host that withd
 
 An `<app>_subdomain` is the app's record name in your one DNS zone — fleet identity, read by DNS discovery from the top level. Scope it per host only to withdraw the role (blank); give divergent _values_ per host only for keys that are genuinely per-host (`tailscale_authkey`, ports).
 
+## Existing multi-host fleets
+
+`auberge headscale` commands default to the one host whose config answers `headscale_subdomain`. While several hosts answer (a fleet-wide key and no blanks), you get the interactive picker — blank the gate on non-serving hosts to regain the non-interactive default.
+
+## Guardrails
+
+- A `[hosts.<name>]` table naming no known host fails preflight — a typo would otherwise silently hand the host every fleet-wide answer.
+- An override whose `!command` reference fails aborts the run instead of falling back to the fleet-wide value.
+- `restic_*` keys are read fleet-wide by `backup push`/`verify`/`prune`; scoping them per host is not supported.
+- `auberge host rename` moves the host's table with it.
+
 ## Editing
 
-`auberge config set` writes flat top-level keys and rejects dotted names. Edit host tables in the file: `auberge config edit`.
+`auberge config set` writes flat top-level keys and rejects dotted names (and the reserved `hosts` name). Edit host tables in the file: `auberge config edit`. `auberge config list` shows host-scoped entries as `hosts.<name>.<key>` rows, secrets redacted.

@@ -24,6 +24,12 @@ Two consequences the repo owns:
 
 The infrastructure roster had no per-Host answer, and the fleet stopped being one Host long before ruche: `vieille-auberge` sits in the same roster today. `group_vars/` cannot carry the answer because Preflight passes every config key as `--extra-vars`, which outrank everything Ansible-side — the merge has to happen where the vars file is built. Scoping config rather than inventing a role-selection vocabulary keeps ADR-0051's rule intact: config alone answers a gate; whose config just became precise.
 
+## Trade-off
+
+- **blocky's keys leave the untagged demand set.** Every untagged `infrastructure` run used to require `blocky_subdomain`; now a first deployment that never sets it silently deploys no resolver. Accepted: it is the same semantics ADR-0051 accepted for headscale, blocky is genuinely optional off-tailnet, and `config init`'s full scaffold still offers the key. No fleet-level "at least one Host answers" assertion exists — a per-Host gate has no run to hang it on.
+- **A fleet where several Hosts answer the headscale gate gets the picker, not a default.** The deleted `hostname` fallback answered non-interactively; the derived default returns only when exactly one Host serves. The remedy is the mechanism itself: withdraw the gate on the non-serving Hosts.
+- **CLI-side restic operations stay fleet-wide.** `backup push`/`verify`/`prune` read `restic_repository`/`restic_password` through the top level; a `[hosts.<name>]` override of them reaches Ansible but not these commands. Per-Host repositories are not a supported shape.
+
 ## Alternatives considered
 
 - **Group-based gates** (`when: "'agent' in group_names"` from `hosts.toml` tags). Rejected: hardcodes trust-tier names into the roster, cannot express vieille-auberge (same groups as auberge, different serving set), and splits the gate's answer across two files.
