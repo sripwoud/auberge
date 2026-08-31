@@ -121,7 +121,7 @@ pub fn preflight_for(
 
 /// Every `[hosts.<name>]` table must name a Host the roster knows: a typoed
 /// name is a fail-open — the run proceeds on the fleet-wide answers the table
-/// meant to withdraw (ADR-0057).
+/// meant to withdraw (ADR-0058).
 pub(crate) fn assert_host_overrides_known(config: &Config, known: &[String]) -> Result<()> {
     for name in config.host_override_names() {
         if !known.contains(&name) {
@@ -379,7 +379,7 @@ mod tests {
     }
 
     /// `blocky` and `headscale` carry infrastructure's `when:` gates
-    /// (ADR-0051, ADR-0057): whether they run is the target Host's answer, so
+    /// (ADR-0051, ADR-0058): whether they run is the target Host's answer, so
     /// an untagged run cannot demand their keys.
     #[test]
     fn test_repo_untagged_infrastructure_run_skips_the_guarded_roles() {

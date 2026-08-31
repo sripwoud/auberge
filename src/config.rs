@@ -7,7 +7,7 @@ use std::path::PathBuf;
 const SENSITIVE_SUFFIXES: &[&str] = &["password", "key", "token", "secret", "cookie", "signature"];
 
 /// Reserved top-level table holding per-Host overrides: `[hosts.<name>]`
-/// answers a key for that Host only (ADR-0056). Never flattened fleet-wide.
+/// answers a key for that Host only (ADR-0058). Never flattened fleet-wide.
 pub const HOSTS_TABLE: &str = "hosts";
 
 const DEFAULT_TTL: u32 = 300;
@@ -113,7 +113,7 @@ impl Config {
         }
     }
 
-    // ── Host-scoped view (ADR-0056) ───────────────────────────────────────────
+    // ── Host-scoped view (ADR-0058) ───────────────────────────────────────────
 
     /// The `[hosts.<name>]` override table for one Host, when config carries one.
     fn host_overrides(&self, host: &str) -> Option<&toml::Table> {
@@ -215,7 +215,7 @@ impl Config {
     pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
         if key == HOSTS_TABLE {
             eyre::bail!(
-                "'{key}' is the reserved per-Host override table (ADR-0057); \
+                "'{key}' is the reserved per-Host override table (ADR-0058); \
                  edit {} directly.",
                 self.path.display()
             );
@@ -235,7 +235,7 @@ impl Config {
     pub fn remove(&mut self, key: &str) -> Result<bool> {
         if key == HOSTS_TABLE {
             eyre::bail!(
-                "'{key}' is the reserved per-Host override table (ADR-0057); \
+                "'{key}' is the reserved per-Host override table (ADR-0058); \
                  removing it would drop every host's overrides. Edit {} directly.",
                 self.path.display()
             );
@@ -303,7 +303,7 @@ impl Config {
 
     /// Every config value as a flat `name -> value` map for one Host's run:
     /// the top level minus the reserved `hosts` table, with the Host's
-    /// `[hosts.<name>]` overrides merged on top (ADR-0057).
+    /// `[hosts.<name>]` overrides merged on top (ADR-0058).
     ///
     /// Top-level values that fail to resolve are dropped (the run may never
     /// read them); an override that fails is an error — dropping it would
@@ -994,7 +994,7 @@ ssh_port = 22022
         );
     }
 
-    // ── Host-scoped view (ADR-0057) ───────────────────────────────────────────
+    // ── Host-scoped view (ADR-0058) ───────────────────────────────────────────
 
     const HOST_SCOPED: &str = r#"
         domain = "example.com"

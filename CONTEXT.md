@@ -17,11 +17,11 @@ A single file (`ansible/keys.yml`) listing every config key auberge knows about,
 _Avoid_: Schema, dictionary, catalog
 
 **Config**:
-The merged user-supplied settings (`config.toml`) parsed against the Key Registry. There is no static `config.example.toml`; users run `auberge config init` to generate a starter file from the registry. Keys are fleet-wide; the reserved `[hosts.<name>]` table scopes overrides to one Host, and a blank override withdraws a fleet-wide answer for that Host — how a serving gate like `headscale_subdomain` answers differently per Host (ADR-0057).
+The merged user-supplied settings (`config.toml`) parsed against the Key Registry. There is no static `config.example.toml`; users run `auberge config init` to generate a starter file from the registry. Keys are fleet-wide; the reserved `[hosts.<name>]` table scopes overrides to one Host, and a blank override withdraws a fleet-wide answer for that Host — how a serving gate like `headscale_subdomain` answers differently per Host (ADR-0058).
 _Avoid_: Settings, options, user config, env
 
 **Preflight**:
-A capability type standing for a `Config` already validated against the keys a run's Playbook Metas declare, read through the target Host's view (ADR-0057). The only way to construct one is `Config::preflight_with_keys`, reached through `services::required_keys::preflight_for`, which resolves those keys off the Metas (ADR-0045) and names the Host the run targets. `AnsibleRunner::run` accepts only a `Preflight`, making it impossible to invoke ansible with unvalidated config.
+A capability type standing for a `Config` already validated against the keys a run's Playbook Metas declare, read through the target Host's view (ADR-0058). The only way to construct one is `Config::preflight_with_keys`, reached through `services::required_keys::preflight_for`, which resolves those keys off the Metas (ADR-0045) and names the Host the run targets. `AnsibleRunner::run` accepts only a `Preflight`, making it impossible to invoke ansible with unvalidated config.
 _Avoid_: Plan, request, prepared run
 
 **Host**:

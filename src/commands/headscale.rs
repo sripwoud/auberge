@@ -255,7 +255,7 @@ impl From<&HeadscaleNode> for NodeDisplay {
 }
 
 /// The only Host whose config answers the headscale serving gate
-/// (ADR-0057), when exactly one does. Zero or several answers mean the
+/// (ADR-0058), when exactly one does. Zero or several answers mean the
 /// caller has to ask.
 fn only_serving_host(hosts: &[Host], config: &Config) -> Option<Host> {
     let mut serving = hosts.iter().filter(|h| {
