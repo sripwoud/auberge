@@ -85,7 +85,8 @@ ansible-playbook -i inventory playbook.yml
 
 - **Installation path**: `/var/www/yourls`
 - **Database**: MariaDB on `localhost` via Unix socket
-- **Web server**: Caddy with PHP-FPM via `/var/run/php/phpX.X-fpm.sock`
+- **Web server**: Caddy with PHP-FPM via a dedicated pool socket `/var/run/php/yourls-fpm.sock`
+- **PHP-FPM pool**: dedicated `yourls` pool in `pool.d/yourls.conf`, so YOURLS never depends on the default `www` pool another role may delete (#733)
 - **Domain**: `{{ yourls_subdomain }}.{{ domain }}`
 - **Admin interface**: `https://{{ yourls_domain }}/admin/`
 
@@ -125,7 +126,7 @@ systemctl status php*-fpm
 Check Caddy can access the socket:
 
 ```bash
-ls -l /var/run/php/php*-fpm.sock
+ls -l /var/run/php/yourls-fpm.sock
 ```
 
 Ensure `www-data` group membership:

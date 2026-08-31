@@ -149,6 +149,36 @@
         mode: "0755"
         recurse: true
 
+    - name: Deploy YOURLS PHP-FPM pool configuration
+      ansible.builtin.template:
+        src: templates/yourls-fpm.conf.j2
+        dest: /etc/php/{{ yourls_php_fpm_version }}/fpm/pool.d/yourls.conf
+        owner: root
+        group: root
+        mode: "0644"
+      register: yourls_fpm_pool
+
+    - name: Check for the YOURLS PHP-FPM socket
+      ansible.builtin.stat:
+        path: "{{ yourls_fpm_socket }}"
+      register: yourls_fpm_socket_probe
+
+    - name: Restart PHP-FPM to load the YOURLS pool
+      when: >-
+        yourls_fpm_pool is changed
+        or not (yourls_fpm_socket_probe.stat.issock | default(false))
+      ansible.builtin.systemd_service:
+        name: php{{ yourls_php_fpm_version }}-fpm
+        state: restarted
+
+    - name: Flush handlers so a pending php-fpm restart lands before the probe
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for the YOURLS PHP-FPM socket
+      ansible.builtin.wait_for:
+        path: "{{ yourls_fpm_socket }}"
+        timeout: 10
+
     - name: Deploy YOURLS Caddyfile
       ansible.builtin.template:
         src: templates/yourls.caddyfile.j2
