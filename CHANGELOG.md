@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - *(yourls)* serve from a dedicated php-fpm pool socket ([#734](https://github.com/sripwoud/auberge/pull/734))
 
+### Other
+
+- *(paperless)* bump to 3.1.1 ([#735](https://github.com/sripwoud/auberge/pull/735))
+
 ## [0.16.4](https://github.com/sripwoud/auberge/compare/v0.16.3...v0.16.4) - 2026-08-30
 
 ### Fixed
