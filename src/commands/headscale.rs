@@ -257,13 +257,7 @@ impl From<&HeadscaleNode> for NodeDisplay {
 fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
     let host = match host_arg {
         Some(name) => HostManager::get_host(&name)?,
-        None => {
-            let config = Config::load()?;
-            match config.get("hostname") {
-                Some(name) if !name.is_empty() => HostManager::get_host(&name)?,
-                _ => select_or_arg(None, HOST_FLAG)?,
-            }
-        }
+        None => select_or_arg(None, HOST_FLAG)?,
     };
 
     let ssh_key = match &host.ssh_key {

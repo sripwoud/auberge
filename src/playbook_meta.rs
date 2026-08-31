@@ -398,7 +398,7 @@ mod tests {
         let meta = load_meta("bootstrap");
         assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
         assert!(meta.required_keys.contains(&"ssh_port".to_string()));
-        assert!(meta.required_keys.contains(&"hostname".to_string()));
+        assert!(!meta.required_keys.contains(&"hostname".to_string()));
     }
 
     #[test]
