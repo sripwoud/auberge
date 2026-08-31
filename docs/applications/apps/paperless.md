@@ -16,14 +16,14 @@ Bare-metal (no Docker). Requires Tailscale deployed first.
 
 ## Required config
 
-| Key                        | Purpose                                                             |
-| -------------------------- | ------------------------------------------------------------------- |
-| `paperless_secret_key`     | Django secret key                                                   |
-| `paperless_admin_user`     | Admin username                                                      |
-| `paperless_admin_password` | Admin password                                                      |
-| `paperless_db_password`    | PostgreSQL password                                                 |
-| `paperless_subdomain`      | Subdomain for HTTPS access                                          |
-| `paperless_tailscale_ip`   | Tailscale IP — signals `dns set-all` to use it instead of public IP |
+| Key                        | Purpose                                        |
+| -------------------------- | ---------------------------------------------- |
+| `paperless_secret_key`     | Django secret key                              |
+| `paperless_admin_user`     | Admin username                                 |
+| `paperless_admin_password` | Admin password                                 |
+| `paperless_db_password`    | PostgreSQL password                            |
+| `paperless_subdomain`      | Subdomain for HTTPS access                     |
+| `paperless_tailscale_ip`   | Tailnet address Blocky publishes for Paperless |
 
 ## Notes
 
