@@ -26,10 +26,17 @@ mod crate_source;
 
 use crate_source::{Module, find, modules, names_in_code};
 
-/// The only modules allowed to *read* `prefer_tailnet` — scanned as the field
-/// access `.prefer_tailnet`, not the bare name, so that a struct literal or a
-/// help string mentioning the field is not mistaken for a routing decision.
+/// The only modules allowed to *read* `prefer_tailnet`.
 ///
+/// Scanned as the field access `.prefer_tailnet`, not the bare name: test
+/// fixtures across four modules initialise the field in a `Host` literal, and
+/// `main.rs`'s `--via` help text names it in prose. Cutting `#[cfg(test)]`
+/// instead would need the trailing-test-module care ADR-0070 documents, and
+/// `services/ssh.rs` carries a `#[cfg(test)]` fixture *outside* its test
+/// module — the exact shape that made that cut silently drop the domain.
+/// The limit the narrower needle accepts: a module that destructured a `Host`
+/// to reach the field would evade this. Nothing in the crate destructures one,
+/// and `route::resolve` is the shorter path to the same answer.
 ///
 /// - `src/services/route.rs` turns it into an address. That is the policy.
 /// - `src/hosts.rs` declares, (de)serializes and validates the field —
