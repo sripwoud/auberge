@@ -293,7 +293,7 @@ pub fn run_backup_create(
         timestamp: timestamp.clone(),
         parameters,
     };
-    let route = crate::services::route::resolve(&host, Some(ssh_key_path));
+    let route = crate::services::route::resolve(&host, Some(ssh_key_path))?;
     let ssh = LiveSshSession::new(&route, &host.become_method)?;
     // `--verbose` renders every App's outcome in the results table below, so
     // the streamed per-App line would report each one twice.
@@ -733,7 +733,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
 
     // One session for pre-flight and restore, so the socket the reachability
     // probe warms is the one every later command reuses.
-    let route = crate::services::route::resolve(&host, Some(ssh_key_path));
+    let route = crate::services::route::resolve(&host, Some(ssh_key_path))?;
     let ssh = LiveSshSession::new(&route, &host.become_method)?;
 
     if is_cross_host {
@@ -901,7 +901,7 @@ fn run_apps_playbook(host: &Host, apps: &[String]) -> Result<AnsibleResult> {
 
     let inventory_host = crate::services::ansible_runner::InventoryHost {
         name: host.name.clone(),
-        route: crate::services::route::resolve(host, None),
+        route: crate::services::route::resolve(host, None)?,
         groups: host.tags.clone(),
     };
 

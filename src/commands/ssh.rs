@@ -219,7 +219,7 @@ pub fn run_ssh_add_key(
     output::info("Add SSH Key");
     output::info(&format!(
         "Host: {} ({}:{})",
-        host.name, host.vars.ansible_host, host.vars.ansible_port
+        host.name, host.connect_address, host.vars.ansible_port
     ));
     output::info(&format!("Remote user: {}", user));
     output::info(&format!("Connection key: {}", connect_key.display()));
@@ -237,7 +237,7 @@ pub fn run_ssh_add_key(
     output::info("Adding key to remote host");
 
     let target = host.ssh_target(&user);
-    let route = crate::services::route::resolve(&target, Some(connect_key));
+    let route = crate::services::route::resolve(&target, Some(connect_key))?;
     let session = LiveSshSession::first_contact(&route, &target.become_method)?;
     authorize_key(&session, pubkey_content.trim())?;
 

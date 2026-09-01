@@ -54,7 +54,7 @@ async fn verify_inner(
     let client = BichonApiClient::new(base_url, token)?;
 
     let ssh_key = crate::services::ssh::resolve_ssh_key_path(&host_record, None)?;
-    let route = crate::services::route::resolve(&host_record, Some(ssh_key));
+    let route = crate::services::route::resolve(&host_record, Some(ssh_key))?;
     let ssh = LiveSshSession::new(&route, &host_record.become_method)?;
 
     let report = compute_coverage(&client, &ssh, &account, &folder, cutoff, &archive_path).await?;

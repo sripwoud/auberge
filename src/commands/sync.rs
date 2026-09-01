@@ -168,11 +168,13 @@ pub fn run_sync_music(
     // what actually needs testing here — the flag set, the progress parser,
     // and the scan/transfer drive — already has seams of its own
     // (`music_rsync_command`, `services::rsync`, `drive_music_sync`).
+    // `connect_address`, not `vars.ansible_host`: the latter is the Host's
+    // public address, which #787 lets diverge from where the CLI connects.
+    // This rsync is a connection, so it follows the route like everything
+    // else — a transfer left on the old address is exactly the split #780
+    // exists to close.
     let ssh_arg = format!("ssh -p {} -i {}", host.vars.ansible_port, ssh_key.display());
-    let destination = format!(
-        "{}@{}:{}",
-        ansible_user, host.vars.ansible_host, remote_path
-    );
+    let destination = format!("{}@{}:{}", ansible_user, host.connect_address, remote_path);
 
     output::info(&format!("Syncing music to {}", destination));
     if dry_run {
@@ -282,7 +284,7 @@ pub fn run_sync_hermes(
             std::fs::create_dir_all(parent)
                 .wrap_err_with(|| format!("Failed to create directory: {}", parent.display()))?;
         }
-        let route = crate::services::route::resolve(&xdg_host, Some(ssh_key));
+        let route = crate::services::route::resolve(&xdg_host, Some(ssh_key))?;
         let session = LiveSshSession::new(&route, &xdg_host.become_method)?;
         output::info(&format!(
             "Pulling hermes config from remote to {}",
@@ -309,7 +311,7 @@ pub fn run_sync_hermes(
 
     let ssh_key = crate::services::ssh::resolve_ssh_key_path(&xdg_host, None)?;
 
-    let route = crate::services::route::resolve(&xdg_host, Some(ssh_key));
+    let route = crate::services::route::resolve(&xdg_host, Some(ssh_key))?;
     let session = LiveSshSession::new(&route, &xdg_host.become_method)?;
     let remote_dest = format!("{}@{}:.hermes/config.yaml", route.user, route.address);
 

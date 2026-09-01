@@ -106,10 +106,7 @@ fn show_execution_plan(runs: &[PlaybookRun], host: &Host, check: bool) -> Result
     } else {
         output::info("Execution plan:");
     }
-    output::info(&format!(
-        "  Host: {} ({})",
-        host.name, host.vars.ansible_host
-    ));
+    output::info(&format!("  Host: {} ({})", host.name, host.connect_address));
     for run in runs {
         let name = run
             .path

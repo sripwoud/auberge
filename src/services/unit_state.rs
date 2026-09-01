@@ -343,7 +343,7 @@ fn try_report(run: &PlaybookRun, host_name: &str, elapsed: Duration) -> Result<O
         return Ok(None);
     }
     let ssh_key = resolve_ssh_key_path(&host, None)?;
-    let route = crate::services::route::resolve(&host, Some(ssh_key));
+    let route = crate::services::route::resolve(&host, Some(ssh_key))?;
     let session = LiveSshSession::new(&route, &host.become_method)?;
     // The probe runs against a Host whose deploy just failed — possibly
     // because the Host went dark — and a bare ssh would hang for the TCP

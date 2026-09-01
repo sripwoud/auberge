@@ -46,11 +46,37 @@ fn default_bootstrap_user() -> String {
 #[derive(Debug, Clone)]
 pub struct Host {
     pub name: String,
+    /// The Inventory's own declaration. `ansible_host` here is the Host's
+    /// **public** address and stays that way under #787's routing policy: it
+    /// is what `dns set-all` publishes as an A record and what a deploy's
+    /// public DNS check expects to see. Where the CLI *connects* is
+    /// [`Host::connect_address`] — two questions one field used to answer.
     pub vars: HostVars,
     pub groups: Vec<String>,
+    /// Where this CLI connects, already resolved through
+    /// `services::route::resolve` — so #787's `prefer_tailnet` and `--via`
+    /// reach ansible's own `ansible_host` var, not just ssh.
+    ///
+    /// Resolved once, at the roster→Inventory conversion, rather than
+    /// re-derived by [`Host::route`]: a second implementation of the policy
+    /// is a second thing to keep in step. Equal to `vars.ansible_host` for a
+    /// Host read from `ansible/inventory.yml`, which declares no tailnet
+    /// facts and therefore no policy to apply.
+    pub connect_address: String,
 }
 
 impl Host {
+    /// A Host straight from `ansible/inventory.yml`: no roster entry, so no
+    /// routing policy, so the declared address is also the route.
+    fn from_inventory(name: String, vars: HostVars, groups: Vec<String>) -> Self {
+        let connect_address = vars.ansible_host.clone();
+        Self {
+            name,
+            vars,
+            groups,
+            connect_address,
+        }
+    }
     /// This Host as the SshSession seam names one. The two representations
     /// carry the same three facts under different names, and only the Inventory
     /// side is reachable from a command that resolved its target from
@@ -62,7 +88,7 @@ impl Host {
     pub fn ssh_target(&self, user: &str) -> crate::hosts::Host {
         crate::hosts::Host {
             name: self.name.clone(),
-            address: self.vars.ansible_host.clone(),
+            address: self.connect_address.clone(),
             user: user.to_string(),
             port: self.vars.ansible_port,
             ssh_key: None,
@@ -87,7 +113,7 @@ impl Host {
     /// opens one of its own (#780) — ansible resolves its own connection.
     pub fn route(&self) -> crate::services::route::Route {
         crate::services::route::Route {
-            address: self.vars.ansible_host.clone(),
+            address: self.connect_address.clone(),
             port: self.vars.ansible_port,
             user: self.vars.bootstrap_user.clone(),
             key_path: None,
@@ -155,11 +181,11 @@ impl Inventory {
             for (host_name, host_vars) in &grp.hosts {
                 if !seen.contains(host_name) {
                     seen.insert(host_name.clone());
-                    hosts.push(Host {
-                        name: host_name.clone(),
-                        vars: host_vars.clone(),
-                        groups: current_groups.clone(),
-                    });
+                    hosts.push(Host::from_inventory(
+                        host_name.clone(),
+                        host_vars.clone(),
+                        current_groups.clone(),
+                    ));
                 }
             }
         }
@@ -224,20 +250,25 @@ pub fn load_inventory(inventory_path: Option<&Path>) -> Result<Inventory> {
     Ok(Inventory::from_raw(raw))
 }
 
-fn convert_xdg_host_to_inventory_host(xdg_host: crate::hosts::Host) -> Host {
-    let route = crate::services::route::resolve(&xdg_host, None);
+/// The roster entry as the Inventory sees it, with both addresses kept
+/// apart: `ansible_host` is the declared public one, `connect_address` the
+/// one #787's policy resolved. Folding them back together publishes a CGNAT
+/// address as a public A record.
+fn convert_xdg_host_to_inventory_host(xdg_host: crate::hosts::Host) -> Result<Host> {
+    let route = crate::services::route::resolve(&xdg_host, None)?;
     let vars = HostVars {
-        ansible_host: route.address,
+        ansible_host: crate::services::route::public_address(&xdg_host),
         ansible_port: route.port,
         bootstrap_user: xdg_host.user.clone(),
         extra: HashMap::new(),
     };
 
-    Host {
+    Ok(Host {
         name: xdg_host.name,
         vars,
         groups: xdg_host.tags,
-    }
+        connect_address: route.address,
+    })
 }
 
 fn try_load_xdg_hosts() -> Result<Option<Vec<Host>>> {
@@ -250,7 +281,7 @@ fn try_load_xdg_hosts() -> Result<Option<Vec<Host>>> {
     let inventory_hosts: Vec<Host> = xdg_hosts
         .into_iter()
         .map(convert_xdg_host_to_inventory_host)
-        .collect();
+        .collect::<Result<_>>()?;
 
     Ok(Some(inventory_hosts))
 }
@@ -291,16 +322,24 @@ pub fn get_host(name: &str, inventory_path: Option<&Path>) -> Result<Host> {
 /// retry storm into a full lockout (#582). Sorted so the rendered jail.local
 /// is stable across deploys; comma-separated because a space-separated
 /// `-e key=value` would be split into bogus extra pairs by ansible's parse_kv.
-fn hosts_ignoreip_value(hosts: &[Host]) -> String {
-    let ips: std::collections::BTreeSet<&str> =
-        hosts.iter().map(|h| h.vars.ansible_host.as_str()).collect();
+/// Both addresses of every peer, not just the one currently in use (#787): a
+/// Host that routes over the tailnet arrives at a peer's sshd from its
+/// tailnet address, while `--via public` recovery arrives from its public
+/// one, and the recovery route must not be the bannable one.
+fn hosts_ignoreip_value(hosts: &[Host], peers: &[String]) -> String {
+    let ips: std::collections::BTreeSet<&str> = hosts
+        .iter()
+        .map(|h| h.vars.ansible_host.as_str())
+        .chain(peers.iter().map(String::as_str))
+        .collect();
     ips.into_iter().collect::<Vec<_>>().join(",")
 }
 
 pub fn hosts_ignoreip_var() -> Result<(String, String)> {
+    let peers = crate::services::route::peer_addresses(&HostManager::load_hosts()?);
     Ok((
         "fail2ban_ignoreip_hosts".to_string(),
-        hosts_ignoreip_value(&get_hosts(None, None)?),
+        hosts_ignoreip_value(&get_hosts(None, None)?, &peers),
     ))
 }
 
@@ -391,33 +430,81 @@ mod tests {
     }
 
     fn host(name: &str, address: &str) -> Host {
-        Host {
-            name: name.to_string(),
-            vars: HostVars {
+        Host::from_inventory(
+            name.to_string(),
+            HostVars {
                 ansible_host: address.to_string(),
                 ansible_port: 22,
                 bootstrap_user: "root".to_string(),
                 extra: HashMap::new(),
             },
-            groups: vec![],
-        }
+            vec![],
+        )
     }
 
     #[test]
     fn test_hosts_ignoreip_value_sorts_and_comma_joins_addresses() {
         let hosts = [host("b", "203.0.113.9"), host("a", "198.51.100.7")];
-        assert_eq!(hosts_ignoreip_value(&hosts), "198.51.100.7,203.0.113.9");
+        assert_eq!(
+            hosts_ignoreip_value(&hosts, &[]),
+            "198.51.100.7,203.0.113.9"
+        );
     }
 
     #[test]
     fn test_hosts_ignoreip_value_dedupes_addresses() {
         let hosts = [host("a", "203.0.113.9"), host("b", "203.0.113.9")];
-        assert_eq!(hosts_ignoreip_value(&hosts), "203.0.113.9");
+        assert_eq!(hosts_ignoreip_value(&hosts, &[]), "203.0.113.9");
     }
 
     #[test]
     fn test_hosts_ignoreip_value_empty_inventory_yields_empty_string() {
-        assert_eq!(hosts_ignoreip_value(&[]), "");
+        assert_eq!(hosts_ignoreip_value(&[], &[]), "");
+    }
+
+    /// A Host routing over the tailnet arrives at its peers from
+    /// `100.64.0.1`; the same Host under `--via public` arrives from
+    /// `203.0.113.10`. fail2ban has to ignore both, or the recovery route is
+    /// the bannable one (#787).
+    #[test]
+    fn hosts_ignoreip_value_keeps_a_peers_public_address_alongside_its_tailnet_one() {
+        let hosts = [host("auberge", "203.0.113.10")];
+        let peers = crate::services::route::peer_addresses(&[crate::hosts::Host::fixture(
+            "auberge",
+            Some("100.64.0.1"),
+        )
+        .preferring_tailnet()]);
+
+        assert_eq!(
+            hosts_ignoreip_value(&hosts, &peers),
+            "100.64.0.1,203.0.113.10"
+        );
+    }
+
+    /// The Inventory's `ansible_host` must stay public even for a Host that
+    /// routes over the tailnet: `dns set-all` reads it as the A record's
+    /// value, and a deploy's public DNS check as the address that record must
+    /// resolve to.
+    #[test]
+    fn the_tailnet_policy_moves_the_route_and_leaves_ansible_host_public() {
+        let converted = convert_xdg_host_to_inventory_host(
+            crate::hosts::Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet(),
+        )
+        .unwrap();
+
+        assert_eq!(converted.vars.ansible_host, "203.0.113.10");
+        assert_eq!(converted.connect_address, "100.64.0.1");
+        assert_eq!(converted.route().address, "100.64.0.1");
+        assert_eq!(converted.ssh_target("admin").address, "100.64.0.1");
+    }
+
+    /// A Host read from `ansible/inventory.yml` carries no policy, so the
+    /// declared address is also the route — the conversion above is the only
+    /// thing that can move one.
+    #[test]
+    fn an_inventory_host_routes_to_the_address_it_declares() {
+        let host = host("auberge", "203.0.113.7");
+        assert_eq!(host.connect_address, host.vars.ansible_host);
     }
 
     #[test]
