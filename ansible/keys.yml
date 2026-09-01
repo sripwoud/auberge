@@ -125,6 +125,13 @@ keys:
     secret: false
     doc: "Subdomain for the FreshRSS feed reader"
 
+  github_bot_email:
+    secret: false
+    doc: >-
+      Git author address for the machine user's commits on the agent tier. GitHub's noreply form,
+      <ID>+<login>@users.noreply.github.com, is what links a commit to the bot's profile; the plain
+      login form links to nothing on an account created after mid-2017.
+
   github_bot_login:
     secret: false
     doc: "GitHub machine-user handle the fleet commits as (ADR-0054); target of `auberge github invite|verify`"

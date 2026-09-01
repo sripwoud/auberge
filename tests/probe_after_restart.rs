@@ -105,11 +105,6 @@ const NOT_YET_PROBED: &[(&str, &str)] = &[
          wait_for what it writes under `tgtg_data_dir`, the way syncthing's \
          probe reads its generated config.xml",
     ),
-    (
-        "vibecoder",
-        "the port `start-telegram-webhook.js` binds for Telegram callbacks — \
-         not stated in this repo; discovering it is the entry's first step",
-    ),
 ];
 
 /// A declared `.service` the scan holds no unit file for — known only through

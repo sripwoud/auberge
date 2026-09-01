@@ -1,0 +1,8 @@
+---
+github_identity_user: "{{ admin_user_name }}"
+github_identity_home: "/home/{{ github_identity_user }}"
+
+github_identity_keyring: /usr/share/keyrings/githubcli-archive-keyring.gpg
+github_identity_keyring_url: https://cli.github.com/packages/githubcli-archive-keyring.gpg
+github_identity_repo_url: https://cli.github.com/packages
+github_identity_host: github.com

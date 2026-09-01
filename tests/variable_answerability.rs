@@ -31,11 +31,12 @@
 //! parameters are passed. The bash role reads `{{ bash_user_name }}` unguarded
 //! and has no `defaults/`; `infrastructure.yml` answers it in a `vars:` on its
 //! own `- role: bash` entry, which answers that one invocation and nothing
-//! else. `vibecoder.yml` reaches the same role through
-//! `vibecoder/meta/main.yml` and bound neither name, so it died mid-play. A
-//! pooled sweep sees `bash_user_name` bound somewhere and reports nothing; this
-//! one names the run it is unbound in. That was the second defect of
-//! `calibre_subdomain`'s shape in the tree, and the reason for the scoping.
+//! else. A second playbook reached the same role through a meta role's
+//! `dependencies:` — where no `vars:` can ride — and bound neither name, so it
+//! died mid-play. A pooled sweep sees `bash_user_name` bound somewhere and
+//! reports nothing; this one names the run it is unbound in. That was the
+//! second defect of `calibre_subdomain`'s shape in the tree, and the reason for
+//! the scoping.
 //!
 //! What each run provides:
 //!
@@ -69,7 +70,7 @@
 //! - `calibre_subdomain`, read unguarded by `roles/calibre/defaults/main.yml`
 //!   and answered by nothing at all;
 //! - `bash_user_name` and `bash_user_home`, answered on the `infrastructure.yml`
-//!   run and unanswered on the `vibecoder.yml` one.
+//!   run and unanswered on the meta-role run beside it.
 //!
 //! Both are fixed in the commits before this one; reverting either turns this
 //! fence red. The third is `paperless_admin_mail`, read once as

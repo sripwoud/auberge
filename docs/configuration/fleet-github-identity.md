@@ -20,8 +20,11 @@ GitHub ToS permits one machine account alongside a personal one.
 | Key                | Secret | Holds                                                                      |
 | ------------------ | ------ | -------------------------------------------------------------------------- |
 | `github_bot_login` | no     | the machine account handle                                                 |
+| `github_bot_email` | no     | git author address, `<ID>+<login>@users.noreply.github.com`                |
 | `github_bot_repos` | no     | space-separated owned allowlist, e.g. `sripwoud/auberge sripwoud/dotfiles` |
 | `github_bot_token` | yes    | fine-grained PAT, e.g. `!pa show fleet/github-pat`                         |
+
+`github_bot_email` decides what a commit's author line says, and the noreply form is what links it to the bot's profile — the plain `<login>@users.noreply.github.com` form links to nothing on an account created after mid-2017. The address with the numeric ID is on the bot's [email settings](https://github.com/settings/emails) page, under _Keep my email addresses private_.
 
 ## Provisioning
 
@@ -55,8 +58,17 @@ Account signup and token minting sit behind a login only a human holds — those
    auberge github verify -o json    # { outcome, identity_ok, repos: [{repo, state}] }
    ```
 
-7. ruche's meta role ([#743](https://github.com/sripwoud/auberge/issues/743)) resolves `github_bot_token` at deploy time and templates it onto the box (git author = bot).
+7. **Deploy the identity.** `auberge deploy ruche -H ruche` resolves `github_bot_token` through the config `!`-ref and hands it to `gh` on the box with `gh auth login --with-token`, routes git's GitHub credentials through gh, and sets the author to the bot:
+
+   ```bash
+   auberge config set github_bot_email "<ID>+<handle>@users.noreply.github.com"
+   auberge deploy ruche -H ruche
+   ```
+
+   The token lands only in gh's own `~/.config/gh/hosts.yml` (`0600`) — never in `/etc/environment`, never on a command line ([ADR-0065](https://github.com/sripwoud/auberge/blob/master/meta/adr/0065-the-agent-permission-baseline-is-a-guard-rail-not-a-boundary.md)).
 
 ## Rotation
 
-Fine-grained tokens expire — 90 days is the ceiling. To rotate: regenerate on the [token page](https://github.com/settings/personal-access-tokens), `pa edit fleet/github-pat`, `auberge github verify`, then `auberge deploy ruche` to re-template.
+Fine-grained tokens expire — 90 days is the ceiling. To rotate: regenerate on the [token page](https://github.com/settings/personal-access-tokens), update the secret your `!`-ref reads, `auberge github verify`, then `auberge deploy ruche -H ruche`.
+
+The re-template is idempotent and offline: the role compares the token gh already holds (`gh auth token`) against the one config resolves to, and logs in only when they differ. A network check could not tell a rotated token from an unreachable API, and would re-authenticate on every run.

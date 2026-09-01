@@ -5,6 +5,7 @@
   roles:
     - role: aoe
       tags: [aoe]
+      when: "'agent' in group_names"
 
   post_tasks:
     - name: Verify caddy ingress survived this deploy

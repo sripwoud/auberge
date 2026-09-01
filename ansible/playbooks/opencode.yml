@@ -5,3 +5,4 @@
   roles:
     - role: opencode
       tags: [opencode]
+      when: "'agent' in group_names"

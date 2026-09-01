@@ -577,9 +577,9 @@ mod tests {
         "memsearch",
         "opencode",
         "remove-radicale",
+        "ruche",
         "syncthing",
         "tgtg",
-        "vibecoder",
     ];
 
     #[test]

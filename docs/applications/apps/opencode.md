@@ -8,8 +8,12 @@ The agent runtime on [ruche](https://github.com/sripwoud/auberge/issues/747), th
 ## Deploy
 
 ```bash
-auberge ansible run opencode -H ruche
+auberge deploy opencode -H ruche # this App alone
+auberge deploy ruche -H ruche    # the whole agent tier
 ```
+
+> [!IMPORTANT]
+> The role is guarded on `when: "'agent' in group_names"`, so the Host must carry `tags = ["agent"]` in `hosts.toml` or the deploy is a green no-op that installs nothing. `auberge host list` shows the TAGS column. Not to be confused with `tailnet_tag = "agent"`, an unrelated field naming the ACL tier.
 
 ## Required config
 

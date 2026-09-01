@@ -613,6 +613,34 @@ mod tests {
         );
     }
 
+    /// The composition, held to the same absence as the App it composes.
+    /// ADR-0054 makes the whole Host disposable, not just the dashboard: a
+    /// Recipe on the playbook that deploys the tier would put a nightly
+    /// stopped-unit pull of a box whose state is a re-auth and a re-clone into
+    /// `backup sync`'s default app set — arriving through the composition
+    /// rather than through aoe, which is the one route
+    /// `test_aoe_meta_declares_no_backup_recipe` above cannot see.
+    #[test]
+    fn test_ruche_meta_declares_no_backup_recipe() {
+        let meta = load_meta("ruche");
+        assert!(
+            meta.backup.is_none(),
+            "the agent Host is disposable by design; a Recipe on its \
+             composition would back the whole tier up nightly"
+        );
+        assert!(
+            meta.units.is_empty(),
+            "ruche owns no unit of its own — aoe's Meta owns the only one the \
+             tier installs, and a second declaration of it would have the \
+             failure report name one unit twice"
+        );
+        assert!(
+            meta.subdomain.is_none() && !meta.tailnet_only,
+            "ruche publishes no name; essaim is aoe's (ADR-0071), and a second \
+             Meta claiming it would put the same name in Blocky's map twice"
+        );
+    }
+
     #[test]
     fn test_immich_meta_declares_no_backup_recipe() {
         let meta = load_meta("immich");
@@ -782,13 +810,6 @@ mod tests {
     #[test]
     fn test_remove_radicale_meta_parses_without_error() {
         let meta = load_meta("remove-radicale");
-        assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
-        assert!(meta.required_keys.contains(&"domain".to_string()));
-    }
-
-    #[test]
-    fn test_vibecoder_meta_parses_without_error() {
-        let meta = load_meta("vibecoder");
         assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
         assert!(meta.required_keys.contains(&"domain".to_string()));
     }

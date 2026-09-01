@@ -1385,14 +1385,14 @@ mod tests {
     #[test]
     fn target_ip_from_inventory_rejects_an_unknown_host_naming_the_inventory() {
         let hosts = inventory(&[
-            ("vibecoder", "192.0.2.30"),
+            ("ruche", "192.0.2.30"),
             ("auberge", "203.0.113.10"),
             ("hermes", "198.51.100.7"),
         ]);
         let err = target_ip_from_inventory(Some("ghost".to_string()), hosts).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Host 'ghost' not found in inventory. Available: auberge, hermes, vibecoder"
+            "Host 'ghost' not found in inventory. Available: auberge, hermes, ruche"
         );
     }
 

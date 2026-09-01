@@ -5,8 +5,12 @@ Self-hosted homelab provisioning: a Rust CLI that runs Ansible playbooks against
 ## Language
 
 **Playbook**:
-An Ansible playbook (`ansible/playbooks/<name>.yml`) that deploys exactly one app or one piece of infrastructure to a Host.
+An Ansible playbook (`ansible/playbooks/<name>.yml`) that deploys one app, one piece of infrastructure, or one **Composition** to a Host.
 _Avoid_: Role, recipe (Ansible-internal), task (Ansible-internal)
+
+**Composition**:
+A Playbook whose roster is several Apps rather than one — the set of things a Host is _for_, named so `auberge deploy <name>` can bring the whole Host up in one command. `ruche.yml` is the only one: the agent tier's machine-user identity, runtime and dashboard (ADR-0075). Every entry is `when:`-guarded on an ansible group, so the same Playbook pointed at another Host is a no-op rather than an incident — which is also why its Meta must declare its roles' `required_keys` itself: an untagged run selects no guarded entry, so Preflight would otherwise demand nothing at all. A Composition owns no units and publishes no name of its own; those belong to the Apps on its roster, and the deploy's **DNS Publication** check and unit readout read the roster for them. It is a `deploy` target but not an **App**: no `subdomain:`, no **Backup Recipe**, no App Version.
+_Avoid_: Meta role (the Ansible `dependencies:` form, deliberately not used — see ADR-0075), bundle, stack
 
 **Playbook Meta**:
 A sibling YAML file (`ansible/playbooks/<name>.meta.yml`) declaring the Playbook's contract with auberge — its `required_keys` from the Key Registry and, optionally, an App Version (`version:`), a Backup Recipe (`backup:`), and per-unit Memory Budgets (`memory:`).
@@ -238,6 +242,7 @@ _Avoid_: Logger, reporter
 ## Relationships
 
 - A **Playbook** has exactly one **Playbook Meta** sibling.
+- A **Composition** is a **Playbook** whose roster names two or more **Apps**, all of them `when:`-guarded; its **Playbook Meta** declares the union of those Apps' `required_keys` and no `units:`, `subdomain:` or **Backup Recipe**.
 - A **Playbook Meta** declares zero or more keys from the **Key Registry**, none of them an **Injected Key**.
 - A **Playbook Meta** declares zero or one **Backup Recipe**, zero or more **Memory Budgets** — one per systemd unit the App runs, each a `MemoryHigh=` and an _optional_ `MemoryMax=` — and the App's **Unit Ownership**. A Budget with no `max` injects no `<unit>_memory_max`, which is how a unit supervising processes it did not fork asks to be throttled and not killed (aoe, ADR-0073); a template still reading the absent name fails the play rather than rendering a bare `MemoryMax=`, which systemd reads as a reset to `infinity`.
 - A **Preflight** binds a validated **Config** to the keys a run's **Playbook Metas** declare — the Playbook's own, unioned with those of the roles its tags select (ADR-0045).

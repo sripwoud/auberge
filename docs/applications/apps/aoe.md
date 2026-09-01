@@ -8,8 +8,12 @@ The phone control plane for [ruche](https://github.com/sripwoud/auberge/issues/7
 ## Deploy
 
 ```bash
-auberge ansible run aoe -H ruche
+auberge deploy aoe -H ruche      # this App alone
+auberge deploy ruche -H ruche    # the whole agent tier
 ```
+
+> [!IMPORTANT]
+> The role is guarded on `when: "'agent' in group_names"`, so the Host must carry `tags = ["agent"]` in `hosts.toml` or the deploy is a green no-op that installs nothing. `auberge host list` shows the TAGS column. Not to be confused with `tailnet_tag = "agent"`, an unrelated field naming the ACL tier.
 
 [Set up the agent tier's DNS zone](configuration/agent-tier-dns-zone.md) first — the vhost needs a certificate for `essaim.{agents_domain}`, and DNS-01 is the only challenge a Host with no public ingress can answer.
 

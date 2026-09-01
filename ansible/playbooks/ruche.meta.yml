@@ -1,0 +1,11 @@
+required_keys:
+  - admin_user_name
+  - agents_cloudflare_dns_api_token
+  - agents_domain
+  - aoe_passphrase
+  - aoe_subdomain
+  - aoe_tailscale_ip
+  - github_bot_email
+  - github_bot_login
+  - github_bot_token
+  - opencode_openrouter_api_key
