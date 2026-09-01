@@ -69,6 +69,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0059 | [DNS Publication resolves a Tailnet-only App's address per App](./adr/0059-a-tailnet-only-apps-address-is-per-app.md)                                          |
 | 0060 | [The tailnet DNS check queries the resolver's Host, not the App's](./adr/0060-the-tailnet-dns-check-queries-the-resolver-host.md)                              |
 | 0061 | [A first ACL policy is rolled out in two stages](./adr/0061-a-first-acl-policy-is-rolled-out-in-two-stages.md)                                                 |
+| 0062 | [A Host's trust tier is a typed roster field](./adr/0062-a-hosts-trust-tier-is-a-typed-roster-field.md)                                                        |
 
 ## Native systemd by default
 
