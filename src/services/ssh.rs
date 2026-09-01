@@ -407,6 +407,14 @@ impl SshSession for LiveSshSession<'_> {
 /// Named after `route.alias` rather than a `Host`: the alias is the Host's
 /// name today (#785 gives it independent meaning), and nothing here needs the
 /// declaration itself to report a failed connection.
+///
+/// A route over a CGNAT address names the remedy #787 leaves unguarded. A
+/// cached `tailscale_ip` gets no freshness check — an address that moved is
+/// indistinguishable from a Host that is simply down until you try it — so
+/// the guarantee is that it fails loud *and says what to do*. Keyed on the
+/// address being in `100.64.0.0/10` rather than on a flag threaded down from
+/// the resolver: the CGNAT range is the fact, and reading it here also covers
+/// a Route that reached the tailnet some other way.
 fn unreachable_error(route: &Route, stderr: &str) -> eyre::Report {
     let stderr = stderr.trim();
     let detail = if stderr.is_empty() {
@@ -414,12 +422,23 @@ fn unreachable_error(route: &Route, stderr: &str) -> eyre::Report {
     } else {
         format!(": {}", stderr)
     };
+    let remedy = if crate::services::dns::is_tailscale_ip(&route.address) {
+        format!(
+            "\nThis is {}'s tailnet address. If it is stale, refresh it with \
+             `auberge --via public host detect-tailscale-ip {}`; `--via public` routes one \
+             command over the public address.",
+            route.alias, route.alias
+        )
+    } else {
+        String::new()
+    };
     eyre::eyre!(
-        "host {} is unreachable over ssh at {}:{}{}\nCheck the SSH key and network connectivity",
+        "host {} is unreachable over ssh at {}:{}{}\nCheck the SSH key and network connectivity{}",
         route.alias,
         route.address,
         route.port,
-        detail
+        detail,
+        remedy
     )
 }
 
@@ -560,6 +579,7 @@ fn mock_host() -> Host {
         become_method: "sudo".to_string(),
         tailscale_ip: None,
         tailnet_tag: None,
+        prefer_tailnet: false,
         unknown: toml::Table::new(),
     }
 }
@@ -568,7 +588,7 @@ fn mock_host() -> Host {
 /// [`unreachable_error`] now takes.
 #[cfg(test)]
 fn mock_route() -> Route {
-    crate::services::route::resolve(&mock_host(), Some(PathBuf::from("/tmp/key")))
+    crate::services::route::resolve(&mock_host(), Some(PathBuf::from("/tmp/key"))).unwrap()
 }
 
 #[cfg(test)]
@@ -908,7 +928,7 @@ mod tests {
             port: 2222,
             ..test_host()
         };
-        let route = crate::services::route::resolve(&host, None);
+        let route = crate::services::route::resolve(&host, None).unwrap();
         let msg = unreachable_error(&route, "").to_string();
         assert!(
             msg.contains("host auberge is unreachable over ssh"),
@@ -921,16 +941,38 @@ mod tests {
         );
     }
 
+    /// #787 leaves a stale `tailscale_ip` unguarded on purpose; the failure
+    /// has to name its own fix, because the nightly `backup sync … --quiet`
+    /// is where it will be read.
+    #[test]
+    fn unreachable_over_a_tailnet_address_names_detect_tailscale_ip() {
+        let host = crate::hosts::Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet();
+        let route = crate::services::route::resolve(&host, None).unwrap();
+
+        let msg = unreachable_error(&route, "").to_string();
+        assert!(msg.contains("host detect-tailscale-ip auberge"), "{msg}");
+        assert!(msg.contains("--via public"), "{msg}");
+    }
+
+    /// And says nothing of the sort for a public route, where the advice
+    /// would be noise on every firewall and key failure the CLI reports.
+    #[test]
+    fn unreachable_over_a_public_address_says_nothing_about_the_tailnet() {
+        let route = crate::services::route::resolve(&test_host(), None).unwrap();
+        let msg = unreachable_error(&route, "").to_string();
+        assert!(!msg.contains("detect-tailscale-ip"), "{msg}");
+    }
+
     #[test]
     fn test_unreachable_error_carries_the_probe_stderr() {
-        let route = crate::services::route::resolve(&test_host(), None);
+        let route = crate::services::route::resolve(&test_host(), None).unwrap();
         let msg = unreachable_error(&route, "  Permission denied (publickey).\n").to_string();
         assert!(msg.contains(": Permission denied (publickey)."), "{msg}");
     }
 
     #[test]
     fn test_unreachable_error_says_nothing_extra_when_stderr_is_empty() {
-        let route = crate::services::route::resolve(&test_host(), None);
+        let route = crate::services::route::resolve(&test_host(), None).unwrap();
         let msg = unreachable_error(&route, "   ").to_string();
         let first_line = msg.lines().next().unwrap();
         assert!(first_line.ends_with("192.0.2.9:2222"), "{first_line}");
@@ -939,7 +981,8 @@ mod tests {
     #[test]
     fn test_rsync_path_arg_defaults_to_sudo() {
         let host = test_host();
-        let route = crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key")));
+        let route =
+            crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key"))).unwrap();
         let session = LiveSshSession::new(&route, &host.become_method).unwrap();
         assert_eq!(session.rsync_path_arg(), "--rsync-path=sudo rsync");
     }
@@ -950,7 +993,8 @@ mod tests {
             become_method: "doas".to_string(),
             ..test_host()
         };
-        let route = crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key")));
+        let route =
+            crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key"))).unwrap();
         let session = LiveSshSession::new(&route, &host.become_method).unwrap();
         assert_eq!(session.rsync_path_arg(), "--rsync-path=doas rsync");
     }
@@ -958,7 +1002,8 @@ mod tests {
     #[test]
     fn test_chown_command_defaults_to_sudo() {
         let host = test_host();
-        let route = crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key")));
+        let route =
+            crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key"))).unwrap();
         let session = LiveSshSession::new(&route, &host.become_method).unwrap();
         assert_eq!(
             session.chown_command("/opt/paperless", "paperless", "paperless"),
@@ -972,7 +1017,8 @@ mod tests {
             become_method: "doas".to_string(),
             ..test_host()
         };
-        let route = crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key")));
+        let route =
+            crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key"))).unwrap();
         let session = LiveSshSession::new(&route, &host.become_method).unwrap();
         assert_eq!(
             session.chown_command("/opt/paperless", "paperless", "paperless"),
@@ -1051,7 +1097,7 @@ mod tests {
     #[test]
     fn test_new_refuses_a_route_with_no_key_path() {
         let host = test_host();
-        let route = crate::services::route::resolve(&host, None);
+        let route = crate::services::route::resolve(&host, None).unwrap();
         assert!(LiveSshSession::new(&route, &host.become_method).is_err());
         assert!(LiveSshSession::first_contact(&route, &host.become_method).is_err());
     }

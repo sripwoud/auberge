@@ -4,7 +4,7 @@ use crate::output::OutputFormat;
 use crate::prompt::{Choice, confirm, select_item};
 use crate::services::ssh::{CONNECT_TIMEOUT, LiveSshSession, SshSession};
 use clap::Subcommand;
-use dialoguer::{Input, Select, theme::ColorfulTheme};
+use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
 use eyre::{Context, Result};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -38,6 +38,12 @@ struct HostDisplay {
     /// is exactly what stays invisible otherwise: four of five were.
     #[tabled(rename = "TIER")]
     tailnet_tag: String,
+    /// Which of the two addresses in this row's fleet the CLI actually
+    /// connects to (#787). Shown for the same reason as `TIER`: a routing
+    /// policy nobody can see is one nobody checks before a restore, and the
+    /// `ADDRESS` column keeps showing the declaration either way.
+    #[tabled(rename = "ROUTE")]
+    route: String,
 }
 
 impl From<&Host> for HostDisplay {
@@ -51,6 +57,10 @@ impl From<&Host> for HostDisplay {
             tailnet_tag: host
                 .tailnet_tag
                 .map_or_else(|| "-".to_string(), |tier| tier.to_string()),
+            // Through the resolver's own mapping, not a second
+            // `if host.prefer_tailnet` — a column that restated the policy
+            // could disagree with the route it claims to describe.
+            route: crate::services::route::declared_via(host).to_string(),
         }
     }
 }
@@ -293,6 +303,7 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         become_method: "sudo".to_string(),
         tailscale_ip: None,
         tailnet_tag,
+        prefer_tailnet: false,
         unknown: toml::Table::new(),
     };
 
@@ -355,7 +366,7 @@ pub fn run_host_show(name: Option<String>) -> Result<()> {
 pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
     let host = crate::hosts::select_or_arg(name_arg, crate::hosts::HOST_POSITIONAL)?;
     let ssh_key = resolve_ssh_key(&host)?;
-    let route = crate::services::route::resolve(&host, Some(ssh_key));
+    let route = crate::services::route::resolve(&host, Some(ssh_key))?;
     let session = LiveSshSession::new(&route, &host.become_method)?;
 
     output::info(&format!(
@@ -365,15 +376,27 @@ pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
 
     let detected = detect_tailscale_ip(&session, &host.name)?;
 
-    let mut updated = host.clone();
-    updated.tailscale_ip = Some(detected.clone());
-    HostManager::update_host(&host.name, updated)?;
+    HostManager::update_host(&host.name, with_detected_tailscale_ip(&host, &detected))?;
 
     output::success(&format!(
         "Cached tailscale_ip={} for host '{}'",
         detected, host.name
     ));
     Ok(())
+}
+
+/// The roster entry `detect-tailscale-ip` writes: the fact, and nothing else.
+///
+/// Caching an address must never be what turns routing on — `prefer_tailnet`
+/// is a separate decision, and `vieille-auberge` holds `100.64.0.4` while
+/// being the rollback surface that must stay on the public route (#787).
+/// Extracted from the command so that "writes one field" is a claim a test
+/// can hold, rather than a property of a struct update nobody re-reads.
+fn with_detected_tailscale_ip(host: &Host, detected: &str) -> Host {
+    Host {
+        tailscale_ip: Some(detected.to_string()),
+        ..host.clone()
+    }
 }
 
 fn resolve_ssh_key(host: &Host) -> Result<PathBuf> {
@@ -478,6 +501,42 @@ fn prompt_tailnet_tag(current: Option<TailnetTag>) -> Result<Option<TailnetTag>>
     Ok(tier_at_item(picked))
 }
 
+/// Whether to route this Host over its tailnet address (#787).
+///
+/// Only asked when the Host has an address to route to. `Host::validate`
+/// refuses the combination at the write, which is where the invariant belongs
+/// — but letting the prompt offer a choice the write will reject would throw
+/// away the other seven answers the operator just typed.
+///
+/// An entry that already carries the policy with no address was hand-edited
+/// past that gate. It cannot be saved as it stands, so the edit clears it and
+/// says so, rather than re-offering a state with no way out.
+fn prompt_prefer_tailnet(host: &Host) -> Result<bool> {
+    use crate::services::route::Via;
+
+    if host.tailscale_ip.is_none() {
+        if crate::services::route::declared_via(host) == Via::Tailnet {
+            output::warn(&format!(
+                "'{}' sets prefer_tailnet with no tailscale_ip to route to; clearing it. Run \
+                 `auberge host detect-tailscale-ip {}`, then edit again to re-enable.",
+                host.name, host.name
+            ));
+        } else {
+            output::info(&format!(
+                "No tailscale_ip cached for '{}', so the tailnet route is not offered. Run \
+                 `auberge host detect-tailscale-ip {}` first.",
+                host.name, host.name
+            ));
+        }
+        return Ok(false);
+    }
+
+    Ok(Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Route over the tailnet address")
+        .default(crate::services::route::declared_via(host) == Via::Tailnet)
+        .interact()?)
+}
+
 pub fn run_host_edit(name: Option<String>) -> Result<()> {
     let host = crate::hosts::select_or_arg(name, crate::hosts::HOST_POSITIONAL)?;
 
@@ -525,6 +584,7 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
         .interact_text()?;
 
     let tailnet_tag = prompt_tailnet_tag(host.tailnet_tag)?;
+    let prefer_tailnet = prompt_prefer_tailnet(&host)?;
 
     let updated_host = Host {
         name: host.name.clone(),
@@ -538,6 +598,7 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
         become_method: host.become_method,
         tailscale_ip: host.tailscale_ip,
         tailnet_tag,
+        prefer_tailnet,
         unknown: host.unknown,
     };
 
@@ -579,7 +640,7 @@ pub fn run_host_rename(old: String, new: String, yes: bool) -> Result<()> {
             )
         })?;
 
-    let route = crate::services::route::resolve(&host, Some(ssh_key));
+    let route = crate::services::route::resolve(&host, Some(ssh_key))?;
     let session = LiveSshSession::new(&route, &host.become_method)?;
     session.reachable(CONNECT_TIMEOUT)?;
 
@@ -865,6 +926,47 @@ mod tests {
         assert!(run_host_edit(unknown()).is_err());
     }
 
+    /// The fact and the policy are two decisions, and only one of them is
+    /// `detect-tailscale-ip`'s to make. `vieille-auberge` is the case: it
+    /// holds a tailnet address and is the rollback surface, so detecting one
+    /// must never be what moves it off the public route.
+    #[test]
+    fn detecting_an_address_writes_the_fact_and_not_the_policy() {
+        let host = Host::fixture("vieille-auberge", None);
+        let updated = with_detected_tailscale_ip(&host, "100.64.0.4");
+
+        assert_eq!(updated.tailscale_ip.as_deref(), Some("100.64.0.4"));
+        assert!(!updated.prefer_tailnet);
+    }
+
+    /// And it does not clear one either: re-detecting an address on a Host
+    /// that already routes over the tailnet must not silently move it back.
+    #[test]
+    fn detecting_an_address_leaves_an_existing_policy_alone() {
+        let host = Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet();
+        let updated = with_detected_tailscale_ip(&host, "100.64.0.7");
+
+        assert_eq!(updated.tailscale_ip.as_deref(), Some("100.64.0.7"));
+        assert!(updated.prefer_tailnet);
+    }
+
+    #[test]
+    fn host_list_shows_which_route_each_host_takes() {
+        let public = Host::fixture("vieille-auberge", Some("100.64.0.4"));
+        let tailnet = Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet();
+
+        assert_eq!(HostDisplay::from(&public).route, "public");
+        assert_eq!(HostDisplay::from(&tailnet).route, "tailnet");
+    }
+
+    /// The `ADDRESS` column is the declaration and must stay so: it is what
+    /// an operator types by hand and what `host edit` defaults to.
+    #[test]
+    fn host_list_keeps_showing_the_declared_address_under_the_tailnet_policy() {
+        let host = Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet();
+        assert_eq!(HostDisplay::from(&host).address, "203.0.113.10");
+    }
+
     fn rename_fixture_host(name: &str, ssh_key: Option<&str>) -> Host {
         Host {
             name: name.to_string(),
@@ -878,6 +980,7 @@ mod tests {
             become_method: "sudo".to_string(),
             tailscale_ip: None,
             tailnet_tag: None,
+            prefer_tailnet: false,
             unknown: toml::Table::new(),
         }
     }

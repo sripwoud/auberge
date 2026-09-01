@@ -11,6 +11,7 @@
   - [hosts.toml](configuration/hosts.md)
   - [Host-scoped Config](configuration/host-scoped-config.md)
   - [SSH Keys](configuration/ssh-keys.md)
+  - [Tailnet Transport](configuration/tailnet-transport.md)
   - [Environment Variables](configuration/environment-variables.md)
   - [Secrets](configuration/secrets.md)
   - [Fleet GitHub Identity](configuration/fleet-github-identity.md)

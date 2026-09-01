@@ -106,10 +106,7 @@ fn show_execution_plan(runs: &[PlaybookRun], host: &Host, check: bool) -> Result
     } else {
         output::info("Execution plan:");
     }
-    output::info(&format!(
-        "  Host: {} ({})",
-        host.name, host.vars.ansible_host
-    ));
+    output::info(&format!("  Host: {} ({})", host.name, host.connect_address));
     for run in runs {
         let name = run
             .path
@@ -176,7 +173,7 @@ fn run_dns_checks_for_run(
     }
 
     let playbooks_dir = run.path.parent().unwrap_or(&run.path).to_path_buf();
-    let ansible_host = &host.vars.ansible_host;
+    let public_address = &host.vars.public_address;
     let mut errors: Vec<String> = Vec::new();
 
     for tag in &run.tags {
@@ -186,7 +183,7 @@ fn run_dns_checks_for_run(
         let vc = match app_verify_config(
             tag,
             &domain,
-            ansible_host,
+            public_address,
             config,
             Some(&host.name),
             verify_public,

@@ -11,7 +11,7 @@ auberge host edit [NAME]
 
 ## Description
 
-Opens an interactive prompt to edit an existing host's configuration. Allows updating address, user, port, SSH key, tags, description, and tailnet trust tier.
+Opens an interactive prompt to edit an existing host's configuration. Allows updating address, user, port, SSH key, tags, description, tailnet trust tier, and whether the CLI routes over the tailnet.
 
 If `NAME` is omitted, you'll be prompted to select a host.
 
@@ -32,6 +32,7 @@ Note: Host name cannot be changed through this command — the name is a foreign
 - **Tags**: Comma-separated tags
 - **Description**: Host description
 - **Tailnet trust tier**: picked from `(none)`, `trusted`, `data`, `agent`, `standby` (ADR-0055), current value preselected. A picker rather than a text field because the set is closed — a typo would otherwise surface as a `hosts.toml` parse failure on some later, unrelated command
+- **Route over the tailnet address** (`prefer_tailnet`): asked only when the host has a cached `tailscale_ip`. Without one the prompt is skipped and says so, because the write would refuse the answer anyway and you would lose the seven you just gave. See [Tailnet Transport](configuration/tailnet-transport.md)
 
 ## Examples
 
@@ -58,5 +59,6 @@ Description [Production web server]: Main API server
 ❯ data
   agent
   standby
+Route over the tailnet address? [y/N]: y
 ✓ Host 'myserver' updated
 ```

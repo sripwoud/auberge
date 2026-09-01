@@ -326,7 +326,7 @@ fn resolve_headscale_host(
     };
 
     let ssh_key = host_ssh_key(&host)?;
-    let route = crate::services::route::resolve(&host, Some(ssh_key));
+    let route = crate::services::route::resolve(&host, Some(ssh_key))?;
     Ok((host, route))
 }
 
@@ -1110,7 +1110,7 @@ fn auto_mint_for(target_name: &str, check: bool) -> Result<AutoMint> {
         })?;
 
     let target_key = host_ssh_key(target)?;
-    let target_route = crate::services::route::resolve(target, Some(target_key));
+    let target_route = crate::services::route::resolve(target, Some(target_key))?;
     if target_is_enrolled(&LiveSshSession::new(&target_route, &target.become_method)?)
         .wrap_err_with(|| {
             format!("Could not ask '{target_name}' whether it is already on the tailnet")
@@ -1120,7 +1120,7 @@ fn auto_mint_for(target_name: &str, check: bool) -> Result<AutoMint> {
     }
 
     let coordinator_key = host_ssh_key(coordinator)?;
-    let coordinator_route = crate::services::route::resolve(coordinator, Some(coordinator_key));
+    let coordinator_route = crate::services::route::resolve(coordinator, Some(coordinator_key))?;
     let session = LiveSshSession::new(&coordinator_route, &coordinator.become_method)?;
     let key = mint_against_coordinator(&session, target_name, target.tailnet_tag).wrap_err_with(
         || {
@@ -2519,6 +2519,7 @@ mod tests {
             become_method: "sudo".to_string(),
             tailscale_ip: None,
             tailnet_tag: None,
+            prefer_tailnet: false,
             unknown: toml::Table::new(),
         }
     }

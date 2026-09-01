@@ -16,9 +16,11 @@ If `NAME` is omitted, you'll be prompted to select a host.
 1. SSHs into the host using its existing SSH key.
 2. Runs `tailscale ip -4` on the remote.
 3. Picks the first CGNAT IPv4 address (`100.64.0.0/10`).
-4. Persists it to `~/.config/auberge/hosts.toml` under the host's `tailscale_ip` field.
+4. Persists it to `~/.config/auberge/hosts.toml` under the host's `tailscale_ip` field, and regenerates `~/.ssh/config.d/auberge.conf`.
 
 ## Why
+
+The address is a **fact**, not a decision: this command never sets or clears `prefer_tailnet`, so caching an address for a host never starts routing over it. Enabling the route is [`auberge host edit`](edit.md).
 
 Once cached, `auberge dns set-all --host <name>` automatically points tailnet-only subdomains (apps with `tailnet_only: true` in their playbook meta — currently `bichon` and `paperless`) at this IP, without needing per-app `<app>_tailscale_ip` keys in `config.toml`.
 
@@ -51,5 +53,6 @@ tailscale_ip = "100.99.62.26"
 ## Related
 
 - [auberge dns set-all](cli-reference/dns/set-all.md) — consumer of `tailscale_ip`
+- [Tailnet Transport](configuration/tailnet-transport.md) — the other consumer: `prefer_tailnet`
 - [Tailnet-only Subdomains](cli-reference/dns/set-all.md#tailnet-only-apps)
 - [Hosts Configuration](configuration/hosts.md)

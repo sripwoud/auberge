@@ -33,6 +33,7 @@ use auberge::commands::select::{SelectCommands, run_select_host, run_select_play
 use auberge::commands::ssh::{SshCommands, run_ssh_add_key, run_ssh_keygen};
 use auberge::commands::sync::{SyncCommands, run_sync_hermes, run_sync_music};
 use auberge::commands::versions::{VersionsCmd, run_versions};
+use auberge::services::route::{self, Via};
 use auberge::{output, signal};
 use clap::{CommandFactory, Parser, Subcommand};
 use eyre::Result;
@@ -58,6 +59,20 @@ struct Cli {
         help = "Disable colored output (also honored via NO_COLOR env var)"
     )]
     no_color: bool,
+    #[arg(
+        long,
+        global = true,
+        value_enum,
+        // Not `ROUTE`: CONTEXT.md's **Route** is the resolved
+        // address/port/user/key/alias tuple, and **Via**'s _Avoid_ list names
+        // `--route`. Spelling the two values is also what the ADR and the docs
+        // say.
+        value_name = "public|tailnet",
+        help = "Reach hosts over their public address or their tailnet address, overriding \
+                each host's prefer_tailnet. `--via public` is the recovery route when the \
+                tailnet is down"
+    )]
+    via: Option<Via>,
 
     #[command(subcommand)]
     command: Commands,
@@ -122,8 +137,9 @@ async fn main() -> Result<()> {
     output::set_verbose(cli.verbose);
     output::set_quiet(cli.quiet);
     output::set_no_color(cli.no_color);
+    route::set_override(cli.via);
 
-    match cli.command {
+    let outcome = match cli.command {
         Commands::Deploy(cmd) => signal::with_ctrlc(|| run_deploy(cmd)),
         Commands::Select(cmd) => match cmd {
             SelectCommands::Host { group } => run_select_host(group),
@@ -387,7 +403,13 @@ async fn main() -> Result<()> {
             );
             Ok(())
         }
-    }
+    };
+
+    // After the command, not before: whether a command routes to a Host is
+    // only knowable once it has tried. A `--via` that decided nothing is
+    // reported rather than ignored — a flag believed to have moved the route
+    // and did not is how #780 started.
+    outcome.and_then(|()| route::ensure_override_reached_a_host())
 }
 
 #[cfg(test)]

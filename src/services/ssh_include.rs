@@ -17,13 +17,18 @@ pub fn include_file_path(ssh_dir: &Path) -> PathBuf {
 /// `HostKeyAlias` (#785) keys every alias's host-key check and known_hosts
 /// entry on the Host's name, so a route change can never present as a
 /// changed key.
-pub fn render(hosts: &[Host]) -> String {
+///
+/// `route::declared`, never `route::resolve`: this file outlives the command
+/// that wrote it, and ADR-0070 regenerates it on *every* roster write — a
+/// `--via` given to `host edit` would otherwise be published to interactive
+/// ssh permanently (#787).
+pub fn render(hosts: &[Host]) -> Result<String> {
     let mut out = String::from(
         "# Managed by auberge. Regenerated from hosts.toml on every write -\n\
          # do not edit by hand.\n",
     );
     for host in hosts {
-        let route = crate::services::route::resolve(host, None);
+        let route = crate::services::route::declared(host, None)?;
         out.push_str(&format!(
             "\nHost {}\n  HostName {}\n  Port {}\n  User {}\n  IdentityFile {}\n  IdentitiesOnly yes\n  HostKeyAlias {}\n  StrictHostKeyChecking accept-new\n",
             host.name,
@@ -34,7 +39,7 @@ pub fn render(hosts: &[Host]) -> String {
             route.alias
         ));
     }
-    out
+    Ok(out)
 }
 
 /// Tier 2 > tier 3 of the SSH key resolution (docs/configuration/ssh-keys.md);
@@ -53,7 +58,7 @@ fn write_include_file(ssh_dir: &Path, hosts: &[Host]) -> Result<PathBuf> {
     let path = include_file_path(ssh_dir);
     let dir = path.parent().expect("include path has a parent");
     create_private_dir(dir)?;
-    std::fs::write(&path, render(hosts))
+    std::fs::write(&path, render(hosts)?)
         .wrap_err_with(|| format!("Failed to write {}", path.display()))?;
     #[cfg(unix)]
     {
@@ -170,20 +175,21 @@ mod tests {
             become_method: "sudo".to_string(),
             tailscale_ip: None,
             tailnet_tag: None,
+            prefer_tailnet: false,
             unknown: toml::Table::new(),
         }
     }
 
     #[test]
     fn render_empty_hosts_is_header_only() {
-        let rendered = render(&[]);
+        let rendered = render(&[]).unwrap();
         assert!(rendered.starts_with("# Managed by auberge"));
         assert!(!rendered.contains("\nHost "));
     }
 
     #[test]
     fn render_derives_identity_file_when_no_ssh_key_configured() {
-        let rendered = render(&[fixture_host("auberge", None)]);
+        let rendered = render(&[fixture_host("auberge", None)]).unwrap();
         assert!(rendered.contains("Host auberge\n"), "{rendered}");
         assert!(rendered.contains("  HostName 203.0.113.10\n"), "{rendered}");
         assert!(rendered.contains("  Port 22\n"), "{rendered}");
@@ -201,13 +207,13 @@ mod tests {
 
     #[test]
     fn render_pins_the_host_key_lookup_to_the_hosts_name() {
-        let rendered = render(&[fixture_host("auberge", None)]);
+        let rendered = render(&[fixture_host("auberge", None)]).unwrap();
         assert!(rendered.contains("  HostKeyAlias auberge\n"), "{rendered}");
     }
 
     #[test]
     fn render_uses_configured_ssh_key_verbatim() {
-        let rendered = render(&[fixture_host("vps", Some("~/.ssh/custom/key"))]);
+        let rendered = render(&[fixture_host("vps", Some("~/.ssh/custom/key"))]).unwrap();
         assert!(
             rendered.contains("  IdentityFile ~/.ssh/custom/key\n"),
             "{rendered}"
@@ -216,7 +222,7 @@ mod tests {
 
     #[test]
     fn render_keeps_hosts_toml_order() {
-        let rendered = render(&[fixture_host("beta", None), fixture_host("alpha", None)]);
+        let rendered = render(&[fixture_host("beta", None), fixture_host("alpha", None)]).unwrap();
         let beta = rendered.find("Host beta").unwrap();
         let alpha = rendered.find("Host alpha").unwrap();
         assert!(beta < alpha);
@@ -300,7 +306,10 @@ mod tests {
         let path = write_include_file(&ssh_dir, &hosts).unwrap();
 
         assert_eq!(path, ssh_dir.join("config.d/auberge.conf"));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), render(&hosts));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            render(&hosts).unwrap()
+        );
 
         #[cfg(unix)]
         {
