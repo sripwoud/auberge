@@ -2,7 +2,7 @@
 
 ## Quick reference
 
-`auberge ansible bootstrap` compares `~/.ssh/known_hosts` against the key the target offers. On a mismatch it prints the stale and offered fingerprints and asks whether to drop the entry; `--force` drops it and warns. Declining, or a non-TTY run without `--force`, aborts with the exact `ssh-keygen -R` to run. Entries for a non-default port are keyed `[vps-ip]:port`.
+`auberge ansible bootstrap` and `auberge ansible run --playbook bootstrap.yml` compare `~/.ssh/known_hosts` against the key the target offers. On a mismatch it prints the stale and offered fingerprints and asks whether to drop the entry; `--force` drops it and warns. Declining, or a non-TTY run without `--force`, aborts with the exact `ssh-keygen -R` to run. Entries for a non-default port are keyed `[vps-ip]:port`.
 
 | Symptom                         | Likely cause               | Fix                                                                               |
 | ------------------------------- | -------------------------- | --------------------------------------------------------------------------------- |

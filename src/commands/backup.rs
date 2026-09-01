@@ -924,6 +924,7 @@ fn run_apps_playbook(host: &Host, apps: &[String]) -> Result<AnsibleResult> {
         Some(&extra_vars),
         false,
         false,
+        false,
         &mut progress,
     )
 }

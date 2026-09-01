@@ -61,3 +61,7 @@ List all tags for a playbook with `cd ansible && ansible-playbook playbooks/apps
 Tasks that depend on previous tasks may report failures in check mode that wouldn't occur in real execution (e.g. copying a file into a directory the previous task only _would have_ created). `command`/`shell` modules always show "changed" — add `check_mode: no` for read-only commands. Handlers are notified but not executed.
 
 </details>
+
+## Troubleshooting
+
+- **`Host key verification failed` on `--playbook bootstrap.yml`**: the target was rebuilt and offers a new key. The run prints both fingerprints and offers to drop the stale `known_hosts` entry; `--force` drops it without asking. See [SSH problems](troubleshooting/ssh-problems.md).

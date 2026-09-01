@@ -11,20 +11,22 @@ impl std::fmt::Display for Fingerprint {
 
 /// Compares `~/.ssh/known_hosts` against the key the target currently offers.
 ///
-/// An advisory probe: an unreachable, firewalled or not-yet-booted target
-/// yields `Unknown` rather than an error, because ansible owns the real
-/// connection failure.
+/// An unreachable, firewalled or not-yet-booted target yields `Unknown`
+/// rather than an error, because ansible owns the real connection failure.
+/// A broken local probe (missing `ssh-keygen`, unreadable key lines) is an
+/// error: it must not be mistaken for "no known entry".
 ///
 /// Keyed on the port bootstrap connects over. A host already hardened onto a
 /// custom port keeps a separate `[ip]:port` entry, which this never inspects.
-pub fn inspect(address: &str, port: u16) -> HostKeyStatus {
+pub fn inspect(address: &str, port: u16) -> Result<HostKeyStatus> {
     let target = entry_target(address, port);
 
-    let known = capture(Command::new("ssh-keygen").arg("-F").arg(&target))
-        .map(|out| fingerprints_of(&out))
-        .unwrap_or_default();
+    let known_lines = capture(Command::new("ssh-keygen").arg("-F").arg(&target))
+        .wrap_err("Failed to execute ssh-keygen -F")?;
+    let known = fingerprints_of(&known_lines)
+        .wrap_err_with(|| format!("Failed to fingerprint the known_hosts entry for {target}"))?;
 
-    let offered = capture(
+    let offered_lines = capture(
         Command::new("ssh-keyscan")
             .arg("-T")
             .arg("5")
@@ -32,14 +34,16 @@ pub fn inspect(address: &str, port: u16) -> HostKeyStatus {
             .arg(port.to_string())
             .arg(address),
     )
-    .map(|out| fingerprints_of(&out))
-    .unwrap_or_default();
+    .wrap_err("Failed to execute ssh-keyscan")?;
+
+    let offered = fingerprints_of(&offered_lines)
+        .wrap_err_with(|| format!("Failed to fingerprint the key offered by {target}"))?;
 
     if offered.is_empty() {
-        return HostKeyStatus::Unknown;
+        return Ok(HostKeyStatus::Unknown);
     }
 
-    classify(&known, &offered)
+    Ok(classify(&known, &offered))
 }
 
 /// `ssh-keygen -R <target>` — removes every entry for the target, hashed or not.
@@ -58,27 +62,35 @@ pub fn forget(address: &str, port: u16) -> Result<()> {
     }
 }
 
-fn capture(cmd: &mut Command) -> Option<String> {
-    let out = cmd.stderr(Stdio::null()).output().ok()?;
-    let text = String::from_utf8_lossy(&out.stdout).into_owned();
-    if text.trim().is_empty() {
-        return None;
-    }
-    Some(text)
+/// A non-zero exit is expected — `ssh-keygen -F` on a miss, `ssh-keyscan` on
+/// an unreachable target — so only the spawn itself can fail here.
+fn capture(cmd: &mut Command) -> Result<String> {
+    let out = cmd.stderr(Stdio::null()).output()?;
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// `ssh-keygen -lf` reads a file, so the captured key lines go through one.
-fn fingerprints_of(key_lines: &str) -> Vec<Fingerprint> {
-    let Ok(mut tmpfile) = tempfile::NamedTempFile::new() else {
-        return Vec::new();
-    };
-    if tmpfile.write_all(key_lines.as_bytes()).is_err() {
-        return Vec::new();
+fn fingerprints_of(key_lines: &str) -> Result<Vec<Fingerprint>> {
+    if key_lines.trim().is_empty() {
+        return Ok(Vec::new());
     }
 
-    capture(Command::new("ssh-keygen").arg("-lf").arg(tmpfile.path()))
-        .map(|out| parse_fingerprints(&out))
-        .unwrap_or_default()
+    let mut tmpfile = tempfile::NamedTempFile::new().wrap_err("Failed to create temp file")?;
+    tmpfile
+        .write_all(key_lines.as_bytes())
+        .wrap_err("Failed to write host key lines")?;
+
+    let out = Command::new("ssh-keygen")
+        .arg("-lf")
+        .arg(tmpfile.path())
+        .stderr(Stdio::null())
+        .output()
+        .wrap_err("Failed to execute ssh-keygen -lf")?;
+    if !out.status.success() {
+        eyre::bail!("ssh-keygen -lf could not read the host key lines");
+    }
+
+    Ok(parse_fingerprints(&String::from_utf8_lossy(&out.stdout)))
 }
 
 /// The `known_hosts` key for a target, in ssh's own bracketed form for any
@@ -176,6 +188,16 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn test_fingerprints_of_empty_input_yields_no_fingerprints() {
+        assert!(fingerprints_of("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_fingerprints_of_fails_when_key_lines_are_unreadable() {
+        assert!(fingerprints_of("not-a-host-key\n").is_err());
     }
 
     #[test]

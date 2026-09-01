@@ -280,6 +280,7 @@ fn run_auto_resolved(
             Some(&extra_vars),
             false,
             ask_pass,
+            force,
             &mut progress,
         )?;
 
@@ -401,6 +402,7 @@ fn run_single_playbook(
         Some(&extra_vars),
         false,
         ask_pass,
+        force,
         &mut progress,
     )?;
 

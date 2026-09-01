@@ -144,7 +144,7 @@ fn render(fingerprints: &[Fingerprint]) -> String {
 /// Clears a `known_hosts` entry the target contradicts, so bootstrap can
 /// connect without the blanket host-key bypass it used to pass to ansible.
 fn resolve_stale_host_key(host: &InventoryHost, assume_yes: bool) -> Result<()> {
-    let status = known_hosts::inspect(&host.address, host.port);
+    let status = known_hosts::inspect(&host.address, host.port)?;
     let HostKeyStatus::Changed { known, offered } = &status else {
         return Ok(());
     };
@@ -193,6 +193,14 @@ struct PlaybookOpts<'a> {
     ask_vault_pass: bool,
     ask_pass: bool,
     is_fresh_bootstrap: bool,
+}
+
+/// Bootstrap is the only path that inspects `known_hosts`; `--force` there
+/// drops a contradicted entry instead of prompting. Both entry points route
+/// through this so `ansible run --playbook bootstrap.yml --force` behaves
+/// like `ansible bootstrap --force`.
+fn stale_key_check(playbook_name: &str, force: bool) -> Option<bool> {
+    (playbook_name == "bootstrap.yml").then_some(force)
 }
 
 fn base_argv(ctx: &ArgvCtx) -> Vec<OsString> {
@@ -342,6 +350,7 @@ pub fn run_playbook(
     extra_vars: Option<&[(&str, &str)]>,
     ask_vault_pass: bool,
     ask_pass: bool,
+    force: bool,
     progress: &mut dyn Progress,
 ) -> Result<AnsibleResult> {
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
@@ -351,10 +360,11 @@ pub fn run_playbook(
     let inventory_file = write_inventory_file(host)?;
 
     let playbook_name = playbook.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
+    let bootstrap_force = stale_key_check(playbook_name, force);
+    let is_fresh_bootstrap = bootstrap_force.is_some();
 
-    if is_fresh_bootstrap {
-        resolve_stale_host_key(host, false)?;
+    if let Some(assume_yes) = bootstrap_force {
+        resolve_stale_host_key(host, assume_yes)?;
     }
 
     let ctx = ArgvCtx {
@@ -580,6 +590,10 @@ mod tests {
         assert!(!joined.contains("StrictHostKeyChecking"));
     }
 
+    fn contains_run(argv: &[OsString], run: &[OsString]) -> bool {
+        argv.windows(run.len()).any(|window| window == run)
+    }
+
     #[test]
     fn test_bootstrap_and_playbook_paths_emit_identical_connection_args() {
         let host = bootstrap_host();
@@ -593,11 +607,25 @@ mod tests {
                 ..PlaybookOpts::default()
             },
         );
+        let shared = bootstrap_connection_argv(&host);
 
+        assert!(contains_run(&bootstrap_argv(&ctx), &shared));
+        assert!(contains_run(&from_playbook, &shared));
         assert_eq!(
             connection_subset(&bootstrap_argv(&ctx)),
             connection_subset(&from_playbook)
         );
+    }
+
+    #[test]
+    fn test_stale_key_check_forwards_force_for_bootstrap() {
+        assert_eq!(stale_key_check("bootstrap.yml", true), Some(true));
+        assert_eq!(stale_key_check("bootstrap.yml", false), Some(false));
+    }
+
+    #[test]
+    fn test_stale_key_check_skips_non_bootstrap_playbooks() {
+        assert_eq!(stale_key_check("apps.yml", true), None);
     }
 
     #[test]
