@@ -354,6 +354,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
             Some(&extra_vars),
             false,
             false,
+            false,
             &mut progress,
         )?;
 

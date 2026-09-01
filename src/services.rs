@@ -6,6 +6,7 @@ pub mod dependency_resolver;
 pub mod dns;
 pub mod dns_verify;
 pub mod inventory;
+pub mod known_hosts;
 pub mod progress;
 pub mod required_keys;
 pub mod rsync;

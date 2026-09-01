@@ -48,3 +48,4 @@ auberge ansible bootstrap my-vps --ip 203.0.113.10 --force      # non-interactiv
 
 - **Locked out**: provider firewall blocks the new port. Use the provider's web/VNC console: `sudo ufw disable`, fix SSH, re-enable.
 - **`User already exists`**: bootstrap already ran. Use `auberge ansible run` for subsequent changes.
+- **`Host key verification failed`**: the target was rebuilt and offers a new key. Bootstrap prints both fingerprints and offers to drop the stale `known_hosts` entry; `--force` drops it without asking. See [SSH problems](troubleshooting/ssh-problems.md).
