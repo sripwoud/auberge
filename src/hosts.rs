@@ -281,9 +281,9 @@ impl HostManager {
     /// failure in `auberge-backup.service`, not a TOFU. Reading the roster is
     /// the event every one of those commands does have.
     ///
-    /// The cost is one `ssh-keygen -F` per Host per read: [`migrate_alias`]
-    /// short-circuits on an alias that already has an entry, which is the
-    /// steady state after the first run.
+    /// The cost is one `ssh-keygen -F` per Host per read in the steady state:
+    /// the migration returns early on an alias that already has an entry,
+    /// which is every run after the first.
     ///
     /// A roster that does not exist yet reads as empty and migrates nothing —
     /// there is no Host to carry trust for, and a read must not conjure a
@@ -292,8 +292,6 @@ impl HostManager {
     /// Both paths are parameters for the same reason [`Self::write_roster`]'s
     /// are: it is what lets the binding be asserted against temp files rather
     /// than the developer's own `~/.ssh/known_hosts`.
-    ///
-    /// [`migrate_alias`]: crate::services::known_hosts
     fn read_roster(config_path: &Path, known_hosts: &Path) -> Result<Vec<Host>> {
         if !config_path.exists() {
             return Ok(Vec::new());

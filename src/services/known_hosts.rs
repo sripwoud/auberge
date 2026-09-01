@@ -248,7 +248,7 @@ fn fingerprints_of(key_lines: &str) -> Result<Vec<Fingerprint>> {
 /// so. Order matters for the same reason: where both exist ssh checks the
 /// port-keyed one, so the alias must inherit that key and not a leftover from
 /// a port-22 era.
-pub fn legacy_targets(address: &str, port: u16) -> Vec<String> {
+fn legacy_targets(address: &str, port: u16) -> Vec<String> {
     if port == 22 {
         vec![address.to_string()]
     } else {
