@@ -3,7 +3,7 @@ use crate::playbook_meta::BackupRecipe;
 use crate::services::backup::executor::RecipeExecutor;
 use crate::services::backup::restic::{self, ResticMessage, parse_restic_message};
 use crate::services::progress::Progress;
-use crate::services::ssh::SshSession;
+use crate::services::ssh::{CONNECT_TIMEOUT, SshSession};
 use eyre::{Context, Result};
 use std::collections::HashMap;
 use std::fs;
@@ -70,6 +70,7 @@ pub struct BackupSession<'a, S: SshSession + ?Sized> {
     recipes: Vec<(String, BackupRecipe)>,
     opts: SessionOpts,
     progress_for: ProgressFactory<'a>,
+    probe_reachability: bool,
 }
 
 impl<'a, S: SshSession + ?Sized> BackupSession<'a, S> {
@@ -84,10 +85,20 @@ impl<'a, S: SshSession + ?Sized> BackupSession<'a, S> {
             recipes,
             opts,
             progress_for: Box::new(progress_for),
+            probe_reachability: true,
         }
     }
 
+    pub fn without_reachability_probe(mut self) -> Self {
+        self.probe_reachability = false;
+        self
+    }
+
     pub fn create(&self) -> Result<CreateOutcome> {
+        if self.probe_reachability && !self.recipes.is_empty() {
+            self.ssh.reachable(CONNECT_TIMEOUT)?;
+        }
+
         let executor = RecipeExecutor::new(self.ssh);
         let mut results = Vec::with_capacity(self.recipes.len());
 
@@ -782,8 +793,9 @@ mod tests {
     fn create_does_not_abort_on_recipe_failure() {
         let tmp = tempfile::tempdir().unwrap();
         let mock = MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult::ok());
         // paperless is guarded (it declares a systemd service), so its
-        // deadman's fire-check is the first `run()` call; stage its
+        // deadman's fire-check is the first per-App `run()` call; stage its
         // "no marker" answer before the pg_dump failure this test is about.
         mock.stage_run_result(crate::services::ssh::CommandResult {
             success: false,
@@ -824,6 +836,28 @@ mod tests {
             .join("2026-04-28_03-00-00")
             .join("paperless");
         assert!(!paperless_dir.exists());
+    }
+
+    #[test]
+    fn create_reports_an_unreachable_host_once_not_once_per_app() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock = MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stderr(
+            "Connection timed out",
+        ));
+
+        let recipes = vec![
+            ("baikal".to_string(), baikal_recipe()),
+            ("bichon".to_string(), bichon_recipe()),
+            ("paperless".to_string(), paperless_recipe()),
+        ];
+        let events = MockProgress::new();
+        let session = BackupSession::new(&mock, recipes, opts(tmp.path()), recording(&events));
+
+        let err = session.create().unwrap_err();
+
+        assert!(err.to_string().contains("unreachable over ssh"), "{err}");
+        assert_eq!(mock.calls(), vec![SshOp::Reachable(CONNECT_TIMEOUT)]);
     }
 
     #[test]
@@ -915,9 +949,10 @@ mod tests {
     fn create_reports_a_failed_app_as_an_error_event() {
         let tmp = tempfile::tempdir().unwrap();
         let mock = MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult::ok());
         // paperless is guarded, so its deadman's fire-check consumes the
-        // first `run()` call; stage its "no marker" answer ahead of pg_dump's
-        // failure this test is about.
+        // first per-App `run()` call; stage its "no marker" answer ahead of
+        // pg_dump's failure this test is about.
         mock.stage_run_result(crate::services::ssh::CommandResult {
             success: false,
             exit_code: Some(1),
