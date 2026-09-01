@@ -41,57 +41,139 @@
         state: present
         timeout: 30
 
-    - name: Configure Syncthing to listen on all interfaces
-      ansible.builtin.replace:
-        path: "{{ syncthing_config_path }}/config.xml"
-        regexp: '<address>127\.0\.0\.1:8384</address>'
-        replace: "        <address>0.0.0.0:8384</address>"
-      when: syncthing_listen_all_interfaces | default(false)
-      notify: Restart Syncthing
-
     - name: Create workspace directory
       ansible.builtin.file:
         path: "{{ syncthing_workspace_path }}"
         state: directory
         owner: "{{ syncthing_user }}"
         group: "{{ syncthing_user }}"
-        mode: "0755"
+        mode: "0750"
       when: syncthing_configure_workspace | default(false)
 
-    - name: Add workspace folder to Syncthing config
-      ansible.builtin.blockinfile:
-        path: "{{ syncthing_config_path }}/config.xml"
-        marker: "<!-- {mark} ANSIBLE MANAGED WORKSPACE FOLDER -->"
-        insertbefore: "</configuration>"
-        block: |
-          <folder id="{{ syncthing_workspace_id }}"
-                  label="{{ syncthing_workspace_label }}"
-                  path="{{ syncthing_workspace_path }}"
-                  type="sendreceive"
-                  rescanIntervalS="60"
-                  fsWatcherEnabled="true"
-                  fsWatcherDelayS="10"
-                  ignorePerms="false"
-                  autoNormalize="true">
-              <filesystemType>basic</filesystemType>
-              {% if syncthing_device_id | length > 0 %}
-              <device id="{{ syncthing_device_id }}" introducedBy=""></device>
-              {% endif %}
-              <minDiskFree unit="%">1</minDiskFree>
-              <versioning></versioning>
-              <copiers>0</copiers>
-              <pullerMaxPendingKiB>0</pullerMaxPendingKiB>
-              <hashers>0</hashers>
-              <order>random</order>
-              <ignoreDelete>false</ignoreDelete>
-              <scanProgressIntervalS>0</scanProgressIntervalS>
-              <pullerPauseS>0</pullerPauseS>
-              <maxConflicts>10</maxConflicts>
-              <disableSparseFiles>false</disableSparseFiles>
-              <disableTempIndexes>false</disableTempIndexes>
-              <paused>false</paused>
-              <weakHashThresholdPct>25</weakHashThresholdPct>
-              <markerName>.stfolder</markerName>
-          </folder>
-      when: syncthing_configure_workspace | default(false)
-      notify: Restart Syncthing
+    # config.xml is Syncthing's file, not ansible's: it re-serializes the whole
+    # document whenever it normalizes or migrates the config, dropping any
+    # comment a `blockinfile` marker left behind and reverting any edit made
+    # under the running process. Everything below therefore goes through the
+    # REST API, which Syncthing persists itself. config.xml is read once, for
+    # the generated API key.
+    #
+    # `uri` declares no check mode, so under `--check` every read here is
+    # skipped and `syncthing_running` is a skip result with no `.json`. The
+    # guards that dereference it would then fail the play rather than report
+    # it -- on `apps.yml` as much as here. Skipping the block outright is what
+    # the Ingress Gate does under `--check` and for the same reason: nothing
+    # was written, so there is nothing to converge against.
+    - name: Declare Syncthing's configuration over its API
+      when: not ansible_check_mode
+      block:
+        - name: Read the generated Syncthing configuration
+          ansible.builtin.slurp:
+            src: "{{ syncthing_config_path }}/config.xml"
+          register: syncthing_config_file
+          no_log: true
+
+        - name: Set the Syncthing API key
+          ansible.builtin.set_fact:
+            syncthing_api_key: >-
+              {{ (syncthing_config_file.content | b64decode
+                  | regex_search('<apikey>([^<]+)</apikey>', '\1'))[0] }}
+          no_log: true
+
+        - name: Wait for the Syncthing API
+          ansible.builtin.uri:
+            url: "{{ syncthing_api }}/system/ping"
+            headers:
+              X-API-Key: "{{ syncthing_api_key }}"
+          register: syncthing_ping
+          until: syncthing_ping.status == 200
+          retries: 15
+          delay: 2
+          changed_when: false
+          no_log: true
+
+        - name: Read the running Syncthing configuration
+          ansible.builtin.uri:
+            url: "{{ syncthing_api }}/config"
+            headers:
+              X-API-Key: "{{ syncthing_api_key }}"
+          register: syncthing_running
+          changed_when: false
+          no_log: true
+
+        # One-way, as the `replace` task it replaces was: `false` means the
+        # role asserts nothing about the address, not that it drags a
+        # hand-bound web UI back to the loopback on the next deploy.
+        - name: Bind the Syncthing web UI to {{ syncthing_listen_address }}
+          ansible.builtin.uri:
+            url: "{{ syncthing_api }}/config/gui"
+            method: PATCH
+            headers:
+              X-API-Key: "{{ syncthing_api_key }}"
+            body_format: json
+            body:
+              address: "{{ syncthing_listen_address }}"
+          no_log: true
+          when:
+            - syncthing_listen_all_interfaces | bool
+            - not (syncthing_listen_is_current | bool)
+
+        # Opt-in, like the workspace: unset means the role asserts nothing.
+        # Syncthing's peer discovery is also configured by hand in its web UI,
+        # and a role that enforced its own default here would silently undo a
+        # Host hardened to announce nowhere.
+        - name: Set peer discovery to {{ syncthing_discovery_enabled }}
+          ansible.builtin.uri:
+            url: "{{ syncthing_api }}/config/options"
+            method: PATCH
+            headers:
+              X-API-Key: "{{ syncthing_api_key }}"
+            body_format: json
+            body:
+              globalAnnounceEnabled: "{{ syncthing_discovery_enabled | bool }}"
+              localAnnounceEnabled: "{{ syncthing_discovery_enabled | bool }}"
+              relaysEnabled: "{{ syncthing_discovery_enabled | bool }}"
+              natEnabled: "{{ syncthing_discovery_enabled | bool }}"
+          no_log: true
+          when:
+            - syncthing_discovery_enabled is not none
+            - not (syncthing_discovery_is_current | bool)
+
+        - name: Read this node's own device ID
+          ansible.builtin.uri:
+            url: "{{ syncthing_api }}/system/status"
+            headers:
+              X-API-Key: "{{ syncthing_api_key }}"
+          register: syncthing_status
+          changed_when: false
+          no_log: true
+          when: syncthing_configure_workspace | default(false)
+
+        - name: Declare the remote device
+          ansible.builtin.uri:
+            url: "{{ syncthing_api }}/config/devices/{{ syncthing_device_id }}"
+            method: PUT
+            headers:
+              X-API-Key: "{{ syncthing_api_key }}"
+            body_format: json
+            body:
+              deviceID: "{{ syncthing_device_id }}"
+              name: "{{ syncthing_device_name }}"
+              addresses: ["dynamic"]
+          no_log: true
+          when:
+            - syncthing_configure_workspace | default(false)
+            - syncthing_device_id | length > 0
+            - not (syncthing_device_is_current | bool)
+
+        - name: Declare the replicated folder
+          ansible.builtin.uri:
+            url: "{{ syncthing_api }}/config/folders/{{ syncthing_workspace_id }}"
+            method: PUT
+            headers:
+              X-API-Key: "{{ syncthing_api_key }}"
+            body_format: json
+            body: "{{ syncthing_desired_folder }}"
+          no_log: true
+          when:
+            - syncthing_configure_workspace | default(false)
+            - not (syncthing_folder_is_current | bool)
