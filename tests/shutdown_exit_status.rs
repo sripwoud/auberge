@@ -150,7 +150,6 @@ const FLEET_SERVICES: &[&str] = &[
     "blocky/lego-renew.service",
     "caddy/caddy.service",
     "calibre/calibre.service",
-    "claude_code_remote/vibecoder.service",
     "colporteur/colporteur.service",
     "freshrss/freshrss-update.service",
     "freshrss/freshrss.service",

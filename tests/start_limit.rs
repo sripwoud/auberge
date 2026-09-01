@@ -91,7 +91,6 @@ static START_LIMIT_REGIMES: &[(&str, &Regime)] = &[
     ("blocky/blocky.service", &RESOLVER),
     ("caddy/caddy.service", &RESTARTING_APP),
     ("calibre/calibre.service", &RESTARTING_APP),
-    ("claude_code_remote/vibecoder.service", &RESTARTING_APP),
     ("freshrss/freshrss.service", &RESTARTING_APP),
     ("gokapi/gokapi.service", &RESTARTING_APP),
     ("grimmory/grimmory.service", &RESTARTING_APP),

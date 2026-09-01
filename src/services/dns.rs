@@ -579,7 +579,6 @@ mod tests {
         "remove-radicale",
         "syncthing",
         "tgtg",
-        "vibecoder",
     ];
 
     #[test]

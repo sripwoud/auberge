@@ -1,5 +1,0 @@
-{
-  "permissions": "allow-all-tools",
-  "disableBypassPermissionsMode": false,
-  "allowedTools": ["*"]
-}

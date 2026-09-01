@@ -787,13 +787,6 @@ mod tests {
     }
 
     #[test]
-    fn test_vibecoder_meta_parses_without_error() {
-        let meta = load_meta("vibecoder");
-        assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
-        assert!(meta.required_keys.contains(&"domain".to_string()));
-    }
-
-    #[test]
     fn test_all_committed_playbooks_have_meta_files() {
         let playbook_files = playbook_files();
 

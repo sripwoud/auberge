@@ -361,7 +361,6 @@ pub const FLEET_UNIT_FILES: &[&str] = &[
     "caddy/caddy.service",
     "caddy/caddy.service.d/caddy-env.conf",
     "calibre/calibre.service",
-    "claude_code_remote/vibecoder.service",
     "cockpit/cockpit.socket.d/override.conf",
     "colporteur/colporteur.service",
     "colporteur/colporteur.timer",

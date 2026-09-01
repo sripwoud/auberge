@@ -31,7 +31,8 @@ pub struct RosterRole {
 
 /// The roster of `playbook_path`, in declaration order. A bare-string role
 /// entry carries neither tags nor a guard and is skipped: nothing can select it
-/// by tag, and `vibecoder.yml` is the only playbook that writes one.
+/// by tag, and no playbook writes one — `vibecoder.yml` was the last, and its
+/// roster being invisible here is half of why it died mid-play (#743).
 pub fn parse_roster(playbook_path: &Path) -> Result<Vec<RosterRole>> {
     let content = std::fs::read_to_string(playbook_path)
         .wrap_err_with(|| format!("Failed to read playbook: {}", playbook_path.display()))?;
@@ -468,14 +469,15 @@ mod tests {
     #[test]
     fn test_find_standalone_playbook_resolves_all_standalones() {
         for name in [
+            "aoe",
             "bootstrap",
             "calibre",
             "gokapi",
             "hermes",
             "immich",
+            "memsearch",
             "opencode",
             "remove-radicale",
-            "vibecoder",
         ] {
             let path = find_standalone_playbook(name).unwrap().unwrap();
             assert_eq!(

@@ -589,12 +589,15 @@ mod tests {
         assert_eq!(units[0].unit.scope, UnitScope::User);
     }
 
+    /// The stem's own Meta owns no units here, so the one reported can only
+    /// have come from a roster role -- which is the property, and which the
+    /// single-role playbooks cannot tell apart from the stem fallback.
     #[test]
     fn test_units_for_run_expands_an_untagged_run_to_the_whole_playbook() {
-        let run = run_for("vibecoder.yml", &[]);
+        let run = run_for("memsearch.yml", &[]);
         let units = units_for_run(&run, &repo_playbooks_dir(), "alice").unwrap();
         let names: Vec<&str> = units.iter().map(|u| u.unit.name.as_str()).collect();
-        assert!(names.contains(&"vibecoder.service"), "got: {names:?}");
+        assert!(names.contains(&"syncthing@alice.service"), "got: {names:?}");
     }
 
     #[test]

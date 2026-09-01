@@ -36,8 +36,8 @@ impl OwnedUnit {
 
 /// The App each role answers as: the role's own name where a Meta of that
 /// name exists, otherwise the playbook that runs the role, otherwise the App
-/// of a role that depends on it — claude_code_remote deploys as a dependency
-/// of the vibecoder role, through vibecoder.yml, so its Meta is vibecoder's.
+/// of a role that depends on it, which is how a role reached only through a
+/// meta role's `dependencies:` gets an App at all.
 pub fn app_of(role: &str) -> Option<String> {
     resolve_app(role, &mut BTreeSet::new())
 }
