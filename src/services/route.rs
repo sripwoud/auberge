@@ -22,8 +22,99 @@
 //! allowlist exactly when it is needed.
 
 use crate::hosts::Host;
+use clap::ValueEnum;
 use eyre::Result;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+
+/// Which of a Host's two addresses a connection takes.
+///
+/// Both the declared policy's answer and the value of the global `--via`
+/// flag, because they are the same choice made at two different moments —
+/// spelling them as two types would let one grow a third case the other
+/// could not express.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Via {
+    /// The Host's declared `address`.
+    Public,
+    /// The Host's cached `tailscale_ip`.
+    Tailnet,
+}
+
+impl Via {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Tailnet => "tailnet",
+        }
+    }
+}
+
+impl std::fmt::Display for Via {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+const NO_OVERRIDE: u8 = 0;
+const OVERRIDE_PUBLIC: u8 = 1;
+const OVERRIDE_TAILNET: u8 = 2;
+
+/// The global `--via` flag, set once from `main` before any command runs.
+///
+/// A process-wide static rather than a threaded parameter, the way
+/// `output::set_verbose` already is: the flag is `global = true` on the clap
+/// tree and reaches roughly twenty construction sites, and threading it would
+/// undo exactly the collapse ADR-0067 performed.
+static OVERRIDE: AtomicU8 = AtomicU8::new(NO_OVERRIDE);
+
+/// Whether the override has actually decided a route this run. `--via` on a
+/// command that connects to nothing is an operator error worth reporting, and
+/// a flag with no observable effect is indistinguishable from one that
+/// silently failed to apply — see [`ensure_override_reached_a_host`].
+static OVERRIDE_REACHED_A_HOST: AtomicBool = AtomicBool::new(false);
+
+/// Install the run's `--via` override. Called once, from `main`.
+pub fn set_override(via: Option<Via>) {
+    OVERRIDE.store(
+        match via {
+            None => NO_OVERRIDE,
+            Some(Via::Public) => OVERRIDE_PUBLIC,
+            Some(Via::Tailnet) => OVERRIDE_TAILNET,
+        },
+        Ordering::Relaxed,
+    );
+    OVERRIDE_REACHED_A_HOST.store(false, Ordering::Relaxed);
+}
+
+fn route_override() -> Option<Via> {
+    match OVERRIDE.load(Ordering::Relaxed) {
+        OVERRIDE_PUBLIC => Some(Via::Public),
+        OVERRIDE_TAILNET => Some(Via::Tailnet),
+        _ => None,
+    }
+}
+
+/// Fails when `--via` was given to a command that resolved no Host route.
+///
+/// Called by `main` *after* the command, because whether a command routes is
+/// not knowable before it runs — a static list of routing subcommands is the
+/// kind of thing a new command forgets to join. The cost is a non-zero exit
+/// after work that already succeeded; the alternative is a flag that reads as
+/// applied and was not, which on `--via public` means believing you moved off
+/// a route you are still on.
+pub fn ensure_override_reached_a_host() -> Result<()> {
+    let Some(via) = route_override() else {
+        return Ok(());
+    };
+    if OVERRIDE_REACHED_A_HOST.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+    eyre::bail!(
+        "--via {via} changed nothing: this command resolved no route to a Host. It applies \
+         only to commands that connect to a host in hosts.toml — the command itself ran."
+    )
+}
 
 /// Everything needed to reach a Host.
 ///
@@ -64,17 +155,45 @@ pub struct Route {
 /// derivation of its own, so a caller with no identity file of its own
 /// (ansible's inventory conversion, the generated ssh include) passes `None`.
 pub fn resolve(host: &Host, key_path: Option<PathBuf>) -> Result<Route> {
-    let address = if host.prefer_tailnet {
-        host.tailscale_ip.clone().ok_or_else(|| {
+    match route_override() {
+        Some(via) => {
+            OVERRIDE_REACHED_A_HOST.store(true, Ordering::Relaxed);
+            route_over(host, key_path, via, &format!("--via {via}"))
+        }
+        None => declared(host, key_path),
+    }
+}
+
+/// The route the roster declares, with no `--via` applied.
+///
+/// The generated ssh include is written from this and never from [`resolve`]:
+/// `~/.ssh/config.d/auberge.conf` outlives the command that regenerated it
+/// (ADR-0070 binds regeneration to every roster write, `--via` included), so
+/// baking a per-invocation override into it would leave interactive
+/// `ssh <name>` on a route nobody declared — the divergence #780 exists to
+/// close, reintroduced by the flag meant to work around it.
+pub fn declared(host: &Host, key_path: Option<PathBuf>) -> Result<Route> {
+    let via = if host.prefer_tailnet {
+        Via::Tailnet
+    } else {
+        Via::Public
+    };
+    route_over(host, key_path, via, "prefer_tailnet")
+}
+
+/// `chose` names what asked for this route, so the failure says whether to
+/// fix the roster or drop the flag.
+fn route_over(host: &Host, key_path: Option<PathBuf>, via: Via, chose: &str) -> Result<Route> {
+    let address = match via {
+        Via::Public => host.address.clone(),
+        Via::Tailnet => host.tailscale_ip.clone().ok_or_else(|| {
             eyre::eyre!(
-                "host '{}' sets prefer_tailnet but has no tailscale_ip to route to; run \
-                 `auberge --via public host detect-tailscale-ip {}` first",
+                "{chose} routes host '{}' over the tailnet, but it has no cached \
+                 tailscale_ip; run `auberge --via public host detect-tailscale-ip {}` first",
                 host.name,
                 host.name
             )
-        })?
-    } else {
-        host.address.clone()
+        })?,
     };
 
     Ok(Route {
@@ -118,6 +237,25 @@ mod tests {
 
     fn host() -> Host {
         Host::fixture("auberge", None)
+    }
+
+    /// Restores the process-wide override on drop, so a failing assertion
+    /// cannot leak `--via` into whatever test runs next in this binary.
+    /// Callers hold `output::TEST_LOCK`, the same lock the env-var guards
+    /// there use, because this static is global for the same reason they are.
+    struct OverrideGuard;
+
+    impl OverrideGuard {
+        fn set(via: Option<Via>) -> Self {
+            set_override(via);
+            Self
+        }
+    }
+
+    impl Drop for OverrideGuard {
+        fn drop(&mut self) {
+            set_override(None);
+        }
     }
 
     #[test]
@@ -190,6 +328,93 @@ mod tests {
         let host = Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet();
         assert_eq!(public_address(&host), "203.0.113.10");
         assert_ne!(public_address(&host), resolve(&host, None).unwrap().address);
+    }
+
+    #[test]
+    fn via_public_overrides_a_hosts_tailnet_policy() {
+        let _lock = crate::output::TEST_LOCK.lock().unwrap();
+        let _guard = OverrideGuard::set(Some(Via::Public));
+        let host = Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet();
+
+        assert_eq!(resolve(&host, None).unwrap().address, "203.0.113.10");
+    }
+
+    #[test]
+    fn via_tailnet_overrides_a_host_that_declared_nothing() {
+        let _lock = crate::output::TEST_LOCK.lock().unwrap();
+        let _guard = OverrideGuard::set(Some(Via::Tailnet));
+        let host = Host::fixture("vieille-auberge", Some("100.64.0.4"));
+
+        assert_eq!(resolve(&host, None).unwrap().address, "100.64.0.4");
+    }
+
+    /// The override is per-invocation. `declared` is what the generated ssh
+    /// include is written from, and it must answer the roster's decision even
+    /// while a `--via` is in force — otherwise `auberge --via public host
+    /// edit x` republishes every alias on the public address for good.
+    #[test]
+    fn declared_ignores_the_override() {
+        let _lock = crate::output::TEST_LOCK.lock().unwrap();
+        let _guard = OverrideGuard::set(Some(Via::Public));
+        let host = Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet();
+
+        assert_eq!(declared(&host, None).unwrap().address, "100.64.0.1");
+    }
+
+    /// Strict in the override direction too, and the message says the flag
+    /// asked rather than the roster, because the fix differs.
+    #[test]
+    fn via_tailnet_refuses_a_host_with_no_cached_address() {
+        let _lock = crate::output::TEST_LOCK.lock().unwrap();
+        let _guard = OverrideGuard::set(Some(Via::Tailnet));
+
+        let err = resolve(&Host::fixture("ruche", None), None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("--via tailnet"), "{err}");
+        assert!(err.contains("host detect-tailscale-ip ruche"), "{err}");
+    }
+
+    #[test]
+    fn an_override_that_decided_a_route_is_not_reported() {
+        let _lock = crate::output::TEST_LOCK.lock().unwrap();
+        let _guard = OverrideGuard::set(Some(Via::Public));
+
+        resolve(&host(), None).unwrap();
+        assert!(ensure_override_reached_a_host().is_ok());
+    }
+
+    /// `--via` on a command that connects to nothing must not pass silently:
+    /// a flag that reads as applied and was not is the failure mode #780 is
+    /// made of.
+    #[test]
+    fn an_override_that_reached_no_host_is_reported() {
+        let _lock = crate::output::TEST_LOCK.lock().unwrap();
+        let _guard = OverrideGuard::set(Some(Via::Tailnet));
+
+        let err = ensure_override_reached_a_host().unwrap_err().to_string();
+        assert!(err.contains("--via tailnet"), "{err}");
+        assert!(err.contains("resolved no route"), "{err}");
+    }
+
+    /// And the include's own resolution must not count as reaching one:
+    /// every roster write regenerates it, so a `host add` under `--via` would
+    /// otherwise report the flag as applied when it decided nothing.
+    #[test]
+    fn declared_does_not_count_as_the_override_reaching_a_host() {
+        let _lock = crate::output::TEST_LOCK.lock().unwrap();
+        let _guard = OverrideGuard::set(Some(Via::Public));
+
+        declared(&host(), None).unwrap();
+        assert!(ensure_override_reached_a_host().is_err());
+    }
+
+    #[test]
+    fn no_override_is_never_reported() {
+        let _lock = crate::output::TEST_LOCK.lock().unwrap();
+        let _guard = OverrideGuard::set(None);
+
+        assert!(ensure_override_reached_a_host().is_ok());
     }
 
     /// Both addresses, always: a Host that routes over the tailnet arrives

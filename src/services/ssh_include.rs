@@ -17,13 +17,18 @@ pub fn include_file_path(ssh_dir: &Path) -> PathBuf {
 /// `HostKeyAlias` (#785) keys every alias's host-key check and known_hosts
 /// entry on the Host's name, so a route change can never present as a
 /// changed key.
+///
+/// `route::declared`, never `route::resolve`: this file outlives the command
+/// that wrote it, and ADR-0070 regenerates it on *every* roster write — a
+/// `--via` given to `host edit` would otherwise be published to interactive
+/// ssh permanently (#787).
 pub fn render(hosts: &[Host]) -> Result<String> {
     let mut out = String::from(
         "# Managed by auberge. Regenerated from hosts.toml on every write -\n\
          # do not edit by hand.\n",
     );
     for host in hosts {
-        let route = crate::services::route::resolve(host, None)?;
+        let route = crate::services::route::declared(host, None)?;
         out.push_str(&format!(
             "\nHost {}\n  HostName {}\n  Port {}\n  User {}\n  IdentityFile {}\n  IdentitiesOnly yes\n  HostKeyAlias {}\n  StrictHostKeyChecking accept-new\n",
             host.name,
