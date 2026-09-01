@@ -63,16 +63,28 @@ const MIGRATION_CALL: &str = "known_hosts::migrate_roster(";
 /// `Host key verification failed` will reach for first.
 const TOFU_OPTION: &str = "StrictHostKeyChecking";
 
-/// The body of the top-level `fn` whose declaration contains `decl`, from the
-/// declaration to the first column-0 `}`.
+/// The body of the `fn` whose declaration contains `decl`, from the
+/// declaration to the closing brace at the declaration's own indentation.
+///
+/// The indentation is read off the declaration rather than assumed to be
+/// column zero. `read_roster` is a method, so its brace is `    }` and a
+/// column-zero search runs to the end of `impl HostManager` — which would
+/// make the assertion below pass with the migration call sitting in
+/// `save_hosts`, the exact binding #800 moves it out of. The sibling helper in
+/// `the_include_follows_the_roster.rs` reads a free function and does not have
+/// the problem; this one is not shared with it precisely so each states the
+/// shape it reads.
 fn fn_body<'a>(source: &'a str, decl: &str) -> &'a str {
     let start = source
         .find(decl)
         .unwrap_or_else(|| panic!("{decl} must exist to be checked"));
+    let line_start = source[..start].rfind('\n').map_or(0, |at| at + 1);
+    let close = format!("\n{}}}\n", &source[line_start..start]);
+
     let rest = &source[start..];
     let end = rest
-        .find("\n}\n")
-        .unwrap_or_else(|| panic!("{decl} must have a column-0 closing brace"));
+        .find(&close)
+        .unwrap_or_else(|| panic!("{decl} must have a closing brace at its own indentation"));
     &rest[..end]
 }
 
