@@ -34,7 +34,9 @@ use serde_json::Value;
 
 mod common;
 
-use common::{Plays, Task, field, role_dir, strings, tasks_in};
+use common::{
+    Plays, Task, field, relative, role_dir, role_templates, strings, tasks_in, templated_yml_files,
+};
 
 /// The trust tiers ADR-0055 declares, and the only tags the policy may name —
 /// as the crate spells them, so the policy file is compared against the type
@@ -295,4 +297,96 @@ fn test_data_and_standby_reach_every_tier_but_the_agent() {
             "{src_tier} reaches trusted/data/standby and never {CONFINED_TIER}"
         );
     }
+}
+
+/// Every ansible file a deploy renders, as (repo-relative path, contents):
+/// every role's templated YAML plus the playbooks ([`templated_yml_files`]
+/// already carries the latter), and every role template. A role's `files/`
+/// payload is out of scope for the same reason the walker excludes it — ansible
+/// copies it byte for byte and nothing there enrolls a node.
+///
+/// [`ENROLLMENT_SITES`] below are the paths this domain must contain for the
+/// scan over it to mean anything.
+fn enrollment_domain() -> Vec<(String, String)> {
+    templated_yml_files()
+        .into_iter()
+        .chain(role_templates())
+        .map(|path| {
+            let text = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{} must be readable: {e}", relative(&path)));
+            (relative(&path), text)
+        })
+        .collect()
+}
+
+/// A node never asserts its own tags. #767 deleted the tailscale role's
+/// `tailscale_advertise_tags`; this keeps it deleted.
+///
+/// The two paths carry opposite authority. A tag stamped on a pre-auth key is
+/// server-forced and applied *unchecked* at registration — which is how `ruche`
+/// came to carry `tag:agent` on a tailnet running no policy at all. A tag a
+/// node advertises through `tailscale up --advertise-tags` is a node-side claim
+/// headscale validates against `tagOwners`, and a rejected claim lands as a
+/// silently invalid tag on the node record. Two writers for one fact can
+/// disagree, only one of them is authoritative, so the other does not exist —
+/// and [`TailnetTag`] is now the single declaration the authoritative one reads.
+///
+/// Text, not structure: a role that merely *documents* the flag is flagged too,
+/// which is the right answer while a pre-auth key is the only authority.
+#[test]
+fn test_a_node_never_advertises_its_own_tags() {
+    let offenders: Vec<String> = enrollment_domain()
+        .into_iter()
+        .filter(|(_, text)| text.contains("advertise-tags") || text.contains("advertise_tags"))
+        .map(|(path, _)| path)
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "a pre-auth key is the only thing that assigns a tailnet tag; these assert one \
+         node-side: {offenders:?}"
+    );
+}
+
+/// The two files the scan above must have read — the command line #767 deleted
+/// the flag from, and the defaults file it deleted the variable from. A domain
+/// that misses either passes vacuously over a place the tag could come back.
+const ENROLLMENT_SITES: [&str; 2] = [
+    "ansible/roles/tailscale/tasks/main.yml",
+    "ansible/roles/tailscale/defaults/main.yml",
+];
+
+/// A floor on the domain, well under the ~185 files it holds today. A walk that
+/// collapses to a handful still finds no offender, so "no offender" has to be
+/// said of a domain that is demonstrably the tree.
+const MIN_ENROLLMENT_DOMAIN: usize = 150;
+
+#[test]
+fn test_the_enrollment_scan_reaches_both_sites_the_flag_lived_at() {
+    let domain = enrollment_domain();
+    assert!(
+        domain.len() >= MIN_ENROLLMENT_DOMAIN,
+        "the scan read only {} files; a collapsed walk finds no offender either",
+        domain.len()
+    );
+
+    let reached: Vec<&str> = domain.iter().map(|(path, _)| path.as_str()).collect();
+    for site in ENROLLMENT_SITES {
+        assert!(
+            reached.contains(&site),
+            "the scan's domain must reach {site}, {} files read",
+            domain.len()
+        );
+    }
+
+    let enrollment_task = ENROLLMENT_SITES[0];
+    let text = &domain
+        .iter()
+        .find(|(path, _)| path == enrollment_task)
+        .expect("reached, asserted above")
+        .1;
+    assert!(
+        text.contains("tailscale up"),
+        "{enrollment_task} is where the scan is pointed because it enrolls the node; if the \
+         command line moved, move this name with it"
+    );
 }
