@@ -161,7 +161,12 @@ impl<'a, S: SshSession + ?Sized> RestoreSession<'a, S> {
         let executor = RecipeExecutor::new(ssh);
         for target in plan {
             let mut progress = progress_for(RestorePhase::AppRestore, &target.app);
-            if let Err(e) = executor.restore(&target.recipe, &target.backup_path, &mut *progress) {
+            if let Err(e) = executor.restore(
+                &target.app,
+                &target.recipe,
+                &target.backup_path,
+                &mut *progress,
+            ) {
                 return RestoreOutcome::Failed {
                     emergency,
                     app: target.app.clone(),
@@ -707,5 +712,75 @@ mod tests {
         assert!(stream.contains(&ProgressEvent::Success(
             "bichon restore completed".to_string()
         )));
+    }
+
+    /// The deadman's own calls (#775), consecutive re-arms within one phase
+    /// collapsed to a single entry — what the Host sees as windows opening
+    /// and closing over the App's units.
+    fn deadman_windows(calls: &[SshOp]) -> Vec<String> {
+        use crate::services::backup::deadman::recognise::{self, DeadmanOp};
+        let mut windows: Vec<String> = Vec::new();
+        for call in calls {
+            let token = match recognise::of(call) {
+                Some(DeadmanOp::FireCheck) => "fire-check".to_string(),
+                Some(DeadmanOp::Arm(op)) => format!("arm {}", op.as_str()),
+                Some(DeadmanOp::Disarm) => "disarm".to_string(),
+                None => continue,
+            };
+            if windows.last() != Some(&token) {
+                windows.push(token);
+            }
+        }
+        windows
+    }
+
+    /// A cross-host restore opens two quiesce windows on the same units, back
+    /// to back: the emergency backup's, then the restore's. Both key their
+    /// transient unit on the App, so the second can only arm once the first
+    /// has disarmed — `systemd-run` refuses a name that is still live. This is
+    /// what makes one unit name per App safe to share between the operations.
+    #[test]
+    fn cross_host_restore_opens_one_deadman_window_per_phase_under_one_unit_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock = MockSshSession::new();
+        let plan = vec![target(
+            "grimmory",
+            BackupRecipe {
+                systemd_services: vec!["grimmory".to_string()],
+                ..recipe(&["/srv/grimmory"])
+            },
+        )];
+        let events = MockProgress::new();
+
+        let session = RestoreSession::new(
+            &mock,
+            &plan,
+            opts(tmp.path(), true),
+            recording(&events),
+            || RedeployOutcome::Completed,
+            |_| panic!("the emergency backup succeeded, no decision to make"),
+        );
+        session.restore();
+
+        let calls = mock.calls();
+        assert_eq!(
+            deadman_windows(&calls),
+            vec![
+                "fire-check",
+                "arm backup",
+                "disarm",
+                "fire-check",
+                "arm restore",
+                "disarm",
+            ],
+            "the restore phase must arm only after the emergency backup's window closed"
+        );
+        assert!(
+            calls.iter().all(|c| match c {
+                SshOp::RunDetached(cmd) => cmd.contains("--unit=auberge-deadman-grimmory "),
+                _ => true,
+            }),
+            "both phases guard the same App, so both use its one transient unit name"
+        );
     }
 }

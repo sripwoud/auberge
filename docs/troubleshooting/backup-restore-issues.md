@@ -17,7 +17,7 @@ rm -rf ~/.ssh/ctl-*
 auberge backup create --host my-vps
 ```
 
-?> If backup is interrupted (network drop, SIGKILL), stopped services restart automatically via a remote failsafe timer (30-minute timeout). Verify: `ssh ansible@vps "systemctl list-timers | grep auberge-backup-failsafe"`.
+?> If a backup **or a restore** is interrupted (network drop, SIGKILL, laptop suspend), stopped services restart automatically via a Host-side deadman timer — one hour per step, armed on the target itself so it survives the driver process dying. Verify: `ssh ansible@vps "systemctl list-timers | grep auberge-deadman"`. A timer that fired leaves a marker the next backup or restore of that App reports.
 
 ## Restore
 
