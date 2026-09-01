@@ -254,18 +254,56 @@ impl HostManager {
         Ok(config_dir.join("hosts.toml"))
     }
 
+    /// The one read of the roster — `get_host`, `list_hosts_filtered` and
+    /// every mutation path land here — and so, by [`Self::read_roster`], the
+    /// one place the `known_hosts` alias migration runs.
     pub fn load_hosts() -> Result<Vec<Host>> {
-        let config_path = Self::config_path()?;
+        Self::read_roster(
+            &Self::config_path()?,
+            &crate::services::known_hosts::default_path()?,
+        )
+    }
 
+    /// Parses `hosts.toml` and carries every Host's already-verified host key
+    /// forward onto its `HostKeyAlias` (#800).
+    ///
+    /// **The migration is bound to the read because the thing that needs
+    /// migrating is the binary, not the roster.** #785 made every connection
+    /// send `-o HostKeyAlias=<name>`; #786 bound the migration that creates
+    /// those entries to `save_hosts`. A roster mutation is not what upgrading
+    /// changes, so the first run of a binary carrying #785 found no alias
+    /// entry and failed `Host key verification failed` on every command until
+    /// the operator happened to run a `host` subcommand — a recovery named
+    /// nowhere in the error. The documented fallback did not hold either:
+    /// `StrictHostKeyChecking accept-new` lives only in the generated
+    /// include's `Host <name>` stanza, and the transport connects to
+    /// `user@<address>`, so ssh's default `ask` governed instead — a hard
+    /// failure in `auberge-backup.service`, not a TOFU. Reading the roster is
+    /// the event every one of those commands does have.
+    ///
+    /// The cost is one `ssh-keygen -F` per Host per read in the steady state:
+    /// the migration returns early on an alias that already has an entry,
+    /// which is every run after the first.
+    ///
+    /// A roster that does not exist yet reads as empty and migrates nothing —
+    /// there is no Host to carry trust for, and a read must not conjure a
+    /// trust store.
+    ///
+    /// Both paths are parameters for the same reason [`Self::write_roster`]'s
+    /// are: it is what lets the binding be asserted against temp files rather
+    /// than the developer's own `~/.ssh/known_hosts`.
+    fn read_roster(config_path: &Path, known_hosts: &Path) -> Result<Vec<Host>> {
         if !config_path.exists() {
             return Ok(Vec::new());
         }
 
-        let contents = fs::read_to_string(&config_path)
+        let contents = fs::read_to_string(config_path)
             .wrap_err_with(|| format!("Failed to read hosts config: {}", config_path.display()))?;
 
         let config: HostsConfig =
             toml::from_str(&contents).wrap_err("Failed to parse hosts.toml")?;
+
+        crate::services::known_hosts::migrate_roster(known_hosts, &config.hosts)?;
 
         Ok(config.hosts)
     }
@@ -274,15 +312,13 @@ impl HostManager {
     /// and `host rename` all land here — and so, by [`Self::write_roster`],
     /// the one regeneration of the generated ssh include (#786).
     ///
-    /// The known_hosts migration runs first, and outside `write_roster`,
-    /// because it reaches the real `~/.ssh/known_hosts` through `ssh-keygen`
-    /// rather than through any path a caller could hand in. It is additive and
-    /// idempotent, so a roster write that fails after it leaves only alias
-    /// entries the next successful write would have made anyway.
+    /// It does not migrate `known_hosts`. #786 put the migration here; #800
+    /// moved it to [`Self::read_roster`], which every mutation path goes
+    /// through before reaching this one, and which also runs on the commands
+    /// that only connect.
     pub fn save_hosts(hosts: &[Host]) -> Result<()> {
         let home =
             dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
-        crate::services::known_hosts::migrate_roster(hosts)?;
         Self::write_roster(&Self::config_path()?, &home.join(".ssh"), hosts)
     }
 
@@ -430,6 +466,57 @@ pub fn select_or_arg(arg: Option<String>, argument: &str) -> eyre::Result<Host> 
 mod tests {
     use super::*;
     use crate::config::Config;
+
+    /// One already-trusted host key, stored under the address
+    /// `Host::fixture` declares — where every entry lived before #785.
+    const LEGACY_ENTRY: &str =
+        "203.0.113.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKEYMATERIAL admin@auberge";
+
+    /// The bind #800 exists for: reading the roster migrates every Host's
+    /// `known_hosts` alias, so a binary that sends `HostKeyAlias` carries the
+    /// operator's existing trust forward on its first run rather than on the
+    /// next roster mutation. Mutation-test it by deleting the
+    /// `migrate_roster` line from `read_roster` — the parse assertion alone
+    /// still passes, this one does not.
+    #[test]
+    fn read_roster_migrates_every_hosts_known_hosts_alias() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("auberge/hosts.toml");
+        let known_hosts = dir.path().join("known_hosts");
+        fs::write(&known_hosts, format!("{LEGACY_ENTRY}\n")).unwrap();
+        HostManager::write_roster(
+            &config_path,
+            &dir.path().join(".ssh"),
+            &[Host::fixture("auberge", None), Host::fixture("ruche", None)],
+        )
+        .unwrap();
+
+        let read = HostManager::read_roster(&config_path, &known_hosts).unwrap();
+
+        assert_eq!(
+            names(&read.iter().collect::<Vec<_>>()),
+            ["auberge", "ruche"]
+        );
+        let trust = fs::read_to_string(&known_hosts).unwrap();
+        for alias in ["auberge", "ruche"] {
+            assert!(trust.contains(&format!("{alias} ssh-ed25519")), "{trust}");
+        }
+    }
+
+    /// A fleet with no roster yet reads as empty and migrates nothing — and
+    /// must not conjure a trust store on the way, which is part of what makes
+    /// the migration safe to run on every read.
+    #[test]
+    fn read_roster_is_empty_before_any_host_is_declared() {
+        let dir = tempfile::tempdir().unwrap();
+        let known_hosts = dir.path().join("known_hosts");
+
+        let read =
+            HostManager::read_roster(&dir.path().join("auberge/hosts.toml"), &known_hosts).unwrap();
+
+        assert!(read.is_empty());
+        assert!(!known_hosts.exists());
+    }
 
     /// The bind #786 exists for: one call writes the roster *and* regenerates
     /// the include from the same slice. Mutation-test it by deleting the

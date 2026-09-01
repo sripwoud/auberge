@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, 2026-09-01. Slice 3 of 4 from the #780 tailnet-transport design, on ADR-0067's seam and #785's host identity. Still no routing change: `route::resolve` answers the public address until #787.
+Accepted, 2026-09-01. Slice 3 of 4 from the #780 tailnet-transport design, on ADR-0067's seam and #785's host identity. Still no routing change: `route::resolve` answers the public address until #787. Its binding of the `known_hosts` migration to `save_hosts` is superseded by [ADR-0076](./0076-the-known-hosts-alias-migration-is-bound-to-the-roster-read.md) on 2026-09-01 — a roster write is not the event an upgrade has. The include regeneration, which is what this ADR is about, stands.
 
 ## Decision
 
@@ -15,7 +15,7 @@ The write and the regeneration sit in one private function, `HostManager::write_
 Two things move to sit with what they call:
 
 - `sync_ssh_include` leaves `commands/host.rs` for `services::ssh_include::sync(ssh_dir, hosts)` — regenerate, then print the `Include` hint while `~/.ssh/config` lacks one.
-- `migrate_known_hosts_aliases` leaves `commands/host.rs` for `services::known_hosts::migrate_roster(hosts)`, beside the `migrate_alias` it loops over. It runs from `save_hosts` and _outside_ `write_roster`, because it reaches the real `~/.ssh/known_hosts` through `ssh-keygen` rather than through any path a caller could hand in — keeping it out is what keeps `write_roster` testable without shelling out or touching the developer's trust store. It is additive and idempotent, so a roster write that fails after it leaves only alias entries the next successful write would have made anyway.
+- `migrate_known_hosts_aliases` leaves `commands/host.rs` for `services::known_hosts::migrate_roster(hosts)`, beside the `migrate_alias` it loops over. It runs from `save_hosts` and _outside_ `write_roster`, because it reaches the real `~/.ssh/known_hosts` through `ssh-keygen` rather than through any path a caller could hand in — keeping it out is what keeps `write_roster` testable without shelling out or touching the developer's trust store. It is additive and idempotent, so a roster write that fails after it leaves only alias entries the next successful write would have made anyway. **Superseded by [ADR-0076](./0076-the-known-hosts-alias-migration-is-bound-to-the-roster-read.md)**: the migration moved to `read_roster`, and `ssh-keygen -F` taking `-f <file>` is what made the trust store a parameter rather than a reason to stay out.
 
 ## Why
 
@@ -49,14 +49,14 @@ The fence cuts `hosts.rs`'s trailing `#[cfg(test)] mod tests` before counting wr
 - `save_hosts` resolves `dirs::home_dir()` before writing anything, so a roster write now fails with nothing written where it used to write `hosts.toml` and fail a line later inside the command. Strictly better, and the only part of the two-file write that is atomic.
 - The `Include` hint moves from after each command's success line to inside the mutation, so `host add` on a fleet with no `Include` line now prints `ssh aliases inactive: …` _before_ `Host 'x' added to …`. Accepted rather than deferred to the end of the command: the alternative is a command remembering to flush it, which is the pattern this ADR removes.
 - `hosts.rs` — the declaration and persistence module — now depends on `services::ssh_include` and `services::known_hosts`, which both depend on `hosts::Host`. A module cycle inside one crate, legal and inert, but it means the roster module can no longer be read without the ssh surface in view. That is the honest shape of the invariant: the two files are one write.
-- A Host whose entry has not been written since the upgrade stays unmigrated in `known_hosts`; its first connection accept-news under the alias like a fresh host, exactly once. Unchanged from #785 — the cadence widened, the gap did not close.
+- A Host whose entry has not been written since the upgrade stays unmigrated in `known_hosts`; its first connection accept-news under the alias like a fresh host, exactly once. Unchanged from #785 — the cadence widened, the gap did not close. **Wrong, and the defect [ADR-0076](./0076-the-known-hosts-alias-migration-is-bound-to-the-roster-read.md) closes** (#800): `accept-new` lives only in the generated include's `Host <name>` stanza, and the CLI connects to `user@<address>`, so ssh's default `ask` governs and the connection fails outright.
 - `write_roster` takes two paths its only caller immediately resolves from the environment. The indirection exists for the test, and is stated as such rather than dressed up as configurability.
 
 ## Alternatives considered
 
 - **Add the missing `sync_ssh_include()` to `detect-tailscale-ip`.** Rejected: it fixes the instance and keeps the design that produced it. #787 adds at least one more mutation path.
 - **A type-level receipt** — make the mutators return a token only the regeneration can consume. Rejected as more machinery than one private function, for an invariant a single choke point already enforces.
-- **Fold the known_hosts migration into `write_roster`.** Rejected: it would put `ssh-keygen` and the developer's real `~/.ssh/known_hosts` inside the one function the unit test exercises, so the test binding regeneration to the write would depend on a system binary and a trust store it must not read.
+- **Fold the known_hosts migration into `write_roster`.** Rejected: it would put `ssh-keygen` and the developer's real `~/.ssh/known_hosts` inside the one function the unit test exercises, so the test binding regeneration to the write would depend on a system binary and a trust store it must not read. The premise held only while the trust store was hard-coded; [ADR-0076](./0076-the-known-hosts-alias-migration-is-bound-to-the-roster-read.md) made it a parameter, and the migration now sits inside `read_roster` on exactly that basis.
 - **Regenerate the include before writing the roster,** so a failed regeneration leaves neither changed. Rejected: it swaps the failure rather than removing it. An include written against a roster that then fails to save advertises a Host the roster does not have, and the next mutation regenerates from the unwritten roster and quietly reverts it — a silent divergence in place of a reported one. Genuine atomicity across two files in two directories needs a staged write and paired renames, which is more machinery than a failure this rare and this loudly reported earns.
 - **Fence "nothing outside `hosts.rs` serializes `HostsConfig`".** Rejected as redundant: `HostsConfig` is private to the module, so the compiler already answers it, and a hand-rolled duplicate elsewhere would be spelled differently and slip past the scan anyway.
 
