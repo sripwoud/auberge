@@ -8,13 +8,19 @@ pub fn include_file_path(ssh_dir: &Path) -> PathBuf {
     ssh_dir.join("config.d/auberge.conf")
 }
 
+/// Every connection directive comes off the resolved `Route` (#786), so
+/// interactive `ssh <name>` and the CLI cannot take different routes to the
+/// same Host — the divergence #780 exists to close. `IdentityFile` is the one
+/// Host-derived line left: it answers "what to write", in `~`-form ssh
+/// expands itself, where `Route::key_path` answers "what to open".
+///
 /// `HostKeyAlias` (#785) keys every alias's host-key check and known_hosts
 /// entry on the Host's name, so a route change can never present as a
 /// changed key.
 pub fn render(hosts: &[Host]) -> String {
     let mut out = String::from(
-        "# Managed by auberge. Regenerated from hosts.toml on every\n\
-         # `auberge host add|edit|rename|remove` - do not edit by hand.\n",
+        "# Managed by auberge. Regenerated from hosts.toml on every write -\n\
+         # do not edit by hand.\n",
     );
     for host in hosts {
         let route = crate::services::route::resolve(host, None);
@@ -22,10 +28,10 @@ pub fn render(hosts: &[Host]) -> String {
             "\nHost {}\n  HostName {}\n  Port {}\n  User {}\n  IdentityFile {}\n  IdentitiesOnly yes\n  HostKeyAlias {}\n  StrictHostKeyChecking accept-new\n",
             host.name,
             route.address,
-            host.port,
-            host.user,
+            route.port,
+            route.user,
             identity_file(host),
-            host.name
+            route.alias
         ));
     }
     out
@@ -43,7 +49,7 @@ fn identity_file(host: &Host) -> String {
 
 /// ssh applies the ~/.ssh/config ownership/permission check to included files
 /// too, so the directory is created 0700 and the file forced to 0600.
-pub fn write_include_file(ssh_dir: &Path, hosts: &[Host]) -> Result<PathBuf> {
+fn write_include_file(ssh_dir: &Path, hosts: &[Host]) -> Result<PathBuf> {
     let path = include_file_path(ssh_dir);
     let dir = path.parent().expect("include path has a parent");
     create_private_dir(dir)?;
@@ -56,6 +62,29 @@ pub fn write_include_file(ssh_dir: &Path, hosts: &[Host]) -> Result<PathBuf> {
             .wrap_err_with(|| format!("Failed to set permissions on {}", path.display()))?;
     }
     Ok(path)
+}
+
+/// Regenerates the CLI-owned `~/.ssh/config.d/auberge.conf` from `hosts`, and
+/// while the user's `~/.ssh/config` still lacks the Include line, prints it.
+/// That file is never written by the CLI — only read.
+///
+/// Bound to `HostManager::save_hosts` (#786) rather than called by each `host`
+/// subcommand. A roster write the include does not follow is the split #780
+/// exists to close: interactive `ssh <name>` would keep taking the route a
+/// stale stanza names while the CLI takes the resolved one. `host
+/// detect-tailscale-ip` shipped without the call precisely because
+/// remembering it was the contract.
+pub fn sync(ssh_dir: &Path, hosts: &[Host]) -> Result<()> {
+    write_include_file(ssh_dir, hosts).wrap_err(
+        "hosts.toml was updated but ~/.ssh/config.d/auberge.conf could not be regenerated; rerun any host subcommand after fixing",
+    )?;
+    if !main_config_has_include(ssh_dir)? {
+        crate::output::info(
+            "ssh aliases inactive: add this line at the top of ~/.ssh/config (first-obtained value wins):",
+        );
+        crate::output::info(&format!("  {INCLUDE_LINE}"));
+    }
+    Ok(())
 }
 
 fn create_private_dir(dir: &Path) -> Result<()> {
@@ -73,7 +102,7 @@ fn create_private_dir(dir: &Path) -> Result<()> {
 
 /// A missing ~/.ssh/config legitimately means "no include yet"; any other
 /// read failure is a real problem the caller must surface, not a nag trigger.
-pub fn main_config_has_include(ssh_dir: &Path) -> Result<bool> {
+fn main_config_has_include(ssh_dir: &Path) -> Result<bool> {
     let path = ssh_dir.join("config");
     match std::fs::read_to_string(&path) {
         Ok(content) => Ok(has_include(&content, ssh_dir)),

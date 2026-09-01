@@ -17,7 +17,7 @@
 
 mod crate_source;
 
-use crate_source::modules;
+use crate_source::{modules, names_in_code};
 
 /// The one module allowed to spawn ssh or scp, and to spell their options.
 const TRANSPORT: &str = "src/services/ssh/transport.rs";
@@ -47,19 +47,6 @@ const OPTIONS: &[&str] = &[
 /// into an undocumented one — a reader who finds the hand-built string has
 /// something to search for.
 const DECLARED_HAND_BUILT_TRANSPORT: (&str, &str) = ("src/commands/sync.rs", "#669");
-
-/// `true` when `source` contains `needle` outside of a `//` comment line.
-///
-/// Comments are excluded on purpose: this fence's own subject gets *discussed*
-/// in prose at the sites that no longer do it — the music-sync exception names
-/// `ssh`, and the transport's doc comment names `ControlPersist` — and a rule
-/// that fires on its own explanation teaches people to delete the explanation.
-fn names_in_code(source: &str, needle: &str) -> bool {
-    source
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .any(|line| line.contains(needle))
-}
 
 #[test]
 fn only_the_transport_spawns_ssh_or_scp() {

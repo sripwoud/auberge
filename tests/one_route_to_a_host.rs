@@ -13,7 +13,7 @@
 
 mod crate_source;
 
-use crate_source::modules;
+use crate_source::{find, modules, names_in_code};
 
 /// The six modules #780 named as answering "how do we reach this host" off
 /// `Host::address` directly, before this seam existed.
@@ -26,6 +26,14 @@ use crate_source::modules;
 /// decision, and must keep showing the Host's own declared address forever,
 /// including after #787 adds a routing policy that could otherwise leak into
 /// them.
+///
+/// Nor is `services/known_hosts.rs`, whose `migrate_roster` reads the address
+/// to build the pre-#785 `known_hosts` key (#786). That read is the strongest
+/// case of all for staying declaration-level: it names where an
+/// already-verified key *used* to be stored, so resolving it through a routing
+/// policy would look the key up at an address it was never written under, find
+/// nothing, and migrate nothing — silently, since the migration shells out to
+/// `ssh-keygen` and no test observes it.
 const CONSUMERS: &[&str] = &[
     "src/services/ssh.rs",
     "src/services/ssh/transport.rs",
@@ -70,26 +78,6 @@ fn marker_precedes(source: &str, literal_line: usize, marker: &str, window: usiz
     lines[start..=literal_line]
         .iter()
         .any(|line| line.contains(marker))
-}
-
-/// `true` when `source` contains `needle` outside of a `//` comment line.
-///
-/// Comments are excluded on purpose, exactly as in the sibling fence: this
-/// module's own doc comment, and `hosts.rs`'s, both discuss `Host::address`
-/// in prose, and a rule that fires on its own explanation teaches people to
-/// delete the explanation rather than fix the code.
-fn names_in_code(source: &str, needle: &str) -> bool {
-    source
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .any(|line| line.contains(needle))
-}
-
-fn find<'a>(walked: &'a [crate_source::Module], path: &str) -> &'a crate_source::Module {
-    walked
-        .iter()
-        .find(|module| module.repo_relative == path)
-        .unwrap_or_else(|| panic!("{path} must exist to be checked"))
 }
 
 #[test]

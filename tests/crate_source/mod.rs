@@ -1,10 +1,11 @@
 //! The crate's own source, as the fences read it.
 //!
-//! Four fences ask a question of `src/**/*.rs` — which call sites discard an
+//! Six fences ask a question of `src/**/*.rs` — which call sites discard an
 //! `AnsibleAssets` guard, which modules name a vendor crate, which modules
-//! spawn ssh or scp, which modules carry a compile-time seam — and the first
-//! two each carried its own copy of the walk that answers it. The walk is the
-//! shared premise underneath all four, and a premise that quietly stops
+//! spawn ssh or scp, which modules carry a compile-time seam, which modules
+//! read a Host's address, and which modules regenerate the ssh include — and
+//! the first two each carried its own copy of the walk that answers it. The walk is the
+//! shared premise underneath all six, and a premise that quietly stops
 //! reaching somewhere does not fail. It shrinks the domain, and every fence
 //! over it goes on passing, vacuously. `tests/common/mod.rs` is the same lesson
 //! learned on the ansible tree, where six copies had already diverged far
@@ -12,10 +13,11 @@
 //! 83 tasks apart (#654). That module is scoped to `ansible/`; this one is the
 //! crate's own source, so it stands beside it rather than inside it.
 //!
-//! The count is load-bearing prose, so it is stated as a count: two of the four
+//! The count is load-bearing prose, so it is stated as a count: four of the six
 //! arrived after this module did (`ssh_stays_in_the_transport` with #669,
-//! `seams_are_injected` with #670), and a reader who trusts a stale one is
-//! reading about a domain smaller than the real one.
+//! `seams_are_injected` with #670, `one_route_to_a_host` with #784,
+//! `the_include_follows_the_roster` with #786), and a reader who trusts a
+//! stale one is reading about a domain smaller than the real one.
 //!
 //! Only one of the two copies pinned its reach: `vendor_types_stay_in_adapter`
 //! asserted the walked set equals [`CRATE_MODULES`] by difference in both
@@ -37,12 +39,18 @@
 //! file, `src/playbook_meta.rs`, as *text*, string-splitting on Rust syntax to
 //! recover the unit-type list declared there (#656). #667 gave the crate a
 //! library target, so that fence imports the `const` instead and reads no
-//! source at all, which is why it is not among the four. The reason it left is
+//! source at all, which is why it is not among the six. The reason it left is
 //! worth keeping: a fence that wants one crate *item* should `use` it, and this
 //! walk is for the questions asked of source as text. `seams_are_injected.rs`
 //! is the case in point — two textual questions, where a `not(test)` predicate
 //! sits and where a `TerminalProgress` is constructed (#670) — neither of which
 //! an import could answer.
+//!
+//! [`Module::source`] is the whole file, `#[cfg(test)]` included. A fence that
+//! must not read test code cuts it itself, and states where it cut: the two
+//! spellings of "not test code" (any `#[cfg(test)]` item versus the trailing
+//! test module) differ by hundreds of lines in `src/hosts.rs`, and the wrong
+//! one hides the very code the fence exists to watch.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -213,6 +221,35 @@ fn pin_reach(walked: &[Module]) {
 /// The pin runs on every call rather than living in a fence of its own, so a
 /// walk that stopped reaching somewhere fails inside whichever fence relies on
 /// it — the caller inherits the reach instead of trusting it.
+/// Every line of `source` that is not a `//` comment, with its 0-based index.
+///
+/// Comments are excluded because a fence's own prose names the thing it
+/// forbids, and a rule that fires on its own explanation teaches people to
+/// delete the explanation rather than fix the code.
+pub fn code_lines(source: &str) -> impl Iterator<Item = (usize, &str)> {
+    source
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| !line.trim_start().starts_with("//"))
+}
+
+/// `true` when `source` contains `needle` outside a `//` comment line.
+pub fn names_in_code(source: &str, needle: &str) -> bool {
+    code_lines(source).any(|(_, line)| line.contains(needle))
+}
+
+/// The walked module at `path`, or a panic naming it.
+///
+/// A fence names the modules it constrains as literals; one that has been
+/// renamed or deleted must stop the run rather than silently drop out of the
+/// domain being scanned.
+pub fn find<'a>(walked: &'a [Module], path: &str) -> &'a Module {
+    walked
+        .iter()
+        .find(|module| module.repo_relative == path)
+        .unwrap_or_else(|| panic!("{path} must exist to be checked"))
+}
+
 pub fn modules() -> Vec<Module> {
     let walked: Vec<Module> = rust_files(&src_dir())
         .iter()

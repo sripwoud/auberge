@@ -22,7 +22,9 @@ ssh_key = "~/.ssh/identities/custom_key"
 
 ## SSH Include
 
-Every `auberge host add|edit|rename|remove` regenerates `~/.ssh/config.d/auberge.conf` from `hosts.toml`: one `Host` block per entry with `HostName`, `Port`, `User`, `IdentityFile` (tiers 2–3 above), `IdentitiesOnly yes`, and `StrictHostKeyChecking accept-new`. The file is CLI-owned — hand edits are lost on the next host subcommand.
+Every write of `hosts.toml` regenerates `~/.ssh/config.d/auberge.conf` from it — `host add|edit|rename|remove|detect-tailscale-ip`, and anything added later, because regeneration is bound to the roster write rather than to the command. One `Host` block per entry with `HostName`, `Port`, `User`, `IdentityFile` (tiers 2–3 above), `IdentitiesOnly yes`, `HostKeyAlias` (the host's name), and `StrictHostKeyChecking accept-new`. The file is CLI-owned — hand edits are lost on the next host subcommand.
+
+`HostName`, `Port` and `User` are the _resolved route_ to the host, the same one the CLI's own ssh, scp, rsync and ansible connections use. Interactive `ssh <name>` and `auberge` therefore cannot take different routes to one host — a hand-written stanza keyed on the old address no longer intercepts one and not the other.
 
 Activate the aliases once:
 
