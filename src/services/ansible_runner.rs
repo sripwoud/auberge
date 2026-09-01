@@ -149,11 +149,7 @@ fn resolve_stale_host_key(host: &InventoryHost, assume_yes: bool) -> Result<()> 
         return Ok(());
     };
 
-    let target = if host.port == 22 {
-        host.address.clone()
-    } else {
-        format!("[{}]:{}", host.address, host.port)
-    };
+    let target = known_hosts::entry_target(&host.address, host.port);
 
     output::warn(&format!(
         "Host key for {target} changed.\n  known_hosts has: {}\n  {target} now offers: {}\n  Expected after a rebuild or reinstall; otherwise verify the offered key against your provider console.",

@@ -83,7 +83,7 @@ fn fingerprints_of(key_lines: &str) -> Vec<Fingerprint> {
 
 /// The `known_hosts` key for a target, in ssh's own bracketed form for any
 /// non-default port.
-fn entry_target(address: &str, port: u16) -> String {
+pub fn entry_target(address: &str, port: u16) -> String {
     if port == 22 {
         address.to_string()
     } else {
