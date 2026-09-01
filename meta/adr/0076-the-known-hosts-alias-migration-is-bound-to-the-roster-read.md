@@ -14,6 +14,8 @@ The read and the migration sit in one private function, `read_roster(config_path
 
 **A pre-#785 key is looked for under both spellings ssh accepts**, most specific first: `[address]:port`, then the bare `address`. `legacy_target` returned only the first for a non-default port; `legacy_targets` returns both.
 
+**Forgetting a Host's key drops every spelling of it.** `forget` took an alias and ran one `ssh-keygen -R`; it now takes the list `key_targets` produces — the alias, the legacy targets for the address the caller reached the Host at, and the legacy targets the roster declares — and the abort message prints the same list.
+
 **`inspect` and `forget` keep ssh's default file.** They neither write nor sit inside a binding a test has to observe, and threading a path through them would be churn with no assertion to serve.
 
 ## Why
@@ -52,6 +54,22 @@ Two of the three Hosts on this fleet are stored that way. A bare-address entry t
 
 The general shape is worth naming, because the first fix had it: a migration whose trigger is right and whose lookup is wrong fails exactly like one that never ran, and both are silent. The verification that caught it was running the binary against the real trust store and re-running the issue's own command — not the unit tests, which agreed with the bug.
 
+### Why forgetting had to widen with it
+
+A read that writes can undo a delete. `forget` dropped only the alias, which under [ADR-0070](./0070-the-ssh-include-is-regenerated-by-the-roster-write.md) was harmless — nothing ever copied a legacy entry back. Under this decision the next roster read does, and bootstrap reads the roster before it checks the host key:
+
+1. reinstalled VPS, new key; bootstrap reports `Changed` and aborts, naming `ssh-keygen -R "auberge"`
+2. the operator runs it
+3. the re-run reads the roster, migrates the stale address-keyed key back onto `auberge`, and reports `Changed` again
+
+A loop closed by following the tool's own instructions. The roster's spelling has to be in the list and not just the reached one: a reinstalled VPS answers on port 22 again, so bootstrap reaches it there while the roster still declares the hardened port, leaving `[address]:59865` for the migration to copy back. `ssh-keygen -R` matches a spelling exactly — it does not collapse `address` and `[address]:port` — so each is named.
+
+Dropping every spelling is also the more correct answer on its own terms: the host key changed, so every entry holding the old one is stale, whichever name it is filed under.
+
+### Why a marker line keeps its marker
+
+`ssh-keygen -F` prints `@cert-authority` and `@revoked` lines verbatim. Reading the marker as the host field produced `auberge 203.0.113.10 ssh-ed25519 …` — unparseable, since the real host field lands where the key type belongs — and silently converted a revocation into a trust line for the alias. The marker is carried instead: a revoked key reaches the alias still revoked. Latent before this decision, because the migration ran only on a roster write; it runs on every read now.
+
 ### Why the read
 
 The trigger has to be an event the upgraded binary actually has. Reading the roster is that event, and it is the only one every affected command shares — `deploy`, `ansible run`, `sync`, `headscale`, `backup` and the nightly `auberge-backup.service` all resolve a Host before they connect. Binding at `load_hosts` rather than at `main` also keeps the trigger where the data is, so a command that reads the roster from a future entry point inherits it instead of remembering it.
@@ -79,6 +97,8 @@ That every sender is _downstream_ of the read is left to the compiler rather tha
 - The roster module's read path now touches `~/.ssh`, where before only its write path did. `hosts.rs` was already coupled to `services::known_hosts`; the coupling is now on both directions of the roster boundary.
 - `read_roster` takes two paths its only caller immediately resolves from the environment. The indirection exists for the test, and is stated as such rather than dressed up as configurability.
 - The migration is additive and never removes anything, so an alias entry outlives the roster entry that justified it. Unchanged from #785, and still the safe direction: a stale alias line is inert, where a missing one is an outage.
+- `forget` now removes up to four entries where it removed one, including address-keyed ones the operator may have made outside auberge. Intended — the key they name is stale by construction — but it is a wider delete than the name `forget` used to imply.
+- `resolve_stale_host_key` reads the roster to build that list, so `services::ansible_runner` joins `services::inventory` and `services::unit_state` in depending on `HostManager`. The alternative was threading the spellings through two public runner signatures for one branch of one playbook.
 
 ## Alternatives considered
 
@@ -86,6 +106,7 @@ That every sender is _downstream_ of the read is left to the compiler rather tha
 - **Keep the migration on `save_hosts` as well.** Rejected as a second trigger for one invariant. Every mutation path reads before it writes, so the read already covers `add`, `edit`, `remove` and `rename`; the only thing the write would add is a migration for an alias declared seconds earlier by a command that then connects to nothing.
 - **`StrictHostKeyChecking=accept-new` in the transport.** Rejected — see above, and #780.
 - **Migrate inside `route::resolve`,** the tightest possible binding to the thing that carries the alias. Rejected: `resolve` is a pure function with unit tests that would then shell out against the developer's real trust store on every call, and the seam #780 built is about deciding an address, not about performing I/O.
+- **Let a failed migration warn and continue** rather than fail the roster read. Rejected: a migration that does not happen is the failure this ADR exists to remove, and its symptom — `Host key verification failed`, minutes later, in a nightly unit — is exactly the undiscoverable one. A machine that cannot run `ssh-keygen` cannot run this CLI's next step either. The cost is that `auberge host list` now needs it too.
 - **Ship the migration as a one-shot `auberge` subcommand** and name it in the release notes. Rejected: it is the recovery that was already undiscoverable, promoted to a documented step. A fleet upgraded by a `mise` pin bump has no moment at which anyone reads release notes before `auberge-backup.service` next runs.
 
 ## References

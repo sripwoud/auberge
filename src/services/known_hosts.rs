@@ -47,19 +47,60 @@ pub fn inspect(alias: &str, address: &str, port: u16) -> Result<HostKeyStatus> {
     Ok(classify(&known, &offered))
 }
 
-/// `ssh-keygen -R <alias>` — removes every entry for the alias, hashed or not.
-pub fn forget(alias: &str) -> Result<()> {
-    let mut cmd = Command::new("ssh-keygen");
-    cmd.arg("-R").arg(alias);
-
-    let result =
-        output::run_piped("ssh-keygen", &mut cmd).wrap_err("Failed to execute ssh-keygen -R")?;
-    if result.status.success() {
-        output::clear_subprocess_lines(result.lines_written);
-        Ok(())
-    } else {
-        Err(result.error(format!("Failed to remove known_hosts entry for {alias}")))
+/// Every `known_hosts` key a Host's host key may be filed under: the
+/// name-keyed alias every connection presents (#785), the legacy targets for
+/// the address the caller actually reached it at, and the legacy targets the
+/// `roster` declares for it.
+///
+/// One list, two consumers — [`forget`] and the text that tells an operator to
+/// run it by hand — because dropping a subset is not a smaller version of
+/// dropping the key. Since #800 the roster read copies a legacy entry onto an
+/// alias that has none, so `ssh-keygen -R <alias>` alone is undone by the very
+/// next command: bootstrap reads the roster before it checks the host key, so
+/// following the abort message and re-running it restores the stale key and
+/// reports the same conflict, forever.
+///
+/// The roster's spelling is listed *as well as* the reached one because they
+/// routinely differ, and it is the roster's that the migration reads: a
+/// reinstalled VPS answers on port 22 again, so bootstrap reaches it there
+/// while the roster still declares the hardened port, leaving
+/// `[address]:<hardened port>` behind to be copied back.
+///
+/// Order is reached-first and duplicates are dropped, so the list reads as
+/// instructions and `-R` is not run twice on one target.
+pub fn key_targets(
+    alias: &str,
+    address: &str,
+    port: u16,
+    roster: &[crate::hosts::Host],
+) -> Vec<String> {
+    let mut targets = vec![alias.to_string()];
+    targets.extend(legacy_targets(address, port));
+    if let Some(declared) = roster.iter().find(|host| host.name == alias) {
+        targets.extend(legacy_targets(&declared.address, declared.port));
     }
+
+    let mut seen = std::collections::HashSet::new();
+    targets.retain(|target| seen.insert(target.clone()));
+    targets
+}
+
+/// `ssh-keygen -R` on each of [`key_targets`] — removes every entry for them,
+/// hashed or not. Missing entries are not an error: `-R` succeeds on a target
+/// it does not find, which is what makes this safe to run over the whole list.
+pub fn forget(targets: &[String]) -> Result<()> {
+    for target in targets {
+        let mut cmd = Command::new("ssh-keygen");
+        cmd.arg("-R").arg(target);
+
+        let result = output::run_piped("ssh-keygen", &mut cmd)
+            .wrap_err("Failed to execute ssh-keygen -R")?;
+        if !result.status.success() {
+            return Err(result.error(format!("Failed to remove known_hosts entry for {target}")));
+        }
+        output::clear_subprocess_lines(result.lines_written);
+    }
+    Ok(())
 }
 
 /// Copies whatever key a `legacy_targets` entry already holds onto `alias`,
@@ -157,16 +198,30 @@ fn strip_comment_lines(raw: &str) -> Vec<String> {
         .collect()
 }
 
-/// Swaps a known_hosts line's leading host field for `alias`, keeping the
-/// key type, key material and any comment verbatim — hashed or not, the
-/// migration never needs to decode the original field, only discard it.
+/// Swaps a known_hosts line's host field for `alias`, keeping the key type,
+/// key material and any comment verbatim — hashed or not, the migration never
+/// needs to decode the original field, only discard it.
+///
+/// A leading `@cert-authority` or `@revoked` marker is carried, not
+/// discarded: it is not the host field, and reading it as one both corrupts
+/// the line — the real host field would land where the key type belongs — and
+/// converts a revocation into a trust line for the alias.
 fn rewrite_host_field(line: &str, alias: &str) -> Option<String> {
-    let (_, rest) = line.split_once(char::is_whitespace)?;
-    let rest = rest.trim_start();
-    if rest.is_empty() {
+    let (marker, rest) = match line.split_once(char::is_whitespace) {
+        Some((first, rest)) if first.starts_with('@') => (Some(first), rest.trim_start()),
+        _ => (None, line),
+    };
+
+    let (_, key) = rest.split_once(char::is_whitespace)?;
+    let key = key.trim_start();
+    if key.is_empty() {
         return None;
     }
-    Some(format!("{alias} {rest}"))
+
+    Some(match marker {
+        Some(marker) => format!("{marker} {alias} {key}"),
+        None => format!("{alias} {key}"),
+    })
 }
 
 /// ssh's own `known_hosts`, which is the file every real connection reads.
@@ -478,6 +533,51 @@ mod tests {
         assert_eq!(rewrite_host_field("", "auberge"), None);
     }
 
+    /// `ssh-keygen -F` prints a marker line verbatim, marker included.
+    /// Treating `@revoked` as the host field turns a revocation into a
+    /// trust line for the alias — and an unparseable one, since the real
+    /// host field then reads as the key type.
+    #[test]
+    fn rewrite_host_field_keeps_a_revoked_marker() {
+        assert_eq!(
+            rewrite_host_field("@revoked 203.0.113.55 ssh-ed25519 AAAAKEY", "auberge"),
+            Some("@revoked auberge ssh-ed25519 AAAAKEY".to_string())
+        );
+    }
+
+    #[test]
+    fn rewrite_host_field_keeps_a_cert_authority_marker() {
+        assert_eq!(
+            rewrite_host_field(
+                "@cert-authority 203.0.113.55 ssh-ed25519 AAAAKEY ca",
+                "auberge"
+            ),
+            Some("@cert-authority auberge ssh-ed25519 AAAAKEY ca".to_string())
+        );
+    }
+
+    #[test]
+    fn rewrite_host_field_none_when_a_marker_line_has_no_key_material() {
+        assert_eq!(rewrite_host_field("@revoked 203.0.113.55", "auberge"), None);
+    }
+
+    /// End to end: a revoked key must reach the alias still revoked. The
+    /// alternative is an alias that trusts a key the operator revoked.
+    #[test]
+    fn migrate_alias_carries_a_revocation_forward_as_a_revocation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("known_hosts");
+        std::fs::write(&path, format!("@revoked 203.0.113.10 {LEGACY_KEY}\n")).unwrap();
+
+        assert!(migrate_alias(&path, "auberge", &legacy_targets("203.0.113.10", 22)).unwrap());
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            written.contains(&format!("@revoked auberge {LEGACY_KEY}")),
+            "{written}"
+        );
+    }
+
     const LEGACY_KEY: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKEYMATERIAL admin@auberge";
 
     /// A `known_hosts` holding one entry for `target`, at a path no other
@@ -601,6 +701,47 @@ mod tests {
         assert!(
             !written.contains("auberge ssh-ed25519 AAAASTALE"),
             "{written}"
+        );
+    }
+
+    #[test]
+    fn key_targets_lists_the_alias_then_the_address_it_was_reached_at() {
+        assert_eq!(
+            key_targets("auberge", "203.0.113.10", 22, &[]),
+            ["auberge", "203.0.113.10"]
+        );
+    }
+
+    /// The loop-breaking case. A reinstalled VPS answers on 22 again, so
+    /// bootstrap reaches it there while the roster still declares 59865 —
+    /// and `[203.0.113.10]:59865` is what the migration would copy back onto
+    /// the alias the operator just dropped.
+    #[test]
+    fn key_targets_adds_the_spelling_the_roster_declares() {
+        let mut host = crate::hosts::Host::fixture("auberge", None);
+        host.port = 59865;
+
+        assert_eq!(
+            key_targets("auberge", "203.0.113.10", 22, &[host]),
+            ["auberge", "203.0.113.10", "[203.0.113.10]:59865"]
+        );
+    }
+
+    #[test]
+    fn key_targets_names_each_spelling_once() {
+        let host = crate::hosts::Host::fixture("auberge", None);
+        assert_eq!(
+            key_targets("auberge", "203.0.113.10", 22, &[host]),
+            ["auberge", "203.0.113.10"]
+        );
+    }
+
+    #[test]
+    fn key_targets_ignores_a_roster_that_does_not_hold_the_host() {
+        let host = crate::hosts::Host::fixture("ruche", None);
+        assert_eq!(
+            key_targets("auberge", "198.51.100.1", 22, &[host]),
+            ["auberge", "198.51.100.1"]
         );
     }
 

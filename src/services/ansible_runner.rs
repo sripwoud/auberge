@@ -131,6 +131,17 @@ fn decide(status: &HostKeyStatus, assume_yes: bool, confirmed: bool) -> HostKeyA
     }
 }
 
+/// The `ssh-keygen -R` lines an operator must run to drop a Host's key
+/// entirely, one per line. All of them: leaving a legacy entry behind lets
+/// the next roster read migrate the stale key back onto the alias (#800).
+fn removal_commands(targets: &[String]) -> String {
+    targets
+        .iter()
+        .map(|target| format!("  ssh-keygen -R \"{target}\""))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn render(fingerprints: &[Fingerprint]) -> String {
     fingerprints
         .iter()
@@ -148,6 +159,16 @@ fn resolve_stale_host_key(host: &InventoryHost, assume_yes: bool) -> Result<()> 
     };
 
     let target = &host.name;
+    // Every spelling, not just the alias: since #800 the roster read copies a
+    // legacy address-keyed entry onto an alias that has none, and bootstrap
+    // reads the roster before it gets here. Dropping the alias alone is undone
+    // before the next check runs, so the same conflict is reported forever.
+    let targets = known_hosts::key_targets(
+        &host.name,
+        &host.route.address,
+        host.route.port,
+        &crate::hosts::HostManager::load_hosts()?,
+    );
 
     output::warn(&format!(
         "Host key for {target} changed.\n  known_hosts has: {}\n  {target} now offers: {}\n  Expected after a rebuild or reinstall; otherwise verify the offered key against your provider console.",
@@ -161,7 +182,7 @@ fn resolve_stale_host_key(host: &InventoryHost, assume_yes: bool) -> Result<()> 
     match decide(&status, assume_yes, confirmed) {
         HostKeyAction::Proceed => Ok(()),
         HostKeyAction::Forget { announce } => {
-            known_hosts::forget(&host.name)?;
+            known_hosts::forget(&targets)?;
             if announce {
                 output::warn(&format!(
                     "Removed stale known_hosts entry for {target} (--force)"
@@ -170,7 +191,8 @@ fn resolve_stale_host_key(host: &InventoryHost, assume_yes: bool) -> Result<()> 
             Ok(())
         }
         HostKeyAction::Abort => eyre::bail!(
-            "Refusing to bootstrap against a changed host key. Verify the key, then run:\n  ssh-keygen -R \"{target}\"\nand re-run the bootstrap."
+            "Refusing to bootstrap against a changed host key. Verify the key, then run:\n{}\nand re-run the bootstrap.",
+            removal_commands(&targets)
         ),
     }
 }
