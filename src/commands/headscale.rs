@@ -95,6 +95,26 @@ pub enum HeadscaleCommands {
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
+    #[command(
+        visible_alias = "tn",
+        about = "Replace an enrolled node's ACL tags (headscale sets the tag list wholesale)"
+    )]
+    TagNode {
+        #[arg(
+            help = "Node name as `list-nodes` shows it (prompts from that listing when omitted)"
+        )]
+        name: Option<String>,
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            required = true,
+            help = "ACL tags the node ends up with — this REPLACES the set it carries, it does not add to it (e.g. tag:server)"
+        )]
+        tags: Vec<String>,
+        #[arg(short = 'H', long, help = "Target host running headscale")]
+        host: Option<String>,
+    },
     #[command(visible_alias = "lu", about = "List registered users")]
     ListUsers {
         #[arg(
@@ -169,7 +189,7 @@ impl ProtoTimestamp {
 /// [`HeadscaleUser`] documents: the camelCase spellings this carried until
 /// #707 are protojson's, and headscale does not use protojson — every node
 /// listing failed to parse on `missing field givenName`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct HeadscaleNode {
     id: u64,
     given_name: String,
@@ -179,11 +199,35 @@ struct HeadscaleNode {
     last_seen: Option<ProtoTimestamp>,
     #[serde(default)]
     online: bool,
+    /// `forced_tags` no longer exists: proto fields 18–20 are reserved and
+    /// commented out in 0.29.3, and a node's tags are field 26, `tags`. A node
+    /// carrying none omits the key, so this is the `omitempty` default the
+    /// sibling fields document — and it is also how auberge tells a user-owned
+    /// node from a tagged one, which is headscale's own `IsTagged()`
+    /// (`len(node.Tags) > 0`).
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct HeadscaleNodeUser {
     name: String,
+}
+
+/// The node a `nodes tag` prints back — *not* the shape a listing prints.
+///
+/// `SetTags` returns `node.Proto()` as it stands, while `ListNodes` runs every
+/// node through a fixup that fills `user` in with the synthetic
+/// `tagged-devices` owner. A node that was just tagged has no user at all —
+/// `SetNodeTags` nulls `UserID` and `User`, because a tagged node is owned by
+/// its tags — so `user` is absent here, and [`HeadscaleNode`], which requires
+/// it, would fail to parse the one thing this command exists to report.
+#[derive(Debug, Serialize, Deserialize)]
+struct TaggedNode {
+    id: u64,
+    given_name: String,
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
 /// The `preauthkeys create` response. Only the key itself is read; the object
@@ -225,6 +269,8 @@ struct NodeDisplay {
     name: String,
     #[tabled(rename = "USER")]
     user: String,
+    #[tabled(rename = "TAGS")]
+    tags: String,
     #[tabled(rename = "IPS")]
     ips: String,
     #[tabled(rename = "ONLINE")]
@@ -239,6 +285,7 @@ impl From<&HeadscaleNode> for NodeDisplay {
             id: n.id.to_string(),
             name: n.given_name.clone(),
             user: n.user.name.clone(),
+            tags: n.tags.join(", "),
             ips: n.ip_addresses.join(", "),
             online: if n.online {
                 "yes".to_string()
@@ -522,6 +569,27 @@ fn parse_auth_id(input: &str) -> Result<String> {
     Ok(candidate.to_string())
 }
 
+/// Puts `remedy` in front of a [`run_headscale_cmd`] failure whose stderr
+/// contains `needle`, and leaves every other failure exactly as headscale
+/// wrote it.
+///
+/// The `stderr` is read off [`HeadscaleCmdError`] through `err.chain()` rather
+/// than off `Report::to_string()`, which would match a *rendering* — see that
+/// type's doc comment.
+///
+/// Callers pass their own pair, so *which* command translates *what* stays a
+/// property of the seam that knows what the failure means: the registration
+/// cache belongs to `register`, the `tagOwners` gate to `tag_node`, and
+/// [`run_headscale_cmd`] — which carries nine other command lines — translates
+/// nothing. Two tests defend that placement, one per flow.
+fn explain(err: eyre::Report, needle: &str, remedy: &'static str) -> eyre::Report {
+    let matched = err
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<HeadscaleCmdError>())
+        .is_some_and(|failed| failed.stderr.contains(needle));
+    if matched { err.wrap_err(remedy) } else { err }
+}
+
 /// The miss headscale reports when the auth-id names no pending enrollment.
 /// Matched as a substring: it arrives wrapped in gRPC framing
 /// (`registering node: rpc error: code = Unknown desc = …`).
@@ -570,17 +638,55 @@ fn register_node(session: &dyn SshSession, auth_id: &str, username: &str) -> Res
             quote(username)
         ),
     )
-    .map_err(|err| {
-        let missed_the_cache = err
-            .chain()
-            .find_map(|cause| cause.downcast_ref::<HeadscaleCmdError>())
-            .is_some_and(|failed| failed.stderr.contains(REGISTRATION_CACHE_MISS));
-        if missed_the_cache {
-            err.wrap_err(REGISTRATION_CACHE_MISS_REMEDY)
-        } else {
-            err
-        }
-    })
+    .map_err(|err| explain(err, REGISTRATION_CACHE_MISS, REGISTRATION_CACHE_MISS_REMEDY))
+}
+
+/// The tail of what headscale says when a well-formed tag is one the deployed
+/// policy does not name: `requested tags [tag:x] are invalid or not permitted`
+/// (`ErrRequestedTagsInvalidOrNotPermitted`, wrapped in gRPC framing).
+///
+/// Prose, not a flag, like [`REGISTRATION_CACHE_MISS`] — no `--help` shows it,
+/// a reworded release ends the translation with every test still green, and it
+/// rides the same [`VERIFIED_CLI_VERSION`] contract as the command lines.
+const TAG_NOT_IN_POLICY: &str = "are invalid or not permitted";
+
+/// Why a tag auberge accepted can still be refused, and what to do about it.
+///
+/// `SetNodeTags` validates each tag against `polMan.TagExists`, which is a
+/// lookup in the deployed policy's `tagOwners`. Nothing else in this file hits
+/// that check: the `--tags` stamped on a pre-auth key is applied at
+/// registration without it, which is why a node can already carry a tag no
+/// policy mentions. So the rejection reads like a malformed tag when the tag
+/// is fine and the *policy* is what is missing.
+const TAG_NOT_IN_POLICY_REMEDY: &str = "headscale takes only a tag its deployed ACL policy names \
+     under `tagOwners`, and `nodes tag` is the only path that checks — the `--tags` stamped on a \
+     pre-auth key is applied unchecked, so a node can already carry a tag no policy mentions. Add \
+     the tag to policy.hujson's tagOwners and deploy it before tagging";
+
+/// Replaces a node's ACL tags. **Replaces** — `--help` says "tags to add to
+/// the node", and `SetNodeTags` assigns `node.Tags = validatedTags`, so a tag
+/// the node carried and this call omits is dropped. The help text on
+/// [`HeadscaleCommands::TagNode`] says so because the upstream one does not.
+///
+/// `--identifier` is a `uint64`, so the id is what rides the command line and
+/// the name never does — #707's lesson, carried by the type, as
+/// `mint_preauth_key` carries it. The tags do ride as text and are quoted,
+/// because [`validate_tag`] is not the shell defense ([`quote`] is).
+///
+/// One failure is translated here and nowhere else, on the #729 precedent: the
+/// `tagOwners` gate belongs to this command alone, while [`run_headscale_cmd`]
+/// carries nine other command lines.
+fn tag_node(session: &dyn SshSession, node_id: u64, tags: &[String]) -> Result<TaggedNode> {
+    let raw = run_headscale_cmd(
+        session,
+        &format!(
+            "nodes tag --identifier {} --tags {} -o json",
+            node_id,
+            quote(&tags.join(","))
+        ),
+    )
+    .map_err(|err| explain(err, TAG_NOT_IN_POLICY, TAG_NOT_IN_POLICY_REMEDY))?;
+    serde_json::from_str(raw.trim()).wrap_err("Failed to parse headscale nodes tag response")
 }
 
 /// `users destroy` still resolves a user by `--name` on 0.29.3, unlike
@@ -711,6 +817,90 @@ fn resolve_existing_user(
     }
 }
 
+/// Resolves a node name against `nodes list` — *locally*, the way
+/// [`find_user`] resolves a username: the name reaches no command line, only
+/// the listing's `u64` id does (#707's lesson).
+///
+/// The name matched is `given_name`, which is what `list-nodes` shows and what
+/// an operator reads off `tailscale status` — not `name`, headscale's
+/// un-deduplicated hostname.
+fn find_node(session: &dyn SshSession, name: &str) -> Result<HeadscaleNode> {
+    list_nodes(session)?
+        .into_iter()
+        .find(|n| n.given_name == name)
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "No headscale node named '{}' — `auberge headscale list-nodes` shows the enrolled ones",
+                name
+            )
+        })
+}
+
+/// A node that must already exist, resolved against one `nodes list`: a name
+/// given as an argument is matched locally, an omitted one goes through the
+/// picker over that same listing. Only the resolved `u64` id reaches a command
+/// line.
+fn resolve_existing_node(
+    session: &dyn SshSession,
+    name: Option<String>,
+    is_tty: bool,
+) -> Result<HeadscaleNode> {
+    match name {
+        Some(name) => find_node(session, &name),
+        None if is_tty => {
+            let nodes = list_nodes(session)?;
+            select_item(
+                &nodes,
+                |n| {
+                    let carries = if n.tags.is_empty() {
+                        format!("user: {}", n.user.name)
+                    } else {
+                        format!("tags: {}", n.tags.join(", "))
+                    };
+                    format!("{} (id: {}, {})", n.given_name, n.id, carries)
+                },
+                Choice::new("node")
+                    .with_prompt("Select node to tag")
+                    .resolved_by("the node name as an argument"),
+            )
+        }
+        None => eyre::bail!("Node name is required (pass as argument or run interactively)"),
+    }
+}
+
+/// What a tagging that *succeeded* still has to tell the operator, read off
+/// the listing's before-state and the response's after-state.
+///
+/// Both are silent consequences of `SetNodeTags` that no error reports, and
+/// both are irreversible from this CLI: a dropped tag is gone because the call
+/// assigns the set rather than adding to it, and a user-owned node that
+/// becomes tagged has its `UserID` nulled with no path back.
+fn tagging_warnings(before: &HeadscaleNode, after: &TaggedNode) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    let dropped: Vec<&str> = before
+        .tags
+        .iter()
+        .filter(|tag| !after.tags.contains(tag))
+        .map(String::as_str)
+        .collect();
+    if !dropped.is_empty() {
+        warnings.push(format!(
+            "Dropped {} — `nodes tag` replaces a node's tag set, it does not add to it",
+            dropped.join(", ")
+        ));
+    }
+
+    if before.tags.is_empty() && !after.tags.is_empty() {
+        warnings.push(format!(
+            "'{}' was owned by user '{}' and is now owned by its tags — headscale does not convert a tagged node back",
+            before.given_name, before.user.name
+        ));
+    }
+
+    warnings
+}
+
 /// A key for a user that already exists, which is what `add-user` refuses
 /// (#711) — the second and third device under the one #510 user had no CLI
 /// path.
@@ -814,6 +1004,54 @@ pub fn run_headscale_add_user(
     print_enrollment_instructions(&key)?;
 
     output::success("Done");
+    Ok(())
+}
+
+/// Tags a node that is already enrolled — the case a pre-auth key cannot
+/// reach (#769). ACL tags are stampable only at mint (`add-user -t`,
+/// `add-key -t`), so every node that enrolled before those flags carried one
+/// has none, and a default-deny policy keyed on tags matches nobody.
+///
+/// Two remote commands, in the shape add-key established: one `nodes list` to
+/// turn the name into the `uint64` `--identifier` wants, then the mutation.
+/// The resulting tag set is read off the mutation's own response rather than a
+/// second listing — it is the authoritative post-state, and nothing can slip
+/// between the change and the report of it.
+///
+/// No `--output`: ADR-0004 puts the flag only on a command whose JSON carries a
+/// field the caller could not have predicted, and there is no consumer for this
+/// one's — `list-nodes -o json` already answers "what does the fleet carry", now
+/// that it reads `tags`. Every sibling mutation here is likewise human-only.
+pub fn run_headscale_tag_node(
+    name: Option<String>,
+    tags: Vec<String>,
+    host: Option<String>,
+) -> Result<()> {
+    validate_tags(&tags)?;
+
+    let (host_info, ssh_key) = resolve_headscale_host(host)?;
+    let session = LiveSshSession::new(&host_info, &ssh_key);
+
+    let is_tty = std::io::stdin().is_terminal();
+
+    let node = resolve_existing_node(&session, name, is_tty)?;
+
+    output::info(&format!(
+        "Setting tags on '{}' (id {})...",
+        node.given_name, node.id
+    ));
+    let tagged = tag_node(&session, node.id, &tags)?;
+
+    for warning in tagging_warnings(&node, &tagged) {
+        output::warn(&warning);
+    }
+
+    output::success(&format!(
+        "'{}' (id {}) now carries {}",
+        tagged.given_name,
+        tagged.id,
+        tagged.tags.join(", ")
+    ));
     Ok(())
 }
 
@@ -1014,8 +1252,58 @@ mod tests {
 		"register_method": 2,
 		"given_name": "phone",
 		"online": true
+	},
+	{
+		"id": 2,
+		"machine_key": "mkey:cc",
+		"node_key": "nodekey:dd",
+		"ip_addresses": [
+			"100.64.0.2"
+		],
+		"name": "ruche",
+		"user": {
+			"id": 2147455555,
+			"name": "tagged-devices"
+		},
+		"last_seen": {
+			"seconds": 1712919600
+		},
+		"created_at": {
+			"seconds": 1712919000
+		},
+		"register_method": 1,
+		"given_name": "ruche",
+		"online": true,
+		"tags": [
+			"tag:agent"
+		]
 	}
 ]"#;
+
+    /// What `headscale nodes tag -o json` prints on 0.29.3: `SetTags` returns
+    /// `node.Proto()` with no listing fixup, and `SetNodeTags` has just nulled
+    /// the user — so there is no `user` key at all.
+    const NODE_TAGGED_JSON: &str = r#"{
+	"id": 3,
+	"machine_key": "mkey:ee",
+	"node_key": "nodekey:ff",
+	"ip_addresses": [
+		"100.64.0.3"
+	],
+	"name": "lechuck",
+	"last_seen": {
+		"seconds": 1712919600
+	},
+	"created_at": {
+		"seconds": 1712919000
+	},
+	"register_method": 1,
+	"given_name": "lechuck",
+	"online": true,
+	"tags": [
+		"tag:infra"
+	]
+}"#;
 
     /// What `headscale users create <name> -o json` prints on 0.29.3: the one
     /// `User` it just made, id included.
@@ -1075,7 +1363,7 @@ mod tests {
         let mock = MockSshSession::new();
         mock.stage_run_result(CommandResult::from_stdout(NODES_LIST_JSON));
         let nodes = list_nodes(&mock).unwrap();
-        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes.len(), 2);
         assert_eq!(nodes[0].given_name, "phone");
         assert_eq!(nodes[0].user.name, "alice");
         assert_eq!(nodes[0].ip_addresses.len(), 2);
@@ -1084,6 +1372,23 @@ mod tests {
             mock.calls(),
             vec![SshOp::Run("sudo headscale nodes list -o json".to_string())]
         );
+    }
+
+    /// A node's tags are field 26, `tags` — `forced_tags` (18) is reserved and
+    /// commented out in 0.29.3's proto, so a listing parsed for it reads every
+    /// node as untagged, which is the reading #769 exists to correct.
+    ///
+    /// The two nodes are the two shapes one listing mixes: an untagged node
+    /// omits the key entirely, and a tagged one is shown owned by headscale's
+    /// synthetic `tagged-devices` user rather than the user it enrolled under.
+    #[test]
+    fn list_nodes_reads_the_tags_a_node_carries() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(NODES_LIST_JSON));
+        let nodes = list_nodes(&mock).unwrap();
+        assert!(nodes[0].tags.is_empty(), "an untagged node omits the key");
+        assert_eq!(nodes[1].tags, vec!["tag:agent".to_string()]);
+        assert_eq!(nodes[1].user.name, "tagged-devices");
     }
 
     #[test]
@@ -1144,6 +1449,276 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// #769's threading, in add-key's shape: the id reaching `nodes tag` is the
+    /// one the *listing* carried for the given name, after exactly two remote
+    /// commands — one `nodes list`, one mutation. The post-state is read off
+    /// the mutation's own response, so no third command exists to assert.
+    #[test]
+    fn tag_node_sets_tags_against_the_id_the_listing_carried() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(NODES_LIST_JSON));
+        mock.stage_run_result(CommandResult::from_stdout(NODE_TAGGED_JSON));
+
+        let node = find_node(&mock, "ruche").unwrap();
+        let tagged = tag_node(&mock, node.id, &["tag:infra".to_string()]).unwrap();
+        assert_eq!(tagged.tags, vec!["tag:infra".to_string()]);
+
+        assert_eq!(
+            mock.calls(),
+            vec![
+                SshOp::Run("sudo headscale nodes list -o json".to_string()),
+                SshOp::Run(
+                    "sudo headscale nodes tag --identifier 2 --tags 'tag:infra' -o json"
+                        .to_string()
+                ),
+            ]
+        );
+    }
+
+    /// `--identifier` is a `uint64` on 0.29.3, so a node name there is a value
+    /// cobra rejects — the `preauthkeys create --user` trap (#707) in a second
+    /// place.
+    ///
+    /// Asserted through the resolve, not against a hand-written id: a test
+    /// that never has the name in scope cannot catch a `tag_node` that started
+    /// interpolating one.
+    #[test]
+    fn the_tag_command_never_carries_a_node_name() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(NODES_LIST_JSON));
+        mock.stage_run_result(CommandResult::from_stdout(NODE_TAGGED_JSON));
+
+        let node = find_node(&mock, "ruche").unwrap();
+        tag_node(&mock, node.id, &["tag:infra".to_string()]).unwrap();
+
+        let SshOp::Run(command) = &mock.calls()[1] else {
+            panic!("nodes tag must reach the Host as a run");
+        };
+        assert!(!command.contains(&node.given_name), "{command}");
+    }
+
+    /// `--tags` is a cobra `StringSlice` here as it is on `preauthkeys create`,
+    /// so several tags ride one comma-joined value.
+    #[test]
+    fn tag_node_carries_several_tags_in_one_invocation() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(NODE_TAGGED_JSON));
+        tag_node(
+            &mock,
+            2,
+            &["tag:infra".to_string(), "tag:exit-node".to_string()],
+        )
+        .unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run(
+                "sudo headscale nodes tag --identifier 2 --tags 'tag:infra,tag:exit-node' -o json"
+                    .to_string()
+            )]
+        );
+    }
+
+    /// `validateTag` accepts `tag:$(whoami)`, so validation is not the shell
+    /// defense on this command line either — quoting is.
+    #[test]
+    fn a_hostile_tag_cannot_break_out_of_the_tag_command_line() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(NODE_TAGGED_JSON));
+        tag_node(&mock, 2, &["tag:$(whoami)".to_string()]).unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run(
+                "sudo headscale nodes tag --identifier 2 --tags 'tag:$(whoami)' -o json"
+                    .to_string()
+            )]
+        );
+    }
+
+    /// The response carries no `user` key — `SetTags` returns `node.Proto()`
+    /// with no listing fixup, over a node whose user `SetNodeTags` just nulled.
+    /// Parsing it as a [`HeadscaleNode`] fails on the missing field, which is
+    /// why the tag response has its own type.
+    #[test]
+    fn tag_node_reads_a_response_that_has_no_user() {
+        assert!(
+            !NODE_TAGGED_JSON.contains("\"user\""),
+            "the fixture must be the userless shape this asserts against"
+        );
+        assert!(serde_json::from_str::<HeadscaleNode>(NODE_TAGGED_JSON).is_err());
+
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(NODE_TAGGED_JSON));
+        let tagged = tag_node(&mock, 3, &["tag:infra".to_string()]).unwrap();
+        assert_eq!(tagged.id, 3);
+        assert_eq!(tagged.given_name, "lechuck");
+    }
+
+    /// `nodes tag` is the only path that checks a tag against the deployed
+    /// policy's `tagOwners`, so its rejection of a well-formed tag reads like
+    /// a malformed one. The policy leads; headscale's own text stays under it
+    /// as the source (#729's shape).
+    #[test]
+    fn tag_node_names_the_policy_when_headscale_refuses_a_well_formed_tag() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: b"Error: setting tags: rpc error: code = InvalidArgument desc = \
+                      requested tags [tag:infra] are invalid or not permitted"
+                .to_vec(),
+        });
+
+        let err = tag_node(&mock, 2, &["tag:infra".to_string()]).unwrap_err();
+        let chain = format!("{err:#}");
+
+        assert!(chain.contains("tagOwners"), "{chain}");
+        assert!(chain.contains("policy.hujson"), "{chain}");
+        assert!(
+            chain.contains("are invalid or not permitted"),
+            "headscale's own text must survive as the source: {chain}"
+        );
+        assert!(
+            chain.contains("headscale nodes tag"),
+            "the command that failed must survive too: {chain}"
+        );
+    }
+
+    /// Only that one string is translated; every other failure reaches the
+    /// operator as headscale wrote it.
+    #[test]
+    fn tag_node_passes_every_other_headscale_failure_through_verbatim() {
+        for stderr in [
+            "Error: setting tags: rpc error: code = NotFound desc = node not found",
+            "Error: failed to connect to headscale: connection refused",
+        ] {
+            let mock = MockSshSession::new();
+            mock.stage_run_result(CommandResult {
+                success: false,
+                exit_code: Some(1),
+                stdout: Vec::new(),
+                stderr: stderr.as_bytes().to_vec(),
+            });
+
+            let err = tag_node(&mock, 2, &["tag:infra".to_string()]).unwrap_err();
+            let chain = format!("{err:#}");
+
+            assert!(chain.contains(stderr), "{stderr:?}: {chain}");
+            assert!(
+                !chain.contains("tagOwners"),
+                "{stderr:?} is not a policy rejection: {chain}"
+            );
+        }
+    }
+
+    /// The translation lives in `tag_node` and nowhere below it: the
+    /// `tagOwners` gate is this command's, while [`run_headscale_cmd`] carries
+    /// nine other command lines. Without this the placement is guarded only by
+    /// a doc comment.
+    #[test]
+    fn the_generic_runner_translates_nothing_the_tag_flow_owns() {
+        let refused = b"Error: requested tags [tag:infra] are invalid or not permitted";
+
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: refused.to_vec(),
+        });
+        let err = run_headscale_cmd(&mock, "users destroy ghost --force").unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("are invalid or not permitted"),
+            "the runner still reports what headscale said: {chain}"
+        );
+        assert!(
+            !chain.contains("tagOwners"),
+            "the runner must not carry the tag flow's remedy: {chain}"
+        );
+    }
+
+    /// tag-node mutates, so a name the store does not carry has to stop the
+    /// sequence at the listing — and point at the command that shows the names.
+    #[test]
+    fn find_node_refuses_a_name_the_listing_does_not_carry() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(NODES_LIST_JSON));
+        let err = find_node(&mock, "ghost").unwrap_err();
+        assert!(err.to_string().contains("ghost"), "{err}");
+        assert!(err.to_string().contains("list-nodes"), "{err}");
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run("sudo headscale nodes list -o json".to_string())],
+            "no mutation may be issued for a node that does not exist"
+        );
+    }
+
+    /// Without a terminal there is no picker, and an omitted name must fail
+    /// rather than block on one.
+    #[test]
+    fn resolving_a_node_without_a_name_or_a_terminal_is_an_error() {
+        let mock = MockSshSession::new();
+        let err = resolve_existing_node(&mock, None, false).unwrap_err();
+        assert!(err.to_string().contains("Node name is required"), "{err}");
+        assert!(
+            mock.calls().is_empty(),
+            "nothing may be issued before the name is known"
+        );
+    }
+
+    /// `--help` says "tags to add to the node" and `SetNodeTags` assigns the
+    /// set, so a tag the node carried and the call omits is silently gone.
+    /// This is the one thing #769 said must not be silent.
+    #[test]
+    fn tagging_says_which_tag_it_dropped() {
+        let before = listed_node("ruche", vec!["tag:agent", "tag:infra"], "alice");
+        let after = TaggedNode {
+            id: 2,
+            given_name: "ruche".to_string(),
+            tags: vec!["tag:infra".to_string()],
+        };
+        let warnings = tagging_warnings(&before, &after);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("tag:agent"), "{warnings:?}");
+        assert!(warnings[0].contains("replaces"), "{warnings:?}");
+        assert!(
+            !warnings[0].contains("tag:infra"),
+            "a kept tag is not a dropped one: {warnings:?}"
+        );
+    }
+
+    /// `SetNodeTags` nulls `UserID` and `User`: a node is either user-owned or
+    /// tagged, and headscale has no path back. The operator asked for a tag,
+    /// not for that.
+    #[test]
+    fn tagging_says_a_user_owned_node_stopped_being_one() {
+        let before = listed_node("lechuck", vec![], "alice");
+        let after = TaggedNode {
+            id: 3,
+            given_name: "lechuck".to_string(),
+            tags: vec!["tag:infra".to_string()],
+        };
+        let warnings = tagging_warnings(&before, &after);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("alice"), "{warnings:?}");
+        assert!(warnings[0].contains("does not convert"), "{warnings:?}");
+    }
+
+    /// A node that was already tagged and keeps what it had loses nothing and
+    /// changes owner class not at all — warning about either would train the
+    /// operator to ignore both.
+    #[test]
+    fn re_tagging_a_tagged_node_with_what_it_had_warns_about_nothing() {
+        let before = listed_node("ruche", vec!["tag:agent"], "tagged-devices");
+        let after = TaggedNode {
+            id: 2,
+            given_name: "ruche".to_string(),
+            tags: vec!["tag:agent".to_string()],
+        };
+        assert!(tagging_warnings(&before, &after).is_empty());
     }
 
     #[test]
@@ -1486,6 +2061,22 @@ mod tests {
         );
     }
 
+    /// A node as `nodes list` renders one, for the assertions that are about
+    /// what auberge does with it rather than about the JSON.
+    fn listed_node(name: &str, tags: Vec<&str>, user: &str) -> HeadscaleNode {
+        HeadscaleNode {
+            id: 1,
+            given_name: name.to_string(),
+            ip_addresses: vec![],
+            user: HeadscaleNodeUser {
+                name: user.to_string(),
+            },
+            last_seen: None,
+            online: true,
+            tags: tags.into_iter().map(String::from).collect(),
+        }
+    }
+
     #[test]
     fn node_display_joins_ips() {
         let node = HeadscaleNode {
@@ -1500,6 +2091,7 @@ mod tests {
                 nanos: 0,
             }),
             online: true,
+            tags: vec![],
         };
         let display = NodeDisplay::from(&node);
         assert_eq!(display.ips, "100.64.0.1, fd7a:115c:a1e0::1");
@@ -1517,10 +2109,22 @@ mod tests {
             },
             last_seen: None,
             online: false,
+            tags: vec![],
         };
         let display = NodeDisplay::from(&node);
         assert_eq!(display.online, "no");
         assert_eq!(display.last_seen, "");
+    }
+
+    /// The column is why the four untagged nodes #769 exists for are visible
+    /// from auberge at all — before it, the only readout was `tailscale
+    /// status` on a machine already in the tailnet.
+    #[test]
+    fn node_display_shows_the_tags_a_node_carries() {
+        let tagged = listed_node("ruche", vec!["tag:agent", "tag:infra"], "tagged-devices");
+        assert_eq!(NodeDisplay::from(&tagged).tags, "tag:agent, tag:infra");
+        let untagged = listed_node("lechuck", vec![], "alice");
+        assert_eq!(NodeDisplay::from(&untagged).tags, "");
     }
 
     #[test]

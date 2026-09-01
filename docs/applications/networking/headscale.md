@@ -63,7 +63,7 @@ tailscale dns status        # Resolver should be the host's tailnet IP
 
 The tailnet runs a tag-based, default-deny policy ([ADR-0055](https://github.com/sripwoud/auberge/blob/master/meta/adr/0055-the-tailnet-runs-a-tag-based-acl-policy.md)). The role deploys `policy.hujson` beside `config.yaml` and points headscale at it with `policy.mode: file` — repo-owned, not a `headscale policy set` into the DB. Its presence flips the tailnet from allow-all to deny-by-default.
 
-Trust is a tag; which node carries which is stamped on its pre-auth key by `auberge headscale add-key -t tag:...`, so the policy names tiers, never nodes.
+Trust is a tag; which node carries which is set by `auberge headscale add-key -t tag:...` at enrollment or by [`auberge headscale tag-node`](cli-reference/headscale/tag-node.md) afterwards, so the policy names tiers, never nodes.
 
 | Tag           | Example nodes     | May initiate to                         |
 | ------------- | ----------------- | --------------------------------------- |
@@ -76,11 +76,14 @@ Every tag reaches the host's [Blocky](applications/networking/blocky.md) global 
 
 !> Deploying the first policy is a **flag day** — flows never inventoried can break. Verify existing flows (syncthing lechuck↔auberge, laptop backup pulls, SSH, tailnet-only app vhosts) before and after, and enroll a `tag:agent` node only once the policy is live.
 
-Enroll a node into a tier:
+Put a node in a tier:
 
 ```bash
-auberge headscale add-key -t tag:agent      # mint a key stamped tag:agent
+auberge headscale add-key -t tag:agent      # at enrollment: mint a key stamped tag:agent
+auberge headscale tag-node lechuck -t tag:trusted   # afterwards: set an enrolled node's tags
 ```
+
+!> The two paths are not validated alike. A tag on a pre-auth key is applied unchecked, so a node can carry a tag no policy names; `tag-node` requires the tag to appear under `tagOwners` in a **deployed** policy and rejects it otherwise. Tagging nodes that are already enrolled therefore happens _after_ the policy is live, not before. `tag-node` also replaces a node's tag set rather than adding to it, and converts a user-owned node to a tag-owned one irreversibly.
 
 ## Migration from Tailscale SaaS
 

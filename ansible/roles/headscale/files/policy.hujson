@@ -2,9 +2,15 @@
 //
 // The presence of this file flips headscale from default-allow to
 // default-deny: only the flows below are permitted, everything else is
-// dropped. Trust is expressed as tags; which node carries which tag is stamped
-// on its pre-auth key by `auberge headscale add-key -t tag:...`, not here, so
-// this file is the same on every tailnet regardless of node names.
+// dropped. Trust is expressed as tags; which node carries which tag is set by
+// `auberge headscale add-key -t tag:...` at enrollment or by `auberge headscale
+// tag-node` afterwards, not here, so this file is the same on every tailnet
+// regardless of node names.
+//
+// A tag must appear under tagOwners below before `tag-node` will set it:
+// headscale checks membership there (and only there), while a tag stamped on a
+// pre-auth key is applied unchecked. Deploy this file before tagging a node
+// that is already enrolled.
 //
 // Owner lists are empty on purpose: only an admin (the CLI that mints the
 // keys) may apply these tags, so the policy needs no operator-specific
