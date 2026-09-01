@@ -115,10 +115,20 @@ pub fn unit_file_name(unit: &str) -> String {
 /// A Memory Budget: one systemd unit's `MemoryHigh=` (throttle-and-reclaim
 /// ceiling) and `MemoryMax=` (OOM-kill line), declared per unit in the App's
 /// Playbook Meta and injected at deploy like an App Version (ADR-0021).
+///
+/// `max` is optional, and omitting it is a statement rather than an oversight:
+/// `MemoryHigh=` throttles and reclaims, so a unit that overshoots it is slow;
+/// `MemoryMax=` is where the kernel kills. A unit that supervises processes it
+/// did not fork — `aoe serve` and the tmux sessions under it — cannot be given
+/// a kill line before it is known which cgroup those processes land in, since
+/// the wrong guess OOM-kills an agent mid-run. An absent `max` injects no
+/// `<unit>_memory_max`, so a template that reads one fails loudly instead of
+/// rendering an empty `MemoryMax=`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MemoryBudget {
     pub high: String,
-    pub max: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<String>,
 }
 
 /// A Pinned version: the exact value plus the upstream coordinates Renovate
@@ -320,14 +330,17 @@ pub fn declared_app_versions(playbooks_dir: &Path) -> Result<Vec<(String, Versio
 /// Collect every declared Memory Budget as `<unit>_memory_high` /
 /// `<unit>_memory_max` extra-var pairs (unit-name hyphens become
 /// underscores), sorted by name. Injected at deploy through the same
-/// `extra_vars` seam as App Versions (ADR-0021).
+/// `extra_vars` seam as App Versions (ADR-0021). A Budget that declares no
+/// `max` contributes only its `_memory_high` half.
 pub fn app_memory_vars(playbooks_dir: &Path) -> Result<Vec<(String, String)>> {
     let mut vars = Vec::new();
     for (_, meta) in load_all_metas(playbooks_dir)? {
         for (unit, budget) in meta.memory {
             let prefix = unit.replace('-', "_");
             vars.push((format!("{prefix}_memory_high"), budget.high));
-            vars.push((format!("{prefix}_memory_max"), budget.max));
+            if let Some(max) = budget.max {
+                vars.push((format!("{prefix}_memory_max"), max));
+            }
         }
     }
     vars.sort();
@@ -707,14 +720,14 @@ mod tests {
         assert_eq!(memory.len(), 4);
         let task_queue = memory.get("paperless-task-queue").unwrap();
         assert_eq!(task_queue.high, "768M");
-        assert_eq!(task_queue.max, "1G");
+        assert_eq!(task_queue.max.as_deref(), Some("1G"));
         let webserver = memory.get("paperless-webserver").unwrap();
         assert_eq!(webserver.high, "512M");
-        assert_eq!(webserver.max, "768M");
+        assert_eq!(webserver.max.as_deref(), Some("768M"));
         for unit in ["paperless-consumer", "paperless-scheduler"] {
             let budget = memory.get(unit).unwrap();
             assert_eq!(budget.high, "192M");
-            assert_eq!(budget.max, "256M");
+            assert_eq!(budget.max.as_deref(), Some("256M"));
         }
     }
 
@@ -1227,8 +1240,21 @@ memory:
         let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
         let budget = meta.memory.get("paperless-task-queue").unwrap();
         assert_eq!(budget.high, "768M");
-        assert_eq!(budget.max, "1G");
+        assert_eq!(budget.max.as_deref(), Some("1G"));
         assert_eq!(meta.memory.len(), 2);
+    }
+
+    /// A Budget may declare a throttle line and no kill line. The absence has
+    /// to survive parsing as an absence: defaulting it to an empty string
+    /// would inject `<unit>_memory_max=` and render `MemoryMax=`, which
+    /// systemd reads as a reset to `infinity` and which nothing would report.
+    #[test]
+    fn test_meta_memory_block_parses_a_budget_without_a_max() {
+        let yaml = "required_keys: []\nmemory:\n  aoe: {high: 3G}\n";
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        let budget = meta.memory.get("aoe").unwrap();
+        assert_eq!(budget.high, "3G");
+        assert_eq!(budget.max, None);
     }
 
     #[test]
@@ -1451,6 +1477,26 @@ units:
         );
     }
 
+    /// A Budget with no `max` injects only its throttle half. Injecting an
+    /// empty `_memory_max` beside it would let a template render
+    /// `MemoryMax=`, which resets the setting to `infinity` — the same
+    /// unbounded unit the omission asks for, reached by a line that reads
+    /// like a limit.
+    #[test]
+    fn test_app_memory_vars_omits_the_max_a_budget_does_not_declare() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("aoe.meta.yml"),
+            "required_keys: []\nmemory:\n  aoe: {high: 3G}\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            app_memory_vars(dir.path()).unwrap(),
+            vec![("aoe_memory_high".to_string(), "3G".to_string())]
+        );
+    }
+
     fn parse_systemd_size(value: &str) -> Option<u64> {
         let (digits, multiplier) = match value.as_bytes().last()? {
             b'K' => (&value[..value.len() - 1], 1u64 << 10),
@@ -1470,14 +1516,16 @@ units:
                 let high = parse_systemd_size(&budget.high).unwrap_or_else(|| {
                     panic!("{app}: {unit} high {:?} is not a systemd size", budget.high)
                 });
-                let max = parse_systemd_size(&budget.max).unwrap_or_else(|| {
-                    panic!("{app}: {unit} max {:?} is not a systemd size", budget.max)
+                let Some(declared) = budget.max.as_deref() else {
+                    continue;
+                };
+                let max = parse_systemd_size(declared).unwrap_or_else(|| {
+                    panic!("{app}: {unit} max {declared:?} is not a systemd size")
                 });
                 assert!(
                     high <= max,
-                    "{app}: {unit} declares high {} above max {}",
+                    "{app}: {unit} declares high {} above max {declared}",
                     budget.high,
-                    budget.max
                 );
             }
         }
@@ -1651,7 +1699,7 @@ units:
         let memory = load_meta("grimmory").memory;
         let budget = memory.get("grimmory").unwrap();
         assert_eq!(budget.high, "1100M");
-        assert_eq!(budget.max, "1200M");
+        assert_eq!(budget.max.as_deref(), Some("1200M"));
     }
 
     #[test]
@@ -1659,7 +1707,7 @@ units:
         let memory = load_meta("navidrome").memory;
         let budget = memory.get("navidrome").unwrap();
         assert_eq!(budget.high, "256M");
-        assert_eq!(budget.max, "384M");
+        assert_eq!(budget.max.as_deref(), Some("384M"));
     }
 
     #[test]
@@ -1681,10 +1729,10 @@ units:
         assert_eq!(memory.len(), 2);
         let liquidsoap = memory.get("liquidsoap").unwrap();
         assert_eq!(liquidsoap.high, "320M");
-        assert_eq!(liquidsoap.max, "384M");
+        assert_eq!(liquidsoap.max.as_deref(), Some("384M"));
         let icecast = memory.get("icecast2").unwrap();
         assert_eq!(icecast.high, "32M");
-        assert_eq!(icecast.max, "64M");
+        assert_eq!(icecast.max.as_deref(), Some("64M"));
     }
 
     #[test]
