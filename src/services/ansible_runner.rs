@@ -1,8 +1,11 @@
 use crate::config::Preflight;
 use crate::output;
+use crate::prompt;
+use crate::services::known_hosts::{self, Fingerprint, HostKeyStatus};
 use crate::services::progress::Progress;
 use eyre::{Result, WrapErr};
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
@@ -114,6 +117,158 @@ pub struct InventoryHost {
     pub groups: Vec<String>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum HostKeyAction {
+    Proceed,
+    Forget { announce: bool },
+    Abort,
+}
+
+fn decide(status: &HostKeyStatus, assume_yes: bool, confirmed: bool) -> HostKeyAction {
+    match status {
+        HostKeyStatus::Unknown | HostKeyStatus::Unchanged => HostKeyAction::Proceed,
+        HostKeyStatus::Changed { .. } if assume_yes => HostKeyAction::Forget { announce: true },
+        HostKeyStatus::Changed { .. } if confirmed => HostKeyAction::Forget { announce: false },
+        HostKeyStatus::Changed { .. } => HostKeyAction::Abort,
+    }
+}
+
+fn render(fingerprints: &[Fingerprint]) -> String {
+    fingerprints
+        .iter()
+        .map(|f| f.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Clears a `known_hosts` entry the target contradicts, so bootstrap can
+/// connect without the blanket host-key bypass it used to pass to ansible.
+fn resolve_stale_host_key(host: &InventoryHost, assume_yes: bool) -> Result<()> {
+    let status = known_hosts::inspect(&host.address, host.port);
+    let HostKeyStatus::Changed { known, offered } = &status else {
+        return Ok(());
+    };
+
+    let target = if host.port == 22 {
+        host.address.clone()
+    } else {
+        format!("[{}]:{}", host.address, host.port)
+    };
+
+    output::warn(&format!(
+        "Host key for {target} changed.\n  known_hosts has: {}\n  {target} now offers: {}\n  Expected after a rebuild or reinstall; otherwise verify the offered key against your provider console.",
+        render(known),
+        render(offered)
+    ));
+
+    let confirmed =
+        assume_yes || prompt::confirm("Remove the stale known_hosts entry and continue?", false);
+
+    match decide(&status, assume_yes, confirmed) {
+        HostKeyAction::Proceed => Ok(()),
+        HostKeyAction::Forget { announce } => {
+            known_hosts::forget(&host.address, host.port)?;
+            if announce {
+                output::warn(&format!(
+                    "Removed stale known_hosts entry for {target} (--force)"
+                ));
+            }
+            Ok(())
+        }
+        HostKeyAction::Abort => eyre::bail!(
+            "Refusing to bootstrap against a changed host key. Verify the key, then run:\n  ssh-keygen -R \"{target}\"\nand re-run the bootstrap."
+        ),
+    }
+}
+
+struct ArgvCtx<'a> {
+    playbook_rel: &'a Path,
+    inventory: &'a Path,
+    vars: &'a Path,
+    host: &'a InventoryHost,
+}
+
+#[derive(Default)]
+struct PlaybookOpts<'a> {
+    check: bool,
+    tags: Option<&'a [String]>,
+    skip_tags: Option<&'a [String]>,
+    extra_vars: Option<&'a [(&'a str, &'a str)]>,
+    ask_vault_pass: bool,
+    ask_pass: bool,
+    is_fresh_bootstrap: bool,
+}
+
+fn base_argv(ctx: &ArgvCtx) -> Vec<OsString> {
+    vec![
+        OsString::from("-i"),
+        OsString::from("inventory.yml"),
+        OsString::from("-i"),
+        ctx.inventory.into(),
+        ctx.playbook_rel.into(),
+        OsString::from("--limit"),
+        OsString::from(&ctx.host.name),
+        OsString::from("--extra-vars"),
+        OsString::from(format!("@{}", ctx.vars.display())),
+    ]
+}
+
+/// The single source of truth for how a fresh-bootstrap connection is made.
+///
+/// Deliberately sets no `ansible_ssh_common_args`: overriding it would drop
+/// `inventory.yml`'s `StrictHostKeyChecking=accept-new` and real
+/// `UserKnownHostsFile`, which is what still refuses a changed host key.
+fn bootstrap_connection_argv(host: &InventoryHost) -> Vec<OsString> {
+    vec![
+        OsString::from("--ask-pass"),
+        OsString::from("-e"),
+        OsString::from(format!("ansible_user={}", host.user)),
+        OsString::from("-e"),
+        OsString::from(format!("ansible_port={}", host.port)),
+    ]
+}
+
+fn playbook_argv(ctx: &ArgvCtx, opts: &PlaybookOpts) -> Vec<OsString> {
+    let mut argv = base_argv(ctx);
+
+    if opts.check {
+        argv.push(OsString::from("--check"));
+    }
+
+    if opts.ask_vault_pass {
+        argv.push(OsString::from("--ask-vault-pass"));
+    }
+
+    if opts.is_fresh_bootstrap {
+        argv.extend(bootstrap_connection_argv(ctx.host));
+    } else if opts.ask_pass {
+        argv.push(OsString::from("--ask-pass"));
+    }
+
+    if let Some(tags) = opts.tags {
+        argv.push(OsString::from("--tags"));
+        argv.push(OsString::from(tags.join(",")));
+    }
+
+    if let Some(skip_tags) = opts.skip_tags {
+        argv.push(OsString::from("--skip-tags"));
+        argv.push(OsString::from(skip_tags.join(",")));
+    }
+
+    for var in extra_var_args(opts.extra_vars) {
+        argv.push(OsString::from("-e"));
+        argv.push(OsString::from(var));
+    }
+
+    argv
+}
+
+fn bootstrap_argv(ctx: &ArgvCtx) -> Vec<OsString> {
+    let mut argv = base_argv(ctx);
+    argv.extend(bootstrap_connection_argv(ctx.host));
+    argv
+}
+
 fn extra_var_args(extra_vars: Option<&[(&str, &str)]>) -> Vec<String> {
     extra_vars
         .into_iter()
@@ -199,53 +354,32 @@ pub fn run_playbook(
     let vars_file = write_extra_vars_file(preflight.flat_vars())?;
     let inventory_file = write_inventory_file(host)?;
 
-    let mut cmd = Command::new("ansible-playbook");
-    cmd.current_dir(&ansible_dir)
-        .arg("-i")
-        .arg("inventory.yml")
-        .arg("-i")
-        .arg(inventory_file.path())
-        .arg(playbook.strip_prefix(&ansible_dir).unwrap_or(playbook))
-        .arg("--limit")
-        .arg(&host.name)
-        .arg("--extra-vars")
-        .arg(format!("@{}", vars_file.path().display()));
-
     let playbook_name = playbook.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let is_fresh_bootstrap = playbook_name == "bootstrap.yml";
 
-    if check {
-        cmd.arg("--check");
-    }
-
-    if ask_vault_pass {
-        cmd.arg("--ask-vault-pass");
-    }
-
     if is_fresh_bootstrap {
-        cmd.arg("--ask-pass");
-        cmd.arg("-e").arg(format!("ansible_port={}", host.port));
-        cmd.arg("-e").arg(format!("ansible_user={}", host.user));
-        cmd.arg("-e").arg(
-            "ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'",
-        );
+        resolve_stale_host_key(host, false)?;
     }
 
-    if ask_pass && !is_fresh_bootstrap {
-        cmd.arg("--ask-pass");
-    }
+    let ctx = ArgvCtx {
+        playbook_rel: playbook.strip_prefix(&ansible_dir).unwrap_or(playbook),
+        inventory: inventory_file.path(),
+        vars: vars_file.path(),
+        host,
+    };
+    let opts = PlaybookOpts {
+        check,
+        tags,
+        skip_tags,
+        extra_vars,
+        ask_vault_pass,
+        ask_pass,
+        is_fresh_bootstrap,
+    };
 
-    if let Some(tags) = tags {
-        cmd.arg("--tags").arg(tags.join(","));
-    }
-
-    if let Some(skip_tags) = skip_tags {
-        cmd.arg("--skip-tags").arg(skip_tags.join(","));
-    }
-
-    for var in extra_var_args(extra_vars) {
-        cmd.arg("-e").arg(var);
-    }
+    let mut cmd = Command::new("ansible-playbook");
+    cmd.current_dir(&ansible_dir)
+        .args(playbook_argv(&ctx, &opts));
 
     let needs_tty = ask_vault_pass || ask_pass || is_fresh_bootstrap;
     if needs_tty {
@@ -293,6 +427,7 @@ pub fn run_bootstrap(
     preflight: &Preflight,
     playbook: &Path,
     host: &InventoryHost,
+    force: bool,
 ) -> Result<AnsibleResult> {
     let assets = crate::ansible_assets::AnsibleAssets::prepare()?;
     assets.ensure_collections()?;
@@ -300,22 +435,18 @@ pub fn run_bootstrap(
     let vars_file = write_extra_vars_file(preflight.flat_vars())?;
     let inventory_file = write_inventory_file(host)?;
 
+    resolve_stale_host_key(host, force)?;
+
+    let ctx = ArgvCtx {
+        playbook_rel: playbook.strip_prefix(&ansible_dir).unwrap_or(playbook),
+        inventory: inventory_file.path(),
+        vars: vars_file.path(),
+        host,
+    };
+
     let status = Command::new("ansible-playbook")
         .current_dir(&ansible_dir)
-        .arg("-i")
-        .arg("inventory.yml")
-        .arg("-i")
-        .arg(inventory_file.path())
-        .arg(playbook.strip_prefix(&ansible_dir).unwrap_or(playbook))
-        .arg("--limit")
-        .arg(&host.name)
-        .arg("--extra-vars")
-        .arg(format!("@{}", vars_file.path().display()))
-        .arg("-e")
-        .arg(format!("ansible_user={}", host.user))
-        .arg("-e")
-        .arg(format!("ansible_port={}", host.port))
-        .arg("--ask-pass")
+        .args(bootstrap_argv(&ctx))
         .status()
         .wrap_err("Failed to execute ansible-playbook")?;
 
@@ -329,6 +460,179 @@ pub fn run_bootstrap(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn changed_status() -> HostKeyStatus {
+        HostKeyStatus::Changed {
+            known: vec![Fingerprint {
+                key_type: "ED25519".to_string(),
+                hash: "SHA256:AAA".to_string(),
+            }],
+            offered: vec![Fingerprint {
+                key_type: "ED25519".to_string(),
+                hash: "SHA256:ZZZ".to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn test_decide_proceeds_when_unchanged_or_unknown() {
+        assert_eq!(
+            decide(&HostKeyStatus::Unchanged, false, false),
+            HostKeyAction::Proceed
+        );
+        assert_eq!(
+            decide(&HostKeyStatus::Unknown, true, true),
+            HostKeyAction::Proceed
+        );
+    }
+
+    #[test]
+    fn test_decide_forgets_under_force_without_prompting() {
+        assert_eq!(
+            decide(&changed_status(), true, false),
+            HostKeyAction::Forget { announce: true }
+        );
+    }
+
+    #[test]
+    fn test_decide_aborts_when_operator_declines() {
+        assert_eq!(
+            decide(&changed_status(), false, false),
+            HostKeyAction::Abort
+        );
+    }
+
+    #[test]
+    fn test_decide_forgets_when_operator_confirms() {
+        assert_eq!(
+            decide(&changed_status(), false, true),
+            HostKeyAction::Forget { announce: false }
+        );
+    }
+
+    fn bootstrap_host() -> InventoryHost {
+        InventoryHost {
+            name: "vps".to_string(),
+            address: "198.51.100.1".to_string(),
+            port: 22,
+            user: "debian".to_string(),
+            groups: vec![],
+        }
+    }
+
+    fn argv_ctx<'a>(host: &'a InventoryHost, paths: &'a [std::path::PathBuf; 3]) -> ArgvCtx<'a> {
+        ArgvCtx {
+            playbook_rel: &paths[0],
+            inventory: &paths[1],
+            vars: &paths[2],
+            host,
+        }
+    }
+
+    fn argv_paths() -> [std::path::PathBuf; 3] {
+        [
+            std::path::PathBuf::from("playbooks/bootstrap.yml"),
+            std::path::PathBuf::from("/tmp/inventory.yml"),
+            std::path::PathBuf::from("/tmp/vars.yml"),
+        ]
+    }
+
+    /// The `--ask-pass` flag plus every `-e` pair naming a connection variable.
+    fn connection_subset(argv: &[OsString]) -> Vec<String> {
+        let strings: Vec<String> = argv
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let mut subset = Vec::new();
+        for (index, arg) in strings.iter().enumerate() {
+            if arg == "--ask-pass" {
+                subset.push(arg.clone());
+            }
+            if arg == "-e"
+                && let Some(value) = strings.get(index + 1)
+                && (value.starts_with("ansible_user=")
+                    || value.starts_with("ansible_port=")
+                    || value.starts_with("ansible_ssh_common_args="))
+            {
+                subset.push(format!("-e {value}"));
+            }
+        }
+        subset
+    }
+
+    #[test]
+    fn test_bootstrap_connection_argv_sets_user_port_and_ask_pass() {
+        let host = bootstrap_host();
+        let argv = bootstrap_connection_argv(&host);
+
+        assert_eq!(
+            argv,
+            vec![
+                OsString::from("--ask-pass"),
+                OsString::from("-e"),
+                OsString::from("ansible_user=debian"),
+                OsString::from("-e"),
+                OsString::from("ansible_port=22"),
+            ]
+        );
+        let joined = argv
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(!joined.contains("ansible_ssh_common_args"));
+        assert!(!joined.contains("StrictHostKeyChecking"));
+    }
+
+    #[test]
+    fn test_bootstrap_and_playbook_paths_emit_identical_connection_args() {
+        let host = bootstrap_host();
+        let paths = argv_paths();
+        let ctx = argv_ctx(&host, &paths);
+
+        let from_playbook = playbook_argv(
+            &ctx,
+            &PlaybookOpts {
+                is_fresh_bootstrap: true,
+                ..PlaybookOpts::default()
+            },
+        );
+
+        assert_eq!(
+            connection_subset(&bootstrap_argv(&ctx)),
+            connection_subset(&from_playbook)
+        );
+    }
+
+    #[test]
+    fn test_non_bootstrap_playbook_has_no_bootstrap_connection_args() {
+        let host = bootstrap_host();
+        let paths = argv_paths();
+        let ctx = argv_ctx(&host, &paths);
+
+        let argv = playbook_argv(&ctx, &PlaybookOpts::default());
+        assert!(connection_subset(&argv).is_empty());
+    }
+
+    #[test]
+    fn test_ask_pass_adds_single_ask_pass_for_non_bootstrap() {
+        let host = bootstrap_host();
+        let paths = argv_paths();
+        let ctx = argv_ctx(&host, &paths);
+
+        let argv = playbook_argv(
+            &ctx,
+            &PlaybookOpts {
+                ask_pass: true,
+                ..PlaybookOpts::default()
+            },
+        );
+        assert_eq!(
+            argv.iter().filter(|a| *a == "--ask-pass").count(),
+            1,
+            "expected exactly one --ask-pass"
+        );
+    }
 
     #[test]
     fn test_write_inventory_file_generates_valid_yaml() {

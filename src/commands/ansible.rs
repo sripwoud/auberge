@@ -631,7 +631,7 @@ pub fn run_ansible_bootstrap(
         groups: host.groups.clone(),
     };
 
-    let result = run_bootstrap(&preflight, &bootstrap_playbook, &inventory_host)?;
+    let result = run_bootstrap(&preflight, &bootstrap_playbook, &inventory_host, force)?;
 
     if result.success {
         output::success("Bootstrap completed successfully");
