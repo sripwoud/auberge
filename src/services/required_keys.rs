@@ -97,6 +97,32 @@ pub fn required_keys_for(
     Ok(keys)
 }
 
+/// Whether a run over `playbook` with `tags` enters `role`.
+///
+/// The same role selection Preflight resolves keys through, asked as a
+/// question — so a caller gating work on "does this run reach role X" and the
+/// Preflight demanding X's keys can never disagree about which roles a run
+/// enters. #768's auto-mint is that caller: minting a pre-auth key costs an
+/// SSH round trip to the coordinator, and only a run entering the enrolling
+/// role can consume one.
+pub fn run_enters_role(
+    ansible_dir: &Path,
+    playbook: &str,
+    tags: Option<&[String]>,
+    role: &str,
+) -> Result<bool> {
+    let playbooks_dir = ansible_dir.join(PLAYBOOKS_DIR);
+    let stem = playbook
+        .strip_suffix(".yml")
+        .or_else(|| playbook.strip_suffix(".yaml"))
+        .unwrap_or(playbook);
+    Ok(
+        selected_roles(&roster_path(&playbooks_dir, stem), tags.unwrap_or_default())?
+            .iter()
+            .any(|selected| selected == role),
+    )
+}
+
 /// Build a [`Preflight`] for `playbook`, validating every key the Playbook
 /// Metas declare for this run. Every production path to an Ansible run comes
 /// through here, so the Metas are the only authority a deploy consults.
@@ -385,7 +411,7 @@ mod tests {
     fn test_repo_untagged_infrastructure_run_skips_the_guarded_roles() {
         let keys = required_keys_for(&repo_ansible_dir(), "infrastructure.yml", None).unwrap();
         let set: HashSet<&str> = keys.iter().map(String::as_str).collect();
-        assert!(set.contains("tailscale_authkey"), "{keys:?}");
+        assert!(set.contains("admin_user_name"), "{keys:?}");
         for gate in ["blocky_subdomain", "headscale_subdomain"] {
             assert!(
                 !set.contains(gate),
@@ -595,5 +621,73 @@ mod tests {
         )
         .unwrap();
         assert!(assert_host_overrides_known(&config, &known).is_ok());
+    }
+
+    // ── role selection, asked directly ────────────────────────────────────────
+
+    #[test]
+    fn test_an_untagged_run_enters_an_unguarded_roster_role() {
+        let dir = fixture_ansible_dir(
+            &[],
+            &[(
+                "apps.yml",
+                "---\n- hosts: all\n  roles:\n    - role: tailscale\n      tags: [network]\n",
+            )],
+        );
+        assert!(run_enters_role(dir.path(), "apps.yml", None, "tailscale").unwrap());
+        assert!(!run_enters_role(dir.path(), "apps.yml", None, "caddy").unwrap());
+    }
+
+    #[test]
+    fn test_a_tagged_run_enters_only_the_roles_its_tags_select() {
+        let dir = fixture_ansible_dir(
+            &[],
+            &[(
+                "apps.yml",
+                "---\n- hosts: all\n  roles:\n    - role: tailscale\n      tags: [network]\n    - role: caddy\n      tags: [web]\n",
+            )],
+        );
+        let network = ["network".to_string()];
+        let web = ["web".to_string()];
+        assert!(run_enters_role(dir.path(), "apps.yml", Some(&network), "tailscale").unwrap());
+        assert!(!run_enters_role(dir.path(), "apps.yml", Some(&web), "tailscale").unwrap());
+    }
+
+    /// A playbook with no roster file at all — a standalone play — enters no
+    /// role, so a caller gating an SSH round trip on this does nothing.
+    #[test]
+    fn test_a_playbook_with_no_roster_enters_no_role() {
+        let dir = fixture_ansible_dir(&[], &[]);
+        assert!(!run_enters_role(dir.path(), "absent.yml", None, "tailscale").unwrap());
+    }
+
+    /// The gate #768's auto-mint reads: an untagged infrastructure run enters
+    /// the tailscale role, so it is the run that may need a pre-auth key.
+    #[test]
+    fn test_the_repo_infrastructure_run_enters_the_enrolling_role() {
+        assert!(
+            run_enters_role(
+                &repo_ansible_dir(),
+                "infrastructure.yml",
+                None,
+                crate::commands::headscale::ENROLLING_ROLE,
+            )
+            .unwrap()
+        );
+    }
+
+    /// …and an unrelated run does not, so a routine app deploy costs no round
+    /// trip to the coordinator.
+    #[test]
+    fn test_the_repo_apps_run_does_not_enter_the_enrolling_role() {
+        assert!(
+            !run_enters_role(
+                &repo_ansible_dir(),
+                "apps.yml",
+                None,
+                crate::commands::headscale::ENROLLING_ROLE,
+            )
+            .unwrap()
+        );
     }
 }

@@ -21,7 +21,7 @@ use dialoguer::{Input, Select, theme::ColorfulTheme};
 use eyre::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tabled::Tabled;
 
 /// The headscale release this module's command lines and JSON shapes were read
@@ -1061,6 +1061,62 @@ pub fn auto_mint_for(target_name: &str) -> Result<AutoMint> {
             coordinator.name
         )
     })
+}
+
+/// The pre-auth key to inject for a plan of `(playbook file, tags)` runs
+/// against `target_name`, reported to the operator as it is decided.
+///
+/// `None` means inject nothing, which leaves whatever `config.toml` holds —
+/// correct both when the target is already enrolled (the role reads no key)
+/// and when no coordinator exists (there is nothing better to offer). A
+/// coordinator that is declared but cannot be minted against is an error, not
+/// a `None`: it reaches the caller before the play, which is the early
+/// failure `required_keys` used to provide for this key.
+pub fn preauth_key_for_plan(
+    ansible_dir: &Path,
+    plan: &[(&str, Option<&[String]>)],
+    target_name: &str,
+) -> Result<Option<String>> {
+    let enrolls = plan.iter().try_fold(false, |found, (playbook, tags)| {
+        if found {
+            return Ok(true);
+        }
+        crate::services::required_keys::run_enters_role(
+            ansible_dir,
+            playbook,
+            *tags,
+            ENROLLING_ROLE,
+        )
+    })?;
+    if !enrolls {
+        return Ok(None);
+    }
+
+    match auto_mint_for(target_name)? {
+        AutoMint::Minted { key, tag } => {
+            match tag {
+                Some(tag) => output::info(&format!(
+                    "Minted a {AUTO_MINT_EXPIRATION} pre-auth key for '{target_name}' ({})",
+                    tag.acl_tag()
+                )),
+                None => output::warn(&format!(
+                    "Minted a {AUTO_MINT_EXPIRATION} pre-auth key for '{target_name}' with no ACL \
+                     tag — hosts.toml declares no tailnet_tag for it, so under the tag-based \
+                     policy the node will reach nothing. Set one with `auberge host edit \
+                     {target_name}`."
+                )),
+            }
+            Ok(Some(key))
+        }
+        AutoMint::AlreadyEnrolled => Ok(None),
+        AutoMint::NoCoordinator => {
+            output::info(&format!(
+                "No roster host serves headscale, so nothing to mint against — {INJECTED_AUTHKEY} \
+                 from config.toml stands for '{target_name}'"
+            ));
+            Ok(None)
+        }
+    }
 }
 
 /// A key for a user that already exists, which is what `add-user` refuses

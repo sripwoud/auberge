@@ -1,6 +1,6 @@
 ---
 # Tailscale configuration
-tailscale_authkey: "" # Required for initial auth — set in config.toml
+tailscale_authkey: "" # Minted per run by the CLI (#768); config.toml only overrides
 tailscale_hostname: "{{ ansible_facts['hostname'] }}" # Hostname to use in tailnet
 tailscale_accept_routes: false # Accept subnet routes advertised by other nodes
 tailscale_advertise_exit_node: false # Advertise as exit node

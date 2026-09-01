@@ -47,7 +47,12 @@
         that:
           - tailscale_authkey is defined
           - tailscale_authkey | length > 0
-        fail_msg: "tailscale_authkey must be set in config.toml for initial Tailscale authentication"
+        fail_msg: >-
+          {{ inventory_hostname }} is not enrolled and no tailscale_authkey reached this play.
+          The CLI mints one per run against the roster host serving headscale (#768); it did not,
+          because no roster host serves headscale and config.toml holds no fallback value.
+          Enroll by hand — `auberge headscale add-key -t tag:<tier>` — and set tailscale_authkey,
+          or give the tailnet a headscale to mint against.
       when: not tailscale_is_authenticated
 
     - name: Connect to Tailscale network

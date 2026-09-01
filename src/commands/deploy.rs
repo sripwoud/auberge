@@ -1,4 +1,5 @@
 use crate::ansible_assets::AnsibleAssets;
+use crate::commands::ansible::preauth_key_for_runs;
 use crate::config::Config;
 use crate::hosts::{HOST_FLAG, HostManager};
 use crate::output;
@@ -316,12 +317,16 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
     let app_versions = app_version_vars(&playbooks_dir)?;
     let memory_budgets = app_memory_vars(&playbooks_dir)?;
     let hosts_ignoreip = hosts_ignoreip_var()?;
-    let extra_vars: Vec<(&str, &str)> = app_versions
+    let preauth_key = preauth_key_for_runs(assets.ansible_dir(), &runs, &host.name)?;
+    let mut extra_vars: Vec<(&str, &str)> = app_versions
         .iter()
         .chain(memory_budgets.iter())
         .chain(std::iter::once(&hosts_ignoreip))
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
+    if let Some(key) = &preauth_key {
+        extra_vars.push((crate::commands::headscale::INJECTED_AUTHKEY, key));
+    }
 
     for (run, preflight) in runs.iter().zip(preflights.iter()) {
         let playbook_name = run

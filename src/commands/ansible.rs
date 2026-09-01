@@ -1,3 +1,4 @@
+use crate::commands::headscale::INJECTED_AUTHKEY;
 use crate::config::{Config, Preflight};
 use crate::hosts::{HOST_FLAG, HOST_POSITIONAL};
 use crate::output;
@@ -5,7 +6,7 @@ use crate::playbook_meta::{app_memory_vars, app_version_vars};
 use crate::prompt::{Choice, select_item};
 use crate::services::ansible_runner::{InventoryHost, run_bootstrap, run_playbook};
 use crate::services::dependency_resolver::{
-    find_standalone_playbook, resolve_tags_to_playbook_runs,
+    PlaybookRun, find_standalone_playbook, resolve_tags_to_playbook_runs,
 };
 use crate::services::inventory::{Host, get_playbooks, hosts_ignoreip_var, select_or_arg};
 use clap::Subcommand;
@@ -216,6 +217,7 @@ fn run_auto_resolved(
     let app_versions = app_version_vars(&assets.playbooks_dir())?;
     let memory_budgets = app_memory_vars(&assets.playbooks_dir())?;
     let hosts_ignoreip = hosts_ignoreip_var()?;
+    let preauth_key = preauth_key_for_runs(assets.ansible_dir(), &runs, &host.name)?;
     let mut extra_vars: Vec<(&str, &str)> = app_versions
         .iter()
         .chain(memory_budgets.iter())
@@ -224,6 +226,9 @@ fn run_auto_resolved(
         .collect();
     if let Some(user) = user {
         extra_vars.push(("ansible_user", user));
+    }
+    if let Some(key) = &preauth_key {
+        extra_vars.push((INJECTED_AUTHKEY, key));
     }
 
     for run in &runs {
@@ -314,6 +319,29 @@ fn run_auto_resolved(
     Ok(())
 }
 
+/// [`preauth_key_for_plan`] over the resolved runs of a plan — the shape both
+/// `ansible run` and `deploy` build before they enter their run loop.
+///
+/// The key is minted once per invocation rather than once per run: it is
+/// injected into every run's extra-vars, and a run that does not read it is
+/// unaffected by its presence, the way App Versions already are.
+pub fn preauth_key_for_runs(
+    ansible_dir: &Path,
+    runs: &[PlaybookRun],
+    target_name: &str,
+) -> Result<Option<String>> {
+    let plan: Vec<(&str, Option<&[String]>)> = runs
+        .iter()
+        .map(|run| {
+            (
+                run.path.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+                (!run.tags.is_empty()).then_some(run.tags.as_slice()),
+            )
+        })
+        .collect();
+    crate::commands::headscale::preauth_key_for_plan(ansible_dir, &plan, target_name)
+}
+
 fn split_standalone_redirects(tags: Vec<String>) -> Result<(Vec<PathBuf>, Vec<String>)> {
     let mut playbooks = Vec::new();
     let mut unknown = Vec::new();
@@ -381,6 +409,11 @@ fn run_single_playbook(
     let app_versions = app_version_vars(&assets.playbooks_dir())?;
     let memory_budgets = app_memory_vars(&assets.playbooks_dir())?;
     let hosts_ignoreip = hosts_ignoreip_var()?;
+    let preauth_key = crate::commands::headscale::preauth_key_for_plan(
+        assets.ansible_dir(),
+        &[(playbook_file, tags)],
+        &host.name,
+    )?;
     let mut extra_vars: Vec<(&str, &str)> = app_versions
         .iter()
         .chain(memory_budgets.iter())
@@ -389,6 +422,9 @@ fn run_single_playbook(
         .collect();
     if let Some(user) = user {
         extra_vars.push(("ansible_user", user));
+    }
+    if let Some(key) = &preauth_key {
+        extra_vars.push((INJECTED_AUTHKEY, key));
     }
 
     let mut progress = crate::services::progress::TerminalProgress::new("");

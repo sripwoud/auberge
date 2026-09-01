@@ -412,9 +412,22 @@ mod tests {
         let meta = load_meta("infrastructure");
         assert!(meta.required_keys.contains(&"admin_user_name".to_string()));
         assert!(meta.required_keys.contains(&"domain".to_string()));
+    }
+
+    /// `tailscale_authkey` was infrastructure's third `required_key` until
+    /// #768. It is minted per run by the CLI now, so demanding it of config
+    /// would fail runs the CLI is about to satisfy — the invariant
+    /// `tests/injected_keys.rs` holds over every Meta, asserted here on the
+    /// one Meta that had it.
+    #[test]
+    fn test_infrastructure_meta_does_not_demand_the_injected_authkey() {
+        let meta = load_meta("infrastructure");
         assert!(
+            !meta
+                .required_keys
+                .contains(&crate::commands::headscale::INJECTED_AUTHKEY.to_string()),
+            "{:?}",
             meta.required_keys
-                .contains(&"tailscale_authkey".to_string())
         );
     }
 
