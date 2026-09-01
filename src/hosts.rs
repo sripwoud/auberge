@@ -282,7 +282,10 @@ impl HostManager {
     pub fn save_hosts(hosts: &[Host]) -> Result<()> {
         let home =
             dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
-        crate::services::known_hosts::migrate_roster(hosts)?;
+        crate::services::known_hosts::migrate_roster(
+            &crate::services::known_hosts::default_path()?,
+            hosts,
+        )?;
         Self::write_roster(&Self::config_path()?, &home.join(".ssh"), hosts)
     }
 

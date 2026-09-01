@@ -1,7 +1,7 @@
 use crate::output;
 use eyre::{Result, WrapErr};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 impl std::fmt::Display for Fingerprint {
@@ -66,18 +66,18 @@ pub fn forget(alias: &str) -> Result<()> {
 /// known_hosts entry keyed by address survives the move to a name-keyed
 /// `HostKeyAlias` (#785) without ssh re-verifying the target over the
 /// network — `StrictHostKeyChecking accept-new` would otherwise trust
-/// whatever answers under the unfamiliar alias.
+/// whatever answers under the unfamiliar alias, and the CLI's own transport
+/// connects by address, so that option never even reaches it.
 ///
-/// A no-op — safe to call for every host on every `auberge host` mutation —
-/// when `alias` already has an entry (already migrated), or when
-/// `legacy_target` never did (nothing trusted yet; a real connection will
-/// accept-new under the alias like any fresh host).
-pub fn migrate_alias(alias: &str, legacy_target: &str) -> Result<bool> {
-    if !key_lines(alias)?.is_empty() {
+/// A no-op — safe to call for every host on every roster read — when `alias`
+/// already has an entry (already migrated), or when `legacy_target` never did
+/// (nothing trusted yet, including a `known_hosts` that does not exist).
+fn migrate_alias(known_hosts: &Path, alias: &str, legacy_target: &str) -> Result<bool> {
+    if !key_lines(known_hosts, alias)?.is_empty() {
         return Ok(false);
     }
 
-    let migrated: Vec<String> = key_lines(legacy_target)?
+    let migrated: Vec<String> = key_lines(known_hosts, legacy_target)?
         .iter()
         .filter_map(|line| rewrite_host_field(line, alias))
         .collect();
@@ -85,41 +85,57 @@ pub fn migrate_alias(alias: &str, legacy_target: &str) -> Result<bool> {
         return Ok(false);
     }
 
-    append_known_hosts(&migrated)?;
+    append_known_hosts(known_hosts, &migrated)?;
     Ok(true)
 }
 
 /// Walks the whole roster through [`migrate_alias`], so every Host the user
-/// has already verified keeps its trust once the generated include starts
-/// advertising a `HostKeyAlias` (#785).
+/// has already verified keeps its trust once every connection starts
+/// presenting a `HostKeyAlias` (#785).
 ///
 /// `Host::address` here is deliberately the declaration, not a resolved
 /// `Route`: it names where the key *used* to be stored, which no routing
 /// policy (#787) may move.
 ///
-/// Bound to `HostManager::save_hosts` (#786) alongside the include
-/// regeneration, so the two stay on one cadence. A Host whose roster entry
-/// has not been written since the upgrade stays unmigrated — its first
-/// connection accept-news under the alias like a fresh host, exactly once.
-pub fn migrate_roster(hosts: &[crate::hosts::Host]) -> Result<()> {
+/// `known_hosts` is a parameter rather than resolved here, and the indirection
+/// exists for the test rather than for configurability: production passes
+/// [`default_path`], and a temp file is what lets `hosts.rs` assert the
+/// migration is bound to the roster read without shelling out against the
+/// developer's own trust store. [`inspect`] and [`forget`] keep ssh's default
+/// file — they neither write nor sit inside a binding a test has to observe.
+pub fn migrate_roster(known_hosts: &Path, hosts: &[crate::hosts::Host]) -> Result<()> {
     for host in hosts {
-        migrate_alias(&host.name, &legacy_target(&host.address, host.port)).wrap_err_with(
-            || {
-                format!(
-                    "Failed to migrate the known_hosts alias for host '{}'",
-                    host.name
-                )
-            },
-        )?;
+        migrate_alias(
+            known_hosts,
+            &host.name,
+            &legacy_target(&host.address, host.port),
+        )
+        .wrap_err_with(|| {
+            format!(
+                "Failed to migrate the known_hosts alias for host '{}'",
+                host.name
+            )
+        })?;
     }
     Ok(())
 }
 
-/// The real key lines `ssh-keygen -F <target>` finds — its own `# Host ...
-/// found` header stripped, so a caller never mistakes it for key material.
-fn key_lines(target: &str) -> Result<Vec<String>> {
-    let raw = capture(Command::new("ssh-keygen").arg("-F").arg(target))
-        .wrap_err_with(|| format!("Failed to run ssh-keygen -F for {target}"))?;
+/// The real key lines `ssh-keygen -F <target>` finds in `known_hosts` — its
+/// own `# Host ... found` header stripped, so a caller never mistakes it for
+/// key material.
+///
+/// A `known_hosts` that does not exist yields no lines rather than an error:
+/// `ssh-keygen -F` exits non-zero with an empty stdout, which is the same
+/// answer as a miss and the correct one — nothing has been trusted yet.
+fn key_lines(known_hosts: &Path, target: &str) -> Result<Vec<String>> {
+    let raw = capture(
+        Command::new("ssh-keygen")
+            .arg("-F")
+            .arg(target)
+            .arg("-f")
+            .arg(known_hosts),
+    )
+    .wrap_err_with(|| format!("Failed to run ssh-keygen -F for {target}"))?;
     Ok(strip_comment_lines(&raw))
 }
 
@@ -142,28 +158,28 @@ fn rewrite_host_field(line: &str, alias: &str) -> Option<String> {
     Some(format!("{alias} {rest}"))
 }
 
-fn known_hosts_path() -> Result<PathBuf> {
+/// ssh's own `known_hosts`, which is the file every real connection reads.
+pub fn default_path() -> Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
     Ok(home.join(".ssh/known_hosts"))
 }
 
-/// Appends `lines` to `~/.ssh/known_hosts`, guaranteeing each lands on its
-/// own line even if the file's last line was left without a trailing `\n`.
-fn append_known_hosts(lines: &[String]) -> Result<()> {
-    let path = known_hosts_path()?;
+/// Appends `lines` to `known_hosts`, guaranteeing each lands on its own line
+/// even if the file's last line was left without a trailing `\n`.
+fn append_known_hosts(path: &Path, lines: &[String]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .wrap_err_with(|| format!("Failed to create {}", parent.display()))?;
     }
 
-    let needs_leading_newline = std::fs::read(&path)
+    let needs_leading_newline = std::fs::read(path)
         .map(|existing| !existing.is_empty() && !existing.ends_with(b"\n"))
         .unwrap_or(false);
 
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&path)
+        .open(path)
         .wrap_err_with(|| format!("Failed to open {}", path.display()))?;
 
     if needs_leading_newline {
@@ -432,5 +448,108 @@ mod tests {
     #[test]
     fn rewrite_host_field_none_on_an_empty_line() {
         assert_eq!(rewrite_host_field("", "auberge"), None);
+    }
+
+    const LEGACY_KEY: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKEYMATERIAL admin@auberge";
+
+    /// A `known_hosts` holding one entry for `target`, at a path no other
+    /// test — and no developer's `$HOME` — shares.
+    fn known_hosts_holding(target: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("known_hosts");
+        std::fs::write(&path, format!("{target} {LEGACY_KEY}\n")).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn migrate_alias_copies_a_legacy_entry_onto_the_alias() {
+        let (_dir, path) = known_hosts_holding("203.0.113.10");
+
+        assert!(migrate_alias(&path, "auberge", "203.0.113.10").unwrap());
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            written.contains(&format!("auberge {LEGACY_KEY}")),
+            "{written}"
+        );
+        assert!(
+            written.contains(&format!("203.0.113.10 {LEGACY_KEY}")),
+            "{written}"
+        );
+    }
+
+    /// The whole reason the migration is safe to run on every roster read:
+    /// a second pass adds nothing.
+    #[test]
+    fn migrate_alias_is_a_no_op_once_the_alias_is_known() {
+        let (_dir, path) = known_hosts_holding("203.0.113.10");
+        migrate_alias(&path, "auberge", "203.0.113.10").unwrap();
+        let after_first = std::fs::read_to_string(&path).unwrap();
+
+        assert!(!migrate_alias(&path, "auberge", "203.0.113.10").unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), after_first);
+    }
+
+    /// Nothing verified yet is not an error: a Host the operator has never
+    /// connected to has no key to carry forward.
+    #[test]
+    fn migrate_alias_is_a_no_op_when_nothing_was_trusted() {
+        let (_dir, path) = known_hosts_holding("198.51.100.7");
+
+        assert!(!migrate_alias(&path, "auberge", "203.0.113.10").unwrap());
+        assert!(
+            !std::fs::read_to_string(&path).unwrap().contains("auberge "),
+            "an unverified Host must not gain an alias entry"
+        );
+    }
+
+    /// A `known_hosts` that does not exist yet is the same answer, not a
+    /// crash: `ssh-keygen -F` on a missing file exits non-zero with nothing
+    /// on stdout, which is exactly "nothing trusted".
+    #[test]
+    fn migrate_alias_is_a_no_op_when_there_is_no_known_hosts_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("known_hosts");
+
+        assert!(!migrate_alias(&path, "auberge", "203.0.113.10").unwrap());
+        assert!(
+            !path.exists(),
+            "the migration must not create an empty trust store"
+        );
+    }
+
+    /// The pre-#785 key for a non-default port is the bracketed form, and it
+    /// is the form `ssh-keygen -F` has to be handed back to find it.
+    #[test]
+    fn migrate_alias_finds_a_legacy_entry_stored_under_a_non_default_port() {
+        let (_dir, path) = known_hosts_holding("[203.0.113.10]:2222");
+
+        assert!(migrate_alias(&path, "auberge", &legacy_target("203.0.113.10", 2222)).unwrap());
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains(&format!("auberge {LEGACY_KEY}"))
+        );
+    }
+
+    #[test]
+    fn migrate_roster_migrates_every_hosts_alias() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("known_hosts");
+        std::fs::write(&path, format!("203.0.113.10 {LEGACY_KEY}\n")).unwrap();
+
+        let hosts = [
+            crate::hosts::Host::fixture("auberge", None),
+            crate::hosts::Host::fixture("ruche", None),
+        ];
+        migrate_roster(&path, &hosts).unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        for alias in ["auberge", "ruche"] {
+            assert!(
+                written.contains(&format!("{alias} {LEGACY_KEY}")),
+                "{written}"
+            );
+        }
     }
 }
