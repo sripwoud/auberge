@@ -81,6 +81,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0071 | [DNS Publication resolves a Tailnet-only App's parent domain per App](./adr/0071-a-tailnet-only-apps-parent-domain-is-per-app.md)                               |
 | 0072 | [The agent tier's Caddy answers DNS-01 for its own zone](./adr/0072-the-agent-tiers-caddy-answers-for-its-own-zone.md)                                          |
 | 0073 | [The agent dashboard is reached through the tailnet, behind two factors](./adr/0073-the-agent-dashboard-is-reached-through-the-tailnet-and-two-factors.md)      |
+| 0074 | [A Host declares which of its two addresses the CLI uses](./adr/0074-a-host-declares-which-of-its-two-addresses-the-cli-uses.md)                                |
 
 ## Native systemd by default
 

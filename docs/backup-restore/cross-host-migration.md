@@ -48,6 +48,29 @@ App-specific:
 
 Apps declaring `restore_advice` in their Backup Recipe — Navidrome and FreshRSS — have `backup restore` print their note at the end of a cross-host run, so it is not repeated here. Baikal declares none.
 
+## When the tailnet route is down
+
+A host with `prefer_tailnet = true` is reached at its `tailscale_ip` and nothing falls back to the public address — see [Tailnet Transport](configuration/tailnet-transport.md). Headscale runs on `auberge`, so the tailnet route to the backup target depends on a service that target hosts, and a disaster recovery is exactly when that matters.
+
+Prefix any command with `--via public` to route it over the declared public address for that run:
+
+```bash
+auberge --via public backup restore latest --from-host old-vps --host new-vps
+auberge --via public backup sync --host auberge
+auberge --via public ansible run --host new-vps
+auberge --via public host detect-tailscale-ip auberge   # after the tailnet is back, if the address moved
+```
+
+`--via public` applies to SSH, rsync and Ansible together, so there is no half-migrated route to reason about. It never rewrites `~/.ssh/config.d/auberge.conf`, so interactive `ssh <name>` is unaffected — for a shell during an outage, use the address directly:
+
+```bash
+ssh -p "$(auberge config get ssh_port)" -i ~/.ssh/identities/auberge/ansible ansible@203.0.113.10
+```
+
+!> A `--via` given to a command that connects to no host (`host list`, `config get`) exits non-zero saying it changed nothing. The command still ran. Drop the flag rather than reading it as a failure.
+
+?> Do not "fix" an outage by editing `prefer_tailnet` out of `hosts.toml`. That is a fleet-wide, persistent change made under pressure, and it also regenerates the ssh include. `--via public` is scoped to one command and leaves no state behind.
+
 ## Common failures
 
 | Error                                       | Fix                                                                                                           |

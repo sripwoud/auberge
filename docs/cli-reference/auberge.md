@@ -8,13 +8,14 @@ auberge [GLOBAL OPTIONS] <COMMAND>
 
 ## Global options
 
-| Option          | Description                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------------- |
-| `-v, --verbose` | Stream subprocess output (kept on failure, dimmed on success)                                     |
-| `-q, --quiet`   | Suppress chrome on stderr (errors and stdout data unchanged); mutually exclusive with `--verbose` |
-| `--no-color`    | Disable colored output (or set `NO_COLOR` env var)                                                |
-| `-h, --help`    | Print help                                                                                        |
-| `-V, --version` | Print version                                                                                     |
+| Option          | Description                                                                                                                                                             |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-v, --verbose` | Stream subprocess output (kept on failure, dimmed on success)                                                                                                           |
+| `-q, --quiet`   | Suppress chrome on stderr (errors and stdout data unchanged); mutually exclusive with `--verbose`                                                                       |
+| `--no-color`    | Disable colored output (or set `NO_COLOR` env var)                                                                                                                      |
+| `--via <ROUTE>` | Reach hosts over their `public` or `tailnet` address for this run, overriding each host's `prefer_tailnet`; see [Tailnet Transport](configuration/tailnet-transport.md) |
+| `-h, --help`    | Print help                                                                                                                                                              |
+| `-V, --version` | Print version                                                                                                                                                           |
 
 ## Commands
 
