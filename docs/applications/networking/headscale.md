@@ -74,7 +74,32 @@ Trust is a tag; which node carries which is set by `auberge headscale add-key -t
 
 Every tag reaches the host's [Blocky](applications/networking/blocky.md) global resolver on 53 (ADR-0052) — the one tailnet path open to `tag:agent`. `tagOwners` lists are empty: only the admin CLI that mints the keys may apply these tags, so the policy carries no operator-specific username.
 
-!> Deploying the first policy is a **flag day** — flows never inventoried can break. Verify existing flows (syncthing lechuck↔auberge, laptop backup pulls, SSH, tailnet-only app vhosts) before and after, and enroll a `tag:agent` node only once the policy is live.
+### Rolling out a first policy
+
+A tailnet's first policy is deployed **twice** ([ADR-0061](https://github.com/sripwoud/auberge/blob/master/meta/adr/0061-a-first-acl-policy-is-rolled-out-in-two-stages.md)). Neither obvious order works: `tag-node` cannot run before a policy is loaded (see the warning above), and deploying the real policy onto an untagged tailnet matches nobody — including the DNS carve-out, whose `dst` is `tag:data:53` — so it partitions rather than confines.
+
+1. Deploy a **bridge**: the full `tagOwners` set with the ACL left at `{"src": ["*"], "dst": ["*:*"]}`. Reachability is unchanged; `tag-node` starts working.
+2. Tag every enrolled node into its tier.
+3. Deploy the real policy.
+
+Verify with a before/after probe run at each step. Step 1 must show **no** change at all — if it does, the bridge was not inert.
+
+!> Only tailnet paths are at risk: the tailnet-only vhosts, Blocky on 53, and syncthing's peer path. SSH, `auberge deploy` and backup pulls reach Hosts on their **public** addresses (`hosts.toml`), so a policy mistake cannot cut the control path or the backups — rollback is always one deploy away.
+
+!> A probe that reports "blocked" must be able to report "open" first. #738's acceptance was declared met by probes against `100.64.0.1:22` and HTTPS-on-bare-IP, which fail for reasons unrelated to any ACL and read as confinement on a fully open tailnet. Probe a port that is listening (the Host's real SSH port), and gate the run on a positive control.
+
+### The policy's own tests
+
+`policy.hujson` carries a `tests` block asserting what its rules are for. `headscale policy check -f <file>` evaluates it against the live fleet **without applying anything** — run it between steps 2 and 3:
+
+```bash
+scp policy.hujson auberge:/tmp/candidate.hujson
+ssh auberge 'sudo headscale policy check -f /tmp/candidate.hujson'
+```
+
+The same tests re-run on every policy load, so a rule change that reopens a confined path stops the policy rather than shipping quietly.
+
+!> A tier named as a test's `src` may not be emptied — an unresolvable `src` is a test failure, not a skip, and the policy stops loading. `tag:standby` is untested for exactly this reason.
 
 Put a node in a tier:
 
