@@ -112,6 +112,28 @@ pub struct Host {
     /// will. `auberge host list` shows the tier so an unset one is visible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tailnet_tag: Option<TailnetTag>,
+    /// Every key this binary's `Host` does not declare, captured verbatim and
+    /// written back unchanged (#788, ADR-0069).
+    ///
+    /// A mutating subcommand (`add`/`edit`/`rename`/`detect-tailscale-ip`)
+    /// reads the whole roster, rebuilds each `Host` it does not touch as a
+    /// typed struct, and writes the whole file back. Before this field
+    /// existed, a binary that predated a field silently dropped it on that
+    /// round trip — reading succeeded, so nothing warned. `tailnet_tag`
+    /// (#767) has already been lost this way once, and `prefer_tailnet`
+    /// (#787) would make the next loss a silent route change rather than a
+    /// missing label. `#[serde(flatten)]` collects whatever a future field
+    /// looks like — before this binary has a name for it — into this map, so
+    /// mutating a Host at that field's neighbours no longer requires the
+    /// binary to already know the field exists.
+    ///
+    /// A call site that reconstructs a `Host` field-by-field (`commands::host
+    /// ::run_host_edit`) must still carry this forward explicitly, the same
+    /// way it already threads `python_interpreter`/`become_method` through
+    /// prompts that never ask about them — flatten protects the (de)serialize
+    /// boundary, not a struct literal that skips a field on purpose.
+    #[serde(flatten)]
+    pub unknown: toml::Table,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -166,6 +188,7 @@ impl Host {
             become_method: "sudo".to_string(),
             tailscale_ip: tailscale_ip.map(str::to_string),
             tailnet_tag: None,
+            unknown: toml::Table::new(),
         }
     }
 }
@@ -383,6 +406,7 @@ blocky_subdomain = "dns"
             become_method: "sudo".to_string(),
             tailscale_ip: None,
             tailnet_tag: None,
+            unknown: toml::Table::new(),
         };
 
         let config = HostsConfig { hosts: vec![host] };
@@ -410,6 +434,7 @@ blocky_subdomain = "dns"
         assert!(config.hosts[0].tags.is_empty());
         assert!(config.hosts[0].tailscale_ip.is_none());
         assert!(config.hosts[0].tailnet_tag.is_none());
+        assert!(config.hosts[0].unknown.is_empty());
     }
 
     #[test]
@@ -426,6 +451,7 @@ blocky_subdomain = "dns"
             become_method: "sudo".to_string(),
             tailscale_ip: Some("100.64.0.5".to_string()),
             tailnet_tag: None,
+            unknown: toml::Table::new(),
         };
 
         let serialized = toml::to_string(&HostsConfig { hosts: vec![host] }).unwrap();
@@ -439,6 +465,55 @@ blocky_subdomain = "dns"
         Ok(toml::from_str(&format!(
             "[[hosts]]\nname = \"vps\"\naddress = \"203.0.113.10\"\nuser = \"admin\"\n{body}"
         ))?)
+    }
+
+    /// #788: a binary whose `Host` predates a field must not delete it on a
+    /// load/save round trip — `tailnet_tag` (#767) was lost this way once,
+    /// and the next loss (`prefer_tailnet`, #787) would be a silent route
+    /// change rather than a missing label.
+    ///
+    /// The sentinel key is checked against every field [`Host`] currently
+    /// serializes — derived from a fully-populated instance rather than a
+    /// hand-typed list — so a future field that happens to share the
+    /// sentinel's name fails this assertion instead of letting the test pass
+    /// without exercising the guarantee.
+    #[test]
+    fn an_unrecognized_key_survives_a_load_and_save_round_trip() {
+        let full = Host {
+            name: "vps".to_string(),
+            address: "203.0.113.10".to_string(),
+            user: "admin".to_string(),
+            port: 22,
+            ssh_key: Some("~/.ssh/id_ed25519".to_string()),
+            tags: vec!["production".to_string()],
+            description: Some("full fixture".to_string()),
+            python_interpreter: Some("/usr/bin/python3".to_string()),
+            become_method: "sudo".to_string(),
+            tailscale_ip: Some("100.64.0.5".to_string()),
+            tailnet_tag: Some(TailnetTag::Trusted),
+            unknown: toml::Table::new(),
+        };
+        let known_fields: Vec<String> = toml::Value::try_from(full)
+            .unwrap()
+            .as_table()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+
+        let sentinel = "a_field_this_binary_has_never_heard_of";
+        assert!(
+            !known_fields.contains(&sentinel.to_string()),
+            "sentinel collides with a real Host field {known_fields:?}; rename the sentinel"
+        );
+
+        let config = host_toml(&format!("{sentinel} = \"kept\"")).unwrap();
+        let saved = toml::to_string(&config).unwrap();
+
+        assert!(
+            saved.contains(&format!("{sentinel} = \"kept\"")),
+            "an unrecognized key must survive a load/save round trip: {saved}"
+        );
     }
 
     /// [`TailnetTag::ALL`] is a literal; the `ValueEnum` derive generates its
@@ -526,6 +601,7 @@ blocky_subdomain = "dns"
             become_method: "sudo".to_string(),
             tailscale_ip: None,
             tailnet_tag: None,
+            unknown: toml::Table::new(),
         };
 
         let serialized = toml::to_string(&HostsConfig { hosts: vec![host] }).unwrap();
