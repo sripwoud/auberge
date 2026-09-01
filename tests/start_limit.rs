@@ -86,6 +86,7 @@ static RESOLVER: Regime = Regime {
 /// of 216, and one this scan would never have seen from a template.
 static START_LIMIT_REGIMES: &[(&str, &Regime)] = &[
     ("actual/actual.service", &RESTARTING_APP),
+    ("aoe/aoe.service", &RESTARTING_APP),
     ("bichon/bichon.service", &RESTARTING_APP),
     ("blocky/blocky.service", &RESOLVER),
     ("caddy/caddy.service", &RESTARTING_APP),

@@ -1,0 +1,19 @@
+---
+- name: Reload aoe systemd user
+  become: true
+  become_user: "{{ aoe_user }}"
+  ansible.builtin.systemd:
+    daemon_reload: true
+    scope: user
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ aoe_user_uid.stdout }}"
+
+- name: Restart aoe
+  become: true
+  become_user: "{{ aoe_user }}"
+  ansible.builtin.systemd:
+    name: aoe
+    state: restarted
+    scope: user
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ aoe_user_uid.stdout }}"

@@ -584,6 +584,35 @@ mod tests {
         );
     }
 
+    /// The agent tier holds nothing irreplaceable by construction (ADR-0054):
+    /// transcripts leave the box by syncthing, the index rebuilds, and a
+    /// rebuild is a re-auth and a re-clone. A Recipe here would put a nightly
+    /// stopped-unit pull of a disposable Host into `backup sync`'s default app
+    /// set — following the immich precedent below.
+    #[test]
+    fn test_aoe_meta_declares_no_backup_recipe() {
+        let meta = load_meta("aoe");
+        assert!(meta.tailnet_only);
+        assert_eq!(meta.subdomain.as_deref(), Some("essaim"));
+        assert_eq!(meta.parent_domain_key(), "agents_domain");
+        assert!(
+            meta.backup.is_none(),
+            "the agent Host is disposable by design; nothing on it is worth a \
+             Backup Recipe, and aoe's VAPID keypair is deliberately unbacked-up"
+        );
+        let budget = meta
+            .memory
+            .get("aoe")
+            .expect("aoe declares a Memory Budget");
+        assert_eq!(budget.high, "4G");
+        assert_eq!(
+            budget.max, None,
+            "aoe supervises tmux sessions running agents it did not fork; until it \
+             is known which cgroup those land in, a kill line risks OOM-killing an \
+             agent mid-run (#740)"
+        );
+    }
+
     #[test]
     fn test_immich_meta_declares_no_backup_recipe() {
         let meta = load_meta("immich");
@@ -1806,16 +1835,30 @@ units:
     fn test_declared_memory_budgets_render_into_role_templates() {
         let templates = role_template_bodies();
         for (app, meta) in load_all_metas(&playbooks_dir()).unwrap() {
-            for unit in meta.memory.keys() {
+            for (unit, budget) in &meta.memory {
                 let prefix = unit.replace('-', "_");
                 let high = format!("MemoryHigh={{{{ {prefix}_memory_high }}}}");
                 let max = format!("MemoryMax={{{{ {prefix}_memory_max }}}}");
-                assert!(
-                    templates
-                        .iter()
-                        .any(|(_, body)| body.contains(&high) && body.contains(&max)),
-                    "{app}: no role template renders both {high} and {max}"
-                );
+                let renders =
+                    |needle: &str| templates.iter().any(|(_, body)| body.contains(needle));
+
+                assert!(renders(&high), "{app}: no role template renders {high}");
+                match budget.max {
+                    Some(_) => assert!(
+                        templates
+                            .iter()
+                            .any(|(_, body)| body.contains(&high) && body.contains(&max)),
+                        "{app}: no role template renders both {high} and {max}"
+                    ),
+                    // A Budget with no kill line injects no `<unit>_memory_max`
+                    // (ADR-0021), so a template still reading one renders
+                    // `MemoryMax=` — which systemd reads as a reset to
+                    // `infinity` rather than as an error.
+                    None => assert!(
+                        !renders(&max),
+                        "{app}: {unit} declares no max, so no template may render {max}"
+                    ),
+                }
             }
         }
     }

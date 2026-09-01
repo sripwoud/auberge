@@ -231,7 +231,7 @@ _Avoid_: Logger, reporter
 
 - A **Playbook** has exactly one **Playbook Meta** sibling.
 - A **Playbook Meta** declares zero or more keys from the **Key Registry**, none of them an **Injected Key**.
-- A **Playbook Meta** declares zero or one **Backup Recipe**, zero or more **Memory Budgets** — one per systemd unit the App runs — and the App's **Unit Ownership**.
+- A **Playbook Meta** declares zero or one **Backup Recipe**, zero or more **Memory Budgets** — one per systemd unit the App runs, each a `MemoryHigh=` and an _optional_ `MemoryMax=` — and the App's **Unit Ownership**. A Budget with no `max` injects no `<unit>_memory_max`, which is how a unit supervising processes it did not fork asks to be throttled and not killed (aoe, ADR-0073); a template still reading the absent name fails the play rather than rendering a bare `MemoryMax=`, which systemd reads as a reset to `infinity`.
 - A **Preflight** binds a validated **Config** to the keys a run's **Playbook Metas** declare — the Playbook's own, unioned with those of the roles its tags select (ADR-0045).
 - The **Recipe Executor** consumes one **Backup Recipe**; the **Backup Session** consumes many.
 - A **Backup Verdict** reads only what a **Backup Session** already pushed, attributing a snapshot to a **Host** by the restic tag push writes (the same tag prune groups retention by).

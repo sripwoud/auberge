@@ -1,0 +1,26 @@
+[Unit]
+Description=Agent of Empires - agent session dashboard
+# `network-online.target` does not exist in the user manager: a unit carrying it
+# gets no ordering at all, silently. aoe retries its own listener, so ordering
+# after the socket layer is what there is to have here.
+After=network.target
+StartLimitIntervalSec=3600
+StartLimitBurst=30
+
+[Service]
+Type=simple
+WorkingDirectory={{ aoe_home }}
+# AOE_SERVE_PASSPHRASE arrives from a 0600 file rather than on the command line,
+# which every process on the box can read out of /proc.
+EnvironmentFile={{ aoe_env_path }}
+ExecStart={{ aoe_binary_path }} serve --host {{ aoe_bind_host }} --port {{ aoe_port }} --auth token --behind-proxy --allowed-host {{ aoe_domain }} --allowed-origin https://{{ aoe_domain }}
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+
+MemoryHigh={{ aoe_memory_high }}
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,21 @@
+{{ aoe_domain }} {
+	bind {{ aoe_tailscale_ip }}
+	tls {
+		dns cloudflare {env.CLOUDFLARE_DNS_API_TOKEN}
+	}
+	reverse_proxy {{ aoe_bind_host }}:{{ aoe_port }}
+
+	log {
+		output file /var/log/caddy/{{ aoe_domain }}.log
+		# aoe's bearer token rides in the URL — `?token=…` in the QR the PWA is
+		# paired from, refreshed every four hours — so the whole query string is
+		# cut out of every logged request. Caddy redacts Authorization and
+		# Cookie on its own and nothing else.
+		format filter {
+			wrap console
+			fields {
+				request>uri regexp "[?].*$" ""
+			}
+		}
+	}
+}

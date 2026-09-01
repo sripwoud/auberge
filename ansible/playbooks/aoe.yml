@@ -1,0 +1,15 @@
+---
+- name: Deploy the agent-of-empires dashboard
+  hosts: vps
+  become: true
+  roles:
+    - role: aoe
+      tags: [aoe]
+
+  post_tasks:
+    - name: Verify caddy ingress survived this deploy
+      ansible.builtin.include_role:
+        name: ingress_gate
+        apply:
+          tags: [always]
+      tags: [always]

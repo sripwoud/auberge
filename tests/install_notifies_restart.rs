@@ -474,6 +474,12 @@ struct DeclaredRole {
 
 const DECLARED_ROLES: &[DeclaredRole] = &[
     DeclaredRole {
+        role: "aoe",
+        why: "its unit is a systemd user unit under ~/.config/systemd/user, which this \
+              model excludes along with everything else outside the system manager",
+        notifies: &[("Install the aoe binary", "Restart aoe")],
+    },
+    DeclaredRole {
         role: "baikal",
         why: "its release is served by the system's php-fpm, installed by apt; the role \
               templates only its two oneshot sync timers, so there is no unit to follow \
