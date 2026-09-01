@@ -305,9 +305,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
 
     let inventory_host = InventoryHost {
         name: host.name.clone(),
-        address: host.vars.ansible_host.clone(),
-        port: host.vars.ansible_port,
-        user: host.vars.bootstrap_user.clone(),
+        route: host.route(),
         groups: host.groups.clone(),
     };
 

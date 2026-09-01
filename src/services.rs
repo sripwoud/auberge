@@ -9,6 +9,7 @@ pub mod inventory;
 pub mod known_hosts;
 pub mod progress;
 pub mod required_keys;
+pub mod route;
 pub mod rsync;
 pub mod ssh;
 pub mod ssh_include;

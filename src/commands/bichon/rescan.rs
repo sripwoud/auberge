@@ -52,7 +52,8 @@ async fn rescan_inner(
     let selected = resolve_accounts(account_filter.clone(), &known, HostManager::is_tty())?;
 
     let ssh_key = crate::services::ssh::resolve_ssh_key_path(&host, None)?;
-    let ssh = LiveSshSession::new(&host, &ssh_key);
+    let route = crate::services::route::resolve(&host, Some(ssh_key));
+    let ssh = LiveSshSession::new(&route, &host.become_method)?;
 
     output::info(&format!(
         "resetting {} archive cursor(s) on {} and starting {} — this waits for the full pass",

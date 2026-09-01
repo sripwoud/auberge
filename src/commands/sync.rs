@@ -282,7 +282,8 @@ pub fn run_sync_hermes(
             std::fs::create_dir_all(parent)
                 .wrap_err_with(|| format!("Failed to create directory: {}", parent.display()))?;
         }
-        let session = LiveSshSession::new(&xdg_host, &ssh_key);
+        let route = crate::services::route::resolve(&xdg_host, Some(ssh_key));
+        let session = LiveSshSession::new(&route, &xdg_host.become_method)?;
         output::info(&format!(
             "Pulling hermes config from remote to {}",
             local_dest.display()
@@ -308,8 +309,9 @@ pub fn run_sync_hermes(
 
     let ssh_key = crate::services::ssh::resolve_ssh_key_path(&xdg_host, None)?;
 
-    let session = LiveSshSession::new(&xdg_host, &ssh_key);
-    let remote_dest = format!("{}@{}:.hermes/config.yaml", xdg_host.user, xdg_host.address);
+    let route = crate::services::route::resolve(&xdg_host, Some(ssh_key));
+    let session = LiveSshSession::new(&route, &xdg_host.become_method)?;
+    let remote_dest = format!("{}@{}:.hermes/config.yaml", route.user, route.address);
 
     output::info("Preparing remote ~/.hermes directory...");
     prepare_hermes_dir(&session)?;

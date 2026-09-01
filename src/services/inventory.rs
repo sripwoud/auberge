@@ -74,6 +74,24 @@ impl Host {
             tailnet_tag: None,
         }
     }
+
+    /// This Host's Route — the `ansible_host`/`ansible_port`/`bootstrap_user`
+    /// triple ansible already connects with. Companion to [`Host::ssh_target`],
+    /// which builds the same shape for an operator-chosen user rather than the
+    /// bootstrap one; the two exist because the caller's user differs by
+    /// consumer, not because the underlying facts do.
+    ///
+    /// No identity key: nothing that constructs an `InventoryHost` from this
+    /// opens one of its own (#780) — ansible resolves its own connection.
+    pub fn route(&self) -> crate::services::route::Route {
+        crate::services::route::Route {
+            address: self.vars.ansible_host.clone(),
+            port: self.vars.ansible_port,
+            user: self.vars.bootstrap_user.clone(),
+            key_path: None,
+            alias: self.name.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -205,9 +223,10 @@ pub fn load_inventory(inventory_path: Option<&Path>) -> Result<Inventory> {
 }
 
 fn convert_xdg_host_to_inventory_host(xdg_host: crate::hosts::Host) -> Host {
+    let route = crate::services::route::resolve(&xdg_host, None);
     let vars = HostVars {
-        ansible_host: xdg_host.address,
-        ansible_port: xdg_host.port,
+        ansible_host: route.address,
+        ansible_port: route.port,
         bootstrap_user: xdg_host.user.clone(),
         extra: HashMap::new(),
     };

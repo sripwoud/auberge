@@ -1,4 +1,5 @@
 use crate::hosts::Host;
+use crate::services::route::Route;
 mod transport;
 
 use eyre::{Context, Result};
@@ -252,37 +253,40 @@ pub trait SshSession {
 
 pub struct LiveSshSession<'a> {
     inner: SshTransport<'a>,
-    host: &'a Host,
+    route: &'a Route,
+    become_method: &'a str,
 }
 
 impl<'a> LiveSshSession<'a> {
-    pub fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
-        Self {
-            inner: SshTransport::new(host, ssh_key),
-            host,
-        }
+    pub fn new(route: &'a Route, become_method: &'a str) -> Result<Self> {
+        Ok(Self {
+            inner: SshTransport::new(route, become_method)?,
+            route,
+            become_method,
+        })
     }
 
     /// A session for a Host no trust is established with yet. See
     /// [`transport::Reach::FirstContact`] for what it gives up and why.
-    pub fn first_contact(host: &'a Host, ssh_key: &'a Path) -> Self {
-        Self {
-            inner: SshTransport::first_contact(host, ssh_key),
-            host,
-        }
+    pub fn first_contact(route: &'a Route, become_method: &'a str) -> Result<Self> {
+        Ok(Self {
+            inner: SshTransport::first_contact(route, become_method)?,
+            route,
+            become_method,
+        })
     }
 
     /// rsync's own escalation flag, using the acting Host's `become_method`
     /// (`sudo` by default, see #776).
     fn rsync_path_arg(&self) -> String {
-        format!("--rsync-path={} rsync", self.host.become_method)
+        format!("--rsync-path={} rsync", self.become_method)
     }
 
     /// The remote chown, escalated with the acting Host's `become_method`.
     fn chown_command(&self, remote: &str, user: &str, group: &str) -> String {
         format!(
             "{} chown -R {}:{} {}",
-            self.host.become_method, user, group, remote
+            self.become_method, user, group, remote
         )
     }
 }
@@ -299,7 +303,7 @@ impl SshSession for LiveSshSession<'_> {
     fn run_raw(&self, args: &[&str]) -> Result<CommandResult> {
         let result = CommandResult::from_output(self.inner.run_raw(args)?);
         if result.ssh_transport_failed() {
-            return Err(unreachable_error(self.host, &result.stderr_str()));
+            return Err(unreachable_error(self.route, &result.stderr_str()));
         }
         Ok(result)
     }
@@ -310,7 +314,7 @@ impl SshSession for LiveSshSession<'_> {
             return Ok(());
         }
         Err(unreachable_error(
-            self.host,
+            self.route,
             &String::from_utf8_lossy(&out.stderr),
         ))
     }
@@ -320,7 +324,7 @@ impl SshSession for LiveSshSession<'_> {
     }
 
     fn become_method(&self) -> &str {
-        &self.host.become_method
+        self.become_method
     }
 
     fn systemctl(&self, action: &str, service: &str) -> Result<()> {
@@ -344,7 +348,7 @@ impl SshSession for LiveSshSession<'_> {
             .arg(self.inner.rsync_e_arg())
             .arg(format!(
                 "{}@{}:{}",
-                self.host.user, self.host.address, remote
+                self.route.user, self.route.address, remote
             ))
             .arg(local)
             .output()
@@ -370,7 +374,7 @@ impl SshSession for LiveSshSession<'_> {
             .arg(rsync_source_arg(local))
             .arg(format!(
                 "{}@{}:{}",
-                self.host.user, self.host.address, remote
+                self.route.user, self.route.address, remote
             ))
             .output()
             .wrap_err("Failed to execute rsync")?;
@@ -399,7 +403,11 @@ impl SshSession for LiveSshSession<'_> {
 /// to word this three ways — and one of them, the cross-host restore's, was the
 /// only one that named the address and port a reader needs to check a firewall,
 /// so the union is kept rather than the shortest.
-fn unreachable_error(host: &Host, stderr: &str) -> eyre::Report {
+///
+/// Named after `route.alias` rather than a `Host`: the alias is the Host's
+/// name today (#785 gives it independent meaning), and nothing here needs the
+/// declaration itself to report a failed connection.
+fn unreachable_error(route: &Route, stderr: &str) -> eyre::Report {
     let stderr = stderr.trim();
     let detail = if stderr.is_empty() {
         String::new()
@@ -408,9 +416,9 @@ fn unreachable_error(host: &Host, stderr: &str) -> eyre::Report {
     };
     eyre::eyre!(
         "host {} is unreachable over ssh at {}:{}{}\nCheck the SSH key and network connectivity",
-        host.name,
-        host.address,
-        host.port,
+        route.alias,
+        route.address,
+        route.port,
         detail
     )
 }
@@ -537,6 +545,13 @@ fn mock_host() -> Host {
     }
 }
 
+/// [`mock_host`], resolved — the mock's own stand-in for the Route
+/// [`unreachable_error`] now takes.
+#[cfg(test)]
+fn mock_route() -> Route {
+    crate::services::route::resolve(&mock_host(), Some(PathBuf::from("/tmp/key")))
+}
+
 #[cfg(test)]
 impl SshSession for MockSshSession {
     fn run(&self, command: &str) -> Result<CommandResult> {
@@ -562,7 +577,7 @@ impl SshSession for MockSshSession {
             .push(SshOp::RunRaw(args.iter().map(|a| a.to_string()).collect()));
         let result = self.next_result();
         if result.ssh_transport_failed() {
-            return Err(unreachable_error(&mock_host(), &result.stderr_str()));
+            return Err(unreachable_error(&mock_route(), &result.stderr_str()));
         }
         Ok(result)
     }
@@ -573,7 +588,7 @@ impl SshSession for MockSshSession {
         if result.success {
             return Ok(());
         }
-        Err(unreachable_error(&mock_host(), &result.stderr_str()))
+        Err(unreachable_error(&mock_route(), &result.stderr_str()))
     }
 
     fn rsync_e_arg(&self) -> String {
@@ -868,7 +883,8 @@ mod tests {
             port: 2222,
             ..test_host()
         };
-        let msg = unreachable_error(&host, "").to_string();
+        let route = crate::services::route::resolve(&host, None);
+        let msg = unreachable_error(&route, "").to_string();
         assert!(
             msg.contains("host auberge is unreachable over ssh"),
             "{msg}"
@@ -882,13 +898,15 @@ mod tests {
 
     #[test]
     fn test_unreachable_error_carries_the_probe_stderr() {
-        let msg = unreachable_error(&test_host(), "  Permission denied (publickey).\n").to_string();
+        let route = crate::services::route::resolve(&test_host(), None);
+        let msg = unreachable_error(&route, "  Permission denied (publickey).\n").to_string();
         assert!(msg.contains(": Permission denied (publickey)."), "{msg}");
     }
 
     #[test]
     fn test_unreachable_error_says_nothing_extra_when_stderr_is_empty() {
-        let msg = unreachable_error(&test_host(), "   ").to_string();
+        let route = crate::services::route::resolve(&test_host(), None);
+        let msg = unreachable_error(&route, "   ").to_string();
         let first_line = msg.lines().next().unwrap();
         assert!(first_line.ends_with("192.0.2.9:2222"), "{first_line}");
     }
@@ -896,8 +914,8 @@ mod tests {
     #[test]
     fn test_rsync_path_arg_defaults_to_sudo() {
         let host = test_host();
-        let key = Path::new("/tmp/key");
-        let session = LiveSshSession::new(&host, key);
+        let route = crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key")));
+        let session = LiveSshSession::new(&route, &host.become_method).unwrap();
         assert_eq!(session.rsync_path_arg(), "--rsync-path=sudo rsync");
     }
 
@@ -907,16 +925,16 @@ mod tests {
             become_method: "doas".to_string(),
             ..test_host()
         };
-        let key = Path::new("/tmp/key");
-        let session = LiveSshSession::new(&host, key);
+        let route = crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key")));
+        let session = LiveSshSession::new(&route, &host.become_method).unwrap();
         assert_eq!(session.rsync_path_arg(), "--rsync-path=doas rsync");
     }
 
     #[test]
     fn test_chown_command_defaults_to_sudo() {
         let host = test_host();
-        let key = Path::new("/tmp/key");
-        let session = LiveSshSession::new(&host, key);
+        let route = crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key")));
+        let session = LiveSshSession::new(&route, &host.become_method).unwrap();
         assert_eq!(
             session.chown_command("/opt/paperless", "paperless", "paperless"),
             "sudo chown -R paperless:paperless /opt/paperless"
@@ -929,8 +947,8 @@ mod tests {
             become_method: "doas".to_string(),
             ..test_host()
         };
-        let key = Path::new("/tmp/key");
-        let session = LiveSshSession::new(&host, key);
+        let route = crate::services::route::resolve(&host, Some(PathBuf::from("/tmp/key")));
+        let session = LiveSshSession::new(&route, &host.become_method).unwrap();
         assert_eq!(
             session.chown_command("/opt/paperless", "paperless", "paperless"),
             "doas chown -R paperless:paperless /opt/paperless"
@@ -1000,5 +1018,16 @@ mod tests {
         );
         assert!(err.contains("unreachable over ssh"), "{err}");
         assert!(err.contains("Connection refused"), "{err}");
+    }
+
+    /// A `Route` built for ansible or the ssh include (`key_path: None`) must
+    /// fail at construction — before a caller can ever hold a session that
+    /// would panic the first time it tried to use it.
+    #[test]
+    fn test_new_refuses_a_route_with_no_key_path() {
+        let host = test_host();
+        let route = crate::services::route::resolve(&host, None);
+        assert!(LiveSshSession::new(&route, &host.become_method).is_err());
+        assert!(LiveSshSession::first_contact(&route, &host.become_method).is_err());
     }
 }

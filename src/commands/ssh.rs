@@ -237,7 +237,8 @@ pub fn run_ssh_add_key(
     output::info("Adding key to remote host");
 
     let target = host.ssh_target(&user);
-    let session = LiveSshSession::first_contact(&target, &connect_key);
+    let route = crate::services::route::resolve(&target, Some(connect_key));
+    let session = LiveSshSession::first_contact(&route, &target.become_method)?;
     authorize_key(&session, pubkey_content.trim())?;
 
     output::success(&format!(

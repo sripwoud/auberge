@@ -277,9 +277,7 @@ fn run_auto_resolved(
 
         let inventory_host = InventoryHost {
             name: host.name.clone(),
-            address: host.vars.ansible_host.clone(),
-            port: host.vars.ansible_port,
-            user: host.vars.bootstrap_user.clone(),
+            route: host.route(),
             groups: host.groups.clone(),
         };
 
@@ -385,9 +383,7 @@ fn run_single_playbook(
 
     let inventory_host = InventoryHost {
         name: host.name.clone(),
-        address: host.vars.ansible_host.clone(),
-        port: host.vars.ansible_port,
-        user: host.vars.bootstrap_user.clone(),
+        route: host.route(),
         groups: host.groups.clone(),
     };
 
@@ -648,11 +644,20 @@ pub fn run_ansible_bootstrap(
     ));
     output::info(&ssh_password_notice(&bootstrap_user));
 
+    // The declared exception to the Route seam (#780): a virgin host has no
+    // tailnet yet, and no verified identity of its own — the operator just
+    // confirmed `host_ip` at the prompt above — so bootstrap builds its Route
+    // directly rather than resolving one from a `Host` that does not exist
+    // yet in any trustworthy sense.
     let inventory_host = InventoryHost {
-        name: host_name,
-        address: host_ip,
-        port,
-        user: bootstrap_user,
+        name: host_name.clone(),
+        route: crate::services::route::Route {
+            address: host_ip,
+            port,
+            user: bootstrap_user,
+            key_path: None,
+            alias: host_name,
+        },
         groups: host.groups.clone(),
     };
 

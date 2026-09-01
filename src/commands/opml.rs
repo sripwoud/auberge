@@ -78,7 +78,8 @@ pub fn run_export_opml(
     eprintln!("  User: {}", user);
     eprintln!("  Output: {}", output.display());
 
-    let session = LiveSshSession::new(&host, &ssh_key_path);
+    let route = crate::services::route::resolve(&host, Some(ssh_key_path));
+    let session = LiveSshSession::new(&route, &host.become_method)?;
     let opml = export_opml(&session, &user)?;
 
     fs::write(&output, &opml)
@@ -109,7 +110,8 @@ pub fn run_import_opml(
     eprintln!("  User: {}", user);
     eprintln!("  Input: {}", input.display());
 
-    let session = LiveSshSession::new(&host, &ssh_key_path);
+    let route = crate::services::route::resolve(&host, Some(ssh_key_path));
+    let session = LiveSshSession::new(&route, &host.become_method)?;
     let stdout = import_opml(&session, &input, &user)?;
     eprintln!("{}", stdout);
 

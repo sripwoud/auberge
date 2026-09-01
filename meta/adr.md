@@ -74,6 +74,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0064 | [Agent memory pools in one directory; capture state and the index stay per-worktree](./adr/0064-agent-memory-pools-in-one-directory.md)                         |
 | 0065 | [The agent's permission baseline is a guard rail, and the boundaries are elsewhere](./adr/0065-the-agent-permission-baseline-is-a-guard-rail-not-a-boundary.md) |
 | 0066 | [A backup's quiesce window is guarded by a host-side deadman, not the driver alone](./adr/0066-a-backups-quiesce-window-is-guarded-by-a-host-side-deadman.md)   |
+| 0067 | [A Host's route is resolved once, not read six times](./adr/0067-a-hosts-route-is-resolved-once-not-read-six-times.md)                                          |
 
 ## Native systemd by default
 
