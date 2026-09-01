@@ -73,7 +73,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0063 | [A pre-auth key is minted per run, not stored](./adr/0063-a-pre-auth-key-is-minted-per-run-not-stored.md)                                                       |
 | 0064 | [Agent memory pools in one directory; capture state and the index stay per-worktree](./adr/0064-agent-memory-pools-in-one-directory.md)                         |
 | 0065 | [The agent's permission baseline is a guard rail, and the boundaries are elsewhere](./adr/0065-the-agent-permission-baseline-is-a-guard-rail-not-a-boundary.md) |
-| 0066 | [A backup's quiesce window is guarded by a host-side deadman, not the driver alone](./adr/0066-a-backups-quiesce-window-is-guarded-by-a-host-side-deadman.md)   |
+| 0066 | [A quiesce window is guarded by a host-side deadman, not the driver alone](./adr/0066-a-backups-quiesce-window-is-guarded-by-a-host-side-deadman.md)            |
 | 0067 | [A Host's route is resolved once, not read six times](./adr/0067-a-hosts-route-is-resolved-once-not-read-six-times.md)                                          |
 | 0068 | [The agent tier holds its own DNS zone](./adr/0068-the-agent-tier-holds-its-own-dns-zone.md)                                                                    |
 | 0069 | [A Host's roster entry preserves fields it does not recognize](./adr/0069-a-hosts-roster-entry-preserves-fields-it-does-not-recognize.md)                       |
