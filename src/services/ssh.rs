@@ -260,6 +260,20 @@ impl<'a> LiveSshSession<'a> {
             host,
         }
     }
+
+    /// rsync's own escalation flag, using the acting Host's `become_method`
+    /// (`sudo` by default, see #776).
+    fn rsync_path_arg(&self) -> String {
+        format!("--rsync-path={} rsync", self.host.become_method)
+    }
+
+    /// The remote chown, escalated with the acting Host's `become_method`.
+    fn chown_command(&self, remote: &str, user: &str, group: &str) -> String {
+        format!(
+            "{} chown -R {}:{} {}",
+            self.host.become_method, user, group, remote
+        )
+    }
 }
 
 impl SshSession for LiveSshSession<'_> {
@@ -306,7 +320,7 @@ impl SshSession for LiveSshSession<'_> {
         let out = Command::new("rsync")
             .arg("-az")
             .arg("--relative")
-            .arg("--rsync-path=sudo rsync")
+            .arg(self.rsync_path_arg())
             .arg("-e")
             .arg(self.inner.rsync_e_arg())
             .arg(format!(
@@ -331,7 +345,7 @@ impl SshSession for LiveSshSession<'_> {
         let out = Command::new("rsync")
             .arg("-az")
             .arg("--delete")
-            .arg("--rsync-path=sudo rsync")
+            .arg(self.rsync_path_arg())
             .arg("-e")
             .arg(self.inner.rsync_e_arg())
             .arg(rsync_source_arg(local))
@@ -353,7 +367,7 @@ impl SshSession for LiveSshSession<'_> {
     }
 
     fn set_ownership(&self, remote: &str, user: &str, group: &str) -> Result<()> {
-        let cmd = format!("sudo chown -R {}:{} {}", user, group, remote);
+        let cmd = self.chown_command(remote, user, group);
         let result = self.run(&cmd)?;
         if !result.success {
             eyre::bail!("chown -R {}:{} {} failed", user, group, remote);
@@ -809,6 +823,50 @@ mod tests {
         let msg = unreachable_error(&test_host(), "   ").to_string();
         let first_line = msg.lines().next().unwrap();
         assert!(first_line.ends_with("192.0.2.9:2222"), "{first_line}");
+    }
+
+    #[test]
+    fn test_rsync_path_arg_defaults_to_sudo() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = LiveSshSession::new(&host, key);
+        assert_eq!(session.rsync_path_arg(), "--rsync-path=sudo rsync");
+    }
+
+    #[test]
+    fn test_rsync_path_arg_uses_configured_become_method() {
+        let host = Host {
+            become_method: "doas".to_string(),
+            ..test_host()
+        };
+        let key = Path::new("/tmp/key");
+        let session = LiveSshSession::new(&host, key);
+        assert_eq!(session.rsync_path_arg(), "--rsync-path=doas rsync");
+    }
+
+    #[test]
+    fn test_chown_command_defaults_to_sudo() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = LiveSshSession::new(&host, key);
+        assert_eq!(
+            session.chown_command("/opt/paperless", "paperless", "paperless"),
+            "sudo chown -R paperless:paperless /opt/paperless"
+        );
+    }
+
+    #[test]
+    fn test_chown_command_uses_configured_become_method() {
+        let host = Host {
+            become_method: "doas".to_string(),
+            ..test_host()
+        };
+        let key = Path::new("/tmp/key");
+        let session = LiveSshSession::new(&host, key);
+        assert_eq!(
+            session.chown_command("/opt/paperless", "paperless", "paperless"),
+            "doas chown -R paperless:paperless /opt/paperless"
+        );
     }
 
     #[test]
