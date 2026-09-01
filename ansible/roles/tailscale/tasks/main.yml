@@ -58,7 +58,6 @@
         {% if tailscale_accept_routes %}--accept-routes{% endif %}
         {% if tailscale_advertise_exit_node %}--advertise-exit-node{% endif %}
         {% if not tailscale_accept_dns %}--accept-dns=false{% endif %}
-        {% if tailscale_advertise_tags | length > 0 %}--advertise-tags={{ tailscale_advertise_tags | join(',') }}{% endif %}
         --authkey={{ tailscale_authkey }}
         {{ tailscale_extra_args }}
       when: not tailscale_is_authenticated

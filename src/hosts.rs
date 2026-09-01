@@ -1,8 +1,85 @@
+use clap::ValueEnum;
 use eyre::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::IsTerminal;
 use std::path::PathBuf;
+
+/// A Host's tailnet trust tier: ADR-0055's four, spelled bare (`agent`), which
+/// is the vocabulary `ansible/roles/headscale/files/policy.hujson` declares
+/// under `tagOwners`.
+///
+/// Closed on purpose. The policy is a `files/` asset — no Jinja, identical on
+/// every tailnet — so which tiers exist is a static property of the repo, and
+/// `tests/headscale_acl_policy.rs` holds this type and that file to each other.
+/// Widening the tailnet's trust vocabulary is a decision made twice (ADR-0046),
+/// never a typo.
+///
+/// **Why this check is static.** #767 asked to reject a value "the deployed
+/// policy's `tagOwners` does not define". That is a different question, and not
+/// one a roster edit can ask. Three checks exist, at three moments:
+///
+/// | check | question | when |
+/// | --- | --- | --- |
+/// | `validate_tag` (`commands::headscale`) | well-formed tag? | any `--tags` |
+/// | this type | one of the fleet's tiers? | `hosts.toml` parse |
+/// | headscale's `TagExists`, translated by `tag_node` | does the *loaded* policy name it? | `nodes tag` |
+///
+/// Only the middle one is answerable while writing a roster entry. `TagExists`
+/// returns false while `pm.pol == nil` (ADR-0061), so it says "no" to a legal
+/// tier whenever no policy is loaded — true of this tailnet for a day, and true
+/// of any Host enrolled before its control plane exists. It also needs SSH to
+/// the control-plane Host, which editing a local file must not. So the runtime
+/// gate keeps its own owner where it fires, and the roster gets the static one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum TailnetTag {
+    Trusted,
+    Data,
+    Agent,
+    Standby,
+}
+
+impl TailnetTag {
+    /// Every tier, in ADR-0055's order — the set the policy fence expects
+    /// `tagOwners` to name, and the picker's item list.
+    ///
+    /// Hand-written, so it can drift from the variants it claims to enumerate:
+    /// a fifth variant left out of here would leave the policy fence comparing
+    /// four tiers to four and passing, while `hosts.toml` quietly accepted a
+    /// fifth. `all_is_every_variant` pins it to what the `ValueEnum` derive
+    /// generates from the real variant list.
+    pub const ALL: [Self; 4] = [Self::Trusted, Self::Data, Self::Agent, Self::Standby];
+
+    /// The bare tier name, which is also how it deserializes.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Trusted => "trusted",
+            Self::Data => "data",
+            Self::Agent => "agent",
+            Self::Standby => "standby",
+        }
+    }
+
+    /// The tag as headscale spells it: what rides `--tags` on a pre-auth key
+    /// and what appears under `tagOwners`. The roster stores the bare tier
+    /// because the `tag:` prefix is a constant the type already carries.
+    ///
+    /// Its caller today is `tests/headscale_acl_policy.rs`, which needs the
+    /// prefixed form to compare this type against the policy's `tagOwners`.
+    /// The production caller is #768's auto-mint. Named because a `pub` item
+    /// with no production call site no longer trips `dead_code` (ADR-0046), so
+    /// nothing else would say so.
+    pub fn acl_tag(self) -> String {
+        format!("tag:{}", self.as_str())
+    }
+}
+
+impl std::fmt::Display for TailnetTag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Host {
@@ -23,6 +100,18 @@ pub struct Host {
     pub become_method: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tailscale_ip: Option<String>,
+    /// The Host's ADR-0055 trust tier. Deliberately not derived from `tags`:
+    /// those are Ansible inventory groups (`all.children.<tag>`), read by
+    /// `when: "'<x>' in group_names"` guards, so deriving one from the other
+    /// would make "which roles run here" and "what this Host may reach on the
+    /// network" the same declaration — adding a group would silently move a
+    /// Host's trust.
+    ///
+    /// Optional because the roster predates the field and never covers every
+    /// node: `lechuck` and `pixel-9a` have no `hosts.toml` entry and never
+    /// will. `auberge host list` shows the tier so an unset one is visible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tailnet_tag: Option<TailnetTag>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -76,6 +165,7 @@ impl Host {
             python_interpreter: None,
             become_method: "sudo".to_string(),
             tailscale_ip: tailscale_ip.map(str::to_string),
+            tailnet_tag: None,
         }
     }
 }
@@ -292,6 +382,7 @@ blocky_subdomain = "dns"
             python_interpreter: None,
             become_method: "sudo".to_string(),
             tailscale_ip: None,
+            tailnet_tag: None,
         };
 
         let config = HostsConfig { hosts: vec![host] };
@@ -318,6 +409,7 @@ blocky_subdomain = "dns"
         assert_eq!(config.hosts[0].become_method, "sudo");
         assert!(config.hosts[0].tags.is_empty());
         assert!(config.hosts[0].tailscale_ip.is_none());
+        assert!(config.hosts[0].tailnet_tag.is_none());
     }
 
     #[test]
@@ -333,6 +425,7 @@ blocky_subdomain = "dns"
             python_interpreter: None,
             become_method: "sudo".to_string(),
             tailscale_ip: Some("100.64.0.5".to_string()),
+            tailnet_tag: None,
         };
 
         let serialized = toml::to_string(&HostsConfig { hosts: vec![host] }).unwrap();
@@ -340,6 +433,83 @@ blocky_subdomain = "dns"
 
         let parsed: HostsConfig = toml::from_str(&serialized).unwrap();
         assert_eq!(parsed.hosts[0].tailscale_ip.as_deref(), Some("100.64.0.5"));
+    }
+
+    fn host_toml(body: &str) -> Result<HostsConfig> {
+        Ok(toml::from_str(&format!(
+            "[[hosts]]\nname = \"vps\"\naddress = \"203.0.113.10\"\nuser = \"admin\"\n{body}"
+        ))?)
+    }
+
+    /// [`TailnetTag::ALL`] is a literal; the `ValueEnum` derive generates its
+    /// list from the variants themselves. Equality here is what lets every
+    /// other assertion — the policy fence included — treat `ALL` as "every
+    /// tier" rather than "four tiers somebody remembered".
+    #[test]
+    fn all_is_every_variant() {
+        assert_eq!(TailnetTag::ALL.as_slice(), TailnetTag::value_variants());
+    }
+
+    /// Three spellings of one name — `as_str`/`Display`, serde's
+    /// `rename_all = "lowercase"`, and clap's derived value name — and a tier
+    /// the CLI accepts must be one the roster file parses. Pinned rather than
+    /// assumed: they agree today only because every variant is a single word.
+    #[test]
+    fn the_cli_the_roster_and_display_spell_a_tier_alike() {
+        for tier in TailnetTag::ALL {
+            let cli = tier
+                .to_possible_value()
+                .expect("every tier must be selectable on the command line");
+            assert_eq!(cli.get_name(), tier.as_str(), "{tier}");
+        }
+    }
+
+    #[test]
+    fn a_tier_round_trips_through_the_roster_file() {
+        for tier in TailnetTag::ALL {
+            let parsed = host_toml(&format!("tailnet_tag = \"{tier}\""))
+                .unwrap_or_else(|e| panic!("{tier} must parse: {e}"));
+            assert_eq!(parsed.hosts[0].tailnet_tag, Some(tier));
+
+            let written = toml::to_string(&parsed).unwrap();
+            assert!(
+                written.contains(&format!("tailnet_tag = \"{tier}\"")),
+                "{tier} must be written back as it was read: {written}"
+            );
+        }
+    }
+
+    /// The check #767 asked for, at the only moment it can be made: a value the
+    /// tailnet's tier vocabulary does not name is refused, and the refusal names
+    /// every value that would have worked.
+    ///
+    /// Static and local by construction. The runtime alternative — headscale's
+    /// `TagExists` against the deployed policy — cannot answer here: it returns
+    /// false whenever no policy is loaded (ADR-0061), so it would reject a legal
+    /// tier on any tailnet before its first policy deploy, and it would need SSH
+    /// to the control-plane Host to answer at all.
+    #[test]
+    fn an_undeclared_tier_is_refused_and_the_refusal_names_the_legal_ones() {
+        let err = host_toml(r#"tailnet_tag = "yolo""#)
+            .expect_err("a tier the policy does not declare must not parse")
+            .to_string();
+        for tier in TailnetTag::ALL {
+            assert!(
+                err.contains(tier.as_str()),
+                "the error must name {tier} as a legal value: {err}"
+            );
+        }
+    }
+
+    /// `tag:` is a constant of the wire format, not of the roster: the file
+    /// spells `agent`, headscale is handed `tag:agent`.
+    #[test]
+    fn the_acl_tag_is_the_tier_prefixed() {
+        assert_eq!(TailnetTag::Agent.acl_tag(), "tag:agent");
+        assert_eq!(
+            TailnetTag::ALL.map(TailnetTag::acl_tag).to_vec(),
+            ["tag:trusted", "tag:data", "tag:agent", "tag:standby"]
+        );
     }
 
     #[test]
@@ -355,6 +525,7 @@ blocky_subdomain = "dns"
             python_interpreter: None,
             become_method: "sudo".to_string(),
             tailscale_ip: None,
+            tailnet_tag: None,
         };
 
         let serialized = toml::to_string(&HostsConfig { hosts: vec![host] }).unwrap();

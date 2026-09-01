@@ -38,11 +38,29 @@ tags = ["production"]
 description = "Main VPS"
 ssh_key = "~/.ssh/identities/auberge/sripwoud"
 tailscale_ip = "100.99.62.26"  # optional, see below
+tailnet_tag = "data"           # optional, see below
 ```
 
 ### Optional fields
 
 - `tailscale_ip` — cached Tailscale CGNAT IPv4 of the host. Populated by [`auberge host detect-tailscale-ip <name>`](cli-reference/host/detect-tailscale-ip.md) and consumed by `auberge dns set-all` to auto-fill DNS records for tailnet-only apps without per-app overrides.
+- `tailnet_tag` — the host's tailnet trust tier: `trusted`, `data`, `agent`, or `standby`. One of exactly those four; anything else fails to parse, naming the legal values. Set by `auberge host add --tailnet-tag` or `auberge host edit` and shown as the `TIER` column in `auberge host list`. Never reaches Ansible; the production consumer is the auto-mint path (#768), which will stamp it on the pre-auth key it mints.
+
+> [!IMPORTANT]
+> `tags` and `tailnet_tag` are different axes and must stay that way. `tags`
+> become Ansible inventory groups (`all.children.<tag>`), read by
+> `when: "'hermes' in group_names"` guards — they decide **which roles run**.
+> `tailnet_tag` is the host's ACL trust tier — it decides **what the host may
+> reach on the tailnet**. Deriving one from the other would mean adding an
+> Ansible group silently moved a host's network trust. See ADR-0062.
+
+The legal tiers are the ones the **shipped** ACL policy declares under
+`tagOwners` (`ansible/roles/headscale/files/policy.hujson`), not the ones the
+running server currently has loaded — a test holds the file and the CLI's type
+equal, so a tier the CLI accepts is one the policy names. Whether headscale
+_accepts_ it is a separate, later question, answered when the tag is applied:
+its `TagExists` gate reads the loaded policy and refuses everything while none
+is loaded, so it cannot validate a declaration. See ADR-0062.
 
 ## Ansible Inventory (Recommended for developers)
 

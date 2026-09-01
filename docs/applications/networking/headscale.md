@@ -65,6 +65,8 @@ The tailnet runs a tag-based, default-deny policy ([ADR-0055](https://github.com
 
 Trust is a tag; which node carries which is set by `auberge headscale add-key -t tag:...` at enrollment or by [`auberge headscale tag-node`](cli-reference/headscale/tag-node.md) afterwards, so the policy names tiers, never nodes.
 
+A host in the roster **declares** its tier as the `tailnet_tag` field of its [`hosts.toml`](configuration/hosts.md) entry — one of the four below, refused at parse time if it is anything else (ADR-0062). Parsing checks the value against the CLI's own closed type; what ties that type to this file is a test holding the two sets equal, so the four stay one vocabulary. That is the declaration; the commands above are what applies it. Nodes outside the roster (`lechuck`, `pixel-9a`) have no entry and are tagged by command alone.
+
 | Tag           | Example nodes     | May initiate to                         |
 | ------------- | ----------------- | --------------------------------------- |
 | `tag:trusted` | lechuck, pixel-9a | everything                              |
@@ -107,6 +109,8 @@ Put a node in a tier:
 auberge headscale add-key -t tag:agent      # at enrollment: mint a key stamped tag:agent
 auberge headscale tag-node lechuck -t tag:trusted   # afterwards: set an enrolled node's tags
 ```
+
+A node **never asserts its own tag.** `tailscale up --advertise-tags` is a node-side claim headscale validates against `tagOwners`, where a key-stamped tag is server-forced and applied unchecked — two writers for one fact, and a rejected claim lands as a silently invalid tag on the node record. The tailscale role's `tailscale_advertise_tags` was deleted for that reason and `tests/headscale_acl_policy.rs` keeps it deleted.
 
 !> The two paths are not validated alike. A tag on a pre-auth key is applied unchecked, so a node can carry a tag no policy names; `tag-node` requires the tag to appear under `tagOwners` in a **deployed** policy and rejects it otherwise. Tagging nodes that are already enrolled therefore happens _after_ the policy is live, not before. `tag-node` also replaces a node's tag set rather than adding to it, and converts a user-owned node to a tag-owned one irreversibly.
 

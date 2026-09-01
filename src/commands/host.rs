@@ -1,10 +1,10 @@
-use crate::hosts::{Host, HostManager};
+use crate::hosts::{Host, HostManager, TailnetTag};
 use crate::output;
 use crate::output::OutputFormat;
 use crate::prompt::{Choice, confirm, select_item};
 use crate::services::ssh::{CONNECT_TIMEOUT, LiveSshSession, SshSession};
 use clap::Subcommand;
-use dialoguer::{Input, theme::ColorfulTheme};
+use dialoguer::{Input, Select, theme::ColorfulTheme};
 use eyre::{Context, Result};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -18,6 +18,7 @@ pub struct AddHostArgs {
     pub ssh_key: Option<String>,
     pub tags: Option<String>,
     pub description: Option<String>,
+    pub tailnet_tag: Option<TailnetTag>,
     pub no_input: bool,
 }
 
@@ -33,6 +34,10 @@ struct HostDisplay {
     port: u16,
     #[tabled(rename = "TAGS")]
     tags: String,
+    /// The ADR-0055 trust tier, `-` when unset. Shown because an untagged node
+    /// is exactly what stays invisible otherwise: four of five were.
+    #[tabled(rename = "TIER")]
+    tailnet_tag: String,
 }
 
 impl From<&Host> for HostDisplay {
@@ -43,6 +48,9 @@ impl From<&Host> for HostDisplay {
             user: host.user.clone(),
             port: host.port,
             tags: host.tags.join(", "),
+            tailnet_tag: host
+                .tailnet_tag
+                .map_or_else(|| "-".to_string(), |tier| tier.to_string()),
         }
     }
 }
@@ -65,6 +73,12 @@ pub enum HostCommands {
         tags: Option<String>,
         #[arg(short, long, help = "Description")]
         description: Option<String>,
+        #[arg(
+            long,
+            value_enum,
+            help = "Tailnet trust tier (ADR-0055); omit to leave unset"
+        )]
+        tailnet_tag: Option<TailnetTag>,
         #[arg(long, help = "Disable interactive prompts")]
         no_input: bool,
     },
@@ -254,6 +268,19 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         .map(|t| t.split(',').map(|s| s.trim().to_string()).collect())
         .unwrap_or_default();
 
+    let tailnet_tag = match args.tailnet_tag {
+        Some(tier) => Some(tier),
+        None if interactive => prompt_tailnet_tag(None)?,
+        None => None,
+    };
+
+    if tailnet_tag.is_none() {
+        output::info(
+            "No tailnet trust tier set. `auberge host edit` sets one; until then the host has no \
+             place in the tailnet ACL policy.",
+        );
+    }
+
     let host = Host {
         name: name.clone(),
         address,
@@ -265,6 +292,7 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         python_interpreter: None,
         become_method: "sudo".to_string(),
         tailscale_ip: None,
+        tailnet_tag,
     };
 
     HostManager::add_host(host)?;
@@ -425,6 +453,50 @@ fn none_if_empty(value: String) -> Option<String> {
     if value.is_empty() { None } else { Some(value) }
 }
 
+/// The unset entry the tier picker offers first.
+const NO_TIER: &str = "(none)";
+
+/// The picker's items: the unset entry, then every tier in ADR-0055's order.
+fn tier_items() -> Vec<String> {
+    let mut items = vec![NO_TIER.to_string()];
+    items.extend(TailnetTag::ALL.iter().map(ToString::to_string));
+    items
+}
+
+/// Where `current` sits in [`tier_items`]. Index 0 is [`NO_TIER`], so a tier is
+/// its position in `TailnetTag::ALL` shifted by one.
+fn tier_item_index(current: Option<TailnetTag>) -> usize {
+    current
+        .and_then(|tier| TailnetTag::ALL.iter().position(|t| *t == tier))
+        .map_or(0, |index| index + 1)
+}
+
+/// The inverse of [`tier_item_index`]: which tier item `index` selects.
+fn tier_at_item(index: usize) -> Option<TailnetTag> {
+    index.checked_sub(1).map(|index| TailnetTag::ALL[index])
+}
+
+/// Pick a Host's trust tier from the closed ADR-0055 set, `current` preselected.
+///
+/// A `Select` and not an `Input`, because the set is closed and a free-text
+/// typo would surface as a `hosts.toml` parse failure on some later, unrelated
+/// command rather than here. Unset is an entry rather than an empty string
+/// because `.default()` on a dialoguer `Input` is not clearable — the same trap
+/// `ssh_key` works around with `with_initial_text`.
+///
+/// The off-by-one that entry costs is the whole correctness of the picker and
+/// is unreachable through a `Select`, so it lives in [`tier_item_index`] and
+/// [`tier_at_item`], which are tested as a round trip.
+fn prompt_tailnet_tag(current: Option<TailnetTag>) -> Result<Option<TailnetTag>> {
+    let picked = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Tailnet trust tier")
+        .items(&tier_items())
+        .default(tier_item_index(current))
+        .interact()?;
+
+    Ok(tier_at_item(picked))
+}
+
 pub fn run_host_edit(name: Option<String>) -> Result<()> {
     let host = crate::hosts::select_or_arg(name, crate::hosts::HOST_POSITIONAL)?;
 
@@ -471,6 +543,8 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
         .allow_empty(true)
         .interact_text()?;
 
+    let tailnet_tag = prompt_tailnet_tag(host.tailnet_tag)?;
+
     let updated_host = Host {
         name: host.name.clone(),
         address,
@@ -482,6 +556,7 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
         python_interpreter: host.python_interpreter,
         become_method: host.become_method,
         tailscale_ip: host.tailscale_ip,
+        tailnet_tag,
     };
 
     HostManager::update_host(&host.name, updated_host)?;
@@ -821,6 +896,7 @@ mod tests {
             python_interpreter: None,
             become_method: "sudo".to_string(),
             tailscale_ip: None,
+            tailnet_tag: None,
         }
     }
 
@@ -1017,6 +1093,40 @@ mod tests {
         let script = etc_hosts_sed_script("auberge", "relais");
         let input = "10.0.0.2 vieille-auberge auberge-next\n";
         assert_eq!(run_etc_hosts_sed(&script, input), input);
+    }
+
+    /// The `(none)` entry shifts every tier by one, and the shift is applied in
+    /// two places that must agree. A round trip over the whole domain — unset
+    /// plus every tier — is the assertion, because an off-by-one here silently
+    /// assigns a Host the wrong trust tier.
+    #[test]
+    fn a_tier_survives_the_pickers_index_shift() {
+        let mut round_tripped = vec![tier_at_item(tier_item_index(None))];
+        for tier in TailnetTag::ALL {
+            round_tripped.push(tier_at_item(tier_item_index(Some(tier))));
+        }
+        assert_eq!(
+            round_tripped,
+            [
+                None,
+                Some(TailnetTag::Trusted),
+                Some(TailnetTag::Data),
+                Some(TailnetTag::Agent),
+                Some(TailnetTag::Standby),
+            ]
+        );
+    }
+
+    /// Each item index the round trip above relies on must be a real item, or
+    /// the `Select` would offer fewer entries than the mapping addresses.
+    #[test]
+    fn every_tier_has_an_item_to_select() {
+        let items = tier_items();
+        assert_eq!(items.len(), TailnetTag::ALL.len() + 1);
+        assert_eq!(items[0], NO_TIER);
+        for tier in TailnetTag::ALL {
+            assert_eq!(items[tier_item_index(Some(tier))], tier.to_string());
+        }
     }
 
     #[test]

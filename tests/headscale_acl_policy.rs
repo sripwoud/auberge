@@ -14,21 +14,36 @@
 //!
 //! Trust is a tag, and node→tag mapping is a pre-auth-key concern, not a
 //! policy-file one — so the policy names tiers, never nodes, and every
-//! assertion below is about a tier. The four tiers and the one carve-out are
-//! written out as literals rather than read back from the file, so widening the
-//! policy is a decision made twice (ADR-0046).
+//! assertion below is about a tier. Which tier plays which part (resolver,
+//! confined) is written out as a literal rather than read back from the file,
+//! so widening the policy is a decision made twice (ADR-0046).
+//!
+//! The tier *vocabulary* is the crate's, reached with `use` (ADR-0046): #767
+//! types a Host's trust tier as [`TailnetTag`], and a roster entry is validated
+//! against that type rather than against the deployed policy — `TagExists` is a
+//! runtime gate on a *loaded* policy (ADR-0061), so it cannot answer for a
+//! declaration. This file is what makes the static check honest: the crate's
+//! four variants and the shipped policy's `tagOwners` are held equal, in both
+//! directions, so neither can widen alone.
 
 use std::fs;
 use std::path::PathBuf;
 
+use auberge::hosts::TailnetTag;
 use serde_json::Value;
 
 mod common;
 
-use common::{Plays, Task, field, role_dir, strings, tasks_in};
+use common::{
+    Plays, Task, field, relative, role_dir, role_templates, strings, tasks_in, templated_yml_files,
+};
 
-/// The trust tiers ADR-0055 declares, and the only tags the policy may name.
-const TRUST_TIERS: [&str; 4] = ["tag:trusted", "tag:data", "tag:agent", "tag:standby"];
+/// The trust tiers ADR-0055 declares, and the only tags the policy may name —
+/// as the crate spells them, so the policy file is compared against the type
+/// `hosts.toml` validates against rather than against a second literal.
+fn trust_tiers() -> Vec<String> {
+    TailnetTag::ALL.iter().map(|tier| tier.acl_tag()).collect()
+}
 
 /// The tier that runs the tailnet's global resolver (ADR-0052): the data
 /// host's Blocky. Every node reaches it on 53, and nothing else.
@@ -185,8 +200,10 @@ fn test_the_four_trust_tiers_are_the_only_declared_tags() {
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(
         owners,
-        TRUST_TIERS.iter().map(|t| t.to_string()).collect(),
-        "the policy names exactly the ADR-0055 tiers — no more, no fewer"
+        trust_tiers().into_iter().collect(),
+        "the policy's tagOwners and TailnetTag's variants are one vocabulary: a tier in the \
+         type but not the policy is a hosts.toml value headscale will refuse, and a tier in the \
+         policy but not the type is one no Host can be declared with"
     );
 }
 
@@ -196,9 +213,9 @@ fn test_the_four_trust_tiers_are_the_only_declared_tags() {
 #[test]
 fn test_tags_are_admin_owned_not_operator_named() {
     let owners = policy()["tagOwners"].clone();
-    for tier in TRUST_TIERS {
+    for tier in trust_tiers() {
         assert_eq!(
-            owners[tier].as_array().map(Vec::len),
+            owners[&tier].as_array().map(Vec::len),
             Some(0),
             "{tier} must be admin-owned (empty list), not owned by a named user"
         );
@@ -262,10 +279,9 @@ fn test_the_agent_tier_initiates_nothing_of_its_own() {
 /// that reach as the rollback surface. Neither ever initiates toward agent.
 #[test]
 fn test_data_and_standby_reach_every_tier_but_the_agent() {
-    let non_agent: std::collections::BTreeSet<String> = TRUST_TIERS
-        .iter()
-        .filter(|tier| **tier != CONFINED_TIER)
-        .map(|tier| tier.to_string())
+    let non_agent: std::collections::BTreeSet<String> = trust_tiers()
+        .into_iter()
+        .filter(|tier| tier != CONFINED_TIER)
         .collect();
     for src_tier in ["tag:data", "tag:standby"] {
         let rule = acls(&policy())
@@ -281,4 +297,96 @@ fn test_data_and_standby_reach_every_tier_but_the_agent() {
             "{src_tier} reaches trusted/data/standby and never {CONFINED_TIER}"
         );
     }
+}
+
+/// Every ansible file a deploy renders, as (repo-relative path, contents):
+/// every role's templated YAML plus the playbooks ([`templated_yml_files`]
+/// already carries the latter), and every role template. A role's `files/`
+/// payload is out of scope for the same reason the walker excludes it — ansible
+/// copies it byte for byte and nothing there enrolls a node.
+///
+/// [`ENROLLMENT_SITES`] below are the paths this domain must contain for the
+/// scan over it to mean anything.
+fn enrollment_domain() -> Vec<(String, String)> {
+    templated_yml_files()
+        .into_iter()
+        .chain(role_templates())
+        .map(|path| {
+            let text = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{} must be readable: {e}", relative(&path)));
+            (relative(&path), text)
+        })
+        .collect()
+}
+
+/// A node never asserts its own tags. #767 deleted the tailscale role's
+/// `tailscale_advertise_tags`; this keeps it deleted.
+///
+/// The two paths carry opposite authority. A tag stamped on a pre-auth key is
+/// server-forced and applied *unchecked* at registration — which is how `ruche`
+/// came to carry `tag:agent` on a tailnet running no policy at all. A tag a
+/// node advertises through `tailscale up --advertise-tags` is a node-side claim
+/// headscale validates against `tagOwners`, and a rejected claim lands as a
+/// silently invalid tag on the node record. Two writers for one fact can
+/// disagree, only one of them is authoritative, so the other does not exist —
+/// and [`TailnetTag`] is now the single declaration the authoritative one reads.
+///
+/// Text, not structure: a role that merely *documents* the flag is flagged too,
+/// which is the right answer while a pre-auth key is the only authority.
+#[test]
+fn test_a_node_never_advertises_its_own_tags() {
+    let offenders: Vec<String> = enrollment_domain()
+        .into_iter()
+        .filter(|(_, text)| text.contains("advertise-tags") || text.contains("advertise_tags"))
+        .map(|(path, _)| path)
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "a pre-auth key is the only thing that assigns a tailnet tag; these assert one \
+         node-side: {offenders:?}"
+    );
+}
+
+/// The two files the scan above must have read — the command line #767 deleted
+/// the flag from, and the defaults file it deleted the variable from. A domain
+/// that misses either passes vacuously over a place the tag could come back.
+const ENROLLMENT_SITES: [&str; 2] = [
+    "ansible/roles/tailscale/tasks/main.yml",
+    "ansible/roles/tailscale/defaults/main.yml",
+];
+
+/// A floor on the domain, well under the ~185 files it holds today. A walk that
+/// collapses to a handful still finds no offender, so "no offender" has to be
+/// said of a domain that is demonstrably the tree.
+const MIN_ENROLLMENT_DOMAIN: usize = 150;
+
+#[test]
+fn test_the_enrollment_scan_reaches_both_sites_the_flag_lived_at() {
+    let domain = enrollment_domain();
+    assert!(
+        domain.len() >= MIN_ENROLLMENT_DOMAIN,
+        "the scan read only {} files; a collapsed walk finds no offender either",
+        domain.len()
+    );
+
+    let reached: Vec<&str> = domain.iter().map(|(path, _)| path.as_str()).collect();
+    for site in ENROLLMENT_SITES {
+        assert!(
+            reached.contains(&site),
+            "the scan's domain must reach {site}, {} files read",
+            domain.len()
+        );
+    }
+
+    let enrollment_task = ENROLLMENT_SITES[0];
+    let text = &domain
+        .iter()
+        .find(|(path, _)| path == enrollment_task)
+        .expect("reached, asserted above")
+        .1;
+    assert!(
+        text.contains("tailscale up"),
+        "{enrollment_task} is where the scan is pointed because it enrolls the node; if the \
+         command line moved, move this name with it"
+    );
 }

@@ -299,6 +299,7 @@ mod tests {
             python_interpreter: None,
             become_method: "sudo".to_string(),
             tailscale_ip: None,
+            tailnet_tag: None,
         }
     }
 
