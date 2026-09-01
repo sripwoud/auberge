@@ -541,6 +541,7 @@ mod tests {
         "hermes",
         "infrastructure",
         "memsearch",
+        "opencode",
         "remove-radicale",
         "syncthing",
         "tgtg",

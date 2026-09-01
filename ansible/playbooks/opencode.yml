@@ -1,0 +1,7 @@
+---
+- name: Deploy OpenCode agent runtime
+  hosts: vps
+  become: true
+  roles:
+    - role: opencode
+      tags: [opencode]

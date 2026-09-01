@@ -1,0 +1,73 @@
+---
+- name: Read installed OpenCode version
+  ansible.builtin.command: "{{ opencode_binary_path }} --version"
+  register: opencode_version_output
+  changed_when: false
+  failed_when: false
+
+- name: Set installed OpenCode version fact
+  ansible.builtin.set_fact:
+    opencode_installed_version: "{{ opencode_version_output.stdout | default('') | trim }}"
+
+- name: Download OpenCode release archive
+  when: opencode_installed_version != opencode_version
+  ansible.builtin.get_url:
+    url: "{{ opencode_archive_url }}"
+    dest: "{{ opencode_archive_download_path }}"
+    mode: "0644"
+
+- name: Install OpenCode binary
+  when: opencode_installed_version != opencode_version
+  ansible.builtin.unarchive:
+    src: "{{ opencode_archive_download_path }}"
+    dest: "{{ opencode_install_dir }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Remove the downloaded OpenCode archive
+  ansible.builtin.file:
+    path: "{{ opencode_archive_download_path }}"
+    state: absent
+
+- name: Create the managed config directory
+  ansible.builtin.file:
+    path: "{{ opencode_managed_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy the OpenRouter API key
+  ansible.builtin.copy:
+    content: "{{ opencode_openrouter_api_key }}"
+    dest: "{{ opencode_openrouter_key_path }}"
+    owner: root
+    group: "{{ opencode_group }}"
+    mode: "0640"
+  no_log: true
+
+- name: Deploy the managed OpenCode configuration
+  ansible.builtin.template:
+    src: opencode.json.j2
+    dest: "{{ opencode_managed_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create the agent workspace root
+  ansible.builtin.file:
+    path: "{{ opencode_workspace_dir }}"
+    state: directory
+    owner: "{{ opencode_user }}"
+    group: "{{ opencode_group }}"
+    mode: "0755"
+
+- name: Deploy the AGENTS.md baseline to the workspace root
+  ansible.builtin.copy:
+    src: AGENTS.md
+    dest: "{{ opencode_agents_md_path }}"
+    owner: root
+    group: root
+    mode: "0644"
