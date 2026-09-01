@@ -23,7 +23,7 @@ use crate::output;
 use eyre::{Context, Result};
 use std::ffi::OsString;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 
 const SSH_MUX_OPTIONS: &[(&str, &str)] = &[
@@ -167,6 +167,25 @@ impl<'a> SshTransport<'a> {
             stdout: Vec::new(),
             stderr: result.last_stderr.into_bytes(),
         })
+    }
+
+    /// Launches `command` over ssh without waiting for it to exit — every
+    /// other method here blocks until the remote command's own exit, which is
+    /// wrong for arming a Host-side deadman (ADR-0066): the timer must be
+    /// scheduled and left running on the Host regardless of what happens to
+    /// the driver next, including a slow or hung ssh round trip blocking the
+    /// backup itself. The child is left unwaited on purpose; this process is
+    /// short-lived and any orphan is reparented and reaped by init.
+    pub fn spawn(&self, command: &str) -> Result<()> {
+        Command::new("ssh")
+            .args(self.ssh_args())
+            .arg(command)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .wrap_err("Failed to launch detached SSH command")?;
+        Ok(())
     }
 
     pub fn run_raw(&self, args: &[&str]) -> Result<Output> {
@@ -457,6 +476,20 @@ mod tests {
             session.systemctl_remote_args("restart", "paperless-webserver"),
             vec!["doas", "systemctl", "restart", "paperless-webserver"]
         );
+    }
+
+    #[test]
+    fn test_spawn_returns_before_the_remote_command_would_finish() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshTransport::new(&host, key);
+        // Not a live ssh: the far end refuses instantly. What this asserts is
+        // that `spawn` itself returns immediately rather than blocking on
+        // that refusal — an `output()`-based call would too, here, so the
+        // real guarantee is that this is `Command::spawn`, not `.output()`.
+        let start = std::time::Instant::now();
+        session.spawn("sleep 5").unwrap();
+        assert!(start.elapsed() < Duration::from_secs(1));
     }
 
     #[test]
