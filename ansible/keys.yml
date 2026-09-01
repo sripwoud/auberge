@@ -183,6 +183,16 @@ keys:
     secret: false
     doc: "Subdomain for the Immich photo server"
 
+  memsearch_sync_device_id:
+    secret: false
+    doc: >-
+      Syncthing device ID of the peer holding the off-box copy of the agent memory store.
+      The peer initiates: the tailnet ACL denies `tag:agent -> tag:trusted` (ADR-0055).
+
+  memsearch_sync_device_name:
+    secret: false
+    doc: "Display name for that Syncthing peer, as it appears in the agent Host's device list."
+
   navidrome_subdomain:
     secret: false
     doc: "Subdomain for the Navidrome music server"

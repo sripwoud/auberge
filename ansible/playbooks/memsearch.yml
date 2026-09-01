@@ -1,0 +1,21 @@
+---
+- name: Agent memory - box-global memsearch store, index, and egress
+  hosts: all
+  become: true
+  roles:
+    - role: syncthing
+      tags: [memsearch, memory, sync, syncthing]
+      vars:
+        # lechuck initiates. The tailnet ACL denies `tag:agent -> tag:trusted`
+        # (ADR-0055), so this Host cannot dial its peer; announcing itself to
+        # third-party discovery servers and dialling relays over the public
+        # internet would be the one way it reached anything off-tailnet.
+        syncthing_discovery_enabled: false
+        syncthing_configure_workspace: true
+        syncthing_workspace_id: agent-memory
+        syncthing_workspace_label: Agent memory
+        syncthing_workspace_path: "{{ memsearch_memory_dir }}"
+        syncthing_device_id: "{{ memsearch_sync_device_id }}"
+        syncthing_device_name: "{{ memsearch_sync_device_name }}"
+    - role: memsearch
+      tags: [memsearch, memory]

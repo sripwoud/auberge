@@ -540,6 +540,7 @@ mod tests {
         "hardening",
         "hermes",
         "infrastructure",
+        "memsearch",
         "remove-radicale",
         "syncthing",
         "tgtg",

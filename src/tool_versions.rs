@@ -188,6 +188,7 @@ mod tests {
                 "caddy_l4_version",
                 "grimmory_java_version",
                 "hermes_uv_version",
+                "memsearch_uv_version",
                 "tgtg_uv_version",
             ],
             "Tool Versions diverged from tests/version_annotations.rs TOOL_VERSIONS"
