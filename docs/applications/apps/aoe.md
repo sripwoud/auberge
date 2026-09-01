@@ -85,4 +85,6 @@ ssh ruche 'journalctl --user -u aoe -f'
 ssh ruche 'aoe serve --status'   # the daemon's own view: PID, mode, URLs, log path
 ```
 
+!> A redeploy restarts the unit, and `KillMode=` is systemd's default, so a version bump may take tmux sessions **started from the dashboard** with it (sessions started from the TUI over ssh live in their own scope and are unaffected). Whether they share the unit's cgroup is the same open question `MemoryMax` waits on — see below. Until it is answered, stop agents before bumping the pin.
+
 `MemoryHigh` is declared at 4G and **`MemoryMax` deliberately is not**. `MemoryHigh` throttles and reclaims; `MemoryMax` is where the kernel kills. aoe supervises tmux sessions running agents it did not fork, and until it is observed which cgroup those land in, a kill line risks OOM-killing an agent mid-run. Set one once that is known.

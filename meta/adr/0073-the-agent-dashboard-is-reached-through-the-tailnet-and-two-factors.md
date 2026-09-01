@@ -35,6 +35,7 @@ Every one of these fails in a way that reads as success.
 - **The passphrase is the only credential the operator holds.** The token cannot be pre-seeded, so first pairing needs `aoe url` over ssh — a bootstrapping step no other App has.
 - **An installed PWA binds to its exact origin**, so `essaim.{agents_domain}` is frozen once anyone installs it. ADR-0068 already carries this; it is restated here because this is the ADR that names the origin.
 - **The dashboard is unreachable off the tailnet, deliberately**, including from a phone with no tailnet client. That is the trade ADR-0054 already made.
+- **A redeploy may take dashboard-started tmux sessions with it.** `KillMode=` is left at systemd's `control-group`, so a restart kills everything in the unit's cgroup — and whether the tmux servers aoe drives are in it is the same unobserved fact `MemoryMax` waits on. Upstream keeps `aoe killall` as a command separate from `aoe serve --stop`, which says sessions are meant to outlive the daemon; `KillMode=process` would honour that. Both settings resolve from one look at the box, so both wait for it rather than one being guessed now.
 - **A user unit is outside two fleet models**: `install_notifies_restart`'s dest→unit model and `service_directories`'s strict-unit scan both read system-manager units only, so aoe's notify edge is a declared one (`DECLARED_ROLES`) rather than a computed one.
 
 ## Alternatives considered

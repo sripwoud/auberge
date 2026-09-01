@@ -20,6 +20,9 @@ aoe_staging_dir: "/tmp/aoe-{{ aoe_version }}"
 # path the unit execs.
 aoe_unpacked_binary: "{{ aoe_staging_dir }}/{{ aoe_asset_name }}"
 
+# ansible's own directory, not aoe's: aoe keeps its state in
+# ~/.agent-of-empires and reads nothing from here. It holds the unit's
+# environment file and nothing else.
 aoe_config_dir: "{{ aoe_home }}/.config/aoe"
 aoe_env_path: "{{ aoe_config_dir }}/serve.env"
 aoe_systemd_user_dir: "{{ aoe_home }}/.config/systemd/user"

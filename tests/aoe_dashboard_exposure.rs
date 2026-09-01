@@ -202,11 +202,19 @@ fn test_the_passphrase_is_not_on_the_command_line() {
         env_file.ends_with("serve.env"),
         "the unit must read its environment from the role's own file, not {env_file}"
     );
-    let rendered = render("serve.env.j2", &[("aoe_passphrase", "correct-horse")]);
+    // Single-quoted, and asserted on a value carrying what systemd would
+    // otherwise eat: an unquoted `p\ss` reaches the process as `pss`, and every
+    // device is locked out with nothing anywhere reporting why. Upstream's own
+    // default passphrase is four words, so spaces are the normal case.
+    let rendered = render("serve.env.j2", &[("aoe_passphrase", "four word p\\ss #1")]);
+    let assignment = rendered
+        .lines()
+        .find(|line| line.starts_with("AOE_SERVE_PASSPHRASE"))
+        .expect("the environment file must set the variable aoe reads the passphrase from");
     assert_eq!(
-        rendered.trim(),
-        "AOE_SERVE_PASSPHRASE=correct-horse",
-        "the environment file must set the variable aoe reads the passphrase from"
+        assignment, "AOE_SERVE_PASSPHRASE='four word p\\ss #1'",
+        "the value must be single-quoted; systemd consumes a backslash in an \
+         unquoted value as an escape and strips trailing whitespace"
     );
 }
 

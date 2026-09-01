@@ -10,8 +10,8 @@ StartLimitBurst=30
 [Service]
 Type=simple
 WorkingDirectory={{ aoe_home }}
-# AOE_SERVE_PASSPHRASE arrives from a 0600 file rather than on the command line,
-# which every process on the box can read out of /proc.
+# The passphrase arrives as AOE_SERVE_PASSPHRASE from a 0600 file rather than on
+# the command line, where every process on the box could read it out of /proc.
 EnvironmentFile={{ aoe_env_path }}
 ExecStart={{ aoe_binary_path }} serve --host {{ aoe_bind_host }} --port {{ aoe_port }} --auth token --behind-proxy --allowed-host {{ aoe_domain }} --allowed-origin https://{{ aoe_domain }}
 Restart=always
@@ -20,6 +20,13 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
+# `MemoryMax=` is deliberately absent, and `KillMode=` is deliberately systemd's
+# default, for one and the same unmeasured reason: where the tmux servers aoe
+# drives land. If they share this cgroup, a `max` OOM-kills an agent mid-run and
+# the default `control-group` kill takes dashboard-started sessions down with a
+# redeploy — upstream keeps `aoe killall` as a separate command precisely because
+# stopping the daemon is not meant to stop the sessions. Observe the placement
+# on the box, then set both together.
 MemoryHigh={{ aoe_memory_high }}
 
 [Install]

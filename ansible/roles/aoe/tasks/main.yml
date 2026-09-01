@@ -1,11 +1,16 @@
 ---
-- name: Require a passphrase upstream will accept
+# The length is aoe's own floor. The quote is systemd's: the passphrase reaches
+# the process through a single-quoted EnvironmentFile value, which carries every
+# character but that one verbatim.
+- name: Require a passphrase upstream and systemd will both accept
   ansible.builtin.assert:
     that:
       - aoe_passphrase | default('') | length >= 8
+      - "\"'\" not in aoe_passphrase | default('')"
     fail_msg: >-
-      aoe_passphrase must be at least 8 characters; aoe refuses a shorter one
-      and `aoe serve` would exit before the dashboard ever listened.
+      aoe_passphrase must be at least 8 characters and carry no single quote.
+      aoe refuses a shorter one and `aoe serve` would exit before the dashboard
+      ever listened; a single quote would truncate the value systemd hands it.
       Set it with: auberge config set aoe_passphrase <VALUE>
   no_log: true
 
@@ -53,7 +58,7 @@
   when: aoe_installed_version != aoe_version
   delegate_to: localhost
   ansible.builtin.set_fact:
-    aoe_archive_sha256: "{{ aoe_published_checksum.content | split | first }}"
+    aoe_archive_sha256: "{{ aoe_published_checksum.content | split() | first }}"
 
 - name: Download the aoe release archive
   when: aoe_installed_version != aoe_version
