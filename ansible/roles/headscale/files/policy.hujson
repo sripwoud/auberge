@@ -47,4 +47,36 @@
       "dst": ["tag:trusted:*", "tag:data:*", "tag:standby:*"],
     },
   ],
+
+  // #738's acceptance, made executable. `headscale policy check -f` evaluates
+  // these against the live fleet, and `pm.RunTests()` re-runs them on every
+  // policy load — so a later rule change that reopens a confined path stops the
+  // policy rather than shipping quietly.
+  //
+  // 59865 is the data host's real SSH port. It is the probe that returned rc=0
+  // from ruche against the flat tailnet, so it is the one that can prove a
+  // change; port 22 and HTTPS-on-bare-IP fail for reasons unrelated to any ACL
+  // and reported "blocked" against a fully open tailnet (#765).
+  //
+  // `src` is a single alias by construction — Tailscale allows one per entry —
+  // and an unresolvable `src` is a test *failure*, not a skip. A tier named
+  // here is therefore pinned to being non-empty: tag:standby is deliberately
+  // absent because vieille-auberge is slated for retirement, and emptying that
+  // tier would otherwise stop the policy loading.
+  "tests": [
+    {
+      "src": "tag:agent",
+      "accept": ["tag:data:53"],
+      "deny": ["tag:data:59865", "tag:data:443", "tag:trusted:59865"],
+    },
+    {
+      "src": "tag:trusted",
+      "accept": ["tag:data:53", "tag:data:443", "tag:data:59865"],
+    },
+    {
+      "src": "tag:data",
+      "accept": ["tag:trusted:59865"],
+      "deny": ["tag:agent:59865"],
+    },
+  ],
 }
