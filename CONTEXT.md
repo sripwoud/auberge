@@ -29,7 +29,7 @@ A capability type standing for a `Config` already validated against the keys a r
 _Avoid_: Plan, request, prepared run
 
 **Host**:
-A target machine in the Inventory (name, user, IP, SSH key). Playbooks run against one Host at a time. A `hosts.toml` entry that carries a field this binary does not declare keeps it — round-tripped verbatim through an `unknown` catch-all rather than dropped on the next save (ADR-0068) — so a binary that predates a field is harmless, not destructive.
+A target machine in the Inventory (name, user, IP, SSH key). Playbooks run against one Host at a time. A `hosts.toml` entry that carries a field this binary does not declare keeps it — round-tripped verbatim through an `unknown` catch-all rather than dropped on the next save (ADR-0069) — so a binary that predates a field is harmless, not destructive.
 _Avoid_: Server, node, target, machine
 
 **Route**:

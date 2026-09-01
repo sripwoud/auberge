@@ -113,7 +113,7 @@ pub struct Host {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tailnet_tag: Option<TailnetTag>,
     /// Every key this binary's `Host` does not declare, captured verbatim and
-    /// written back unchanged (#788, ADR-0068).
+    /// written back unchanged (#788, ADR-0069).
     ///
     /// A mutating subcommand (`add`/`edit`/`rename`/`detect-tailscale-ip`)
     /// reads the whole roster, rebuilds each `Host` it does not touch as a

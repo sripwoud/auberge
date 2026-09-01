@@ -1,4 +1,4 @@
-# ADR-0068: A Host's roster entry preserves fields it does not recognize
+# ADR-0069: A Host's roster entry preserves fields it does not recognize
 
 ## Status
 

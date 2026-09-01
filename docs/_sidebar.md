@@ -14,6 +14,7 @@
   - [Environment Variables](configuration/environment-variables.md)
   - [Secrets](configuration/secrets.md)
   - [Fleet GitHub Identity](configuration/fleet-github-identity.md)
+  - [Agent Tier DNS Zone](configuration/agent-tier-dns-zone.md)
   - [Ansible Inventory](configuration/ansible-inventory.md)
   - [Cloudflare Setup](dns/cloudflare-setup.md)
 
