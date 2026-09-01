@@ -11,7 +11,7 @@
 //! noticed (#707).
 
 use crate::config::Config;
-use crate::hosts::{HOST_FLAG, Host, HostManager, select_or_arg};
+use crate::hosts::{HOST_FLAG, Host, HostManager, TailnetTag, select_or_arg};
 use crate::output;
 use crate::output::OutputFormat;
 use crate::prompt::{Choice, confirm, select_item};
@@ -323,13 +323,18 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
         }
     };
 
-    let ssh_key = match &host.ssh_key {
+    let ssh_key = headscale_ssh_key(&host)?;
+    Ok((host, ssh_key))
+}
+
+fn headscale_ssh_key(host: &Host) -> Result<PathBuf> {
+    match &host.ssh_key {
         Some(key) => {
             let path = crate::services::ssh::configured_key_path(key);
             if !path.exists() {
                 eyre::bail!("SSH key not found: {}", path.display());
             }
-            path
+            Ok(path)
         }
         None => {
             let path = crate::services::ssh::default_ssh_key_path(&host.user, &host.name)?;
@@ -341,11 +346,9 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
                     host.user
                 );
             }
-            path
+            Ok(path)
         }
-    };
-
-    Ok((host, ssh_key))
+    }
 }
 
 fn validate_username(name: &str) -> Result<()> {
@@ -901,6 +904,165 @@ fn tagging_warnings(before: &HeadscaleNode, after: &TaggedNode) -> Vec<String> {
     warnings
 }
 
+/// The `config.toml` key the auto-mint supplies as an extra-var.
+///
+/// Named here rather than spelled at the injection site because two other
+/// files have to agree with it: `ansible/keys.yml` marks this entry
+/// `injected:`, and no Playbook Meta may demand it. A unit test in this module
+/// holds the first; `tests/injected_keys.rs` holds the second.
+pub const INJECTED_AUTHKEY: &str = "tailscale_authkey";
+
+/// The roster role whose first enrollment reads [`INJECTED_AUTHKEY`], and so
+/// the only role whose selection is worth an SSH round trip to the
+/// coordinator. `tests/preauth_auto_mint.rs` holds this against
+/// `infrastructure.yml`'s roster, so renaming the role fails the build rather
+/// than silently stopping the mint.
+pub const ENROLLING_ROLE: &str = "tailscale";
+
+/// The window between minting a key and `tailscale up` consuming it.
+///
+/// Deliberately not `add-key`'s 24h default: that one is sized for a human
+/// carrying a key to a phone, this one for the seconds between an extra-var
+/// and the play that reads it. A key that outlives its run is a live
+/// credential nobody is going to revoke.
+const AUTO_MINT_EXPIRATION: &str = "10m";
+
+/// What the auto-mint decided for one target Host.
+pub enum AutoMint {
+    /// A key minted for this run, to be injected as [`INJECTED_AUTHKEY`], and
+    /// the tier it was stamped with — `None` when the roster declares none.
+    Minted {
+        key: String,
+        tag: Option<TailnetTag>,
+    },
+    /// The coordinator already lists this target, so the role will not read a
+    /// key at all.
+    AlreadyEnrolled,
+    /// No roster Host's config answers the headscale gate: there is no
+    /// coordinator to mint against, so whatever `config.toml` holds stands.
+    /// This is the first-host case — bootstrapping the Host that will *serve*
+    /// headscale has nothing to mint from.
+    NoCoordinator,
+}
+
+/// Written out rather than derived: the `Minted` key is a live credential for
+/// its window, and a derived `Debug` puts it one `dbg!` or one wrapped error
+/// away from a terminal or a log.
+impl std::fmt::Debug for AutoMint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Minted { tag, .. } => write!(f, "Minted {{ key: <redacted>, tag: {tag:?} }}"),
+            Self::AlreadyEnrolled => f.write_str("AlreadyEnrolled"),
+            Self::NoCoordinator => f.write_str("NoCoordinator"),
+        }
+    }
+}
+
+/// The one roster Host to mint against, read through the same ADR-0051 gate
+/// `auberge headscale` resolves its default target with.
+///
+/// Zero and several are different answers here, which is why this does not
+/// reuse [`only_serving_host`]: zero is the first-host case and falls back to
+/// config, while several is a roster the auto-mint cannot read — picking one
+/// would mint a key for a tailnet the target is not joining, and there is no
+/// operator mid-deploy to ask.
+fn mint_coordinator<'a>(hosts: &'a [Host], config: &Config) -> Result<Option<&'a Host>> {
+    match crate::hosts::serving_hosts(hosts, config, "headscale_subdomain").as_slice() {
+        [] => Ok(None),
+        [only] => Ok(Some(only)),
+        several => eyre::bail!(
+            "{} roster hosts serve headscale ({}) — the auto-mint cannot tell which tailnet the \
+             target is joining. Blank headscale_subdomain for all but one, or mint by hand with \
+             `auberge headscale add-key`.",
+            several.len(),
+            several
+                .iter()
+                .map(|h| h.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+    }
+}
+
+/// One target's verdict, over an open session to the coordinator.
+///
+/// The enrollment check comes first and short-circuits: a node already in the
+/// listing needs no key, and minting one anyway would leave a credential row
+/// in headscale's store on every routine deploy.
+///
+/// The name matched is `given_name`, which ADR-0057 ties to the roster name —
+/// a Host's name *is* its remote hostname, and `tailscale_hostname` defaults
+/// to that hostname. `name` is headscale's un-deduplicated spelling and no
+/// mechanism keeps it in step with the roster.
+fn mint_for_target(
+    session: &dyn SshSession,
+    target_name: &str,
+    tag: Option<TailnetTag>,
+) -> Result<AutoMint> {
+    if list_nodes(session)?
+        .iter()
+        .any(|node| node.given_name == target_name)
+    {
+        return Ok(AutoMint::AlreadyEnrolled);
+    }
+
+    let users = list_users(session)?;
+    let user = match users.as_slice() {
+        [only] => only,
+        [] => eyre::bail!(
+            "headscale has no users to mint a pre-auth key for '{target_name}' against — \
+             `auberge headscale add-user` creates one"
+        ),
+        several => eyre::bail!(
+            "headscale has {} users ({}) and the auto-mint has no operator to ask which one \
+             '{target_name}' enrolls under — mint by hand with `auberge headscale add-key` and \
+             set {INJECTED_AUTHKEY}",
+            several.len(),
+            several
+                .iter()
+                .map(|u| u.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+    };
+
+    let tags: Vec<String> = tag.map(TailnetTag::acl_tag).into_iter().collect();
+    let key = mint_preauth_key(session, user.id, AUTO_MINT_EXPIRATION, &tags)?;
+    Ok(AutoMint::Minted { key, tag })
+}
+
+/// Mints the pre-auth key a run's first enrollment of `target_name` will
+/// consume, or says why it did not (#768).
+///
+/// Replaces a permanently-stored `tailscale_authkey`: the credential is
+/// one-shot with a TTL, so persisting it stored a string that was meaningless
+/// the moment after it was used, and demanded it of every run forever. The
+/// mint is now the gate — it runs before the play, and a coordinator that is
+/// declared but unreachable aborts here rather than mid-play.
+pub fn auto_mint_for(target_name: &str) -> Result<AutoMint> {
+    let config = Config::load()?;
+    let hosts = HostManager::load_hosts()?;
+    let Some(coordinator) = mint_coordinator(&hosts, &config)? else {
+        return Ok(AutoMint::NoCoordinator);
+    };
+
+    // An absent roster entry and an untiered one are the same fact to the
+    // mint: no tier to stamp. Neither is a reason to stop the run.
+    let tag = hosts
+        .iter()
+        .find(|h| h.name == target_name)
+        .and_then(|h| h.tailnet_tag);
+
+    let ssh_key = headscale_ssh_key(coordinator)?;
+    let session = LiveSshSession::new(coordinator, &ssh_key);
+    mint_for_target(&session, target_name, tag).wrap_err_with(|| {
+        format!(
+            "Could not mint a pre-auth key for '{target_name}' against headscale on '{}'",
+            coordinator.name
+        )
+    })
+}
+
 /// A key for a user that already exists, which is what `add-user` refuses
 /// (#711) — the second and third device under the one #510 user had no CLI
 /// path.
@@ -1304,6 +1466,18 @@ mod tests {
 		"tag:infra"
 	]
 }"#;
+
+    /// A tailnet with exactly one user — the shape the auto-mint requires,
+    /// and the one #510's tailnet has actually had all along.
+    const USERS_LIST_ONE_JSON: &str = r#"[
+	{
+		"id": 7,
+		"name": "sripwoud",
+		"created_at": {
+			"seconds": 1735689600
+		}
+	}
+]"#;
 
     /// What `headscale users create <name> -o json` prints on 0.29.3: the one
     /// `User` it just made, id included.
@@ -2257,5 +2431,211 @@ mod tests {
         .unwrap();
         let hosts = [named_host("auberge"), named_host("ruche")];
         assert_eq!(only_serving_host(&hosts, &config).unwrap().name, "auberge");
+    }
+
+    fn tiered_host(name: &str, tier: TailnetTag) -> Host {
+        Host {
+            tailnet_tag: Some(tier),
+            ..named_host(name)
+        }
+    }
+
+    /// The enrollment check is one `nodes list`, and a target the listing
+    /// already carries ends the flow there: no user listing, no mint, no key
+    /// row in headscale's store for a node that will never read one.
+    #[test]
+    fn a_target_the_node_listing_carries_is_already_enrolled() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(NODES_LIST_JSON));
+
+        assert!(matches!(
+            mint_for_target(&mock, "ruche", Some(TailnetTag::Agent)).unwrap(),
+            AutoMint::AlreadyEnrolled
+        ));
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run("sudo headscale nodes list -o json".to_string())]
+        );
+    }
+
+    /// ADR-0057 makes the Host's roster name its remote hostname, and
+    /// `tailscale_hostname` defaults to that hostname — so `given_name` is the
+    /// field the roster name meets. `name` is headscale's un-deduplicated
+    /// spelling and is not what a rename keeps in step.
+    #[test]
+    fn enrollment_is_read_off_given_name() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(
+            r#"[{"id":1,"name":"auberge","given_name":"auberge-1","user":{"name":"sripwoud"}}]"#,
+        ));
+        mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_ONE_JSON));
+        mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
+
+        assert!(matches!(
+            mint_for_target(&mock, "auberge", None).unwrap(),
+            AutoMint::Minted { .. }
+        ));
+    }
+
+    /// The whole point of #767: the tier the roster declares is what the
+    /// minted key stamps, so a node lands in its ACL tier at enrollment rather
+    /// than needing a `tag-node` afterwards.
+    #[test]
+    fn the_mint_stamps_the_targets_declared_tier() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout("null"));
+        mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_ONE_JSON));
+        mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
+
+        let minted = mint_for_target(&mock, "ruche", Some(TailnetTag::Agent)).unwrap();
+        assert!(matches!(
+            minted,
+            AutoMint::Minted { ref key, tag: Some(TailnetTag::Agent) } if key == "abcdef123456"
+        ));
+        assert_eq!(
+            mock.calls(),
+            vec![
+                SshOp::Run("sudo headscale nodes list -o json".to_string()),
+                SshOp::Run("sudo headscale users list -o json".to_string()),
+                SshOp::Run(
+                    "sudo headscale preauthkeys create --user 7 --expiration 10m \
+                     --tags 'tag:agent' -o json"
+                        .to_string()
+                ),
+            ]
+        );
+    }
+
+    /// `tailnet_tag` is optional by ADR-0062 — the roster predates it. An
+    /// untiered target still enrolls; the key simply carries no tag, exactly
+    /// as `add-key` with no `-t` does. The absent tier rides back on the
+    /// verdict so the caller can say so.
+    #[test]
+    fn an_untiered_target_mints_a_key_with_no_tags() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout("null"));
+        mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_ONE_JSON));
+        mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
+
+        assert!(matches!(
+            mint_for_target(&mock, "auberge", None).unwrap(),
+            AutoMint::Minted { tag: None, .. }
+        ));
+        assert_eq!(
+            mock.calls()[2],
+            SshOp::Run(
+                "sudo headscale preauthkeys create --user 7 --expiration 10m -o json".to_string()
+            )
+        );
+    }
+
+    /// The auto-mint's window is the gap between the mint and `tailscale up`,
+    /// not `add-key`'s human-facing 24h: the two callers have different
+    /// windows, and a key that outlives its run is a credential nobody
+    /// revokes.
+    #[test]
+    fn the_auto_mint_window_is_ten_minutes() {
+        assert_eq!(AUTO_MINT_EXPIRATION, "10m");
+        validate_expiration(AUTO_MINT_EXPIRATION).unwrap();
+    }
+
+    /// No operator is present to pick, so several users is not a prompt — it
+    /// is a stop. Falling back to `config.toml` here would be minting-by-
+    /// omission against whichever key happened to be stored.
+    #[test]
+    fn the_mint_refuses_to_choose_between_several_users() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout("null"));
+        mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_JSON));
+
+        let err = mint_for_target(&mock, "ruche", None).unwrap_err();
+        assert!(err.to_string().contains("2 users"), "{err}");
+        assert!(err.to_string().contains("add-key"), "{err}");
+    }
+
+    #[test]
+    fn a_headscale_with_no_users_cannot_be_minted_against() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout("null"));
+        mock.stage_run_result(CommandResult::from_stdout("null"));
+
+        let err = mint_for_target(&mock, "ruche", None).unwrap_err();
+        assert!(err.to_string().contains("add-user"), "{err}");
+    }
+
+    /// The minted key is a live credential for its window. `{:?}` on the
+    /// verdict is one `dbg!` away from an error report or a log line, so the
+    /// derived Debug is replaced by one that says the key exists without
+    /// saying what it is.
+    #[test]
+    fn the_verdict_never_debug_prints_the_key() {
+        let minted = AutoMint::Minted {
+            key: "tskey-auth-supersecret".to_string(),
+            tag: Some(TailnetTag::Data),
+        };
+        let rendered = format!("{:?}", minted);
+        assert!(!rendered.contains("supersecret"), "{rendered}");
+        assert!(rendered.contains("Minted"), "{rendered}");
+    }
+
+    #[test]
+    fn no_roster_host_serving_headscale_leaves_nothing_to_mint_against() {
+        let config = Config::from_toml_str(r#"domain = "example.com""#).unwrap();
+        let hosts = [named_host("auberge")];
+        assert!(mint_coordinator(&hosts, &config).unwrap().is_none());
+    }
+
+    /// Zero coordinators is the first-host case and falls back; several is a
+    /// roster the auto-mint cannot read, and a wrong coordinator mints a key
+    /// for the wrong tailnet. Only one of the two collapses to a fallback.
+    #[test]
+    fn several_headscale_hosts_stop_the_run_rather_than_falling_back() {
+        let config = Config::from_toml_str(r#"headscale_subdomain = "hs""#).unwrap();
+        let hosts = [named_host("auberge"), named_host("ruche")];
+        let err = mint_coordinator(&hosts, &config).unwrap_err();
+        assert!(err.to_string().contains("auberge"), "{err}");
+        assert!(err.to_string().contains("ruche"), "{err}");
+    }
+
+    #[test]
+    fn the_one_serving_host_is_the_coordinator() {
+        let config = Config::from_toml_str(
+            r#"
+            headscale_subdomain = "hs"
+
+            [hosts.ruche]
+            headscale_subdomain = ""
+        "#,
+        )
+        .unwrap();
+        let hosts = [
+            tiered_host("auberge", TailnetTag::Data),
+            named_host("ruche"),
+        ];
+        assert_eq!(
+            mint_coordinator(&hosts, &config).unwrap().unwrap().name,
+            "auberge"
+        );
+    }
+
+    /// The name the CLI injects has to be the one the Key Registry marks as
+    /// CLI-supplied, or `keys.yml` documents an override for a key nothing
+    /// overrides. `tests/injected_keys.rs` holds the other half — that an
+    /// injected key is demanded of no Playbook Meta.
+    #[test]
+    fn the_injected_name_is_declared_injected_in_the_registry() {
+        let registry = crate::key_registry::KeyRegistry::load(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("ansible")
+                .join("keys.yml"),
+        )
+        .unwrap();
+        let entry = registry
+            .get(INJECTED_AUTHKEY)
+            .unwrap_or_else(|| panic!("{INJECTED_AUTHKEY} is absent from the Key Registry"));
+        assert!(
+            entry.injected,
+            "{INJECTED_AUTHKEY} is injected by the auto-mint but the registry does not say so"
+        );
     }
 }

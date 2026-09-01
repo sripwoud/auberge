@@ -237,7 +237,8 @@ keys:
 
   tailscale_authkey:
     secret: true
-    doc: "Tailscale auth key used to register new nodes"
+    injected: true
+    doc: "Pre-auth key registering a new node; minted per run by the CLI, set only to override (#768)"
 
   tailscale_login_server:
     secret: false

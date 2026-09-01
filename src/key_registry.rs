@@ -11,6 +11,13 @@ pub struct KeyEntry {
     pub secret: bool,
     /// Human-readable description of what the key configures.
     pub doc: String,
+    /// Whether the CLI supplies this key as an extra-var, making `config.toml`
+    /// an override rather than the source. An injected key must be demanded by
+    /// no Playbook Meta — a run whose Preflight requires what the CLI is about
+    /// to hand it fails on config the run never needed
+    /// (`tests/injected_keys.rs`).
+    #[serde(default)]
+    pub injected: bool,
 }
 
 /// Raw deserialization wrapper for `keys.yml`.
@@ -81,7 +88,13 @@ impl KeyRegistry {
         let mut out = String::new();
         for name in sorted {
             let entry = &self.entries[name];
-            let marker = if entry.secret { " (secret)" } else { "" };
+            let mut marker = String::new();
+            if entry.secret {
+                marker.push_str(" (secret)");
+            }
+            if entry.injected {
+                marker.push_str(" (supplied by the CLI; set this only to override)");
+            }
             let _ = writeln!(out, "# {}{marker}", entry.doc);
             let _ = writeln!(out, "{name} = \"\"");
             let _ = writeln!(out);
@@ -193,6 +206,7 @@ mod tests {
             KeyEntry {
                 secret: false,
                 doc: "Primary domain name".into(),
+                injected: false,
             },
         );
         entries.insert(
@@ -200,6 +214,7 @@ mod tests {
             KeyEntry {
                 secret: true,
                 doc: "Tailscale auth key".into(),
+                injected: true,
             },
         );
         entries.insert(
@@ -207,6 +222,7 @@ mod tests {
             KeyEntry {
                 secret: false,
                 doc: "Admin username".into(),
+                injected: false,
             },
         );
         KeyRegistry { entries }
@@ -232,8 +248,23 @@ mod tests {
     #[test]
     fn test_scaffold_marks_secret_keys() {
         let scaffold = fixture_registry().scaffold();
-        assert!(scaffold.contains("# Tailscale auth key (secret)\n"));
+        assert!(scaffold.contains("# Tailscale auth key (secret)"));
         assert!(!scaffold.contains("# Primary domain name (secret)"));
+    }
+
+    /// An injected key is still scaffolded — `config init` should show it, so
+    /// the override is discoverable — but the comment has to say the value is
+    /// the CLI's, or a blank line reads as a key the operator forgot to fill.
+    #[test]
+    fn test_scaffold_says_an_injected_key_is_supplied_by_the_cli() {
+        let scaffold = fixture_registry().scaffold();
+        assert!(
+            scaffold.contains(
+                "# Tailscale auth key (secret) (supplied by the CLI; set this only to override)\n"
+            ),
+            "{scaffold}"
+        );
+        assert!(!scaffold.contains("# Primary domain name (supplied"));
     }
 
     #[test]
