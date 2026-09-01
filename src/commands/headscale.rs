@@ -323,11 +323,15 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
         }
     };
 
-    let ssh_key = headscale_ssh_key(&host)?;
+    let ssh_key = host_ssh_key(&host)?;
     Ok((host, ssh_key))
 }
 
-fn headscale_ssh_key(host: &Host) -> Result<PathBuf> {
+/// The private key auberge connects to a roster Host with. Extracted from
+/// [`resolve_headscale_host`] so the auto-mint can open its two sessions — one
+/// to the target it probes, one to the coordinator it mints against — through
+/// the same resolution the `headscale` subcommands already use.
+fn host_ssh_key(host: &Host) -> Result<PathBuf> {
     match &host.ssh_key {
         Some(key) => {
             let path = crate::services::ssh::configured_key_path(key);
@@ -913,36 +917,58 @@ fn tagging_warnings(before: &HeadscaleNode, after: &TaggedNode) -> Vec<String> {
 pub const INJECTED_AUTHKEY: &str = "tailscale_authkey";
 
 /// The roster role whose first enrollment reads [`INJECTED_AUTHKEY`], and so
-/// the only role whose selection is worth an SSH round trip to the
-/// coordinator. `tests/preauth_auto_mint.rs` holds this against
-/// `infrastructure.yml`'s roster, so renaming the role fails the build rather
-/// than silently stopping the mint.
+/// the only role whose selection is worth the two SSH round trips a mint
+/// costs. `tests/injected_keys.rs` holds this against `infrastructure.yml`'s
+/// roster, so renaming the role fails the build rather than silently stopping
+/// the mint.
 pub const ENROLLING_ROLE: &str = "tailscale";
 
-/// The window between minting a key and `tailscale up` consuming it.
+/// The command whose answer decides whether a key is needed, and the states
+/// that count as enrolled.
 ///
-/// Deliberately not `add-key`'s 24h default: that one is sized for a human
-/// carrying a key to a phone, this one for the seconds between an extra-var
-/// and the play that reads it. A key that outlives its run is a live
-/// credential nobody is going to revoke.
-const AUTO_MINT_EXPIRATION: &str = "10m";
+/// Both are the tailscale role's own — `ansible/roles/tailscale/tasks/main.yml`
+/// runs this command and reads these two states to set
+/// `tailscale_is_authenticated`, which is what gates its `tailscale up`. The
+/// CLI has to ask the *same* question or the two disagree about whether the
+/// play will consume a key, and `tests/injected_keys.rs` holds the pair equal
+/// to the role's.
+pub const ENROLLMENT_PROBE: &str = "tailscale status --json";
+pub const ENROLLED_STATES: [&str; 2] = ["Running", "Starting"];
+
+/// The window a minted key stays valid for.
+///
+/// Sized to a whole Playbook run, not to the seconds around `tailscale up`.
+/// #768 estimated "~10m, matching the real window between mint and `tailscale
+/// up`", but `tailscale` is the *last* role in `infrastructure.yml` — the key
+/// has to survive `apt`, `caddy`, `blocky` and `headscale` ahead of it, which
+/// on a virgin VPS is routinely longer than ten minutes. A key that expires
+/// before the play reaches it fails exactly the fresh-host enrollment this
+/// exists for.
+///
+/// Still not `add-key`'s 24h: that one is sized for a human carrying a key to
+/// a phone. A key minted here is consumed or wasted within one run, and is
+/// single-use either way.
+const AUTO_MINT_EXPIRATION: &str = "1h";
 
 /// What the auto-mint decided for one target Host.
-pub enum AutoMint {
+enum AutoMint {
     /// A key minted for this run, to be injected as [`INJECTED_AUTHKEY`], and
     /// the tier it was stamped with — `None` when the roster declares none.
     Minted {
         key: String,
         tag: Option<TailnetTag>,
     },
-    /// The coordinator already lists this target, so the role will not read a
-    /// key at all.
+    /// The target's own `tailscaled` is already authenticated, so the role
+    /// will not read a key at all.
     AlreadyEnrolled,
     /// No roster Host's config answers the headscale gate: there is no
     /// coordinator to mint against, so whatever `config.toml` holds stands.
     /// This is the first-host case — bootstrapping the Host that will *serve*
     /// headscale has nothing to mint from.
     NoCoordinator,
+    /// A dry run. Minting writes a real credential row into headscale's store,
+    /// which `--check` promises not to do.
+    CheckMode,
 }
 
 /// Written out rather than derived: the `Minted` key is a live credential for
@@ -954,6 +980,7 @@ impl std::fmt::Debug for AutoMint {
             Self::Minted { tag, .. } => write!(f, "Minted {{ key: <redacted>, tag: {tag:?} }}"),
             Self::AlreadyEnrolled => f.write_str("AlreadyEnrolled"),
             Self::NoCoordinator => f.write_str("NoCoordinator"),
+            Self::CheckMode => f.write_str("CheckMode"),
         }
     }
 }
@@ -984,28 +1011,46 @@ fn mint_coordinator<'a>(hosts: &'a [Host], config: &Config) -> Result<Option<&'a
     }
 }
 
-/// One target's verdict, over an open session to the coordinator.
+/// Whether the target's own `tailscaled` is authenticated — the question the
+/// tailscale role asks itself, asked here with the same command and the same
+/// two states ([`ENROLLMENT_PROBE`], [`ENROLLED_STATES`]).
 ///
-/// The enrollment check comes first and short-circuits: a node already in the
-/// listing needs no key, and minting one anyway would leave a credential row
-/// in headscale's store on every routine deploy.
+/// Deliberately the *target*, not the coordinator's node listing. The listing
+/// answers a different question — "does the coordinator hold a record under
+/// this name" — and the two come apart exactly where it matters: a re-imaged
+/// Host reusing its name, or one that has run `tailscale logout`, is still in
+/// the listing while its `tailscaled` needs a key. Reading the listing there
+/// mints nothing, the role's assert fires, and the Host cannot be enrolled by
+/// the CLI at all.
 ///
-/// The name matched is `given_name`, which ADR-0057 ties to the roster name —
-/// a Host's name *is* its remote hostname, and `tailscale_hostname` defaults
-/// to that hostname. `name` is headscale's un-deduplicated spelling and no
-/// mechanism keeps it in step with the roster.
-fn mint_for_target(
+/// A non-zero exit is "not enrolled": on a virgin Host `tailscale` is not
+/// installed yet, and the role treats the same failure the same way
+/// (`failed_when: false`, then `rc == 0`).
+fn target_is_enrolled(session: &dyn SshSession) -> Result<bool> {
+    let out = session.run(ENROLLMENT_PROBE)?;
+    if !out.success {
+        return Ok(false);
+    }
+    let stdout = out.stdout_str();
+    let status: serde_json::Value = serde_json::from_str(strip_ssh_banner(&stdout))
+        .wrap_err("Failed to parse `tailscale status --json` from the target")?;
+    Ok(status
+        .get("BackendState")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|state| ENROLLED_STATES.contains(&state)))
+}
+
+/// A key for `target_name`, minted against an open session to the coordinator.
+///
+/// The tailnet's single user is the one it enrolls under. No operator is
+/// present to pick, so zero and several are both stops rather than prompts:
+/// falling back to `config.toml` here would be minting-by-omission against
+/// whichever key happened to be stored.
+fn mint_against_coordinator(
     session: &dyn SshSession,
     target_name: &str,
     tag: Option<TailnetTag>,
-) -> Result<AutoMint> {
-    if list_nodes(session)?
-        .iter()
-        .any(|node| node.given_name == target_name)
-    {
-        return Ok(AutoMint::AlreadyEnrolled);
-    }
-
+) -> Result<String> {
     let users = list_users(session)?;
     let user = match users.as_slice() {
         [only] => only,
@@ -1027,8 +1072,7 @@ fn mint_for_target(
     };
 
     let tags: Vec<String> = tag.map(TailnetTag::acl_tag).into_iter().collect();
-    let key = mint_preauth_key(session, user.id, AUTO_MINT_EXPIRATION, &tags)?;
-    Ok(AutoMint::Minted { key, tag })
+    mint_preauth_key(session, user.id, AUTO_MINT_EXPIRATION, &tags)
 }
 
 /// Mints the pre-auth key a run's first enrollment of `target_name` will
@@ -1039,27 +1083,49 @@ fn mint_for_target(
 /// the moment after it was used, and demanded it of every run forever. The
 /// mint is now the gate — it runs before the play, and a coordinator that is
 /// declared but unreachable aborts here rather than mid-play.
-pub fn auto_mint_for(target_name: &str) -> Result<AutoMint> {
+///
+/// The coordinator is resolved from local files first, so the common case of
+/// a tailnet with no self-hosted control plane costs no network at all.
+fn auto_mint_for(target_name: &str, check: bool) -> Result<AutoMint> {
     let config = Config::load()?;
     let hosts = HostManager::load_hosts()?;
     let Some(coordinator) = mint_coordinator(&hosts, &config)? else {
         return Ok(AutoMint::NoCoordinator);
     };
+    if check {
+        return Ok(AutoMint::CheckMode);
+    }
 
-    // An absent roster entry and an untiered one are the same fact to the
-    // mint: no tier to stamp. Neither is a reason to stop the run.
-    let tag = hosts
+    let target = hosts
         .iter()
         .find(|h| h.name == target_name)
-        .and_then(|h| h.tailnet_tag);
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "'{target_name}' is not in hosts.toml, so the auto-mint cannot reach it to ask \
+                 whether it is enrolled — `auberge host add {target_name}` puts it in the roster"
+            )
+        })?;
 
-    let ssh_key = headscale_ssh_key(coordinator)?;
-    let session = LiveSshSession::new(coordinator, &ssh_key);
-    mint_for_target(&session, target_name, tag).wrap_err_with(|| {
-        format!(
-            "Could not mint a pre-auth key for '{target_name}' against headscale on '{}'",
-            coordinator.name
-        )
+    let target_key = host_ssh_key(target)?;
+    if target_is_enrolled(&LiveSshSession::new(target, &target_key)).wrap_err_with(|| {
+        format!("Could not ask '{target_name}' whether it is already on the tailnet")
+    })? {
+        return Ok(AutoMint::AlreadyEnrolled);
+    }
+
+    let coordinator_key = host_ssh_key(coordinator)?;
+    let session = LiveSshSession::new(coordinator, &coordinator_key);
+    let key = mint_against_coordinator(&session, target_name, target.tailnet_tag).wrap_err_with(
+        || {
+            format!(
+                "Could not mint a pre-auth key for '{target_name}' against headscale on '{}'",
+                coordinator.name
+            )
+        },
+    )?;
+    Ok(AutoMint::Minted {
+        key,
+        tag: target.tailnet_tag,
     })
 }
 
@@ -1067,15 +1133,17 @@ pub fn auto_mint_for(target_name: &str) -> Result<AutoMint> {
 /// against `target_name`, reported to the operator as it is decided.
 ///
 /// `None` means inject nothing, which leaves whatever `config.toml` holds —
-/// correct both when the target is already enrolled (the role reads no key)
-/// and when no coordinator exists (there is nothing better to offer). A
-/// coordinator that is declared but cannot be minted against is an error, not
-/// a `None`: it reaches the caller before the play, which is the early
-/// failure `required_keys` used to provide for this key.
+/// correct when the target is already enrolled (the role reads no key), when
+/// no coordinator exists (there is nothing better to offer), and under
+/// `--check` (a dry run must not write a credential row). A coordinator that
+/// is declared but cannot be minted against is an error, not a `None`: it
+/// reaches the caller before the play, which is the early failure
+/// `required_keys` used to provide for this key.
 pub fn preauth_key_for_plan(
     ansible_dir: &Path,
     plan: &[(&str, Option<&[String]>)],
     target_name: &str,
+    check: bool,
 ) -> Result<Option<String>> {
     let enrolls = plan.iter().try_fold(false, |found, (playbook, tags)| {
         if found {
@@ -1092,7 +1160,7 @@ pub fn preauth_key_for_plan(
         return Ok(None);
     }
 
-    match auto_mint_for(target_name)? {
+    match auto_mint_for(target_name, check)? {
         AutoMint::Minted { key, tag } => {
             match tag {
                 Some(tag) => output::info(&format!(
@@ -1109,6 +1177,13 @@ pub fn preauth_key_for_plan(
             Ok(Some(key))
         }
         AutoMint::AlreadyEnrolled => Ok(None),
+        AutoMint::CheckMode => {
+            output::info(&format!(
+                "Check mode: not minting a pre-auth key for '{target_name}' (it would be a real \
+                 credential in headscale's store)"
+            ));
+            Ok(None)
+        }
         AutoMint::NoCoordinator => {
             output::info(&format!(
                 "No roster host serves headscale, so nothing to mint against — {INJECTED_AUTHKEY} \
@@ -2496,41 +2571,60 @@ mod tests {
         }
     }
 
-    /// The enrollment check is one `nodes list`, and a target the listing
-    /// already carries ends the flow there: no user listing, no mint, no key
-    /// row in headscale's store for a node that will never read one.
+    /// The probe is the tailscale role's own question, asked of the target
+    /// rather than of the coordinator. A target whose `tailscaled` is up ends
+    /// the flow before anything is minted.
     #[test]
-    fn a_target_the_node_listing_carries_is_already_enrolled() {
-        let mock = MockSshSession::new();
-        mock.stage_run_result(CommandResult::from_stdout(NODES_LIST_JSON));
-
-        assert!(matches!(
-            mint_for_target(&mock, "ruche", Some(TailnetTag::Agent)).unwrap(),
-            AutoMint::AlreadyEnrolled
-        ));
-        assert_eq!(
-            mock.calls(),
-            vec![SshOp::Run("sudo headscale nodes list -o json".to_string())]
-        );
+    fn a_target_whose_tailscaled_is_running_is_already_enrolled() {
+        for state in ENROLLED_STATES {
+            let mock = MockSshSession::new();
+            mock.stage_run_result(CommandResult::from_stdout(&format!(
+                r#"{{"BackendState":"{state}","Self":{{"HostName":"ruche"}}}}"#
+            )));
+            assert!(target_is_enrolled(&mock).unwrap(), "{state}");
+            assert_eq!(mock.calls(), vec![SshOp::Run(ENROLLMENT_PROBE.to_string())]);
+        }
     }
 
-    /// ADR-0057 makes the Host's roster name its remote hostname, and
-    /// `tailscale_hostname` defaults to that hostname — so `given_name` is the
-    /// field the roster name meets. `name` is headscale's un-deduplicated
-    /// spelling and is not what a rename keeps in step.
+    /// `NeedsLogin` is what a `tailscale logout` leaves behind, and `Stopped`
+    /// what a fresh install has. Both need a key — and both are states the
+    /// coordinator's node listing would have called enrolled, because the node
+    /// row is still there under the same name. That divergence is why the
+    /// probe asks the target.
     #[test]
-    fn enrollment_is_read_off_given_name() {
+    fn a_target_that_needs_a_login_is_not_enrolled() {
+        for state in ["NeedsLogin", "Stopped", "NoState"] {
+            let mock = MockSshSession::new();
+            mock.stage_run_result(CommandResult::from_stdout(&format!(
+                r#"{{"BackendState":"{state}"}}"#
+            )));
+            assert!(!target_is_enrolled(&mock).unwrap(), "{state}");
+        }
+    }
+
+    /// On a virgin Host `tailscale` is not installed, so the probe exits
+    /// non-zero. The role treats the same failure the same way
+    /// (`failed_when: false`, then `rc == 0`) — it means "no key yet", not
+    /// "stop".
+    #[test]
+    fn a_probe_that_cannot_run_reads_as_not_enrolled() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult {
+            success: false,
+            exit_code: Some(127),
+            stdout: Vec::new(),
+            stderr: b"bash: tailscale: command not found".to_vec(),
+        });
+        assert!(!target_is_enrolled(&mock).unwrap());
+    }
+
+    #[test]
+    fn the_probe_reads_through_the_login_banner() {
         let mock = MockSshSession::new();
         mock.stage_run_result(CommandResult::from_stdout(
-            r#"[{"id":1,"name":"auberge","given_name":"auberge-1","user":{"name":"sripwoud"}}]"#,
+            "**** Authorized uses only ****\n{\"BackendState\":\"Running\"}",
         ));
-        mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_ONE_JSON));
-        mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
-
-        assert!(matches!(
-            mint_for_target(&mock, "auberge", None).unwrap(),
-            AutoMint::Minted { .. }
-        ));
+        assert!(target_is_enrolled(&mock).unwrap());
     }
 
     /// The whole point of #767: the tier the roster declares is what the
@@ -2539,22 +2633,17 @@ mod tests {
     #[test]
     fn the_mint_stamps_the_targets_declared_tier() {
         let mock = MockSshSession::new();
-        mock.stage_run_result(CommandResult::from_stdout("null"));
         mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_ONE_JSON));
         mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
 
-        let minted = mint_for_target(&mock, "ruche", Some(TailnetTag::Agent)).unwrap();
-        assert!(matches!(
-            minted,
-            AutoMint::Minted { ref key, tag: Some(TailnetTag::Agent) } if key == "abcdef123456"
-        ));
+        let key = mint_against_coordinator(&mock, "ruche", Some(TailnetTag::Agent)).unwrap();
+        assert_eq!(key, "abcdef123456");
         assert_eq!(
             mock.calls(),
             vec![
-                SshOp::Run("sudo headscale nodes list -o json".to_string()),
                 SshOp::Run("sudo headscale users list -o json".to_string()),
                 SshOp::Run(
-                    "sudo headscale preauthkeys create --user 7 --expiration 10m \
+                    "sudo headscale preauthkeys create --user 7 --expiration 1h \
                      --tags 'tag:agent' -o json"
                         .to_string()
                 ),
@@ -2564,34 +2653,28 @@ mod tests {
 
     /// `tailnet_tag` is optional by ADR-0062 — the roster predates it. An
     /// untiered target still enrolls; the key simply carries no tag, exactly
-    /// as `add-key` with no `-t` does. The absent tier rides back on the
-    /// verdict so the caller can say so.
+    /// as `add-key` with no `-t` does.
     #[test]
     fn an_untiered_target_mints_a_key_with_no_tags() {
         let mock = MockSshSession::new();
-        mock.stage_run_result(CommandResult::from_stdout("null"));
         mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_ONE_JSON));
         mock.stage_run_result(CommandResult::from_stdout(PREAUTHKEY_JSON));
 
-        assert!(matches!(
-            mint_for_target(&mock, "auberge", None).unwrap(),
-            AutoMint::Minted { tag: None, .. }
-        ));
+        mint_against_coordinator(&mock, "auberge", None).unwrap();
         assert_eq!(
-            mock.calls()[2],
+            mock.calls()[1],
             SshOp::Run(
-                "sudo headscale preauthkeys create --user 7 --expiration 10m -o json".to_string()
+                "sudo headscale preauthkeys create --user 7 --expiration 1h -o json".to_string()
             )
         );
     }
 
-    /// The auto-mint's window is the gap between the mint and `tailscale up`,
-    /// not `add-key`'s human-facing 24h: the two callers have different
-    /// windows, and a key that outlives its run is a credential nobody
-    /// revokes.
+    /// The window has to outlast the roles ahead of `tailscale` in
+    /// `infrastructure.yml`, not just the seconds around `tailscale up` —
+    /// #768's "~10m" estimate would expire mid-play on a virgin VPS.
     #[test]
-    fn the_auto_mint_window_is_ten_minutes() {
-        assert_eq!(AUTO_MINT_EXPIRATION, "10m");
+    fn the_auto_mint_window_outlasts_a_playbook_run() {
+        assert_eq!(AUTO_MINT_EXPIRATION, "1h");
         validate_expiration(AUTO_MINT_EXPIRATION).unwrap();
     }
 
@@ -2601,10 +2684,9 @@ mod tests {
     #[test]
     fn the_mint_refuses_to_choose_between_several_users() {
         let mock = MockSshSession::new();
-        mock.stage_run_result(CommandResult::from_stdout("null"));
         mock.stage_run_result(CommandResult::from_stdout(USERS_LIST_JSON));
 
-        let err = mint_for_target(&mock, "ruche", None).unwrap_err();
+        let err = mint_against_coordinator(&mock, "ruche", None).unwrap_err();
         assert!(err.to_string().contains("2 users"), "{err}");
         assert!(err.to_string().contains("add-key"), "{err}");
     }
@@ -2613,9 +2695,8 @@ mod tests {
     fn a_headscale_with_no_users_cannot_be_minted_against() {
         let mock = MockSshSession::new();
         mock.stage_run_result(CommandResult::from_stdout("null"));
-        mock.stage_run_result(CommandResult::from_stdout("null"));
 
-        let err = mint_for_target(&mock, "ruche", None).unwrap_err();
+        let err = mint_against_coordinator(&mock, "ruche", None).unwrap_err();
         assert!(err.to_string().contains("add-user"), "{err}");
     }
 

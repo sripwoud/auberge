@@ -13,15 +13,19 @@ A sibling YAML file (`ansible/playbooks/<name>.meta.yml`) declaring the Playbook
 _Avoid_: Manifest, descriptor, schema
 
 **Key Registry**:
-A single file (`ansible/keys.yml`) listing every config key auberge knows about, with per-key metadata (secret, doc string). The vocabulary of `Config`.
+A single file (`ansible/keys.yml`) listing every config key auberge knows about, with per-key metadata (secret, doc string, and whether the CLI injects the value). The vocabulary of `Config`.
 _Avoid_: Schema, dictionary, catalog
+
+**Injected Key**:
+A **Key Registry** entry marked `injected: true`: the CLI computes the value and hands it to the run as an extra-var, so `config.toml` is an override rather than the source. No **Playbook Meta** may declare one under `required_keys` — a Preflight demanding what the CLI is about to supply fails runs on config they never needed (`tests/injected_keys.rs`). `tailscale_authkey` is the only one: a pre-auth key is one-shot with a TTL, so it is minted per run against the Host serving headscale rather than stored (ADR-0063).
+_Avoid_: Computed key, derived key, dynamic var
 
 **Config**:
 The merged user-supplied settings (`config.toml`) parsed against the Key Registry. There is no static `config.example.toml`; users run `auberge config init` to generate a starter file from the registry. Keys are fleet-wide; the reserved `[hosts.<name>]` table scopes overrides to one Host, and a blank override withdraws a fleet-wide answer for that Host — how a serving gate like `headscale_subdomain` answers differently per Host (ADR-0058).
 _Avoid_: Settings, options, user config, env
 
 **Preflight**:
-A capability type standing for a `Config` already validated against the keys a run's Playbook Metas declare, read through the target Host's view (ADR-0058). The only way to construct one is `Config::preflight_with_keys`, reached through `services::required_keys::preflight_for`, which resolves those keys off the Metas (ADR-0045) and names the Host the run targets. `AnsibleRunner::run` accepts only a `Preflight`, making it impossible to invoke ansible with unvalidated config.
+A capability type standing for a `Config` already validated against the keys a run's Playbook Metas declare, read through the target Host's view (ADR-0058). The only way to construct one is `Config::preflight_with_keys`, reached through `services::required_keys::preflight_for`, which resolves those keys off the Metas (ADR-0045) and names the Host the run targets. `AnsibleRunner::run` accepts only a `Preflight`, making it impossible to invoke ansible with unvalidated config. An **Injected Key** is exempt: no Meta may declare one, so Preflight never demands it.
 _Avoid_: Plan, request, prepared run
 
 **Host**:
@@ -218,7 +222,7 @@ _Avoid_: Logger, reporter
 ## Relationships
 
 - A **Playbook** has exactly one **Playbook Meta** sibling.
-- A **Playbook Meta** declares zero or more keys from the **Key Registry**.
+- A **Playbook Meta** declares zero or more keys from the **Key Registry**, none of them an **Injected Key**.
 - A **Playbook Meta** declares zero or one **Backup Recipe**, zero or more **Memory Budgets** — one per systemd unit the App runs — and the App's **Unit Ownership**.
 - A **Preflight** binds a validated **Config** to the keys a run's **Playbook Metas** declare — the Playbook's own, unioned with those of the roles its tags select (ADR-0045).
 - The **Recipe Executor** consumes one **Backup Recipe**; the **Backup Session** consumes many.

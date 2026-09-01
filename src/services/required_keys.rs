@@ -52,6 +52,14 @@ fn selected_roles(playbook_path: &Path, tags: &[String]) -> Result<Vec<String>> 
         .collect())
 }
 
+/// A Playbook name with its extension trimmed, however it was spelled.
+fn playbook_stem(playbook: &str) -> &str {
+    playbook
+        .strip_suffix(".yml")
+        .or_else(|| playbook.strip_suffix(".yaml"))
+        .unwrap_or(playbook)
+}
+
 /// The Playbook file for `stem`, whichever extension it carries.
 fn roster_path(playbooks_dir: &Path, stem: &str) -> PathBuf {
     let yml = playbooks_dir.join(format!("{stem}.yml"));
@@ -75,10 +83,7 @@ pub fn required_keys_for(
 ) -> Result<Vec<String>> {
     let playbooks_dir = ansible_dir.join(PLAYBOOKS_DIR);
     let registry = KeyRegistry::load(&ansible_dir.join(REGISTRY_FILE))?;
-    let stem = playbook
-        .strip_suffix(".yml")
-        .or_else(|| playbook.strip_suffix(".yaml"))
-        .unwrap_or(playbook);
+    let stem = playbook_stem(playbook);
 
     let mut sources = vec![stem.to_string()];
     sources.extend(selected_roles(
@@ -100,9 +105,10 @@ pub fn required_keys_for(
 /// Whether a run over `playbook` with `tags` enters `role`.
 ///
 /// The same role selection Preflight resolves keys through, asked as a
-/// question — so a caller gating work on "does this run reach role X" and the
-/// Preflight demanding X's keys can never disagree about which roles a run
-/// enters. #768's auto-mint is that caller: minting a pre-auth key costs an
+/// question — same [`playbook_stem`], same [`roster_path`], same
+/// [`selected_roles`] — so a caller gating work on "does this run reach role
+/// X" and the Preflight demanding X's keys cannot disagree about which roles a
+/// run enters. #768's auto-mint is that caller: minting a pre-auth key costs an
 /// SSH round trip to the coordinator, and only a run entering the enrolling
 /// role can consume one.
 pub fn run_enters_role(
@@ -112,10 +118,7 @@ pub fn run_enters_role(
     role: &str,
 ) -> Result<bool> {
     let playbooks_dir = ansible_dir.join(PLAYBOOKS_DIR);
-    let stem = playbook
-        .strip_suffix(".yml")
-        .or_else(|| playbook.strip_suffix(".yaml"))
-        .unwrap_or(playbook);
+    let stem = playbook_stem(playbook);
     Ok(
         selected_roles(&roster_path(&playbooks_dir, stem), tags.unwrap_or_default())?
             .iter()

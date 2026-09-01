@@ -39,9 +39,9 @@ The majority of the tailnet already enrolled without a persisted credential: `le
 
 That produces a green run over a node that never joined the tailnet. The role's assert stays and hard-fails; only its `fail_msg` changed, because it named `config.toml` as the source and that is now wrong.
 
-### Why the key is minted once per invocation, not once per run
+### Why `injected:` ended up meaning something other than #768 expected
 
-It is injected into every run's extra-vars and a run that does not read it is unaffected by its presence — the arrangement App Versions already use. Minting per run would put several credential rows in headscale's store for one deploy.
+The issue proposed the flag as a source for the answerability fence, which "derives CLI-injected names from Playbook Metas and needs a source for this one". That turned out to be moot: `tests/common`'s `registry_keys()` already answers _every_ `keys.yml` name, flag-blind, so `tailscale_authkey` was answerable throughout. The flag earned a better job instead — `tests/injected_keys.rs` holds that no Meta may declare an injected key, which is the invariant that makes the whole arrangement safe and which nothing else was checking.
 
 ### Why extra-vars order is load-bearing
 
@@ -49,8 +49,8 @@ It is injected into every run's extra-vars and a run that does not read it is un
 
 ## Alternatives considered
 
-- **Always mint, skip the enrollment check.** Rejected: every routine `deploy` would leave an unused credential row in headscale's store, and would need the coordinator reachable for runs that do not need it. The check is free — the session is open anyway.
-- **Probe the target over SSH for `tailscale status`.** Rejected: it duplicates the role's own check at a second seam and adds a round trip, to answer a question the listing already answers under ADR-0057.
+- **Always mint, skip the enrollment check.** Rejected: every routine `deploy` would leave an unused credential row in headscale's store, and would need the coordinator reachable for runs that do not need it.
+- **Read enrollment off the coordinator's `nodes list`.** Rejected after review, having first been built. It is cheaper — the coordinator session is open anyway — and `given_name` meets the roster name under ADR-0057. But it answers the wrong question, and the divergence is a dead end rather than a slow path: see the Decision above. The probe's extra round trip buys an answer that cannot be wrong.
 - **A `headscale_user` config key.** Rejected: it swaps a persisted credential for a persisted required key, which is the shape this ADR exists to remove, and it would be a key that is right exactly once.
 - **A headscale user per roster Host.** Rejected: registering with a tagged key nulls the node's `UserID`, so those users would own nothing the moment they were used.
 - **Remove `tailscale_authkey` from the Key Registry entirely.** Rejected: the fallback needs a name config can carry, and the key is the canonical secret exemplar in ~20 tests across `key_registry`, `config`, `config_cmd`, `required_keys` and `playbook_meta`. `injected:` says what is true without rehoming them.

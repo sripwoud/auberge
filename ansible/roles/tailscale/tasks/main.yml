@@ -49,10 +49,12 @@
           - tailscale_authkey | length > 0
         fail_msg: >-
           {{ inventory_hostname }} is not enrolled and no tailscale_authkey reached this play.
-          The CLI mints one per run against the roster host serving headscale (#768); it did not,
-          because no roster host serves headscale and config.toml holds no fallback value.
-          Enroll by hand — `auberge headscale add-key -t tag:<tier>` — and set tailscale_authkey,
-          or give the tailnet a headscale to mint against.
+          The CLI mints one per run against the roster host serving headscale (#768), and injects
+          nothing when no roster host serves headscale, when --check is in force, or when this
+          play was reached by a path that does not mint at all (`auberge backup`, a hand-rolled
+          ansible-playbook). Re-run through `auberge deploy` or `auberge ansible run`; failing
+          that, mint by hand with `auberge headscale add-key -t tag:<tier>` and set
+          tailscale_authkey.
       when: not tailscale_is_authenticated
 
     - name: Connect to Tailscale network

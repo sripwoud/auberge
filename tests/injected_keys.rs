@@ -15,7 +15,9 @@
 
 mod common;
 
-use auberge::commands::headscale::{ENROLLING_ROLE, INJECTED_AUTHKEY};
+use auberge::commands::headscale::{
+    ENROLLED_STATES, ENROLLING_ROLE, ENROLLMENT_PROBE, INJECTED_AUTHKEY,
+};
 use common::{meta_files, parse_yaml, playbooks_dir, relative, repo};
 use serde_yaml::Value;
 use std::collections::BTreeSet;
@@ -136,4 +138,66 @@ fn the_enrolling_role_is_unguarded() {
         "'{ENROLLING_ROLE}' carries a when: guard in {}; the auto-mint's gate cannot evaluate it",
         relative(&path)
     );
+}
+
+/// The CLI decides whether to mint by asking the target the *same* question
+/// the role asks itself. If the two drift, they disagree about whether the
+/// play will consume a key: the CLI mints nothing for a node the role is about
+/// to try to enroll, and the role's assert fires with no key to read.
+///
+/// Read out of the role's task file as text, so a change to either side has to
+/// be a change to both.
+#[test]
+fn the_cli_probe_asks_the_roles_own_enrollment_question() {
+    let path = repo()
+        .join("ansible/roles/tailscale/tasks/main.yml")
+        .to_path_buf();
+    let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", relative(&path)));
+
+    assert!(
+        raw.contains(ENROLLMENT_PROBE),
+        "the role must run `{ENROLLMENT_PROBE}`, the command the CLI probes with: {}",
+        relative(&path)
+    );
+
+    let tasks: Vec<Value> = serde_yaml::from_str(&raw)
+        .unwrap_or_else(|e| panic!("{} must parse: {e}", relative(&path)));
+    let fact = find_key(&tasks, "tailscale_is_authenticated").unwrap_or_else(|| {
+        panic!(
+            "{} must set tailscale_is_authenticated; the CLI's probe mirrors its states",
+            relative(&path)
+        )
+    });
+
+    for state in ENROLLED_STATES {
+        assert!(
+            fact.contains(&format!("\"{state}\"")),
+            "the role's tailscale_is_authenticated must count \"{state}\" as enrolled, \
+             as the CLI's probe does: {fact}"
+        );
+    }
+}
+
+/// The first scalar value under `name` anywhere in a nested YAML document.
+fn find_key(node: &[Value], name: &str) -> Option<String> {
+    fn walk(node: &Value, name: &str) -> Option<String> {
+        match node {
+            Value::Mapping(map) => {
+                for (key, value) in map {
+                    if key.as_str() == Some(name)
+                        && let Some(scalar) = value.as_str()
+                    {
+                        return Some(scalar.to_string());
+                    }
+                    if let Some(found) = walk(value, name) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+            Value::Sequence(items) => items.iter().find_map(|item| walk(item, name)),
+            _ => None,
+        }
+    }
+    node.iter().find_map(|item| walk(item, name))
 }

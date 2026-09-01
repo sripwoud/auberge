@@ -21,16 +21,19 @@ auberge ansible run --tags headscale
 
 ## Enrollment keys
 
-A pre-auth key is one-shot and expires. The CLI mints one **per run** rather than storing it ([ADR-0063](https://github.com/sripwoud/auberge/blob/master/meta/adr/0063-a-pre-auth-key-is-minted-per-run-not-stored.md)): a run entering the `tailscale` role reads this host's `headscale nodes list`, and if the target is not there, mints a 10-minute key stamped with the target's [`tailnet_tag`](configuration/hosts.md) and injects it as `tailscale_authkey`. An already-enrolled target costs one listing and nothing else.
+A pre-auth key is one-shot and expires. The CLI mints one **per run** rather than storing it ([ADR-0063](https://github.com/sripwoud/auberge/blob/master/meta/adr/0063-a-pre-auth-key-is-minted-per-run-not-stored.md)): a run entering the `tailscale` role asks the target `tailscale status --json` — the role's own check — and if its `tailscaled` needs a login, mints a 1-hour key stamped with the target's [`tailnet_tag`](configuration/hosts.md) and injects it as `tailscale_authkey`. An already-enrolled target costs one probe and nothing else.
 
 `tailscale_authkey` is therefore **not** required config. It stays a settable key for one case: bootstrapping the host that will _serve_ headscale, which has no coordinator to mint against. Set it there, or leave it unset everywhere else.
 
-| The run finds…                       | What happens                                                                        |
-| ------------------------------------ | ----------------------------------------------------------------------------------- |
-| the target already enrolled          | nothing minted; the role skips `tailscale up`                                       |
-| one host serving headscale           | a 10m key minted for the tailnet's single user, tagged with the target's tier       |
-| **no** host serving headscale        | nothing minted; `tailscale_authkey` from `config.toml` stands (the first-host case) |
-| several such hosts, or several users | the run stops — there is no operator mid-deploy to ask which                        |
+| The run finds…                          | What happens                                                                        |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| the target's `tailscaled` authenticated | nothing minted; the role skips `tailscale up`                                       |
+| one host serving headscale              | a 1h key minted for the tailnet's single user, tagged with the target's tier        |
+| **no** host serving headscale           | nothing minted; `tailscale_authkey` from `config.toml` stands (the first-host case) |
+| `--check`                               | nothing minted — a dry run must not write a credential row                          |
+| several such hosts, or several users    | the run stops — there is no operator mid-deploy to ask which                        |
+
+?> Enrollment is read off the **target**, not off `headscale nodes list`. A re-imaged host reusing its name, or one that ran `tailscale logout`, is still in the listing while it needs a key — the listing would say "enrolled" and the host could never be re-enrolled by the CLI.
 
 !> A minted key overrides `config.toml`'s value, because the CLI's `-e` is appended after the config extra-vars file. A stale key left in config is inert on any host with a reachable coordinator.
 

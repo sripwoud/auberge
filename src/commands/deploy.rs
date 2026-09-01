@@ -1,5 +1,5 @@
 use crate::ansible_assets::AnsibleAssets;
-use crate::commands::ansible::preauth_key_for_runs;
+use crate::commands::headscale::{INJECTED_AUTHKEY, preauth_key_for_plan};
 use crate::config::Config;
 use crate::hosts::{HOST_FLAG, HostManager};
 use crate::output;
@@ -317,16 +317,12 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
     let app_versions = app_version_vars(&playbooks_dir)?;
     let memory_budgets = app_memory_vars(&playbooks_dir)?;
     let hosts_ignoreip = hosts_ignoreip_var()?;
-    let preauth_key = preauth_key_for_runs(assets.ansible_dir(), &runs, &host.name)?;
-    let mut extra_vars: Vec<(&str, &str)> = app_versions
+    let extra_vars: Vec<(&str, &str)> = app_versions
         .iter()
         .chain(memory_budgets.iter())
         .chain(std::iter::once(&hosts_ignoreip))
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
-    if let Some(key) = &preauth_key {
-        extra_vars.push((crate::commands::headscale::INJECTED_AUTHKEY, key));
-    }
 
     for (run, preflight) in runs.iter().zip(preflights.iter()) {
         let playbook_name = run
@@ -347,6 +343,22 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
             run_tags.map_or(String::new(), |t| format!(" (tags: {})", t.join(", ")))
         ));
 
+        // Minted per run, immediately before the run that consumes it: the key
+        // has a TTL, and a plan's earlier playbooks would otherwise burn it.
+        let preauth_key = preauth_key_for_plan(
+            assets.ansible_dir(),
+            &[(
+                run.path.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+                run_tags,
+            )],
+            &host.name,
+            cmd.check,
+        )?;
+        let mut run_extra_vars = extra_vars.clone();
+        if let Some(key) = &preauth_key {
+            run_extra_vars.push((INJECTED_AUTHKEY, key));
+        }
+
         let mut progress = crate::services::progress::TerminalProgress::new("");
         let run_started = std::time::Instant::now();
         let result = run_playbook(
@@ -356,7 +368,7 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
             cmd.check,
             run_tags,
             None,
-            Some(&extra_vars),
+            Some(&run_extra_vars),
             false,
             false,
             false,
