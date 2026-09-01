@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, 2026-08-31. Decided in #755; surfaced preparing #740's `essaim.agents.{domain}`. Amends the fourth decision bullet of [ADR-0003](./0003-tailnet-only-app-dns.md), which named a `customDNS` _list_ and left the address it maps to implicit; [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md) inherited that assumption and otherwise stands.
+Accepted, 2026-08-31. Decided in #755; surfaced preparing #740's `essaim.agents.{domain}`. The deploy-time check it left pointed at the wrong Host is fixed by [ADR-0060](./0060-the-tailnet-dns-check-queries-the-resolver-host.md). Amends the fourth decision bullet of [ADR-0003](./0003-tailnet-only-app-dns.md), which named a `customDNS` _list_ and left the address it maps to implicit; [ADR-0052](./0052-the-tailnets-global-resolver-is-the-hosts-blocky.md) inherited that assumption and otherwise stands.
 
 ## Decision
 
@@ -30,7 +30,7 @@ The failure it produces is the quiet kind. `dig` answers, Blocky is up, the depl
 
 Accepted, because the alternative is a cross-host fact exchange for a value that changes only on re-enrolment, and because the value is written down once rather than tracked.
 
-**Setting the key wakes a deploy-time DNS check that assumes the same thing this ADR unassumes.** `app_verify_config` reads `<app>_tailscale_ip` as _both_ the resolver to query and the address to expect, which is only ever one string on a single-Host fleet — and is not what ADR-0003's fifth decision bullet specified, which says the check queries _Blocky_ for a Tailnet-only App. It has been dormant — no App sets the key today, so the check returns `None` and never runs — and setting the key for an off-Host App is what wakes it, pointed at a Host that serves the App and no resolver. So the first off-Host Tailnet-only App gets correct publication and an aborted deploy. Carried as #760 rather than fixed here: separating the two addresses needs the CLI to answer "where is Blocky?", which is a Host lookup that does not exist yet.
+**Setting the key wakes a deploy-time DNS check that assumes the same thing this ADR unassumes.** `app_verify_config` reads `<app>_tailscale_ip` as _both_ the resolver to query and the address to expect, which is only ever one string on a single-Host fleet — and is not what ADR-0003's fifth decision bullet specified, which says the check queries _Blocky_ for a Tailnet-only App. It has been dormant — no App sets the key today, so the check returns `None` and never runs — and setting the key for an off-Host App is what wakes it, pointed at a Host that serves the App and no resolver. So the first off-Host Tailnet-only App gets correct publication and an aborted deploy. Carried as #760 rather than fixed here: separating the two addresses needs the CLI to answer "where is Blocky?", which is a Host lookup that does not exist yet. **Fixed by [ADR-0060](./0060-the-tailnet-dns-check-queries-the-resolver-host.md)**, which builds that lookup: the check now queries the Host the Blocky gate selects, and no longer skips silently when it cannot find one.
 
 ## Alternatives considered
 

@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::hosts::{Host, serving_hosts};
 use crate::services::dns::is_tailscale_ip;
 use eyre::Result;
 use std::net::IpAddr;
@@ -98,6 +99,7 @@ pub fn verify_a_record<L: DnsLookup>(
 }
 
 /// Resolved verification parameters for a single app.
+#[derive(Debug)]
 pub struct AppVerifyConfig {
     pub fqdn: String,
     pub resolver_ip: String,
@@ -112,11 +114,89 @@ impl AppVerifyConfig {
     }
 }
 
+/// The config key that gates Blocky onto a Host (ADR-0051, ADR-0058).
+const BLOCKY_GATE: &str = "blocky_subdomain";
+
+/// Where the tailnet's resolver answers, or why the CLI cannot say.
+///
+/// A Tailnet-only App's records are published in the Blocky the tailnet
+/// resolves through (ADR-0052), which stops being the App's own Host as soon
+/// as the fleet is larger than one — so ADR-0003's fifth decision bullet says
+/// the check queries Blocky, and the CLI has to find it.
+#[derive(Debug)]
+pub enum TailnetResolver {
+    At(String),
+    Unlocatable(String),
+}
+
+impl TailnetResolver {
+    /// Which Host runs Blocky, and what is its tailnet address? The Host is
+    /// the one whose config answers the Blocky gate; the address is the one
+    /// `auberge host detect-tailscale-ip` cached for it in `hosts.toml`.
+    ///
+    /// Every way of not knowing is a reason, never a silent fallback: an
+    /// address guessed here would be verified against, and a check that passes
+    /// against the wrong resolver says nothing at all.
+    pub fn locate(hosts: &[Host], config: &Config) -> Self {
+        if hosts.is_empty() {
+            return Self::Unlocatable(
+                "hosts.toml lists no Host, so there is nothing to run the tailnet's resolver"
+                    .to_string(),
+            );
+        }
+
+        let serving = serving_hosts(hosts, config, BLOCKY_GATE);
+        let host = match serving.as_slice() {
+            [only] => only,
+            [] => {
+                return Self::Unlocatable(format!(
+                    "no Host's config answers `{BLOCKY_GATE}`, so the tailnet has no resolver to query"
+                ));
+            }
+            several => {
+                let names: Vec<&str> = several.iter().map(|h| h.name.as_str()).collect();
+                return Self::Unlocatable(format!(
+                    "{} Hosts answer `{BLOCKY_GATE}` ({}), but the tailnet has one resolver (ADR-0052); \
+                     withdraw the gate on the others with `[hosts.<name>] {BLOCKY_GATE} = \"\"`",
+                    names.len(),
+                    names.join(", ")
+                ));
+            }
+        };
+
+        match host
+            .tailscale_ip
+            .as_deref()
+            .map(str::trim)
+            .filter(|ip| !ip.is_empty())
+        {
+            Some(ip) if is_tailscale_ip(ip) => Self::At(ip.to_string()),
+            Some(ip) => Self::Unlocatable(format!(
+                "Host '{}' serves Blocky but its recorded tailscale_ip '{ip}' is not a Tailscale address",
+                host.name
+            )),
+            None => Self::Unlocatable(format!(
+                "Host '{name}' serves Blocky but hosts.toml records no tailscale_ip for it; \
+                 run `auberge host detect-tailscale-ip {name}`",
+                name = host.name
+            )),
+        }
+    }
+}
+
 /// Derive the DNS-verification config for `app` from the user config.
 ///
-/// Returns `None` when:
+/// A Tailnet-only App is two addresses, not one: `tailnet_resolver` answers
+/// the query and `{app}_tailscale_ip` is the answer it must give. They coincide
+/// only while the App runs on the resolver's own Host.
+///
+/// Returns `Ok(None)` when:
 /// - the app has no `{app}_subdomain` config key, or
 /// - the app is public and `verify_public` is `false`.
+///
+/// Returns `Err` when the app is Tailnet-only and the resolver is unlocatable:
+/// its records live in that resolver or nowhere, so an unanswerable check is a
+/// failed one.
 pub fn app_verify_config(
     app: &str,
     domain: &str,
@@ -124,11 +204,15 @@ pub fn app_verify_config(
     config: &Config,
     host: Option<&str>,
     verify_public: bool,
-) -> Option<AppVerifyConfig> {
+    tailnet_resolver: &TailnetResolver,
+) -> Result<Option<AppVerifyConfig>> {
     let subdomain_key = format!("{}_subdomain", app);
-    let subdomain = config
+    let Some(subdomain) = config
         .get_for_host(&subdomain_key, host)
-        .filter(|v| !v.is_empty())?;
+        .filter(|v| !v.is_empty())
+    else {
+        return Ok(None);
+    };
     let fqdn = format!("{}.{}", subdomain, domain);
 
     let tailscale_key = format!("{}_tailscale_ip", app);
@@ -137,22 +221,28 @@ pub fn app_verify_config(
         .filter(|v| !v.is_empty())
         && is_tailscale_ip(&tailscale_ip)
     {
-        return Some(AppVerifyConfig {
+        let resolver_ip = match tailnet_resolver {
+            TailnetResolver::At(ip) => ip.clone(),
+            TailnetResolver::Unlocatable(why) => {
+                eyre::bail!("Cannot verify {fqdn} on the tailnet: {why}")
+            }
+        };
+        return Ok(Some(AppVerifyConfig {
             fqdn,
-            resolver_ip: tailscale_ip.clone(),
+            resolver_ip,
             expected_ip: tailscale_ip,
-        });
+        }));
     }
 
     if verify_public {
-        return Some(AppVerifyConfig {
+        return Ok(Some(AppVerifyConfig {
             fqdn,
             resolver_ip: "1.1.1.1".to_string(),
             expected_ip: ansible_host.to_string(),
-        });
+        }));
     }
 
-    None
+    Ok(None)
 }
 
 /// Format a user-visible diagnostic for a failed DNS check.
@@ -287,31 +377,169 @@ mod tests {
         assert!(err.to_string().contains("Invalid expected IP"));
     }
 
+    // ── TailnetResolver::locate ───────────────────────────────────────────────
+
+    fn unlocatable(resolver: &TailnetResolver) -> &str {
+        match resolver {
+            TailnetResolver::At(ip) => panic!("expected Unlocatable, got At({ip})"),
+            TailnetResolver::Unlocatable(why) => why,
+        }
+    }
+
+    #[test]
+    fn test_locate_reads_the_gated_hosts_cached_address() {
+        let hosts = [
+            Host::fixture("auberge", Some("100.64.0.1")),
+            Host::fixture("ruche", Some("100.64.0.9")),
+        ];
+        let config = make_config(
+            r#"
+blocky_subdomain = "dns"
+
+[hosts.ruche]
+blocky_subdomain = ""
+"#,
+        );
+        match TailnetResolver::locate(&hosts, &config) {
+            TailnetResolver::At(ip) => assert_eq!(ip, "100.64.0.1"),
+            TailnetResolver::Unlocatable(why) => panic!("expected At, got Unlocatable({why})"),
+        }
+    }
+
+    #[test]
+    fn test_locate_unlocatable_when_the_roster_is_empty() {
+        let config = make_config(r#"blocky_subdomain = "dns""#);
+        let resolver = TailnetResolver::locate(&[], &config);
+        assert!(unlocatable(&resolver).contains("hosts.toml"));
+    }
+
+    #[test]
+    fn test_locate_unlocatable_when_no_host_answers_the_gate() {
+        let hosts = [Host::fixture("auberge", Some("100.64.0.1"))];
+        let config = make_config(r#"domain = "example.com""#);
+        let why = TailnetResolver::locate(&hosts, &config);
+        assert!(unlocatable(&why).contains("blocky_subdomain"), "{why:?}");
+    }
+
+    #[test]
+    fn test_locate_unlocatable_when_several_hosts_answer_the_gate() {
+        let hosts = [
+            Host::fixture("auberge", Some("100.64.0.1")),
+            Host::fixture("ruche", Some("100.64.0.9")),
+        ];
+        let config = make_config(r#"blocky_subdomain = "dns""#);
+        let resolver = TailnetResolver::locate(&hosts, &config);
+        let why = unlocatable(&resolver);
+        assert!(why.contains("auberge"), "{why}");
+        assert!(why.contains("ruche"), "{why}");
+    }
+
+    #[test]
+    fn test_locate_unlocatable_when_the_gated_host_has_no_cached_address() {
+        let hosts = [Host::fixture("auberge", None)];
+        let config = make_config(r#"blocky_subdomain = "dns""#);
+        let resolver = TailnetResolver::locate(&hosts, &config);
+        let why = unlocatable(&resolver);
+        assert!(why.contains("detect-tailscale-ip"), "{why}");
+        assert!(why.contains("auberge"), "{why}");
+    }
+
+    #[test]
+    fn test_locate_unlocatable_when_the_cached_address_is_not_a_tailnet_one() {
+        let hosts = [Host::fixture("auberge", Some("192.168.1.10"))];
+        let config = make_config(r#"blocky_subdomain = "dns""#);
+        let resolver = TailnetResolver::locate(&hosts, &config);
+        assert!(unlocatable(&resolver).contains("192.168.1.10"));
+    }
+
     // ── app_verify_config ─────────────────────────────────────────────────────
 
     fn make_config(toml_str: &str) -> Config {
         Config::from_toml_str(toml_str).expect("test fixture TOML must parse")
     }
 
+    fn resolver_at(ip: &str) -> TailnetResolver {
+        TailnetResolver::At(ip.to_string())
+    }
+
     #[test]
-    fn test_app_verify_config_tailnet() {
+    fn test_app_verify_config_tailnet_queries_the_resolver_for_the_apps_address() {
         let config = make_config(
             r#"
 domain = "example.com"
-paperless_subdomain = "paperless"
-paperless_tailscale_ip = "100.64.1.2"
+aoe_subdomain = "essaim"
+aoe_tailscale_ip = "100.64.0.9"
 "#,
         );
-        let vc =
-            app_verify_config("paperless", "example.com", "1.2.3.4", &config, None, false).unwrap();
-        assert_eq!(vc.fqdn, "paperless.example.com");
-        assert_eq!(vc.resolver_ip, "100.64.1.2");
-        assert_eq!(vc.expected_ip, "100.64.1.2");
+        let vc = app_verify_config(
+            "aoe",
+            "example.com",
+            "1.2.3.4",
+            &config,
+            None,
+            false,
+            &resolver_at("100.64.0.1"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(vc.fqdn, "essaim.example.com");
+        assert_eq!(vc.resolver_ip, "100.64.0.1");
+        assert_eq!(vc.expected_ip, "100.64.0.9");
         assert!(vc.is_tailnet());
     }
 
     #[test]
-    fn test_app_verify_config_public_opt_in() {
+    fn test_app_verify_config_tailnet_on_the_resolvers_own_host() {
+        let config = make_config(
+            r#"
+domain = "example.com"
+paperless_subdomain = "paperless"
+paperless_tailscale_ip = "100.64.0.1"
+"#,
+        );
+        let vc = app_verify_config(
+            "paperless",
+            "example.com",
+            "1.2.3.4",
+            &config,
+            None,
+            false,
+            &resolver_at("100.64.0.1"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(vc.resolver_ip, "100.64.0.1");
+        assert_eq!(vc.expected_ip, "100.64.0.1");
+    }
+
+    #[test]
+    fn test_app_verify_config_tailnet_errors_when_the_resolver_is_unlocatable() {
+        let config = make_config(
+            r#"
+domain = "example.com"
+aoe_subdomain = "essaim"
+aoe_tailscale_ip = "100.64.0.9"
+"#,
+        );
+        let err = app_verify_config(
+            "aoe",
+            "example.com",
+            "1.2.3.4",
+            &config,
+            None,
+            false,
+            &TailnetResolver::Unlocatable("no Host answers the gate".to_string()),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("essaim.example.com"), "{err}");
+        assert!(
+            err.to_string().contains("no Host answers the gate"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_app_verify_config_public_ignores_an_unlocatable_resolver() {
         let config = make_config(
             r#"
 domain = "example.com"
@@ -325,7 +553,9 @@ freshrss_subdomain = "rss"
             &config,
             None,
             true,
+            &TailnetResolver::Unlocatable("no Host answers the gate".to_string()),
         )
+        .unwrap()
         .unwrap();
         assert_eq!(vc.fqdn, "rss.example.com");
         assert_eq!(vc.resolver_ip, "1.1.1.1");
@@ -341,7 +571,6 @@ domain = "example.com"
 freshrss_subdomain = "rss"
 "#,
         );
-        // verify_public = false → None for public apps
         assert!(
             app_verify_config(
                 "freshrss",
@@ -349,8 +578,10 @@ freshrss_subdomain = "rss"
                 "203.0.113.10",
                 &config,
                 None,
-                false
+                false,
+                &resolver_at("100.64.0.1"),
             )
+            .unwrap()
             .is_none()
         );
     }
@@ -359,7 +590,17 @@ freshrss_subdomain = "rss"
     fn test_app_verify_config_no_subdomain() {
         let config = make_config(r#"domain = "example.com""#);
         assert!(
-            app_verify_config("paperless", "example.com", "1.2.3.4", &config, None, true).is_none()
+            app_verify_config(
+                "paperless",
+                "example.com",
+                "1.2.3.4",
+                &config,
+                None,
+                true,
+                &resolver_at("100.64.0.1"),
+            )
+            .unwrap()
+            .is_none()
         );
     }
 
