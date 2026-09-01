@@ -204,6 +204,6 @@
             Relay fallback: {{ headscale_derp_urls | length }} remote DERP map(s)
             Status: systemctl status headscale
           Next steps:
-            1. headscale users create default
-            2. headscale preauthkeys create --user default --reusable --expiration 24h
-            3. Set tailscale_authkey and tailscale_login_server in config.toml
+            1. auberge headscale add-user            # the tailnet's one user
+            2. auberge config set tailscale_login_server {{ headscale_server_url }}
+            3. Re-run infrastructure — pre-auth keys are minted per run from here on (ADR-0063)

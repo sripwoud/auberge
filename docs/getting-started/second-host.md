@@ -33,18 +33,15 @@ auberge ansible run --host agent-box --playbook ansible/playbooks/infrastructure
 
 ## Step 4: Enroll in the tailnet
 
-With self-hosted Headscale and an [ACL policy](applications/networking/headscale.md), mint a pre-auth key carrying the host's trust tag and scope it to the host — the fleet-wide `tailscale_authkey` was consumed by your first host:
+Nothing to do by hand. The infrastructure run above already enrolled the host: it asked the target whether its `tailscaled` was authenticated, minted a 1-hour pre-auth key stamped with the host's `tailnet_tag`, and handed it to the `tailscale` role ([ADR-0063](https://github.com/sripwoud/auberge/blob/master/meta/adr/0063-a-pre-auth-key-is-minted-per-run-not-stored.md)). The ACL policy, not the target host, decides what the node may reach.
+
+That works because the host declared its trust tier when you added it:
 
 ```bash
-auberge headscale add-key -t tag:agent
+auberge host add agent-box --ip 203.0.113.20 --tailnet-tag agent
 ```
 
-```toml
-[hosts.agent-box]
-tailscale_authkey = "<generated key>"
-```
-
-Re-run the infrastructure playbook (or `-t tailscale`); the `tailscale` role authenticates against `tailscale_login_server` with the tagged key. The ACL policy, not the target host, decides what the node may reach.
+?> A host with no `tailnet_tag` still enrolls, but its key carries no tag — under the default-deny [ACL policy](applications/networking/headscale.md) it reaches nothing. The run warns and names `auberge host edit`.
 
 ## Step 5: Verify
 

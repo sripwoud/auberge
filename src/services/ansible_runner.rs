@@ -628,6 +628,48 @@ mod tests {
         assert_eq!(stale_key_check("apps.yml", true), None);
     }
 
+    /// The config file is `--extra-vars @file` in `base_argv`; a caller's pairs
+    /// are `-e key=value` appended after it, and ansible's last `-e` wins. So a
+    /// value the CLI computes beats the same key in `config.toml`.
+    ///
+    /// #768's auto-mint depends on exactly this: the pre-auth key it mints must
+    /// override whatever `tailscale_authkey` config still holds — which on a
+    /// live fleet is a spent string. Reorder these two and a stale credential
+    /// silently wins over a fresh one, and the play fails at `tailscale up`
+    /// with no hint that a good key was minted and discarded.
+    #[test]
+    fn test_a_callers_extra_var_is_appended_after_the_config_file() {
+        let host = bootstrap_host();
+        let paths = argv_paths();
+        let ctx = argv_ctx(&host, &paths);
+
+        let vars = [("tailscale_authkey", "tskey-minted")];
+        let argv = playbook_argv(
+            &ctx,
+            &PlaybookOpts {
+                extra_vars: Some(&vars),
+                ..PlaybookOpts::default()
+            },
+        );
+        let rendered: Vec<String> = argv
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+
+        let config_file = rendered
+            .iter()
+            .position(|a| a.starts_with('@'))
+            .expect("the config extra-vars file must be on the command line");
+        let injected = rendered
+            .iter()
+            .position(|a| a == "tailscale_authkey=tskey-minted")
+            .expect("the caller's pair must be on the command line");
+        assert!(
+            config_file < injected,
+            "the minted key must come after the config file to win: {rendered:?}"
+        );
+    }
+
     #[test]
     fn test_non_bootstrap_playbook_has_no_bootstrap_connection_args() {
         let host = bootstrap_host();

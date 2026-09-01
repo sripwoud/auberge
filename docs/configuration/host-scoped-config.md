@@ -10,7 +10,7 @@ blocky_subdomain = "dns"
 [hosts.agent-box]
 headscale_subdomain = ""       # this host does not serve headscale
 blocky_subdomain = ""          # nor blocky
-tailscale_authkey = "!pa show tailnet/agent-box"
+ssh_port = "2244"              # nor the fleet's SSH port
 ```
 
 `<name>` matches the host's `hosts.toml` entry. Tables for names no host carries are inert.
@@ -28,7 +28,7 @@ Naming a gated role's tag asserts it runs, so asking for it on a host that withd
 
 ## What stays top-level
 
-An `<app>_subdomain` is the app's record name in your one DNS zone — fleet identity, read by DNS discovery from the top level. Scope it per host only to withdraw the role (blank); give divergent _values_ per host only for keys that are genuinely per-host (`tailscale_authkey`, ports).
+An `<app>_subdomain` is the app's record name in your one DNS zone — fleet identity, read by DNS discovery from the top level. Scope it per host only to withdraw the role (blank); give divergent _values_ per host only for keys that are genuinely per-host (ports, `<app>_tailscale_ip`).
 
 ## Existing multi-host fleets
 

@@ -1,3 +1,4 @@
+use crate::commands::headscale::{INJECTED_AUTHKEY, preauth_key_for_plan};
 use crate::config::{Config, Preflight};
 use crate::hosts::{HOST_FLAG, HOST_POSITIONAL};
 use crate::output;
@@ -254,6 +255,19 @@ fn run_auto_resolved(
             Some(run.tags.as_slice())
         };
 
+        // Minted per run, immediately before the run that consumes it: the key
+        // has a TTL, and a plan's earlier playbooks would otherwise burn it.
+        let preauth_key = preauth_key_for_plan(
+            assets.ansible_dir(),
+            &[(playbook_file, run_tags_ref)],
+            &host.name,
+            check,
+        )?;
+        let mut run_extra_vars = extra_vars.clone();
+        if let Some(key) = &preauth_key {
+            run_extra_vars.push((INJECTED_AUTHKEY, key));
+        }
+
         output::info(&format!(
             "Running {} on {}{}",
             playbook_stem,
@@ -277,7 +291,7 @@ fn run_auto_resolved(
             check,
             run_tags,
             skip_tags,
-            Some(&extra_vars),
+            Some(&run_extra_vars),
             false,
             ask_pass,
             force,
@@ -381,6 +395,12 @@ fn run_single_playbook(
     let app_versions = app_version_vars(&assets.playbooks_dir())?;
     let memory_budgets = app_memory_vars(&assets.playbooks_dir())?;
     let hosts_ignoreip = hosts_ignoreip_var()?;
+    let preauth_key = preauth_key_for_plan(
+        assets.ansible_dir(),
+        &[(playbook_file, tags)],
+        &host.name,
+        check,
+    )?;
     let mut extra_vars: Vec<(&str, &str)> = app_versions
         .iter()
         .chain(memory_budgets.iter())
@@ -389,6 +409,9 @@ fn run_single_playbook(
         .collect();
     if let Some(user) = user {
         extra_vars.push(("ansible_user", user));
+    }
+    if let Some(key) = &preauth_key {
+        extra_vars.push((INJECTED_AUTHKEY, key));
     }
 
     let mut progress = crate::services::progress::TerminalProgress::new("");
