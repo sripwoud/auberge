@@ -112,6 +112,20 @@ pub struct Host {
     /// will. `auberge host list` shows the tier so an unset one is visible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tailnet_tag: Option<TailnetTag>,
+    /// Route this Host over its tailnet address rather than its public one
+    /// (#787). A **policy**, where `tailscale_ip` is a **fact**: caching the
+    /// fact never implies the policy, which is why `detect-tailscale-ip`
+    /// writes one and never the other — `vieille-auberge` holds a tailnet
+    /// address and must never be reached over it.
+    ///
+    /// `tailscale_ip` is its precondition, enforced by [`Host::validate`] at
+    /// every roster write. That is what dissolves the bootstrap
+    /// chicken-and-egg: `tailscale` is a role in
+    /// `ansible/playbooks/infrastructure.yml`, so a Host joins the tailnet
+    /// during a run — a fresh Host has no fact, so it cannot carry the
+    /// policy, so the run that enrolls it goes over the public address.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub prefer_tailnet: bool,
     /// Every key this binary's `Host` does not declare, captured verbatim and
     /// written back unchanged (#788, ADR-0069).
     ///
@@ -149,6 +163,13 @@ fn default_become_method() -> String {
     "sudo".to_string()
 }
 
+/// `prefer_tailnet`'s `skip_serializing_if`: the default is off, and writing
+/// `prefer_tailnet = false` into every entry would make the roster claim a
+/// decision nobody made.
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// The Hosts whose config answers a serving gate: the ADR-0051 shape — config
 /// alone answers it, and a blank value is no answer — read through ADR-0058's
 /// host-scoped view, so a `[hosts.<name>]` override decides for that Host.
@@ -171,6 +192,28 @@ pub fn serving_hosts<'a>(
 }
 
 impl Host {
+    /// The one invariant a roster entry must satisfy beyond parsing:
+    /// `prefer_tailnet` is a routing decision that needs an address to route
+    /// to, so enabling it without a cached `tailscale_ip` is refused (#787).
+    ///
+    /// Checked against the artifact at every write rather than only at the
+    /// `host edit` prompt: a prompt guard validates one operator's keystrokes,
+    /// not the file, and `hosts.toml` is hand-edited. The remedy names
+    /// `detect-tailscale-ip` because that is the command that supplies the
+    /// missing fact, and `--via public` because a Host already carrying the
+    /// policy cannot be reached to detect it otherwise.
+    pub fn validate(&self) -> Result<()> {
+        if self.prefer_tailnet && self.tailscale_ip.is_none() {
+            eyre::bail!(
+                "host '{}' sets prefer_tailnet but has no tailscale_ip to route to; run \
+                 `auberge --via public host detect-tailscale-ip {}` first",
+                self.name,
+                self.name
+            );
+        }
+        Ok(())
+    }
+
     /// A roster entry with only the two fields the gate lookups read, so a
     /// unit test elsewhere in the crate does not restate the other eight.
     /// Test-only, like `Config::from_toml_str`.
@@ -188,8 +231,18 @@ impl Host {
             become_method: "sudo".to_string(),
             tailscale_ip: tailscale_ip.map(str::to_string),
             tailnet_tag: None,
+            prefer_tailnet: false,
             unknown: toml::Table::new(),
         }
+    }
+
+    /// The same fixture carrying #787's policy. A builder rather than a third
+    /// `fixture` parameter: every existing caller passes the fact and means
+    /// only the fact, which is the distinction this slice turns on.
+    #[cfg(test)]
+    pub fn preferring_tailnet(mut self) -> Self {
+        self.prefer_tailnet = true;
+        self
     }
 }
 
@@ -247,6 +300,10 @@ impl HostManager {
     /// does not have, which the next mutation would quietly revert. ADR-0070
     /// records the trade.
     ///
+    /// Every entry is validated before either file is touched (#787), so a
+    /// roster that refuses to route cannot be written *and* published to the
+    /// ssh include.
+    ///
     /// Nothing outside this module can write the roster instead -
     /// `HostsConfig` is private to it — and nothing outside it regenerates the
     /// include, fenced by `tests/the_include_follows_the_roster.rs`.
@@ -255,6 +312,10 @@ impl HostManager {
     /// the binding be asserted against a pair of temp directories instead of
     /// the developer's own `$HOME`.
     fn write_roster(config_path: &Path, ssh_dir: &Path, hosts: &[Host]) -> Result<()> {
+        for host in hosts {
+            host.validate()?;
+        }
+
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent).wrap_err_with(|| {
                 format!("Failed to create config directory: {}", parent.display())
@@ -494,6 +555,7 @@ blocky_subdomain = "dns"
             become_method: "sudo".to_string(),
             tailscale_ip: None,
             tailnet_tag: None,
+            prefer_tailnet: false,
             unknown: toml::Table::new(),
         };
 
@@ -525,6 +587,72 @@ blocky_subdomain = "dns"
         assert!(config.hosts[0].unknown.is_empty());
     }
 
+    /// #787's policy is a declared field, not an inference: a Host carrying
+    /// the fact must be able to carry the decision separately, and a roster
+    /// round trip must not lose it.
+    #[test]
+    fn prefer_tailnet_round_trips() {
+        let host = Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet();
+
+        let serialized = toml::to_string(&HostsConfig { hosts: vec![host] }).unwrap();
+        assert!(serialized.contains("prefer_tailnet = true"), "{serialized}");
+
+        let parsed: HostsConfig = toml::from_str(&serialized).unwrap();
+        assert!(parsed.hosts[0].prefer_tailnet);
+    }
+
+    /// The default is off, and an entry that never made the decision must not
+    /// read as having made it — `vieille-auberge` holds a tailnet address and
+    /// must never be routed over it.
+    #[test]
+    fn prefer_tailnet_is_omitted_when_unset() {
+        let serialized = toml::to_string(&HostsConfig {
+            hosts: vec![Host::fixture("vieille-auberge", Some("100.64.0.4"))],
+        })
+        .unwrap();
+
+        assert!(!serialized.contains("prefer_tailnet"), "{serialized}");
+        assert!(serialized.contains("tailscale_ip"), "{serialized}");
+    }
+
+    /// The precondition that dissolves the bootstrap chicken-and-egg, checked
+    /// against the artifact rather than the prompt: `hosts.toml` is
+    /// hand-edited, and a policy with nothing to route to is a route change
+    /// waiting to fail in the nightly path.
+    #[test]
+    fn write_roster_refuses_a_policy_with_no_address_to_route_to() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut host = Host::fixture("ruche", None).preferring_tailnet();
+        host.tailscale_ip = None;
+
+        let err = HostManager::write_roster(
+            &dir.path().join("auberge/hosts.toml"),
+            &dir.path().join(".ssh"),
+            &[host],
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("prefer_tailnet"), "{err}");
+        assert!(err.contains("host detect-tailscale-ip ruche"), "{err}");
+    }
+
+    /// A refused entry must leave *both* files untouched: a roster written and
+    /// then rejected would publish the policy to the ssh include anyway.
+    #[test]
+    fn a_refused_policy_writes_neither_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("auberge/hosts.toml");
+        let ssh_dir = dir.path().join(".ssh");
+        let mut host = Host::fixture("ruche", None).preferring_tailnet();
+        host.tailscale_ip = None;
+
+        HostManager::write_roster(&config_path, &ssh_dir, &[host]).unwrap_err();
+
+        assert!(!config_path.exists());
+        assert!(!crate::services::ssh_include::include_file_path(&ssh_dir).exists());
+    }
+
     #[test]
     fn test_tailscale_ip_round_trip() {
         let host = Host {
@@ -539,6 +667,7 @@ blocky_subdomain = "dns"
             become_method: "sudo".to_string(),
             tailscale_ip: Some("100.64.0.5".to_string()),
             tailnet_tag: None,
+            prefer_tailnet: false,
             unknown: toml::Table::new(),
         };
 
@@ -579,6 +708,7 @@ blocky_subdomain = "dns"
             become_method: "sudo".to_string(),
             tailscale_ip: Some("100.64.0.5".to_string()),
             tailnet_tag: Some(TailnetTag::Trusted),
+            prefer_tailnet: true,
             unknown: toml::Table::new(),
         };
         let known_fields: Vec<String> = toml::Value::try_from(full)
@@ -689,6 +819,7 @@ blocky_subdomain = "dns"
             become_method: "sudo".to_string(),
             tailscale_ip: None,
             tailnet_tag: None,
+            prefer_tailnet: false,
             unknown: toml::Table::new(),
         };
 

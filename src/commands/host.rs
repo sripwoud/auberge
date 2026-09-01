@@ -293,6 +293,7 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         become_method: "sudo".to_string(),
         tailscale_ip: None,
         tailnet_tag,
+        prefer_tailnet: false,
         unknown: toml::Table::new(),
     };
 
@@ -538,6 +539,7 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
         become_method: host.become_method,
         tailscale_ip: host.tailscale_ip,
         tailnet_tag,
+        prefer_tailnet: host.prefer_tailnet,
         unknown: host.unknown,
     };
 
@@ -878,6 +880,7 @@ mod tests {
             become_method: "sudo".to_string(),
             tailscale_ip: None,
             tailnet_tag: None,
+            prefer_tailnet: false,
             unknown: toml::Table::new(),
         }
     }
