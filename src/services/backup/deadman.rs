@@ -1,5 +1,5 @@
 //! A Host-side deadman that guards a backup's quiesce window independently of
-//! the driver process (ADR-0063).
+//! the driver process (ADR-0066).
 //!
 //! `RecipeExecutor::backup`'s own restart-on-`Err` is a property of the Rust
 //! process staying alive to run it. Two real outages happened because the
@@ -106,7 +106,7 @@ pub fn disarm<S: SshSession + ?Sized>(session: &S, app: &str) {
 /// Reads and clears `app`'s fire marker, warning through `progress` when one
 /// is found. Evidence that a prior run's driver died mid-quiesce and this
 /// Host, not that process, brought the units back — the warning is the only
-/// account of it, so the run itself still completes (ADR-0063).
+/// account of it, so the run itself still completes (ADR-0066).
 pub fn check_and_report<S: SshSession + ?Sized>(
     session: &S,
     app: &str,

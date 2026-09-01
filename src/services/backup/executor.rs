@@ -1,4 +1,5 @@
 use crate::playbook_meta::{BackupRecipe, DbEngine};
+use crate::services::backup::deadman;
 use crate::services::progress::Progress;
 use crate::services::ssh::SshSession;
 use eyre::Result;
@@ -16,6 +17,7 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
 
     pub fn backup(
         &self,
+        app: &str,
         recipe: &BackupRecipe,
         dest_dir: &Path,
         parameters: &HashMap<String, bool>,
@@ -23,14 +25,31 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
     ) -> Result<()> {
         self.verify_path_attestation(recipe, parameters, progress)?;
 
+        // A deadman only guards a quiesce window, so an App with nothing to
+        // quiesce has nothing for it to protect (ADR-0066).
+        let guarded = !recipe.systemd_services.is_empty();
+        if guarded {
+            let _ = deadman::check_and_report(self.session, app, progress);
+            self.arm_deadman(app, recipe, progress);
+        }
+
         let mut stopped: Vec<&str> = Vec::new();
         for service in &recipe.systemd_services {
             progress.task_started(&format!("Stopping {}", service));
             if let Err(e) = self.session.systemctl("stop", service) {
                 self.restart_all(&stopped);
+                if guarded {
+                    deadman::disarm(self.session, app);
+                }
                 return Err(e);
             }
             stopped.push(service);
+        }
+
+        // Re-arm at the dump step boundary: what is bounded is how long any
+        // one step may run, not the whole operation (ADR-0066).
+        if guarded {
+            self.arm_deadman(app, recipe, progress);
         }
 
         let result = (|| -> Result<()> {
@@ -65,6 +84,12 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
 
             let paths = recipe.effective_paths(parameters);
             for path in &paths {
+                // Re-armed per transfer, not once for the whole rsync phase:
+                // the incident's own media rsync could plausibly run for tens
+                // of minutes on its own (ADR-0066).
+                if guarded {
+                    self.arm_deadman(app, recipe, progress);
+                }
                 progress.task_started(&format!("rsync {}", path));
                 self.session.rsync_from(path, dest_dir)?;
             }
@@ -79,10 +104,19 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
             Ok(())
         })();
 
+        // Re-arm at the restart step boundary, then disarm once the units are
+        // back up — every exit path from here, success or failure, leaves the
+        // App up again, so nothing stays armed once it is (ADR-0066).
+        if guarded {
+            self.arm_deadman(app, recipe, progress);
+        }
         for service in &stopped {
             progress.task_started(&format!("Starting {}", service));
         }
         let restart_failures = self.restart_all_collecting(&stopped);
+        if guarded {
+            deadman::disarm(self.session, app);
+        }
         progress.task_done();
 
         match result {
@@ -249,6 +283,22 @@ impl<'a, S: SshSession + ?Sized> RecipeExecutor<'a, S> {
         }
     }
 
+    /// Arms `app`'s deadman, warning through `progress` if it fails.
+    ///
+    /// A silent failure here would defeat the whole mechanism: the window it
+    /// was meant to guard runs unprotected with nothing telling the operator
+    /// so. The `Result` still is not propagated with `?` — an arm failure
+    /// must never skip the guaranteed restart that follows it, only leave a
+    /// visible trace that this window had no Host-side backstop.
+    fn arm_deadman(&self, app: &str, recipe: &BackupRecipe, progress: &mut dyn Progress) {
+        if let Err(e) = deadman::arm(self.session, app, &recipe.systemd_services) {
+            progress.warn(&format!(
+                "{app}: failed to arm the backup deadman ({e}); this window has no Host-side \
+                 recovery if the driver dies before finishing it"
+            ));
+        }
+    }
+
     fn restart_all(&self, services: &[&str]) {
         for service in services {
             let _ = self.session.systemctl("start", service);
@@ -364,6 +414,21 @@ mod tests {
         crate::services::backup::recipe::load_app_recipe(&playbooks_dir, "bichon", "alice").unwrap()
     }
 
+    /// Strips every SSH call a deadman (ADR-0066) issues to guard the quiesce
+    /// window, leaving the App's own stop/dump/rsync/start sequence — so a
+    /// test asserting that sequence by position does not have to know how
+    /// many arm/disarm/fire-check calls a guarded recipe adds around it.
+    fn without_deadman_ops(calls: Vec<SshOp>) -> Vec<SshOp> {
+        calls
+            .into_iter()
+            .filter(|c| match c {
+                SshOp::RunDetached(_) => false,
+                SshOp::Run(cmd) => !cmd.contains("deadman"),
+                _ => true,
+            })
+            .collect()
+    }
+
     fn systemctl_sequence(calls: &[SshOp]) -> Vec<(String, String)> {
         calls
             .iter()
@@ -384,6 +449,7 @@ mod tests {
         let mut progress = crate::services::progress::MockProgress::new();
         executor
             .backup(
+                "bichon",
                 &shipped_bichon_recipe(),
                 Path::new("/tmp/dest"),
                 &HashMap::new(),
@@ -491,7 +557,13 @@ mod tests {
         let executor = RecipeExecutor::new(mock);
         let mut progress = crate::services::progress::MockProgress::new();
         let tmp = tempfile::tempdir().unwrap();
-        executor.backup(recipe, tmp.path(), &HashMap::new(), &mut progress)
+        executor.backup(
+            "grimmory",
+            recipe,
+            tmp.path(),
+            &HashMap::new(),
+            &mut progress,
+        )
     }
 
     fn navidrome_recipe() -> BackupRecipe {
@@ -539,6 +611,7 @@ mod tests {
         let mut progress = crate::services::progress::MockProgress::new();
         executor
             .backup(
+                "syncthing",
                 &syncthing_recipe(),
                 Path::new("/tmp/dest"),
                 &HashMap::new(),
@@ -546,7 +619,7 @@ mod tests {
             )
             .unwrap();
 
-        let calls = mock.calls();
+        let calls = without_deadman_ops(mock.calls());
         assert_eq!(
             calls[0],
             SshOp::Systemctl {
@@ -608,6 +681,7 @@ mod tests {
         let mut progress = crate::services::progress::MockProgress::new();
         executor
             .backup(
+                "baikal",
                 &baikal_recipe(),
                 Path::new("/tmp/dest"),
                 &HashMap::new(),
@@ -640,6 +714,7 @@ mod tests {
         let mut progress = crate::services::progress::MockProgress::new();
         executor
             .backup(
+                "bichon",
                 &recipe,
                 Path::new("/tmp/dest"),
                 &HashMap::new(),
@@ -647,7 +722,7 @@ mod tests {
             )
             .unwrap();
 
-        let calls = mock.calls();
+        let calls = without_deadman_ops(mock.calls());
         assert_eq!(
             calls[0],
             SshOp::Systemctl {
@@ -672,6 +747,7 @@ mod tests {
         let mut progress = crate::services::progress::MockProgress::new();
         executor
             .backup(
+                "paperless",
                 &paperless_recipe(),
                 Path::new("/tmp/dest"),
                 &HashMap::new(),
@@ -679,7 +755,7 @@ mod tests {
             )
             .unwrap();
 
-        let calls = mock.calls();
+        let calls = without_deadman_ops(mock.calls());
         assert_eq!(
             calls[0],
             SshOp::Systemctl {
@@ -721,6 +797,7 @@ mod tests {
         let mut progress = crate::services::progress::MockProgress::new();
         executor
             .backup(
+                "grimmory",
                 &grimmory_recipe(),
                 Path::new("/tmp/dest"),
                 &HashMap::new(),
@@ -728,7 +805,7 @@ mod tests {
             )
             .unwrap();
 
-        let calls = mock.calls();
+        let calls = without_deadman_ops(mock.calls());
         match &calls[1] {
             SshOp::Run(cmd) => assert_eq!(
                 cmd,
@@ -808,6 +885,7 @@ mod tests {
         let mut progress = crate::services::progress::MockProgress::new();
         executor
             .backup(
+                "navidrome",
                 &navidrome_recipe(),
                 Path::new("/tmp/dest"),
                 &params,
@@ -834,6 +912,7 @@ mod tests {
         let mut progress = crate::services::progress::MockProgress::new();
         executor
             .backup(
+                "navidrome",
                 &navidrome_recipe(),
                 Path::new("/tmp/dest"),
                 &HashMap::new(),
@@ -967,6 +1046,7 @@ mod tests {
         let mut progress = crate::services::progress::MockProgress::new();
         executor
             .backup(
+                "paperless",
                 &paperless_recipe(),
                 Path::new("/tmp/dest"),
                 &HashMap::new(),
@@ -1137,6 +1217,15 @@ mod tests {
     #[test]
     fn test_backup_failed_pg_dump_still_restarts_services() {
         let mock = MockSshSession::new();
+        // The deadman's fire-check is the first `run()` call for a guarded
+        // recipe; stage its "no marker" answer before pg_dump's failure so
+        // the second staged result is the one pg_dump actually consumes.
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        });
         mock.stage_run_result(crate::services::ssh::CommandResult {
             success: false,
             exit_code: Some(1),
@@ -1146,6 +1235,7 @@ mod tests {
         let executor = RecipeExecutor::new(&mock);
         let mut progress = crate::services::progress::MockProgress::new();
         let result = executor.backup(
+            "paperless",
             &paperless_recipe(),
             Path::new("/tmp/dest"),
             &HashMap::new(),
@@ -1262,5 +1352,256 @@ mod tests {
                 .any(|call| matches!(call, SshOp::Run(cmd) if cmd.contains("select"))),
             "the check is opt-in per Recipe; every App without `attests:` is untouched"
         );
+    }
+
+    // ADR-0066: a Host-side deadman guards the quiesce window.
+
+    fn detached_calls(calls: &[SshOp]) -> Vec<String> {
+        calls
+            .iter()
+            .filter_map(|c| match c {
+                SshOp::RunDetached(cmd) => Some(cmd.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn backup_arms_a_deadman_before_quiescing_a_guarded_recipe() {
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .backup(
+                "paperless",
+                &paperless_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
+            .unwrap();
+
+        let calls = mock.calls();
+        let first_arm = calls
+            .iter()
+            .position(|c| matches!(c, SshOp::RunDetached(_)))
+            .expect("a guarded recipe must arm a deadman");
+        let first_stop = calls
+            .iter()
+            .position(|c| matches!(c, SshOp::Systemctl { action, .. } if action == "stop"))
+            .unwrap();
+        assert!(
+            first_arm < first_stop,
+            "the deadman must be armed before anything is quiesced"
+        );
+    }
+
+    #[test]
+    fn backup_disarms_the_deadman_as_the_very_last_call_on_a_clean_finish() {
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .backup(
+                "paperless",
+                &paperless_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
+            .unwrap();
+
+        assert_eq!(
+            mock.calls().last(),
+            Some(&SshOp::Run(deadman::disarm_command("paperless"))),
+            "nothing must be left armed on the Host once the App is back up"
+        );
+    }
+
+    #[test]
+    fn backup_re_arms_before_every_individual_rsync_transfer() {
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut params = HashMap::new();
+        params.insert("include_music".to_string(), true);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .backup(
+                "navidrome",
+                &navidrome_recipe(),
+                Path::new("/tmp/dest"),
+                &params,
+                &mut progress,
+            )
+            .unwrap();
+
+        let calls = mock.calls();
+        let rsync_positions: Vec<usize> = calls
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| matches!(c, SshOp::RsyncFrom { .. }).then_some(i))
+            .collect();
+        assert_eq!(rsync_positions.len(), 2, "both paths must have rsynced");
+        let arm_before = |idx: usize| {
+            calls[..idx]
+                .iter()
+                .rev()
+                .find(|c| !matches!(c, SshOp::RsyncFrom { .. }))
+        };
+        assert!(
+            matches!(arm_before(rsync_positions[0]), Some(SshOp::RunDetached(_))),
+            "the first rsync must be immediately preceded by a re-arm"
+        );
+        assert!(
+            matches!(arm_before(rsync_positions[1]), Some(SshOp::RunDetached(_))),
+            "the second rsync must get its own re-arm, not share the first one's"
+        );
+    }
+
+    #[test]
+    fn backup_arms_the_recipes_units_in_their_declared_quiesce_order() {
+        let mock = MockSshSession::new();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        executor
+            .backup(
+                "bichon",
+                &shipped_bichon_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
+            .unwrap();
+
+        let arm = detached_calls(&mock.calls())
+            .into_iter()
+            .next()
+            .expect("bichon has services and must arm a deadman");
+        let timer_pos = arm.find("systemctl start bichon-archive.timer;").unwrap();
+        let server_pos = arm.find("systemctl start bichon;").unwrap();
+        assert!(
+            timer_pos < server_pos,
+            "the fire path must replay the same order the executor's own \
+             restart uses: {arm}"
+        );
+    }
+
+    #[test]
+    fn backup_disarms_the_deadman_even_when_the_dump_fails() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        });
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: b"connection refused".to_vec(),
+        });
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+        let result = executor.backup(
+            "paperless",
+            &paperless_recipe(),
+            Path::new("/tmp/dest"),
+            &HashMap::new(),
+            &mut progress,
+        );
+        assert!(result.is_err());
+
+        assert_eq!(
+            mock.calls().last(),
+            Some(&SshOp::Run(deadman::disarm_command("paperless"))),
+            "a failed backup must still leave nothing armed on the Host"
+        );
+    }
+
+    #[test]
+    fn backup_never_touches_the_deadman_for_a_recipe_with_no_services() {
+        let mock = MockSshSession::new();
+        backup_with(
+            &BackupRecipe {
+                systemd_services: Vec::new(),
+                attests: None,
+                ..baikal_recipe()
+            },
+            &mock,
+        )
+        .unwrap();
+
+        assert!(
+            !mock
+                .calls()
+                .iter()
+                .any(|c| matches!(c, SshOp::RunDetached(_))
+                    || matches!(c, SshOp::Run(cmd) if cmd.contains("deadman"))),
+            "there is no quiesce window to guard when nothing is quiesced"
+        );
+    }
+
+    #[test]
+    fn backup_warns_and_still_completes_when_a_previous_deadman_fired() {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(crate::services::ssh::CommandResult::from_stdout(
+            "Tue Sep  1 01:14:39 UTC 2026\n",
+        ));
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+
+        executor
+            .backup(
+                "paperless",
+                &paperless_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
+            .expect("a prior fire is a warning, not a reason to fail this run");
+
+        let warnings: Vec<String> = progress
+            .events()
+            .into_iter()
+            .filter_map(|e| match e {
+                crate::services::progress::ProgressEvent::Warn(msg) => Some(msg),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("paperless"), "{warnings:?}");
+    }
+
+    #[test]
+    fn backup_warns_but_still_completes_when_arming_the_deadman_fails() {
+        let mock = MockSshSession::new();
+        mock.fail_run_detached();
+        let executor = RecipeExecutor::new(&mock);
+        let mut progress = crate::services::progress::MockProgress::new();
+
+        executor
+            .backup(
+                "paperless",
+                &paperless_recipe(),
+                Path::new("/tmp/dest"),
+                &HashMap::new(),
+                &mut progress,
+            )
+            .expect("a failed arm must not block the backup itself");
+
+        let warnings: Vec<String> = progress
+            .events()
+            .into_iter()
+            .filter_map(|e| match e {
+                crate::services::progress::ProgressEvent::Warn(msg) => Some(msg),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !warnings.is_empty(),
+            "a silently unguarded window defeats the whole mechanism"
+        );
+        assert!(warnings.iter().all(|w| w.contains("paperless")));
     }
 }

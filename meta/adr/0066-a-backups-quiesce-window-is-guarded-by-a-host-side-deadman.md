@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed, 2026-09-01. Decided in #774's triage grilling; extends ADR-0032's quiesce order to a case it does not cover — the driver process itself dying mid-window.
+Accepted, 2026-09-01. Decided in #774's triage grilling, implemented in #774; extends ADR-0032's quiesce order to a case it does not cover — the driver process itself dying mid-window.
 
 ## Decision
 
