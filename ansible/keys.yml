@@ -19,6 +19,14 @@ keys:
     secret: true
     doc: "Password for the admin user account"
 
+  agents_cloudflare_dns_api_token:
+    secret: true
+    doc: "Cloudflare API token scoped to the agents_domain zone only; answers DNS-01 for the agent tier, off the parent domain's blast radius (ADR-0068)."
+
+  agents_domain:
+    secret: false
+    doc: "Domain dedicated to the agent tier's own Cloudflare zone (ADR-0068), e.g. agents-example.com. essaim.{agents_domain} is aoe's PWA origin (#740)."
+
   baikal_admin_password:
     secret: true
     doc: "Password for the Baïkal CalDAV/CardDAV admin interface"
