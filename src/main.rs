@@ -22,6 +22,7 @@ use auberge::commands::github::{GithubCommands, run_github_invite, run_github_ve
 use auberge::commands::headscale::{
     HeadscaleCommands, run_headscale_add_key, run_headscale_add_user, run_headscale_list_nodes,
     run_headscale_list_users, run_headscale_register, run_headscale_remove_user,
+    run_headscale_tag_node,
 };
 use auberge::commands::host::{
     AddHostArgs, HostCommands, run_host_add, run_host_detect_tailscale_ip, run_host_edit,
@@ -143,6 +144,9 @@ async fn main() -> Result<()> {
             } => run_headscale_add_key(user, expiration, tags, host),
             HeadscaleCommands::Register { auth, user, host } => {
                 run_headscale_register(auth, user, host)
+            }
+            HeadscaleCommands::TagNode { name, tags, host } => {
+                run_headscale_tag_node(name, tags, host)
             }
             HeadscaleCommands::ListUsers { output, host } => run_headscale_list_users(output, host),
             HeadscaleCommands::ListNodes { output, host } => run_headscale_list_nodes(output, host),

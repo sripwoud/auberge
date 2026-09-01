@@ -57,6 +57,7 @@
     - [add-user](cli-reference/headscale/add-user.md)
     - [add-key](cli-reference/headscale/add-key.md)
     - [register](cli-reference/headscale/register.md)
+    - [tag-node](cli-reference/headscale/tag-node.md)
     - [list-users](cli-reference/headscale/list-users.md)
     - [list-nodes](cli-reference/headscale/list-nodes.md)
     - [remove-user](cli-reference/headscale/remove-user.md)
