@@ -46,7 +46,11 @@ jobs:
           mkdir -p ~/.ssh/identities/production
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/identities/production/ansible
           chmod 600 ~/.ssh/identities/production/ansible
-          ssh-keyscan -p "${{ secrets.SSH_PORT }}" "${{ secrets.AUBERGE_HOST }}" >> ~/.ssh/known_hosts
+          # Every connection checks HostKeyAlias=<host name>, not the address
+          # (#785) — seed the entry under "production" to match --host below,
+          # not under AUBERGE_HOST.
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" "${{ secrets.AUBERGE_HOST }}" \
+            | sed 's/^[^ ]*/production/' >> ~/.ssh/known_hosts
 
       - name: Configure auberge
         run: |

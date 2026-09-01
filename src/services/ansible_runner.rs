@@ -144,12 +144,12 @@ fn render(fingerprints: &[Fingerprint]) -> String {
 /// Clears a `known_hosts` entry the target contradicts, so bootstrap can
 /// connect without the blanket host-key bypass it used to pass to ansible.
 fn resolve_stale_host_key(host: &InventoryHost, assume_yes: bool) -> Result<()> {
-    let status = known_hosts::inspect(&host.address, host.port)?;
+    let status = known_hosts::inspect(&host.name, &host.address, host.port)?;
     let HostKeyStatus::Changed { known, offered } = &status else {
         return Ok(());
     };
 
-    let target = known_hosts::entry_target(&host.address, host.port);
+    let target = &host.name;
 
     output::warn(&format!(
         "Host key for {target} changed.\n  known_hosts has: {}\n  {target} now offers: {}\n  Expected after a rebuild or reinstall; otherwise verify the offered key against your provider console.",
@@ -163,7 +163,7 @@ fn resolve_stale_host_key(host: &InventoryHost, assume_yes: bool) -> Result<()> 
     match decide(&status, assume_yes, confirmed) {
         HostKeyAction::Proceed => Ok(()),
         HostKeyAction::Forget { announce } => {
-            known_hosts::forget(&host.address, host.port)?;
+            known_hosts::forget(&host.name)?;
             if announce {
                 output::warn(&format!(
                     "Removed stale known_hosts entry for {target} (--force)"
@@ -301,6 +301,14 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
     host_vars.insert(
         Value::String("ansible_port".into()),
         Value::Number(host.port.into()),
+    );
+    // Additive (never overrides inventory.yml's group-level
+    // ansible_ssh_common_args), so the host key check moves onto the
+    // name-keyed alias (#785) without disturbing StrictHostKeyChecking or
+    // UserKnownHostsFile, which that file still owns.
+    host_vars.insert(
+        Value::String("ansible_ssh_extra_args".into()),
+        Value::String(format!("-o HostKeyAlias={}", host.name)),
     );
 
     let mut hosts = Mapping::new();
@@ -717,6 +725,27 @@ mod tests {
         let host_entry = &parsed["all"]["children"]["vps"]["hosts"]["testhost"];
         assert_eq!(host_entry["ansible_host"].as_str().unwrap(), "198.51.100.1");
         assert_eq!(host_entry["ansible_port"].as_u64().unwrap(), 59865);
+    }
+
+    #[test]
+    fn test_write_inventory_file_pins_the_host_key_lookup_to_the_hosts_name() {
+        let host = InventoryHost {
+            name: "testhost".to_string(),
+            address: "198.51.100.1".to_string(),
+            port: 22,
+            user: "root".to_string(),
+            groups: vec![],
+        };
+
+        let tmpfile = write_inventory_file(&host).unwrap();
+        let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
+
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&contents).unwrap();
+        let host_entry = &parsed["all"]["children"]["vps"]["hosts"]["testhost"];
+        assert_eq!(
+            host_entry["ansible_ssh_extra_args"].as_str().unwrap(),
+            "-o HostKeyAlias=testhost"
+        );
     }
 
     #[test]

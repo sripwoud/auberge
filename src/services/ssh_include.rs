@@ -8,6 +8,9 @@ pub fn include_file_path(ssh_dir: &Path) -> PathBuf {
     ssh_dir.join("config.d/auberge.conf")
 }
 
+/// `HostKeyAlias` (#785) keys every alias's host-key check and known_hosts
+/// entry on the Host's name, so a route change can never present as a
+/// changed key.
 pub fn render(hosts: &[Host]) -> String {
     let mut out = String::from(
         "# Managed by auberge. Regenerated from hosts.toml on every\n\
@@ -15,12 +18,13 @@ pub fn render(hosts: &[Host]) -> String {
     );
     for host in hosts {
         out.push_str(&format!(
-            "\nHost {}\n  HostName {}\n  Port {}\n  User {}\n  IdentityFile {}\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new\n",
+            "\nHost {}\n  HostName {}\n  Port {}\n  User {}\n  IdentityFile {}\n  IdentitiesOnly yes\n  HostKeyAlias {}\n  StrictHostKeyChecking accept-new\n",
             host.name,
             host.address,
             host.port,
             host.user,
-            identity_file(host)
+            identity_file(host),
+            host.name
         ));
     }
     out
@@ -162,6 +166,12 @@ mod tests {
             rendered.contains("  StrictHostKeyChecking accept-new\n"),
             "{rendered}"
         );
+    }
+
+    #[test]
+    fn render_pins_the_host_key_lookup_to_the_hosts_name() {
+        let rendered = render(&[fixture_host("auberge", None)]);
+        assert!(rendered.contains("  HostKeyAlias auberge\n"), "{rendered}");
     }
 
     #[test]
