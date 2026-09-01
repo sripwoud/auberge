@@ -1413,7 +1413,7 @@ mod tests {
 
         assert_eq!(
             mock.calls().last(),
-            Some(&SshOp::Run(deadman::disarm_command("paperless"))),
+            Some(&SshOp::Run(deadman::disarm_command("paperless", "sudo"))),
             "nothing must be left armed on the Host once the App is back up"
         );
     }
@@ -1514,7 +1514,7 @@ mod tests {
 
         assert_eq!(
             mock.calls().last(),
-            Some(&SshOp::Run(deadman::disarm_command("paperless"))),
+            Some(&SshOp::Run(deadman::disarm_command("paperless", "sudo"))),
             "a failed backup must still leave nothing armed on the Host"
         );
     }

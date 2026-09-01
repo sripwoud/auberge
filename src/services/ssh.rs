@@ -236,6 +236,12 @@ pub trait SshSession {
     /// [`SshSession::rsync_to`] nor [`SshSession::scp_to`] can express. Flags
     /// stay at the caller; only reaching the Host comes from here.
     fn rsync_e_arg(&self) -> String;
+    /// The Host's configured escalation command (`sudo` by default, see
+    /// #776), for a caller building its own privileged command line rather
+    /// than going through [`SshSession::systemctl`], [`SshSession::rsync_to`]
+    /// or [`SshSession::set_ownership`]'s own escalation — the Host-side
+    /// deadman (ADR-0066) arms via `systemd-run` outside all three of those.
+    fn become_method(&self) -> &str;
     fn systemctl(&self, action: &str, service: &str) -> Result<()>;
     fn scp_from(&self, remote: &str, local: &Path) -> Result<()>;
     fn scp_to(&self, local: &Path, remote: &str) -> Result<()>;
@@ -311,6 +317,10 @@ impl SshSession for LiveSshSession<'_> {
 
     fn rsync_e_arg(&self) -> String {
         self.inner.rsync_e_arg()
+    }
+
+    fn become_method(&self) -> &str {
+        &self.host.become_method
     }
 
     fn systemctl(&self, action: &str, service: &str) -> Result<()> {
@@ -454,6 +464,7 @@ pub struct MockSshSession {
     calls: std::cell::RefCell<Vec<SshOp>>,
     run_results: std::cell::RefCell<std::collections::VecDeque<CommandResult>>,
     fail_run_detached: std::cell::Cell<bool>,
+    become_method: String,
 }
 
 #[cfg(test)]
@@ -463,6 +474,17 @@ impl MockSshSession {
             calls: std::cell::RefCell::new(Vec::new()),
             run_results: std::cell::RefCell::new(std::collections::VecDeque::new()),
             fail_run_detached: std::cell::Cell::new(false),
+            become_method: "sudo".to_string(),
+        }
+    }
+
+    /// A mock standing in for a Host configured with a non-default
+    /// escalation command — for a caller building its own privileged command
+    /// line to test against (deadman arm/disarm; ADR-0066).
+    pub fn with_become_method(method: &str) -> Self {
+        Self {
+            become_method: method.to_string(),
+            ..Self::new()
         }
     }
 
@@ -556,6 +578,10 @@ impl SshSession for MockSshSession {
 
     fn rsync_e_arg(&self) -> String {
         MOCK_RSYNC_E_ARG.to_string()
+    }
+
+    fn become_method(&self) -> &str {
+        &self.become_method
     }
 
     fn systemctl(&self, action: &str, service: &str) -> Result<()> {

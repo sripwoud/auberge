@@ -41,11 +41,14 @@ fn marker(app: &str) -> String {
 /// armed, or already fired and exited, is left exactly as absent as it
 /// already was — `2>/dev/null` and the trailing `true` are what make a
 /// disarm-with-nothing-to-disarm a success rather than a noisy no-op.
-pub(crate) fn disarm_command(app: &str) -> String {
+/// Escalated with the acting Host's `become_method` (`sudo` by default,
+/// see #776) — `systemctl` here runs outside `SshSession::systemctl`'s own
+/// escalation, since arm/disarm build their own command line.
+pub(crate) fn disarm_command(app: &str, become_method: &str) -> String {
     let unit = unit(app);
     format!(
-        "sudo systemctl stop {unit}.timer {unit}.service 2>/dev/null; \
-         sudo systemctl reset-failed {unit}.timer {unit}.service 2>/dev/null; \
+        "{become_method} systemctl stop {unit}.timer {unit}.service 2>/dev/null; \
+         {become_method} systemctl reset-failed {unit}.timer {unit}.service 2>/dev/null; \
          true"
     )
 }
@@ -61,8 +64,10 @@ pub(crate) fn disarm_command(app: &str) -> String {
 ///
 /// Always disarms first — re-arming under the same unit name requires the
 /// previous instance gone, or `systemd-run` refuses with "Unit already
-/// exists".
-fn arm_command(app: &str, units: &[String]) -> String {
+/// exists". `systemd-run` itself is what needs escalating: once it runs as
+/// root, the transient unit's own `systemctl`/`mkdir`/`date` inherit that,
+/// with no further escalation needed inside it.
+fn arm_command(app: &str, units: &[String], become_method: &str) -> String {
     let unit = unit(app);
     let marker = marker(app);
     let recovery = units
@@ -71,9 +76,9 @@ fn arm_command(app: &str, units: &[String]) -> String {
         .collect::<Vec<_>>()
         .join("; ");
     format!(
-        "{disarm}; sudo systemd-run --on-active={secs} --unit={unit} /bin/sh -c \
+        "{disarm}; {become_method} systemd-run --on-active={secs} --unit={unit} /bin/sh -c \
          '{recovery}; mkdir -p {MARKER_DIR}; date -u > {marker}'",
-        disarm = disarm_command(app),
+        disarm = disarm_command(app, become_method),
         secs = TIMEOUT.as_secs(),
     )
 }
@@ -81,10 +86,13 @@ fn arm_command(app: &str, units: &[String]) -> String {
 /// The check-and-clear run against `app`'s marker: a `cat` that only reaches
 /// `rm -f` when the marker exists, so an absent marker leaves nothing to
 /// clean up and a present one is cleared the moment it is read — a fire is
-/// reported exactly once, by whichever run next asks.
-fn fire_check_command(app: &str) -> String {
+/// reported exactly once, by whichever run next asks. `cat` needs no
+/// escalation (the marker is world-readable), but `rm -f` does: the marker
+/// lives in a directory the arming `systemd-run` created as root, and unlink
+/// permission comes from the directory, not the file.
+fn fire_check_command(app: &str, become_method: &str) -> String {
     let marker = marker(app);
-    format!("cat {marker} 2>/dev/null && rm -f {marker}")
+    format!("cat {marker} 2>/dev/null && {become_method} rm -f {marker}")
 }
 
 /// Arms a deadman for `app` over `units`, in declared quiesce order. Launched
@@ -92,7 +100,7 @@ fn fire_check_command(app: &str) -> String {
 /// left running on the Host regardless of what the driver does next,
 /// including a slow or hung ssh round trip.
 pub fn arm<S: SshSession + ?Sized>(session: &S, app: &str, units: &[String]) -> Result<()> {
-    session.run_detached(&arm_command(app, units))
+    session.run_detached(&arm_command(app, units, session.become_method()))
 }
 
 /// Cancels `app`'s armed deadman. Best-effort: a disarm that fails to reach
@@ -100,7 +108,7 @@ pub fn arm<S: SshSession + ?Sized>(session: &S, app: &str, units: &[String]) -> 
 /// than a backup that fails because its own cleanup step could not confirm
 /// itself.
 pub fn disarm<S: SshSession + ?Sized>(session: &S, app: &str) {
-    let _ = session.run(&disarm_command(app));
+    let _ = session.run(&disarm_command(app, session.become_method()));
 }
 
 /// Reads and clears `app`'s fire marker, warning through `progress` when one
@@ -112,7 +120,7 @@ pub fn check_and_report<S: SshSession + ?Sized>(
     app: &str,
     progress: &mut dyn Progress,
 ) -> Result<()> {
-    let result = session.run(&fire_check_command(app))?;
+    let result = session.run(&fire_check_command(app, session.become_method()))?;
     let recorded = result.stdout_str();
     let recorded = recorded.trim();
     if !result.success || recorded.is_empty() {
@@ -134,7 +142,7 @@ mod tests {
 
     #[test]
     fn disarm_command_stops_and_clears_both_transient_units_and_still_succeeds_if_absent() {
-        let cmd = disarm_command("paperless");
+        let cmd = disarm_command("paperless", "sudo");
         assert!(cmd.contains(
             "systemctl stop auberge-deadman-paperless.timer auberge-deadman-paperless.service"
         ));
@@ -144,7 +152,7 @@ mod tests {
 
     #[test]
     fn arm_command_disarms_before_arming_under_the_same_unit_name() {
-        let cmd = arm_command("paperless", &["paperless-webserver".to_string()]);
+        let cmd = arm_command("paperless", &["paperless-webserver".to_string()], "sudo");
         let disarm_pos = cmd
             .find("systemctl stop auberge-deadman-paperless.timer")
             .unwrap();
@@ -154,9 +162,30 @@ mod tests {
 
     #[test]
     fn arm_command_carries_the_fixed_timeout_and_a_dedicated_unit_name() {
-        let cmd = arm_command("bichon", &["bichon".to_string()]);
+        let cmd = arm_command("bichon", &["bichon".to_string()], "sudo");
         assert!(cmd.contains("--on-active=3600"), "{cmd}");
         assert!(cmd.contains("--unit=auberge-deadman-bichon"), "{cmd}");
+    }
+
+    #[test]
+    fn arm_and_disarm_commands_use_the_hosts_configured_become_method() {
+        let arm = arm_command("bichon", &["bichon".to_string()], "doas");
+        let disarm = disarm_command("bichon", "doas");
+        assert!(
+            arm.contains("doas systemctl stop auberge-deadman-bichon"),
+            "{arm}"
+        );
+        assert!(arm.contains("doas systemd-run"), "{arm}");
+        assert!(!arm.contains("sudo"), "{arm}");
+        assert!(disarm.contains("doas systemctl"), "{disarm}");
+        assert!(!disarm.contains("sudo"), "{disarm}");
+    }
+
+    #[test]
+    fn fire_check_command_escalates_the_removal_with_the_hosts_become_method() {
+        let cmd = fire_check_command("paperless", "doas");
+        assert!(cmd.contains("&& doas rm -f"), "{cmd}");
+        assert!(!cmd.contains("sudo"), "{cmd}");
     }
 
     #[test]
@@ -164,6 +193,7 @@ mod tests {
         let cmd = arm_command(
             "bichon",
             &["bichon-archive.timer".to_string(), "bichon".to_string()],
+            "sudo",
         );
         let recovery_start = cmd.find("/bin/sh -c '").unwrap() + "/bin/sh -c '".len();
         let recovery = &cmd[recovery_start..];
@@ -184,7 +214,7 @@ mod tests {
 
     #[test]
     fn arm_command_never_says_restart_or_stop_against_the_guarded_units() {
-        let cmd = arm_command("paperless", &["paperless-webserver".to_string()]);
+        let cmd = arm_command("paperless", &["paperless-webserver".to_string()], "sudo");
         let recovery_start = cmd.find("/bin/sh -c '").unwrap();
         let recovery = &cmd[recovery_start..];
         assert!(!recovery.contains("restart"), "{cmd}");
@@ -193,7 +223,7 @@ mod tests {
 
     #[test]
     fn arm_command_writes_a_marker_the_next_run_can_read() {
-        let cmd = arm_command("paperless", &["paperless-webserver".to_string()]);
+        let cmd = arm_command("paperless", &["paperless-webserver".to_string()], "sudo");
         assert!(cmd.contains("mkdir -p /var/lib/auberge/deadman"), "{cmd}");
         assert!(
             cmd.contains("date -u > /var/lib/auberge/deadman/paperless.fired"),
@@ -203,10 +233,10 @@ mod tests {
 
     #[test]
     fn fire_check_command_only_removes_the_marker_when_it_was_read() {
-        let cmd = fire_check_command("paperless");
+        let cmd = fire_check_command("paperless", "sudo");
         assert_eq!(
             cmd,
-            "cat /var/lib/auberge/deadman/paperless.fired 2>/dev/null && rm -f \
+            "cat /var/lib/auberge/deadman/paperless.fired 2>/dev/null && sudo rm -f \
              /var/lib/auberge/deadman/paperless.fired"
         );
     }
@@ -222,11 +252,26 @@ mod tests {
     }
 
     #[test]
+    fn arm_escalates_with_the_sessions_configured_become_method() {
+        let mock = MockSshSession::with_become_method("doas");
+        arm(&mock, "paperless", &["paperless-webserver".to_string()]).unwrap();
+
+        let calls = mock.calls();
+        assert!(
+            matches!(&calls[0], SshOp::RunDetached(cmd) if cmd.contains("doas systemd-run") && !cmd.contains("sudo")),
+            "{calls:?}"
+        );
+    }
+
+    #[test]
     fn disarm_sends_a_blocking_disarm_command() {
         let mock = MockSshSession::new();
         disarm(&mock, "paperless");
 
-        assert_eq!(mock.calls(), vec![SshOp::Run(disarm_command("paperless"))]);
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::Run(disarm_command("paperless", "sudo"))]
+        );
     }
 
     #[test]
@@ -265,7 +310,7 @@ mod tests {
         );
         assert_eq!(
             mock.calls(),
-            vec![SshOp::Run(fire_check_command("paperless"))]
+            vec![SshOp::Run(fire_check_command("paperless", "sudo"))]
         );
     }
 
