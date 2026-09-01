@@ -110,8 +110,13 @@ impl<'a, S: SshSession + ?Sized> BackupSession<'a, S> {
                 continue;
             }
 
-            let exec_result =
-                executor.backup(recipe, &app_dir, &self.opts.parameters, &mut *progress);
+            let exec_result = executor.backup(
+                app_name,
+                recipe,
+                &app_dir,
+                &self.opts.parameters,
+                &mut *progress,
+            );
 
             match exec_result {
                 Ok(()) => {
@@ -777,7 +782,15 @@ mod tests {
     fn create_does_not_abort_on_recipe_failure() {
         let tmp = tempfile::tempdir().unwrap();
         let mock = MockSshSession::new();
-        // Stage a failure for paperless's pg_dump (the first run() call).
+        // paperless is guarded (it declares a systemd service), so its
+        // deadman's fire-check is the first `run()` call; stage its
+        // "no marker" answer before the pg_dump failure this test is about.
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        });
         mock.stage_run_result(crate::services::ssh::CommandResult {
             success: false,
             exit_code: Some(1),
@@ -902,6 +915,15 @@ mod tests {
     fn create_reports_a_failed_app_as_an_error_event() {
         let tmp = tempfile::tempdir().unwrap();
         let mock = MockSshSession::new();
+        // paperless is guarded, so its deadman's fire-check consumes the
+        // first `run()` call; stage its "no marker" answer ahead of pg_dump's
+        // failure this test is about.
+        mock.stage_run_result(crate::services::ssh::CommandResult {
+            success: false,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        });
         mock.stage_run_result(crate::services::ssh::CommandResult {
             success: false,
             exit_code: Some(1),

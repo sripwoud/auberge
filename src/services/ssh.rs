@@ -207,6 +207,11 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// is testable against [`MockSshSession`] without one.
 pub trait SshSession {
     fn run(&self, command: &str) -> Result<CommandResult>;
+    /// Launches `command` without waiting for it to finish — see
+    /// [`SshTransport::spawn`] for why this exists alongside every other,
+    /// blocking method here: arming a Host-side deadman (ADR-0066) must not
+    /// depend on the ssh round trip itself completing quickly.
+    fn run_detached(&self, command: &str) -> Result<()>;
     /// A command given as pieces rather than as one string the caller joined.
     ///
     /// This buys nothing on the *remote* side — ssh(1) appends its arguments
@@ -279,6 +284,10 @@ impl<'a> LiveSshSession<'a> {
 impl SshSession for LiveSshSession<'_> {
     fn run(&self, command: &str) -> Result<CommandResult> {
         Ok(CommandResult::from_output(self.inner.run(command)?))
+    }
+
+    fn run_detached(&self, command: &str) -> Result<()> {
+        self.inner.spawn(command)
     }
 
     fn run_raw(&self, args: &[&str]) -> Result<CommandResult> {
@@ -410,6 +419,7 @@ fn rsync_source_arg(local: &Path) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SshOp {
     Run(String),
+    RunDetached(String),
     RunRaw(Vec<String>),
     Reachable(Duration),
     Systemctl {
@@ -443,6 +453,7 @@ pub enum SshOp {
 pub struct MockSshSession {
     calls: std::cell::RefCell<Vec<SshOp>>,
     run_results: std::cell::RefCell<std::collections::VecDeque<CommandResult>>,
+    fail_run_detached: std::cell::Cell<bool>,
 }
 
 #[cfg(test)]
@@ -451,11 +462,19 @@ impl MockSshSession {
         Self {
             calls: std::cell::RefCell::new(Vec::new()),
             run_results: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            fail_run_detached: std::cell::Cell::new(false),
         }
     }
 
     pub fn stage_run_result(&self, result: CommandResult) {
         self.run_results.borrow_mut().push_back(result);
+    }
+
+    /// Makes every subsequent `run_detached` call fail, as if the local
+    /// `ssh` process could not even be launched — the one way arming a
+    /// deadman (ADR-0066) can fail.
+    pub fn fail_run_detached(&self) {
+        self.fail_run_detached.set(true);
     }
 
     pub fn calls(&self) -> Vec<SshOp> {
@@ -503,6 +522,16 @@ impl SshSession for MockSshSession {
             .borrow_mut()
             .push(SshOp::Run(command.to_string()));
         Ok(self.next_result())
+    }
+
+    fn run_detached(&self, command: &str) -> Result<()> {
+        self.calls
+            .borrow_mut()
+            .push(SshOp::RunDetached(command.to_string()));
+        if self.fail_run_detached.get() {
+            eyre::bail!("Failed to launch detached SSH command");
+        }
+        Ok(())
     }
 
     fn run_raw(&self, args: &[&str]) -> Result<CommandResult> {
@@ -695,6 +724,19 @@ mod tests {
         let mock = MockSshSession::new();
         let _ = mock.run("echo hello").unwrap();
         assert_eq!(mock.calls(), vec![SshOp::Run("echo hello".to_string())]);
+    }
+
+    #[test]
+    fn test_mock_records_run_detached_calls() {
+        let mock = MockSshSession::new();
+        mock.run_detached("systemd-run --on-active=3600 --unit=x true")
+            .unwrap();
+        assert_eq!(
+            mock.calls(),
+            vec![SshOp::RunDetached(
+                "systemd-run --on-active=3600 --unit=x true".to_string()
+            )]
+        );
     }
 
     #[test]

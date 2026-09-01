@@ -84,6 +84,7 @@ pub const CRATE_MODULES: &[&str] = &[
     "src/services.rs",
     "src/services/ansible_runner.rs",
     "src/services/backup.rs",
+    "src/services/backup/deadman.rs",
     "src/services/backup/executor.rs",
     "src/services/backup/recipe.rs",
     "src/services/backup/restic.rs",
