@@ -12,12 +12,29 @@ pub struct PlaybookRun {
 impl PlaybookRun {
     /// `true` when this run targets the apps playbook (`apps.yml`).
     pub fn is_apps(&self) -> bool {
+        self.is_named("apps.yml")
+    }
+
+    /// `true` when this run targets the infrastructure playbook.
+    pub fn is_infrastructure(&self) -> bool {
+        self.is_named(INFRASTRUCTURE_PLAYBOOK)
+    }
+
+    /// `true` when this run targets the hardening playbook.
+    pub fn is_hardening(&self) -> bool {
+        self.is_named(HARDENING_PLAYBOOK)
+    }
+
+    fn is_named(&self, filename: &str) -> bool {
         self.path
             .file_name()
             .and_then(|n| n.to_str())
-            .is_some_and(|n| n == "apps.yml")
+            .is_some_and(|n| n == filename)
     }
 }
+
+pub const HARDENING_PLAYBOOK: &str = "hardening.yml";
+pub const INFRASTRUCTURE_PLAYBOOK: &str = "infrastructure.yml";
 
 /// One entry on a Playbook's roster.
 #[derive(Debug, Clone)]
@@ -101,19 +118,36 @@ fn build_tag_playbook_map() -> Result<HashMap<String, Vec<PathBuf>>> {
     Ok(tag_map)
 }
 
-const PLAYBOOK_ORDER: &[&str] = &["hardening.yml", "infrastructure.yml", "apps.yml"];
+/// The layered playbooks, in run order. `deploy` reaches these by tag, never
+/// by name: they are the composition it resolves *into*.
+pub const PLAYBOOK_ORDER: &[&str] = &[HARDENING_PLAYBOOK, INFRASTRUCTURE_PLAYBOOK, "apps.yml"];
+
+/// The stem of a standalone playbook file, or `None` when the file is not one:
+/// a layered playbook, a `.meta.yml` sidecar, or not a playbook at all.
+///
+/// One definition, because both questions the callers ask — "which stems are
+/// there" and "does this name resolve" — have to agree about what counts.
+pub fn standalone_stem(filename: &str) -> Option<&str> {
+    if PLAYBOOK_ORDER.contains(&filename) {
+        return None;
+    }
+    let stem = filename
+        .strip_suffix(".yml")
+        .or_else(|| filename.strip_suffix(".yaml"))?;
+    (!stem.ends_with(".meta")).then_some(stem)
+}
 
 /// Resolves `name` to a standalone playbook (one outside [`PLAYBOOK_ORDER`]),
 /// excluding `.meta.yml` sidecars.
 pub fn find_standalone_playbook(name: &str) -> Result<Option<PathBuf>> {
-    if name.ends_with(".meta") || name.contains(['/', '\\']) {
+    if name.contains(['/', '\\']) {
         return Ok(None);
     }
 
     let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
     for ext in ["yml", "yaml"] {
         let filename = format!("{name}.{ext}");
-        if PLAYBOOK_ORDER.contains(&filename.as_str()) {
+        if standalone_stem(&filename).is_none() {
             return Ok(None);
         }
         let path = playbooks_dir.join(&filename);
@@ -143,6 +177,35 @@ fn playbook_role_names(filename: &str) -> Result<Vec<String>> {
 
 pub fn get_app_names() -> Result<Vec<String>> {
     playbook_role_names("apps.yml")
+}
+
+/// Every standalone playbook in the tree, by stem — exactly the names
+/// [`find_standalone_playbook`] resolves, so a caller can offer the set before
+/// it knows which one it wants.
+///
+/// The assets guard is bound rather than dropped: this reads the directory it
+/// names, and a concurrent invocation carrying a different fingerprint could
+/// otherwise sweep the tree out from under the listing.
+pub fn standalone_playbook_names() -> Result<Vec<String>> {
+    let assets = AnsibleAssets::prepare()?;
+    let playbooks_dir = assets.playbooks_dir();
+    let entries = std::fs::read_dir(&playbooks_dir)
+        .wrap_err_with(|| format!("Failed to read playbooks: {}", playbooks_dir.display()))?;
+
+    let mut names: Vec<String> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(stem) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(standalone_stem)
+        else {
+            continue;
+        };
+        names.push(stem.to_string());
+    }
+    names.sort();
+    Ok(names)
 }
 
 pub fn get_infrastructure_role_names() -> Result<Vec<String>> {
@@ -180,7 +243,7 @@ pub fn resolve_tags_to_playbook_runs(tags: &[String]) -> Result<(Vec<PlaybookRun
 
     if has_apps {
         let playbooks_dir = AnsibleAssets::prepare()?.playbooks_dir();
-        let infra = playbooks_dir.join("infrastructure.yml");
+        let infra = playbooks_dir.join(INFRASTRUCTURE_PLAYBOOK);
         if infra.exists() {
             let canonical = std::fs::canonicalize(&infra)?;
             playbook_tags.entry(canonical).or_default().clear();
@@ -234,6 +297,11 @@ mod tests {
         for (playbook, expected) in [
             ("apps.yml", vec!["hermes"]),
             ("infrastructure.yml", vec!["blocky", "headscale"]),
+            // Every entry of every agent-tier playbook, so no route reaches an
+            // unattended runtime on a Host that did not ask for one (ADR-0075).
+            ("aoe.yml", vec!["aoe"]),
+            ("opencode.yml", vec!["opencode"]),
+            ("ruche.yml", vec!["github_identity", "opencode", "aoe"]),
         ] {
             let path = std::fs::canonicalize(playbooks_dir.join(playbook)).unwrap();
             let guarded: Vec<String> = parse_roster(&path)
@@ -478,6 +546,7 @@ mod tests {
             "memsearch",
             "opencode",
             "remove-radicale",
+            "ruche",
         ] {
             let path = find_standalone_playbook(name).unwrap().unwrap();
             assert_eq!(

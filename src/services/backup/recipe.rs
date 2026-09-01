@@ -123,6 +123,7 @@ mod tests {
         assert!(!apps.contains(&"infrastructure".to_string()));
         assert!(!apps.contains(&"hermes".to_string()));
         assert!(!apps.contains(&"remove-radicale".to_string()));
+        assert!(!apps.contains(&"ruche".to_string()));
         assert!(!apps.contains(&"apps".to_string()));
     }
 }

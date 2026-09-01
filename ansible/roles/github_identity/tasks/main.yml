@@ -1,0 +1,85 @@
+---
+- name: Install git, which the agents commit through
+  ansible.builtin.apt:
+    name: git
+    state: present
+
+- name: Download the GitHub CLI archive keyring
+  ansible.builtin.get_url:
+    url: "{{ github_identity_keyring_url }}"
+    dest: "{{ github_identity_keyring }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Add the GitHub CLI apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch=amd64 signed-by={{ github_identity_keyring }}]
+      {{ github_identity_repo_url }} stable main
+    state: present
+    filename: github-cli
+
+- name: Install the GitHub CLI
+  ansible.builtin.apt:
+    name: gh
+    state: present
+    update_cache: true
+
+# gh owns its `hosts.yml` and rewrites it, so the token goes in through gh's
+# own verb rather than through a template ansible would fight it over. The
+# comparison is `gh auth token`, which reads that file and dials nothing: a
+# network check could not tell a rotated token from an unreachable API, and
+# would re-login on every deploy run from a box with no route out.
+- name: Read the token gh already holds
+  become: true
+  become_user: "{{ github_identity_user }}"
+  ansible.builtin.command: "gh auth token --hostname {{ github_identity_host }}"
+  register: github_identity_stored_token
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Authenticate gh as the machine user
+  when: github_identity_stored_token.stdout | default('') | trim != github_bot_token
+  become: true
+  become_user: "{{ github_identity_user }}"
+  ansible.builtin.command: "gh auth login --hostname {{ github_identity_host }} --with-token"
+  args:
+    stdin: "{{ github_bot_token }}"
+  changed_when: true
+  no_log: true
+
+- name: Read the credential helper git resolves GitHub through
+  become: true
+  become_user: "{{ github_identity_user }}"
+  community.general.git_config_info:
+    name: "credential.https://{{ github_identity_host }}.helper"
+    scope: global
+  register: github_identity_credential_helper
+
+# gh writes two helper lines -- an empty one that resets any inherited helper,
+# then its own -- so this is `gh auth setup-git` rather than a `git_config`
+# pair that would have to reproduce that shape and stay equal to it.
+- name: Route git's GitHub credentials through gh
+  when: >-
+    'gh auth git-credential' not in
+    (github_identity_credential_helper.config_values | default([]) | join(' '))
+  become: true
+  become_user: "{{ github_identity_user }}"
+  ansible.builtin.command: "gh auth setup-git --hostname {{ github_identity_host }}"
+  changed_when: true
+
+- name: Set the git author to the machine user
+  become: true
+  become_user: "{{ github_identity_user }}"
+  community.general.git_config:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    scope: global
+  loop:
+    - { name: user.name, value: "{{ github_bot_login }}" }
+    - { name: user.email, value: "{{ github_bot_email }}" }
+  loop_control:
+    label: "{{ item.name }}"

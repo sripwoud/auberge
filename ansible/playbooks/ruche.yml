@@ -1,0 +1,24 @@
+---
+- name: The agent tier - runtimes, dashboard and machine-user identity
+  hosts: vps
+  become: true
+  roles:
+    # Identity first: a runtime that starts before git knows who it is commits
+    # as whoever the box's fallback author happens to be.
+    - role: github_identity
+      tags: [ruche, github_identity]
+      when: "'agent' in group_names"
+    - role: opencode
+      tags: [ruche, opencode]
+      when: "'agent' in group_names"
+    - role: aoe
+      tags: [ruche, aoe]
+      when: "'agent' in group_names"
+
+  post_tasks:
+    - name: Verify caddy ingress survived this deploy
+      ansible.builtin.include_role:
+        name: ingress_gate
+        apply:
+          tags: [always]
+      tags: [always]
