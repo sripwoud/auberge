@@ -17,10 +17,11 @@ pub fn render(hosts: &[Host]) -> String {
          # `auberge host add|edit|rename|remove` - do not edit by hand.\n",
     );
     for host in hosts {
+        let route = crate::services::route::resolve(host, None);
         out.push_str(&format!(
             "\nHost {}\n  HostName {}\n  Port {}\n  User {}\n  IdentityFile {}\n  IdentitiesOnly yes\n  HostKeyAlias {}\n  StrictHostKeyChecking accept-new\n",
             host.name,
-            host.address,
+            route.address,
             host.port,
             host.user,
             identity_file(host),

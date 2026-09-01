@@ -357,11 +357,12 @@ pub fn run_host_show(name: Option<String>) -> Result<()> {
 pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
     let host = crate::hosts::select_or_arg(name_arg, crate::hosts::HOST_POSITIONAL)?;
     let ssh_key = resolve_ssh_key(&host)?;
-    let session = LiveSshSession::new(&host, &ssh_key);
+    let route = crate::services::route::resolve(&host, Some(ssh_key));
+    let session = LiveSshSession::new(&route, &host.become_method)?;
 
     output::info(&format!(
         "Querying Tailscale IPv4 on {}@{}…",
-        host.user, host.address
+        route.user, route.address
     ));
 
     let detected = detect_tailscale_ip(&session, &host.name)?;
@@ -627,7 +628,8 @@ pub fn run_host_rename(old: String, new: String, yes: bool) -> Result<()> {
             )
         })?;
 
-    let session = LiveSshSession::new(&host, &ssh_key);
+    let route = crate::services::route::resolve(&host, Some(ssh_key));
+    let session = LiveSshSession::new(&route, &host.become_method)?;
     session.reachable(CONNECT_TIMEOUT)?;
 
     if !confirm(

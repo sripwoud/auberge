@@ -18,8 +18,8 @@
 //! socket path rather than to this refactor. `Reach::FirstContact` opts out
 //! entirely where the sharing would actually cost something.
 
-use crate::hosts::Host;
 use crate::output;
+use crate::services::route::Route;
 use eyre::{Context, Result};
 use std::ffi::OsString;
 use std::path::Path;
@@ -54,26 +54,54 @@ pub enum Reach {
 }
 
 pub struct SshTransport<'a> {
-    pub host: &'a Host,
-    ssh_key: &'a Path,
+    route: &'a Route,
+    become_method: &'a str,
     reach: Reach,
 }
 
 impl<'a> SshTransport<'a> {
-    pub fn new(host: &'a Host, ssh_key: &'a Path) -> Self {
-        Self {
-            host,
-            ssh_key,
+    pub fn new(route: &'a Route, become_method: &'a str) -> Result<Self> {
+        Self::require_key(route)?;
+        Ok(Self {
+            route,
+            become_method,
             reach: Reach::Shared,
-        }
+        })
     }
 
-    pub fn first_contact(host: &'a Host, ssh_key: &'a Path) -> Self {
-        Self {
-            host,
-            ssh_key,
+    pub fn first_contact(route: &'a Route, become_method: &'a str) -> Result<Self> {
+        Self::require_key(route)?;
+        Ok(Self {
+            route,
+            become_method,
             reach: Reach::FirstContact,
+        })
+    }
+
+    /// Every caller resolves a real key before building a `Route` for the ssh
+    /// transport specifically (unlike ansible's or the ssh include's Route
+    /// use, which pass `None`), so failing here — at construction, rather
+    /// than the first time `ssh_key` is later read — turns "this module was
+    /// handed the wrong kind of Route" into an error at the mistake's own
+    /// call site instead of a panic somewhere downstream of it.
+    fn require_key(route: &Route) -> Result<()> {
+        if route.key_path.is_none() {
+            eyre::bail!(
+                "SshTransport requires a Route with a resolved key path (got one built for \
+                 ansible or the ssh include, not ssh)"
+            );
         }
+        Ok(())
+    }
+
+    /// The identity file to connect with. `require_key` already checked this
+    /// at construction, so the `expect` here can only fire on a bug in that
+    /// check, not on a route this module was actually handed.
+    fn ssh_key(&self) -> &Path {
+        self.route
+            .key_path
+            .as_deref()
+            .expect("checked by require_key at construction")
     }
 
     /// The connection-sharing options this reach wants. `ControlPath=none` is
@@ -99,21 +127,21 @@ impl<'a> SshTransport<'a> {
         args.extend(self.host_key_alias_args());
         args.extend([
             "-i".into(),
-            self.ssh_key.into(),
+            self.ssh_key().into(),
             "-p".into(),
-            self.host.port.to_string().into(),
-            format!("{}@{}", self.host.user, self.host.address).into(),
+            self.route.port.to_string().into(),
+            format!("{}@{}", self.route.user, self.route.address).into(),
         ]);
         args
     }
 
-    /// `-o HostKeyAlias=<name>` — every connection checks and saves the host
-    /// key under the Host's name (#785), so a route change (tailnet vs
+    /// `-o HostKeyAlias=<alias>` — every connection checks and saves the host
+    /// key under the Host's alias (#785), so a route change (tailnet vs
     /// public address) can never present as a changed key.
     fn host_key_alias_args(&self) -> Vec<OsString> {
         vec![
             "-o".into(),
-            format!("HostKeyAlias={}", self.host.name).into(),
+            format!("HostKeyAlias={}", self.route.alias).into(),
         ]
     }
 
@@ -220,11 +248,11 @@ impl<'a> SshTransport<'a> {
             .map(|(k, v)| format!("-o {}={}", k, v))
             .collect::<Vec<_>>()
             .join(" ");
-        let key = shell_escape::escape(self.ssh_key.display().to_string().into());
-        let alias = shell_escape::escape(self.host.name.clone().into());
+        let key = shell_escape::escape(self.ssh_key().display().to_string().into());
+        let alias = shell_escape::escape(self.route.alias.clone().into());
         format!(
             "ssh {} -o HostKeyAlias={} -i {} -p {}",
-            mux, alias, key, self.host.port
+            mux, alias, key, self.route.port
         )
     }
 
@@ -233,9 +261,9 @@ impl<'a> SshTransport<'a> {
         args.extend(self.host_key_alias_args());
         args.extend([
             "-i".into(),
-            self.ssh_key.into(),
+            self.ssh_key().into(),
             "-P".into(),
-            self.host.port.to_string().into(),
+            self.route.port.to_string().into(),
         ]);
         args
     }
@@ -246,7 +274,7 @@ impl<'a> SshTransport<'a> {
             .arg(local)
             .arg(format!(
                 "{}@{}:{}",
-                self.host.user, self.host.address, remote
+                self.route.user, self.route.address, remote
             ))
             .output()
             .wrap_err("Failed to upload file via scp")?;
@@ -258,9 +286,14 @@ impl<'a> SshTransport<'a> {
         if !out.status.success() {
             let stderr = stderr_text.trim();
             if stderr.is_empty() {
-                eyre::bail!("scp to {}:{} failed", self.host.address, remote);
+                eyre::bail!("scp to {}:{} failed", self.route.address, remote);
             } else {
-                eyre::bail!("scp to {}:{} failed: {}", self.host.address, remote, stderr);
+                eyre::bail!(
+                    "scp to {}:{} failed: {}",
+                    self.route.address,
+                    remote,
+                    stderr
+                );
             }
         }
         Ok(())
@@ -271,7 +304,7 @@ impl<'a> SshTransport<'a> {
             .args(self.scp_args())
             .arg(format!(
                 "{}@{}:{}",
-                self.host.user, self.host.address, remote
+                self.route.user, self.route.address, remote
             ))
             .arg(local)
             .output()
@@ -284,11 +317,11 @@ impl<'a> SshTransport<'a> {
         if !out.status.success() {
             let stderr = stderr_text.trim();
             if stderr.is_empty() {
-                eyre::bail!("scp from {}:{} failed", self.host.address, remote);
+                eyre::bail!("scp from {}:{} failed", self.route.address, remote);
             } else {
                 eyre::bail!(
                     "scp from {}:{} failed: {}",
-                    self.host.address,
+                    self.route.address,
                     remote,
                     stderr
                 );
@@ -300,12 +333,7 @@ impl<'a> SshTransport<'a> {
     /// The remote argv systemctl runs, escalated with the acting Host's
     /// `become_method` (`sudo` by default, see #776).
     fn systemctl_remote_args<'b>(&'b self, action: &'b str, service: &'b str) -> Vec<&'b str> {
-        vec![
-            self.host.become_method.as_str(),
-            "systemctl",
-            action,
-            service,
-        ]
+        vec![self.become_method, "systemctl", action, service]
     }
 
     pub fn systemctl(&self, action: &str, service: &str) -> Result<()> {
@@ -329,22 +357,19 @@ impl<'a> SshTransport<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
-    fn test_host() -> Host {
-        Host {
-            name: "test".to_string(),
+    fn test_route() -> Route {
+        Route {
             address: "192.0.2.1".to_string(),
-            user: "deploy".to_string(),
             port: 2222,
-            ssh_key: None,
-            tags: vec![],
-            description: None,
-            python_interpreter: None,
-            become_method: "sudo".to_string(),
-            tailscale_ip: None,
-            tailnet_tag: None,
+            user: "deploy".to_string(),
+            key_path: Some(PathBuf::from("/home/user/.ssh/id_ed25519")),
+            alias: "test".to_string(),
         }
     }
+
+    const BECOME_METHOD: &str = "sudo";
 
     fn strings(args: &[OsString]) -> Vec<String> {
         args.iter()
@@ -354,9 +379,8 @@ mod tests {
 
     #[test]
     fn test_ssh_args_contains_mux_options() {
-        let host = test_host();
-        let key = Path::new("/home/user/.ssh/id_ed25519");
-        let session = SshTransport::new(&host, key);
+        let route = test_route();
+        let session = SshTransport::new(&route, BECOME_METHOD).unwrap();
         let strs = strings(&session.ssh_args());
         assert!(strs.contains(&"ControlMaster=auto".to_string()));
         assert!(strs.contains(&"ControlPath=/tmp/ssh-%r@%h:%p".to_string()));
@@ -365,9 +389,8 @@ mod tests {
 
     #[test]
     fn test_ssh_args_includes_key_port_user_host() {
-        let host = test_host();
-        let key = Path::new("/home/user/.ssh/id_ed25519");
-        let session = SshTransport::new(&host, key);
+        let route = test_route();
+        let session = SshTransport::new(&route, BECOME_METHOD).unwrap();
         let strs = strings(&session.ssh_args());
         assert!(strs.contains(&"/home/user/.ssh/id_ed25519".to_string()));
         assert!(strs.contains(&"2222".to_string()));
@@ -375,44 +398,48 @@ mod tests {
     }
 
     #[test]
-    fn test_ssh_args_pins_the_host_key_lookup_to_the_hosts_name() {
-        let host = test_host();
-        let key = Path::new("/tmp/key");
-        let session = SshTransport::new(&host, key);
+    fn test_ssh_args_pins_the_host_key_lookup_to_the_hosts_alias() {
+        let route = test_route();
+        let session = SshTransport::new(&route, BECOME_METHOD).unwrap();
         let strs = strings(&session.ssh_args());
         assert!(strs.contains(&"HostKeyAlias=test".to_string()), "{strs:?}");
     }
 
     #[test]
     fn test_first_contact_also_pins_the_host_key_alias() {
-        let host = test_host();
-        let key = Path::new("/tmp/chosen_key");
-        let strs = strings(&SshTransport::first_contact(&host, key).ssh_args());
+        let route = Route {
+            key_path: Some(PathBuf::from("/tmp/chosen_key")),
+            ..test_route()
+        };
+        let strs = strings(
+            &SshTransport::first_contact(&route, BECOME_METHOD)
+                .unwrap()
+                .ssh_args(),
+        );
         assert!(strs.contains(&"HostKeyAlias=test".to_string()), "{strs:?}");
     }
 
     #[test]
-    fn test_scp_args_pins_the_host_key_lookup_to_the_hosts_name() {
-        let host = test_host();
-        let key = Path::new("/tmp/key");
-        let session = SshTransport::new(&host, key);
+    fn test_scp_args_pins_the_host_key_lookup_to_the_hosts_alias() {
+        let route = test_route();
+        let session = SshTransport::new(&route, BECOME_METHOD).unwrap();
         let strs = strings(&session.scp_args());
         assert!(strs.contains(&"HostKeyAlias=test".to_string()), "{strs:?}");
     }
 
     #[test]
-    fn test_rsync_e_arg_pins_the_host_key_lookup_to_the_hosts_name() {
-        let host = test_host();
-        let key = Path::new("/home/user/.ssh/id_ed25519");
-        let e_arg = SshTransport::new(&host, key).rsync_e_arg();
+    fn test_rsync_e_arg_pins_the_host_key_lookup_to_the_hosts_alias() {
+        let route = test_route();
+        let e_arg = SshTransport::new(&route, BECOME_METHOD)
+            .unwrap()
+            .rsync_e_arg();
         assert!(e_arg.contains("HostKeyAlias=test"), "{e_arg}");
     }
 
     #[test]
     fn test_scp_args_uses_uppercase_p_for_port() {
-        let host = test_host();
-        let key = Path::new("/tmp/key");
-        let session = SshTransport::new(&host, key);
+        let route = test_route();
+        let session = SshTransport::new(&route, BECOME_METHOD).unwrap();
         let strs = strings(&session.scp_args());
         assert!(strs.contains(&"-P".to_string()));
         assert!(!strs.contains(&"-p".to_string()));
@@ -420,9 +447,10 @@ mod tests {
 
     #[test]
     fn test_rsync_e_arg_contains_mux_and_key() {
-        let host = test_host();
-        let key = Path::new("/home/user/.ssh/id_ed25519");
-        let e_arg = SshTransport::new(&host, key).rsync_e_arg();
+        let route = test_route();
+        let e_arg = SshTransport::new(&route, BECOME_METHOD)
+            .unwrap()
+            .rsync_e_arg();
         assert!(e_arg.starts_with("ssh "));
         assert!(e_arg.contains("ControlMaster=auto"));
         assert!(e_arg.contains("ControlPath=/tmp/ssh-%r@%h:%p"));
@@ -433,18 +461,21 @@ mod tests {
 
     #[test]
     fn test_rsync_e_arg_escapes_spaces_in_key_path() {
-        let host = test_host();
-        let key = Path::new("/home/user/my keys/id_ed25519");
-        let e_arg = SshTransport::new(&host, key).rsync_e_arg();
+        let route = Route {
+            key_path: Some(PathBuf::from("/home/user/my keys/id_ed25519")),
+            ..test_route()
+        };
+        let e_arg = SshTransport::new(&route, BECOME_METHOD)
+            .unwrap()
+            .rsync_e_arg();
         assert!(!e_arg.contains("-i /home/user/my keys/id_ed25519"));
         assert!(e_arg.contains("'/home/user/my keys/id_ed25519'"));
     }
 
     #[test]
     fn test_probe_args_bound_the_connect_and_forbid_prompts() {
-        let host = test_host();
-        let key = Path::new("/tmp/key");
-        let session = SshTransport::new(&host, key);
+        let route = test_route();
+        let session = SshTransport::new(&route, BECOME_METHOD).unwrap();
         let strs = strings(&session.probe_args(Duration::from_secs(10)));
         assert!(strs.contains(&"ConnectTimeout=10".to_string()));
         assert!(strs.contains(&"BatchMode=yes".to_string()));
@@ -452,9 +483,8 @@ mod tests {
 
     #[test]
     fn test_probe_args_keep_the_mux_options_so_the_socket_stays_warm() {
-        let host = test_host();
-        let key = Path::new("/tmp/key");
-        let session = SshTransport::new(&host, key);
+        let route = test_route();
+        let session = SshTransport::new(&route, BECOME_METHOD).unwrap();
         let strs = strings(&session.probe_args(Duration::from_secs(3)));
         assert!(strs.contains(&"ControlMaster=auto".to_string()));
         assert!(strs.contains(&"ControlPersist=60s".to_string()));
@@ -463,9 +493,15 @@ mod tests {
 
     #[test]
     fn test_first_contact_refuses_to_share_a_master() {
-        let host = test_host();
-        let key = Path::new("/tmp/chosen_key");
-        let strs = strings(&SshTransport::first_contact(&host, key).ssh_args());
+        let route = Route {
+            key_path: Some(PathBuf::from("/tmp/chosen_key")),
+            ..test_route()
+        };
+        let strs = strings(
+            &SshTransport::first_contact(&route, BECOME_METHOD)
+                .unwrap()
+                .ssh_args(),
+        );
         assert!(strs.contains(&"ControlPath=none".to_string()), "{strs:?}");
         assert!(
             !strs.iter().any(|s| s.starts_with("ControlMaster")),
@@ -479,35 +515,42 @@ mod tests {
 
     #[test]
     fn test_first_contact_still_names_the_key_the_operator_chose() {
-        let host = test_host();
-        let key = Path::new("/tmp/chosen_key");
-        let strs = strings(&SshTransport::first_contact(&host, key).ssh_args());
+        let route = Route {
+            key_path: Some(PathBuf::from("/tmp/chosen_key")),
+            ..test_route()
+        };
+        let strs = strings(
+            &SshTransport::first_contact(&route, BECOME_METHOD)
+                .unwrap()
+                .ssh_args(),
+        );
         assert!(strs.contains(&"/tmp/chosen_key".to_string()), "{strs:?}");
         assert!(strs.contains(&"deploy@192.0.2.1".to_string()), "{strs:?}");
     }
 
     #[test]
     fn test_shared_reach_is_the_default_and_multiplexes() {
-        let host = test_host();
-        let key = Path::new("/tmp/key");
-        let strs = strings(&SshTransport::new(&host, key).ssh_args());
+        let route = test_route();
+        let strs = strings(&SshTransport::new(&route, BECOME_METHOD).unwrap().ssh_args());
         assert!(strs.contains(&"ControlMaster=auto".to_string()), "{strs:?}");
         assert!(!strs.contains(&"ControlPath=none".to_string()), "{strs:?}");
     }
 
     #[test]
     fn test_first_contact_scp_args_do_not_share_either() {
-        let host = test_host();
-        let key = Path::new("/tmp/key");
-        let strs = strings(&SshTransport::first_contact(&host, key).scp_args());
+        let route = test_route();
+        let strs = strings(
+            &SshTransport::first_contact(&route, BECOME_METHOD)
+                .unwrap()
+                .scp_args(),
+        );
         assert!(strs.contains(&"ControlPath=none".to_string()), "{strs:?}");
     }
 
     #[test]
     fn test_systemctl_remote_args_defaults_to_sudo() {
-        let host = test_host();
-        let key = Path::new("/tmp/key");
-        let session = SshTransport::new(&host, key);
+        let route = test_route();
+        let session = SshTransport::new(&route, "sudo").unwrap();
         assert_eq!(
             session.systemctl_remote_args("restart", "paperless-webserver"),
             vec!["sudo", "systemctl", "restart", "paperless-webserver"]
@@ -516,12 +559,8 @@ mod tests {
 
     #[test]
     fn test_systemctl_remote_args_uses_configured_become_method() {
-        let host = Host {
-            become_method: "doas".to_string(),
-            ..test_host()
-        };
-        let key = Path::new("/tmp/key");
-        let session = SshTransport::new(&host, key);
+        let route = test_route();
+        let session = SshTransport::new(&route, "doas").unwrap();
         assert_eq!(
             session.systemctl_remote_args("restart", "paperless-webserver"),
             vec!["doas", "systemctl", "restart", "paperless-webserver"]
@@ -530,9 +569,8 @@ mod tests {
 
     #[test]
     fn test_spawn_returns_before_the_remote_command_would_finish() {
-        let host = test_host();
-        let key = Path::new("/tmp/key");
-        let session = SshTransport::new(&host, key);
+        let route = test_route();
+        let session = SshTransport::new(&route, BECOME_METHOD).unwrap();
         // Not a live ssh: the far end refuses instantly. What this asserts is
         // that `spawn` itself returns immediately rather than blocking on
         // that refusal — an `output()`-based call would too, here, so the
@@ -553,5 +591,18 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A `Route` built for ansible or the ssh include (`key_path: None`) must
+    /// be refused at construction, not accepted and left to panic the first
+    /// time `ssh_args`/`scp_args`/`rsync_e_arg` reads a key that isn't there.
+    #[test]
+    fn test_new_refuses_a_route_with_no_key_path() {
+        let route = Route {
+            key_path: None,
+            ..test_route()
+        };
+        assert!(SshTransport::new(&route, BECOME_METHOD).is_err());
+        assert!(SshTransport::first_contact(&route, BECOME_METHOD).is_err());
     }
 }

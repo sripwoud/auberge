@@ -311,7 +311,9 @@ fn only_serving_host(hosts: &[Host], config: &Config) -> Option<Host> {
     }
 }
 
-fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
+fn resolve_headscale_host(
+    host_arg: Option<String>,
+) -> Result<(Host, crate::services::route::Route)> {
     let host = match host_arg {
         Some(name) => HostManager::get_host(&name)?,
         None => {
@@ -324,7 +326,8 @@ fn resolve_headscale_host(host_arg: Option<String>) -> Result<(Host, PathBuf)> {
     };
 
     let ssh_key = host_ssh_key(&host)?;
-    Ok((host, ssh_key))
+    let route = crate::services::route::resolve(&host, Some(ssh_key));
+    Ok((host, route))
 }
 
 /// The private key auberge connects to a roster Host with. Extracted from
@@ -1107,14 +1110,18 @@ fn auto_mint_for(target_name: &str, check: bool) -> Result<AutoMint> {
         })?;
 
     let target_key = host_ssh_key(target)?;
-    if target_is_enrolled(&LiveSshSession::new(target, &target_key)).wrap_err_with(|| {
-        format!("Could not ask '{target_name}' whether it is already on the tailnet")
-    })? {
+    let target_route = crate::services::route::resolve(target, Some(target_key));
+    if target_is_enrolled(&LiveSshSession::new(&target_route, &target.become_method)?)
+        .wrap_err_with(|| {
+            format!("Could not ask '{target_name}' whether it is already on the tailnet")
+        })?
+    {
         return Ok(AutoMint::AlreadyEnrolled);
     }
 
     let coordinator_key = host_ssh_key(coordinator)?;
-    let session = LiveSshSession::new(coordinator, &coordinator_key);
+    let coordinator_route = crate::services::route::resolve(coordinator, Some(coordinator_key));
+    let session = LiveSshSession::new(&coordinator_route, &coordinator.become_method)?;
     let key = mint_against_coordinator(&session, target_name, target.tailnet_tag).wrap_err_with(
         || {
             format!(
@@ -1203,8 +1210,8 @@ pub fn run_headscale_add_key(
     tags: Vec<String>,
     host: Option<String>,
 ) -> Result<()> {
-    let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = LiveSshSession::new(&host_info, &ssh_key);
+    let (host_info, route) = resolve_headscale_host(host)?;
+    let session = LiveSshSession::new(&route, &host_info.become_method)?;
 
     let is_tty = std::io::stdin().is_terminal();
 
@@ -1246,8 +1253,8 @@ pub fn run_headscale_register(
 ) -> Result<()> {
     let auth_id = parse_auth_id(&auth)?;
 
-    let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = LiveSshSession::new(&host_info, &ssh_key);
+    let (host_info, route) = resolve_headscale_host(host)?;
+    let session = LiveSshSession::new(&route, &host_info.become_method)?;
 
     let is_tty = std::io::stdin().is_terminal();
 
@@ -1273,8 +1280,8 @@ pub fn run_headscale_add_user(
     tags: Vec<String>,
     host: Option<String>,
 ) -> Result<()> {
-    let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = LiveSshSession::new(&host_info, &ssh_key);
+    let (host_info, route) = resolve_headscale_host(host)?;
+    let session = LiveSshSession::new(&route, &host_info.become_method)?;
 
     let is_tty = std::io::stdin().is_terminal();
 
@@ -1322,8 +1329,8 @@ pub fn run_headscale_tag_node(
 ) -> Result<()> {
     validate_tags(&tags)?;
 
-    let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = LiveSshSession::new(&host_info, &ssh_key);
+    let (host_info, route) = resolve_headscale_host(host)?;
+    let session = LiveSshSession::new(&route, &host_info.become_method)?;
 
     let is_tty = std::io::stdin().is_terminal();
 
@@ -1349,8 +1356,8 @@ pub fn run_headscale_tag_node(
 }
 
 pub fn run_headscale_list_users(output_fmt: OutputFormat, host: Option<String>) -> Result<()> {
-    let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = LiveSshSession::new(&host_info, &ssh_key);
+    let (host_info, route) = resolve_headscale_host(host)?;
+    let session = LiveSshSession::new(&route, &host_info.become_method)?;
 
     let users = list_users(&session)?;
 
@@ -1371,8 +1378,8 @@ pub fn run_headscale_list_users(output_fmt: OutputFormat, host: Option<String>) 
 }
 
 pub fn run_headscale_list_nodes(output_fmt: OutputFormat, host: Option<String>) -> Result<()> {
-    let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = LiveSshSession::new(&host_info, &ssh_key);
+    let (host_info, route) = resolve_headscale_host(host)?;
+    let session = LiveSshSession::new(&route, &host_info.become_method)?;
 
     let nodes = list_nodes(&session)?;
 
@@ -1401,8 +1408,8 @@ pub fn run_headscale_remove_user(
         eyre::bail!("--yes requires a username argument");
     }
 
-    let (host_info, ssh_key) = resolve_headscale_host(host)?;
-    let session = LiveSshSession::new(&host_info, &ssh_key);
+    let (host_info, route) = resolve_headscale_host(host)?;
+    let session = LiveSshSession::new(&route, &host_info.become_method)?;
 
     let is_tty = std::io::stdin().is_terminal();
 

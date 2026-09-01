@@ -111,9 +111,7 @@ fn pin_output_format(cmd: &mut Command) {
 
 pub struct InventoryHost {
     pub name: String,
-    pub address: String,
-    pub port: u16,
-    pub user: String,
+    pub route: crate::services::route::Route,
     pub groups: Vec<String>,
 }
 
@@ -144,7 +142,7 @@ fn render(fingerprints: &[Fingerprint]) -> String {
 /// Clears a `known_hosts` entry the target contradicts, so bootstrap can
 /// connect without the blanket host-key bypass it used to pass to ansible.
 fn resolve_stale_host_key(host: &InventoryHost, assume_yes: bool) -> Result<()> {
-    let status = known_hosts::inspect(&host.name, &host.address, host.port)?;
+    let status = known_hosts::inspect(&host.name, &host.route.address, host.route.port)?;
     let HostKeyStatus::Changed { known, offered } = &status else {
         return Ok(());
     };
@@ -226,9 +224,9 @@ fn bootstrap_connection_argv(host: &InventoryHost) -> Vec<OsString> {
     vec![
         OsString::from("--ask-pass"),
         OsString::from("-e"),
-        OsString::from(format!("ansible_user={}", host.user)),
+        OsString::from(format!("ansible_user={}", host.route.user)),
         OsString::from("-e"),
-        OsString::from(format!("ansible_port={}", host.port)),
+        OsString::from(format!("ansible_port={}", host.route.port)),
     ]
 }
 
@@ -296,11 +294,11 @@ fn write_inventory_file(host: &InventoryHost) -> Result<tempfile::NamedTempFile>
     let mut host_vars = Mapping::new();
     host_vars.insert(
         Value::String("ansible_host".into()),
-        Value::String(host.address.clone()),
+        Value::String(host.route.address.clone()),
     );
     host_vars.insert(
         Value::String("ansible_port".into()),
-        Value::Number(host.port.into()),
+        Value::Number(host.route.port.into()),
     );
     // Additive (never overrides inventory.yml's group-level
     // ansible_ssh_common_args), so the host key check moves onto the
@@ -524,14 +522,28 @@ mod tests {
         );
     }
 
-    fn bootstrap_host() -> InventoryHost {
+    fn inventory_host(
+        name: &str,
+        address: &str,
+        port: u16,
+        user: &str,
+        groups: &[&str],
+    ) -> InventoryHost {
         InventoryHost {
-            name: "vps".to_string(),
-            address: "198.51.100.1".to_string(),
-            port: 22,
-            user: "debian".to_string(),
-            groups: vec![],
+            name: name.to_string(),
+            route: crate::services::route::Route {
+                address: address.to_string(),
+                port,
+                user: user.to_string(),
+                key_path: None,
+                alias: name.to_string(),
+            },
+            groups: groups.iter().map(|g| g.to_string()).collect(),
         }
+    }
+
+    fn bootstrap_host() -> InventoryHost {
+        inventory_host("vps", "198.51.100.1", 22, "debian", &[])
     }
 
     fn argv_ctx<'a>(host: &'a InventoryHost, paths: &'a [std::path::PathBuf; 3]) -> ArgvCtx<'a> {
@@ -710,13 +722,7 @@ mod tests {
 
     #[test]
     fn test_write_inventory_file_generates_valid_yaml() {
-        let host = InventoryHost {
-            name: "testhost".to_string(),
-            address: "198.51.100.1".to_string(),
-            port: 59865,
-            user: "root".to_string(),
-            groups: vec![],
-        };
+        let host = inventory_host("testhost", "198.51.100.1", 59865, "root", &[]);
 
         let tmpfile = write_inventory_file(&host).unwrap();
         let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
@@ -729,13 +735,7 @@ mod tests {
 
     #[test]
     fn test_write_inventory_file_pins_the_host_key_lookup_to_the_hosts_name() {
-        let host = InventoryHost {
-            name: "testhost".to_string(),
-            address: "198.51.100.1".to_string(),
-            port: 22,
-            user: "root".to_string(),
-            groups: vec![],
-        };
+        let host = inventory_host("testhost", "198.51.100.1", 22, "root", &[]);
 
         let tmpfile = write_inventory_file(&host).unwrap();
         let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
@@ -750,13 +750,7 @@ mod tests {
 
     #[test]
     fn test_write_inventory_file_places_host_in_vps_group() {
-        let host = InventoryHost {
-            name: "myserver".to_string(),
-            address: "203.0.113.42".to_string(),
-            port: 22,
-            user: "debian".to_string(),
-            groups: vec![],
-        };
+        let host = inventory_host("myserver", "203.0.113.42", 22, "debian", &[]);
 
         let tmpfile = write_inventory_file(&host).unwrap();
         let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
@@ -767,13 +761,7 @@ mod tests {
 
     #[test]
     fn test_write_inventory_file_emits_tag_groups() {
-        let host = InventoryHost {
-            name: "openclaw".to_string(),
-            address: "203.0.113.7".to_string(),
-            port: 22,
-            user: "root".to_string(),
-            groups: vec!["hermes".to_string(), "gpu".to_string()],
-        };
+        let host = inventory_host("openclaw", "203.0.113.7", 22, "root", &["hermes", "gpu"]);
 
         let tmpfile = write_inventory_file(&host).unwrap();
         let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
@@ -798,13 +786,7 @@ mod tests {
 
     #[test]
     fn test_write_inventory_file_no_tags_yields_only_vps_group() {
-        let host = InventoryHost {
-            name: "plain".to_string(),
-            address: "203.0.113.8".to_string(),
-            port: 22,
-            user: "root".to_string(),
-            groups: vec![],
-        };
+        let host = inventory_host("plain", "203.0.113.8", 22, "root", &[]);
 
         let tmpfile = write_inventory_file(&host).unwrap();
         let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
@@ -817,13 +799,7 @@ mod tests {
 
     #[test]
     fn test_write_inventory_file_vps_tag_does_not_clobber_vps_group() {
-        let host = InventoryHost {
-            name: "tagged-vps".to_string(),
-            address: "203.0.113.9".to_string(),
-            port: 2222,
-            user: "root".to_string(),
-            groups: vec!["vps".to_string(), "vps".to_string()],
-        };
+        let host = inventory_host("tagged-vps", "203.0.113.9", 2222, "root", &["vps", "vps"]);
 
         let tmpfile = write_inventory_file(&host).unwrap();
         let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
@@ -1104,13 +1080,7 @@ mod tests {
 
     #[test]
     fn test_write_inventory_file_escapes_special_chars() {
-        let host = InventoryHost {
-            name: "host:with#special".to_string(),
-            address: "198.51.100.1".to_string(),
-            port: 22,
-            user: "root".to_string(),
-            groups: vec![],
-        };
+        let host = inventory_host("host:with#special", "198.51.100.1", 22, "root", &[]);
 
         let tmpfile = write_inventory_file(&host).unwrap();
         let contents = std::fs::read_to_string(tmpfile.path()).unwrap();
