@@ -42,10 +42,48 @@ pub enum Via {
 }
 
 impl Via {
+    /// Every variant, in the order [`Via::from_slot`] indexes them.
+    const ALL: [Self; 2] = [Self::Public, Self::Tailnet];
+
+    /// The empty [`OVERRIDE`] slot. A `Via` occupies `discriminant + 1`, so
+    /// zero can mean "no override" without a second atomic.
+    const NO_OVERRIDE: u8 = 0;
+
     const fn as_str(self) -> &'static str {
         match self {
             Self::Public => "public",
             Self::Tailnet => "tailnet",
+        }
+    }
+
+    const fn slot(self) -> u8 {
+        self as u8 + 1
+    }
+
+    /// The inverse of [`Via::slot`], `None` for the empty slot. Tested as a
+    /// round trip, the way `commands::host`'s tier picker is: the off-by-one
+    /// that lets zero mean "unset" is the whole correctness of the encoding.
+    fn from_slot(slot: u8) -> Option<Self> {
+        let index = slot.checked_sub(1)?;
+        Self::ALL.get(usize::from(index)).copied()
+    }
+}
+
+/// What asked for a route, so a failure says whether to fix the roster or
+/// drop the flag. A type rather than a `&str` the caller formats: the two
+/// answers are closed, and one of them was being allocated on the happy path
+/// to be read only on the error one.
+#[derive(Debug, Clone, Copy)]
+enum Chose {
+    Policy,
+    Flag(Via),
+}
+
+impl std::fmt::Display for Chose {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Policy => f.write_str("prefer_tailnet"),
+            Self::Flag(via) => write!(f, "--via {via}"),
         }
     }
 }
@@ -56,17 +94,13 @@ impl std::fmt::Display for Via {
     }
 }
 
-const NO_OVERRIDE: u8 = 0;
-const OVERRIDE_PUBLIC: u8 = 1;
-const OVERRIDE_TAILNET: u8 = 2;
-
 /// The global `--via` flag, set once from `main` before any command runs.
 ///
 /// A process-wide static rather than a threaded parameter, the way
 /// `output::set_verbose` already is: the flag is `global = true` on the clap
 /// tree and reaches roughly twenty construction sites, and threading it would
 /// undo exactly the collapse ADR-0067 performed.
-static OVERRIDE: AtomicU8 = AtomicU8::new(NO_OVERRIDE);
+static OVERRIDE: AtomicU8 = AtomicU8::new(Via::NO_OVERRIDE);
 
 /// Whether the override has actually decided a route this run. `--via` on a
 /// command that connects to nothing is an operator error worth reporting, and
@@ -76,23 +110,12 @@ static OVERRIDE_REACHED_A_HOST: AtomicBool = AtomicBool::new(false);
 
 /// Install the run's `--via` override. Called once, from `main`.
 pub fn set_override(via: Option<Via>) {
-    OVERRIDE.store(
-        match via {
-            None => NO_OVERRIDE,
-            Some(Via::Public) => OVERRIDE_PUBLIC,
-            Some(Via::Tailnet) => OVERRIDE_TAILNET,
-        },
-        Ordering::Relaxed,
-    );
+    OVERRIDE.store(via.map_or(Via::NO_OVERRIDE, Via::slot), Ordering::Relaxed);
     OVERRIDE_REACHED_A_HOST.store(false, Ordering::Relaxed);
 }
 
 fn route_override() -> Option<Via> {
-    match OVERRIDE.load(Ordering::Relaxed) {
-        OVERRIDE_PUBLIC => Some(Via::Public),
-        OVERRIDE_TAILNET => Some(Via::Tailnet),
-        _ => None,
-    }
+    Via::from_slot(OVERRIDE.load(Ordering::Relaxed))
 }
 
 /// Fails when `--via` was given to a command that resolved no Host route.
@@ -155,13 +178,12 @@ pub struct Route {
 /// derivation of its own, so a caller with no identity file of its own
 /// (ansible's inventory conversion, the generated ssh include) passes `None`.
 pub fn resolve(host: &Host, key_path: Option<PathBuf>) -> Result<Route> {
-    match route_override() {
-        Some(via) => {
-            OVERRIDE_REACHED_A_HOST.store(true, Ordering::Relaxed);
-            route_over(host, key_path, via, &format!("--via {via}"))
-        }
-        None => declared(host, key_path),
-    }
+    let Some(via) = route_override() else {
+        return declared(host, key_path);
+    };
+    let route = route_over(host, key_path, via, Chose::Flag(via))?;
+    OVERRIDE_REACHED_A_HOST.store(true, Ordering::Relaxed);
+    Ok(route)
 }
 
 /// The route the roster declares, with no `--via` applied.
@@ -173,17 +195,24 @@ pub fn resolve(host: &Host, key_path: Option<PathBuf>) -> Result<Route> {
 /// `ssh <name>` on a route nobody declared — the divergence #780 exists to
 /// close, reintroduced by the flag meant to work around it.
 pub fn declared(host: &Host, key_path: Option<PathBuf>) -> Result<Route> {
-    let via = if host.prefer_tailnet {
+    route_over(host, key_path, declared_via(host), Chose::Policy)
+}
+
+/// Which address the roster says to use — the whole of `prefer_tailnet`'s
+/// meaning, in one place.
+///
+/// `pub` for `host list`'s `ROUTE` column, which shows the decision without
+/// resolving an address: a second `if host.prefer_tailnet` there would be the
+/// policy written twice, which is what this seam exists to prevent.
+pub fn declared_via(host: &Host) -> Via {
+    if host.prefer_tailnet {
         Via::Tailnet
     } else {
         Via::Public
-    };
-    route_over(host, key_path, via, "prefer_tailnet")
+    }
 }
 
-/// `chose` names what asked for this route, so the failure says whether to
-/// fix the roster or drop the flag.
-fn route_over(host: &Host, key_path: Option<PathBuf>, via: Via, chose: &str) -> Result<Route> {
+fn route_over(host: &Host, key_path: Option<PathBuf>, via: Via, chose: Chose) -> Result<Route> {
     let address = match via {
         Via::Public => host.address.clone(),
         Via::Tailnet => host.tailscale_ip.clone().ok_or_else(|| {
@@ -329,6 +358,32 @@ mod tests {
         let host = Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet();
         assert_eq!(public_address(&host), "203.0.113.10");
         assert_ne!(public_address(&host), resolve(&host, None).unwrap().address);
+    }
+
+    /// The off-by-one that lets slot zero mean "no override" is the whole
+    /// correctness of the encoding, and it is unreachable through the public
+    /// API — so it is tested as a round trip, the way `commands::host`'s tier
+    /// picker is.
+    #[test]
+    fn every_via_survives_the_override_slot() {
+        assert_eq!(Via::from_slot(Via::NO_OVERRIDE), None);
+        for via in Via::ALL {
+            assert_ne!(via.slot(), Via::NO_OVERRIDE);
+            assert_eq!(Via::from_slot(via.slot()), Some(via));
+        }
+        assert_eq!(Via::from_slot(Via::ALL.len() as u8 + 1), None);
+    }
+
+    /// A `--via tailnet` the resolver refused decided no route, so it must
+    /// not also silence the unused-override report — two failures, one of
+    /// them swallowed, is how the first is misdiagnosed.
+    #[test]
+    fn an_override_that_could_not_be_honoured_did_not_reach_a_host() {
+        let _lock = crate::output::TEST_LOCK.lock().unwrap();
+        let _guard = OverrideGuard::set(Some(Via::Tailnet));
+
+        resolve(&Host::fixture("ruche", None), None).unwrap_err();
+        assert!(ensure_override_reached_a_host().is_err());
     }
 
     #[test]

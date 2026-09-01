@@ -241,6 +241,10 @@ pub fn run_ssh_add_key(
     // resolving it a second time would ask the policy about a Host that
     // never held the facts it decides from.
     let route = host.route_as(&user, Some(connect_key));
+    // `sudo` is a literal here because the Inventory type carries no
+    // `become_method` — this target came from `ansible/inventory.yml`, which
+    // declares none, and #776's per-Host escalation is a `hosts.toml` field.
+    // The `ssh_target` this replaced hard-coded the same string.
     let session = LiveSshSession::first_contact(&route, "sudo")?;
     authorize_key(&session, pubkey_content.trim())?;
 

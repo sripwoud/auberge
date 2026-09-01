@@ -46,15 +46,6 @@ struct HostDisplay {
     route: String,
 }
 
-/// The `ROUTE` column's value: the declared policy, not a live probe.
-fn declared_route(host: &Host) -> &'static str {
-    if host.prefer_tailnet {
-        "tailnet"
-    } else {
-        "public"
-    }
-}
-
 impl From<&Host> for HostDisplay {
     fn from(host: &Host) -> Self {
         Self {
@@ -66,7 +57,10 @@ impl From<&Host> for HostDisplay {
             tailnet_tag: host
                 .tailnet_tag
                 .map_or_else(|| "-".to_string(), |tier| tier.to_string()),
-            route: declared_route(host).to_string(),
+            // Through the resolver's own mapping, not a second
+            // `if host.prefer_tailnet` — a column that restated the policy
+            // could disagree with the route it claims to describe.
+            route: crate::services::route::declared_via(host).to_string(),
         }
     }
 }
@@ -518,8 +512,10 @@ fn prompt_tailnet_tag(current: Option<TailnetTag>) -> Result<Option<TailnetTag>>
 /// past that gate. It cannot be saved as it stands, so the edit clears it and
 /// says so, rather than re-offering a state with no way out.
 fn prompt_prefer_tailnet(host: &Host) -> Result<bool> {
+    use crate::services::route::Via;
+
     if host.tailscale_ip.is_none() {
-        if host.prefer_tailnet {
+        if crate::services::route::declared_via(host) == Via::Tailnet {
             output::warn(&format!(
                 "'{}' sets prefer_tailnet with no tailscale_ip to route to; clearing it. Run \
                  `auberge host detect-tailscale-ip {}`, then edit again to re-enable.",
@@ -537,7 +533,7 @@ fn prompt_prefer_tailnet(host: &Host) -> Result<bool> {
 
     Ok(Confirm::with_theme(&ColorfulTheme::default())
         .with_prompt("Route over the tailnet address")
-        .default(host.prefer_tailnet)
+        .default(crate::services::route::declared_via(host) == Via::Tailnet)
         .interact()?)
 }
 

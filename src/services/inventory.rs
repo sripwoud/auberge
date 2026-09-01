@@ -76,6 +76,22 @@ pub struct Host {
 }
 
 impl Host {
+    /// An Inventory Host whose declared address is also its route, for a unit
+    /// test elsewhere in the crate. Test-only, like `hosts::Host::fixture`.
+    #[cfg(test)]
+    pub fn fixture(name: &str, address: &str, port: u16) -> Self {
+        Self::from_inventory(
+            name.to_string(),
+            HostVars {
+                public_address: address.to_string(),
+                ansible_port: port,
+                bootstrap_user: "root".to_string(),
+                extra: HashMap::new(),
+            },
+            vec![],
+        )
+    }
+
     /// A Host straight from `ansible/inventory.yml`: no roster entry, so no
     /// routing policy, so the declared address is also the route.
     fn from_inventory(name: String, vars: HostVars, groups: Vec<String>) -> Self {
@@ -253,10 +269,9 @@ pub fn load_inventory(inventory_path: Option<&Path>) -> Result<Inventory> {
 
 /// The roster entry as the Inventory sees it, with both addresses kept
 /// apart: `public_address` is the declared one, `connect_address` the one
-/// #787's policy resolved. Folding them back together publishes a CGNAT
-/// address as a public A record.
-fn convert_xdg_host_to_inventory_host(xdg_host: crate::hosts::Host) -> Result<Host> {
-    let route = crate::services::route::resolve(&xdg_host, None)?;
+/// the given `route` resolved to. Folding them back together publishes a
+/// CGNAT address as a public A record.
+fn inventory_host(xdg_host: crate::hosts::Host, route: &crate::services::route::Route) -> Host {
     let vars = HostVars {
         public_address: crate::services::route::public_address(&xdg_host),
         ansible_port: route.port,
@@ -264,12 +279,32 @@ fn convert_xdg_host_to_inventory_host(xdg_host: crate::hosts::Host) -> Result<Ho
         extra: HashMap::new(),
     };
 
-    Ok(Host {
+    Host {
         name: xdg_host.name,
         vars,
         groups: xdg_host.tags,
-        connect_address: route.address,
-    })
+        connect_address: route.address.clone(),
+    }
+}
+
+/// A roster entry in a *listing*: the route it declares, with no `--via`
+/// applied.
+///
+/// Nothing connects to a listed Host — `hosts_ignoreip_var`,
+/// `discover_hosts_with_ips` and `select host` all read `public_address` or
+/// the name — so applying the override here would report `--via` as having
+/// decided a route for a command that reached nobody, and `--via tailnet`
+/// would fail on a Host the command never touches.
+fn listed_inventory_host(xdg_host: crate::hosts::Host) -> Result<Host> {
+    let route = crate::services::route::declared(&xdg_host, None)?;
+    Ok(inventory_host(xdg_host, &route))
+}
+
+/// The one roster entry a command is acting on: the resolved route, `--via`
+/// included, so ansible's `ansible_host` moves with ssh.
+fn targeted_inventory_host(xdg_host: crate::hosts::Host) -> Result<Host> {
+    let route = crate::services::route::resolve(&xdg_host, None)?;
+    Ok(inventory_host(xdg_host, &route))
 }
 
 fn try_load_xdg_hosts() -> Result<Option<Vec<Host>>> {
@@ -281,7 +316,7 @@ fn try_load_xdg_hosts() -> Result<Option<Vec<Host>>> {
 
     let inventory_hosts: Vec<Host> = xdg_hosts
         .into_iter()
-        .map(convert_xdg_host_to_inventory_host)
+        .map(listed_inventory_host)
         .collect::<Result<_>>()?;
 
     Ok(Some(inventory_hosts))
@@ -304,12 +339,18 @@ pub fn get_hosts(group: Option<&str>, inventory_path: Option<&Path>) -> Result<V
     Ok(inventory.get_hosts(group))
 }
 
+/// The Host a command is about to act on, resolved through [`route::resolve`]
+/// (`--via` included) rather than through the listing conversion — this is
+/// the one entry point that answers "which Host, and how do we reach it".
+///
+/// [`route::resolve`]: crate::services::route::resolve
 pub fn get_host(name: &str, inventory_path: Option<&Path>) -> Result<Host> {
     if inventory_path.is_none()
-        && let Some(hosts) = try_load_xdg_hosts()?
-        && let Some(host) = hosts.into_iter().find(|h| h.name == name)
+        && let Some(host) = HostManager::load_hosts()?
+            .into_iter()
+            .find(|h| h.name == name)
     {
-        return Ok(host);
+        return targeted_inventory_host(host);
     }
 
     let inventory = load_inventory(inventory_path)?;
@@ -353,20 +394,30 @@ pub fn discover_hosts_with_ips(inventory_path: Option<&Path>) -> Result<HashMap<
         .collect())
 }
 
+/// Pick a Host, then resolve it: the picker lists declared entries and the
+/// chosen *name* goes back through [`get_host`], so a Host reaches its
+/// command by exactly one path whether it was named or picked. Returning the
+/// listed entry directly would leave the interactive path on the declared
+/// route while `--host <name>` took the resolved one.
 pub fn select_or_arg(arg: Option<String>, argument: &str) -> Result<Host> {
-    match arg {
-        Some(name) => get_host(&name, None),
-        None => crate::prompt::select_item(
-            &get_hosts(None, None)?,
-            |h: &Host| {
-                format!(
-                    "{} ({}:{})",
-                    h.name, h.vars.public_address, h.vars.ansible_port
-                )
-            },
-            crate::hosts::host_choice(argument),
-        ),
-    }
+    let name = match arg {
+        Some(name) => name,
+        None => {
+            crate::prompt::select_item(
+                &get_hosts(None, None)?,
+                |h: &Host| {
+                    format!(
+                        "{} ({}:{})",
+                        h.name, h.vars.public_address, h.vars.ansible_port
+                    )
+                },
+                crate::hosts::host_choice(argument),
+            )?
+            .name
+        }
+    };
+
+    get_host(&name, None)
 }
 
 pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<PathBuf>> {
@@ -430,16 +481,7 @@ mod tests {
     }
 
     fn host(name: &str, address: &str) -> Host {
-        Host::from_inventory(
-            name.to_string(),
-            HostVars {
-                public_address: address.to_string(),
-                ansible_port: 22,
-                bootstrap_user: "root".to_string(),
-                extra: HashMap::new(),
-            },
-            vec![],
-        )
+        Host::fixture(name, address, 22)
     }
 
     #[test]
@@ -487,7 +529,7 @@ mod tests {
     /// resolve to.
     #[test]
     fn the_tailnet_policy_moves_the_route_and_leaves_the_public_address_alone() {
-        let converted = convert_xdg_host_to_inventory_host(
+        let converted = targeted_inventory_host(
             crate::hosts::Host::fixture("auberge", Some("100.64.0.1")).preferring_tailnet(),
         )
         .unwrap();

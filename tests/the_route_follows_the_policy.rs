@@ -42,9 +42,10 @@ use crate_source::{Module, find, modules, names_in_code};
 /// - `src/hosts.rs` declares, (de)serializes and validates the field —
 ///   declaration-level work, exempt for the same reason it is exempt from
 ///   `one_route_to_a_host.rs`'s address scan.
-/// - `src/commands/host.rs` is the operator's surface: the `host edit` prompt
-///   that sets it and the `host list` column that shows it. Neither decides
-///   an address.
+/// - `src/commands/host.rs` builds `Host` literals and asserts on the field
+///   in its tests. Its two operator-facing reads — the `host edit` prompt and
+///   the `host list` `ROUTE` column — go through `route::declared_via`, so
+///   the policy's meaning is not restated where it is merely shown.
 ///
 /// Anything else naming the field is deciding a route off the declaration,
 /// which is the six-read-sites problem #784 removed, re-entering through the
@@ -108,6 +109,25 @@ fn only_the_resolver_decides_a_route_from_prefer_tailnet() {
 
 /// Without this, emptying the resolver out would leave the scan above passing
 /// over a policy nothing implements.
+/// The `host list` column and the `host edit` prompt describe the policy;
+/// they must not re-derive it. `route::declared_via` is the one mapping from
+/// the field to a [`Via`], so a column claiming `public` cannot disagree with
+/// the route the same host takes.
+///
+/// [`Via`]: auberge::services::route::Via
+#[test]
+fn the_operator_surface_shows_the_policy_through_the_resolver() {
+    let walked = modules();
+    let surface = find(&walked, "src/commands/host.rs");
+
+    assert!(
+        names_in_code(&surface.source, "route::declared_via("),
+        "src/commands/host.rs no longer reads the policy through \
+         route::declared_via — a second `if host.prefer_tailnet` there is the \
+         policy written twice (#787)"
+    );
+}
+
 #[test]
 fn the_resolver_still_decides_from_prefer_tailnet() {
     let walked = modules();

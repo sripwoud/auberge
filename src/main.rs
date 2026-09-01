@@ -63,7 +63,11 @@ struct Cli {
         long,
         global = true,
         value_enum,
-        value_name = "ROUTE",
+        // Not `ROUTE`: CONTEXT.md's **Route** is the resolved
+        // address/port/user/key/alias tuple, and **Via**'s _Avoid_ list names
+        // `--route`. Spelling the two values is also what the ADR and the docs
+        // say.
+        value_name = "public|tailnet",
         help = "Reach hosts over their public address or their tailnet address, overriding \
                 each host's prefer_tailnet. `--via public` is the recovery route when the \
                 tailnet is down"

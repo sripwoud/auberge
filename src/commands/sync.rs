@@ -69,6 +69,25 @@ pub enum SyncCommands {
 // would `protect` whatever an earlier sync already copied; --delete-excluded
 // makes them sender-side only so the host loses it. Patterns carry no slash,
 // so rsync matches basenames at any depth.
+/// The `-e` ssh invocation for the music rsync, mirroring
+/// `SshTransport::rsync_e_arg` minus the mux this transfer opts out of.
+///
+/// `HostKeyAlias` is what makes it safe for the destination below to be
+/// `connect_address` rather than the declared one: #785 keys every
+/// `known_hosts` entry on the Host's name, so an rsync that connected by bare
+/// address would find no entry for it and treat a Host it has trusted for
+/// months as unknown — and #787 moves that address. The seam this file is a
+/// declared exception to (#669) gets the alias for free; a hand-built argv
+/// has to say so.
+fn music_ssh_arg(host: &crate::services::inventory::Host, ssh_key: &Path) -> String {
+    format!(
+        "ssh -o HostKeyAlias={} -i {} -p {}",
+        shell_escape::escape(host.name.clone().into()),
+        shell_escape::escape(ssh_key.display().to_string().into()),
+        host.vars.ansible_port
+    )
+}
+
 fn music_rsync_command(source: &Path, ssh_arg: &str, destination: &str) -> Command {
     let mut cmd = Command::new("rsync");
     cmd.args(MUSIC_RSYNC_FLAGS)
@@ -168,11 +187,7 @@ pub fn run_sync_music(
     // what actually needs testing here — the flag set, the progress parser,
     // and the scan/transfer drive — already has seams of its own
     // (`music_rsync_command`, `services::rsync`, `drive_music_sync`).
-    // `connect_address`, not the Inventory's declared `public_address`: #787
-    // lets the two diverge, and this rsync is a connection, so it follows the
-    // route like everything else. A transfer left on the old address is
-    // exactly the split #780 exists to close.
-    let ssh_arg = format!("ssh -p {} -i {}", host.vars.ansible_port, ssh_key.display());
+    let ssh_arg = music_ssh_arg(&host, &ssh_key);
     let destination = format!("{}@{}:{}", ansible_user, host.connect_address, remote_path);
 
     output::info(&format!("Syncing music to {}", destination));
@@ -364,6 +379,21 @@ mod tests {
         cmd.get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect()
+    }
+
+    /// #785 keys every `known_hosts` entry on the Host's name, and #787 moves
+    /// the address underneath it. A hand-built rsync argv that omitted the
+    /// alias would meet a Host it has trusted for months as an unknown one on
+    /// the first run after a route flip.
+    #[test]
+    fn the_music_rsync_keys_the_host_key_check_on_the_hosts_name() {
+        let host = crate::services::inventory::Host::fixture("auberge", "100.64.0.1", 2222);
+        let arg = music_ssh_arg(&host, Path::new("/home/me/.ssh/identities/auberge/ansible"));
+
+        assert_eq!(
+            arg,
+            "ssh -o HostKeyAlias=auberge -i /home/me/.ssh/identities/auberge/ansible -p 2222"
+        );
     }
 
     #[test]

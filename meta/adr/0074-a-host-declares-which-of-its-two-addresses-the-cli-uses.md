@@ -22,6 +22,8 @@ A **stale** `tailscale_ip` gets no guard. An address that moved is indistinguish
 
 A global flag, set once in `main`, read only by the resolver. `--via public` is the recovery route; `--via tailnet` proves one before it is declared.
 
+**The Inventory resolves a listing and a target differently**, which is what makes both halves of the flag's contract hold. `services::inventory::get_hosts` converts roster entries through `route::declared`: nothing connects to a listed Host — `hosts_ignoreip_var`, `discover_hosts_with_ips` and `select host` read `public_address` or the name — so applying the override there would report `--via` as having decided a route for a command that reached nobody, and `--via tailnet` would fail on Hosts the command never touches. `get_host` is the one entry point that answers "which Host, and how do we reach it", and it resolves. `select_or_arg` picks from the listing and sends the chosen _name_ back through `get_host`, so a Host reaches its command by one path whether it was named or picked.
+
 Global because half a route is worse than none: ssh going public while ansible still tries the tailnet is the same divergence in miniature. It reaches ansible's own `ansible_host` because the roster→Inventory conversion goes through `resolve` like everything else.
 
 Two things it deliberately does not do:
@@ -43,7 +45,7 @@ Three consumers needed the public one and would have silently taken the route:
 
 The third is the sharpest, and is why `route::peer_addresses` exists: it lists **both** of a Host's addresses. Once peers arrive over the tailnet, ignoring only the address in use would make the `--via public` recovery route the bannable one, at exactly the moment it is needed.
 
-And one consumer needed the route and was taking the declaration: `sync music` built its rsync destination from `ansible_host`. It was the one command that would have been left behind.
+And one consumer needed the route and was taking the declaration: `sync music` built its rsync destination from `ansible_host`. It was the one command that would have been left behind — and, being the declared hand-built exception to the ssh seam (#669), it was also the one whose argv had no `-o HostKeyAlias`. #785 keys every `known_hosts` entry on the Host's name, so moving that rsync onto the resolved address without the alias would have met a Host trusted for months as an unknown one. `music_ssh_arg` now mirrors `SshTransport::rsync_e_arg` minus the mux this transfer opts out of.
 
 ## Why
 
@@ -64,7 +66,7 @@ Whether a command routes to a Host is only knowable once it has tried. The alter
 ## What it costs
 
 - **A `--via` that decided nothing exits non-zero after work that already succeeded.** `auberge --via public host edit x` performs the edit and then fails. The exit code says the invocation was wrong, which it was; a CI wrapper reading it as "the edit failed" would be wrong in the safe direction. Accepted over the alternative: a flag that reads as applied and was not, which on `--via public` means believing you moved off a route you are still on.
-- **`--via tailnet` is fleet-wide, so it fails if _any_ roster Host lacks a cached address**, not only the target — the roster→Inventory conversion resolves every entry. Deliberate: applying the override at a second, target-only site would put the policy in two places, which is what ADR-0067 spent a slice removing. `--via public`, the recovery direction, can never fail this way.
+- **One hand-edited invalid entry blocks every roster write**, including `host add` and `host rename` for unrelated Hosts: `write_roster` validates the whole slice, because it writes the whole file. The refusal names the offending Host and its fix, and `auberge --via public host detect-tailscale-ip <name>` clears it.
 - **`resolve` is now fallible**, and roughly twenty construction sites propagate it. The one case it catches is a hand-edited roster whose policy outlived its fact.
 - **The route to the backup target depends on a service the backup target hosts.** headscale runs on auberge. Bounded by measurement: no node key on this tailnet expires, so a running `tailscaled` keeps its WireGuard peers through a headscale outage — losing the route needs headscale down _and_ a `tailscaled` restart in the same window. `--via public` is the way out, and it belongs in the runbook rather than being discovered under pressure.
 - **A stale binary rewrites `hosts.toml` wholesale.** ADR-0069's `unknown` map protects fields this binary does not know; it does not protect `prefer_tailnet` from a binary that predates it, which would drop the field and, under strict resolution, quietly move the route to the public address rather than erroring. General fix tracked separately.
