@@ -19,7 +19,15 @@ use crate::services::inventory::{Host, hosts_ignoreip_var, select_or_arg};
 use clap::Args;
 use eyre::Result;
 
-const ALL_ENTRY: &str = "[all]";
+/// The menu entry standing for the `apps.yml` roster, named for what it
+/// selects: the menu holds standalone playbooks too, and `[all]` above a list
+/// it covers two thirds of is a menu that lies.
+const ALL_ENTRY: &str = "[all apps]";
+
+/// What marks a menu entry as a standalone playbook rather than an App. An
+/// operator picking `ruche` is choosing a whole Playbook, not a role in
+/// `apps.yml`, and the two are worth telling apart before the plan prints.
+const PLAYBOOK_MARKER: &str = " (playbook)";
 
 /// The standalone playbooks `deploy` refuses, each with the reason it is a
 /// lifecycle operation rather than a convergence toward a declared state.
@@ -66,25 +74,86 @@ fn select_host(host_arg: Option<String>) -> Result<Host> {
     select_or_arg(host_arg, HOST_FLAG)
 }
 
-fn select_apps(available: &[String]) -> Result<Vec<String>> {
-    if available.len() == 1 {
-        return Ok(available.to_vec());
+/// The menu's selectable rows: the roster in `apps.yml`'s own declaration
+/// order, then the standalone playbooks the roster does not already hold,
+/// sorted and marked.
+///
+/// A name that is both — calibre, gokapi, hermes, immich — appears once and
+/// bare, because [`split_routes`] sends it through the roster whichever way it
+/// was selected. Offering it twice would print two entries that deploy the
+/// same thing.
+///
+/// The sort and the dedup are this function's own rather than inherited from
+/// `standalone_playbook_names`, which sorts but does not deduplicate: it reads
+/// stems off the tree, and `standalone_stem` strips `.yml` and `.yaml` alike,
+/// so one playbook filed under both spellings yields its name twice.
+fn menu_targets(roster: &[String], playbooks: &[String]) -> Vec<String> {
+    let mut standalone: Vec<&String> = playbooks
+        .iter()
+        .filter(|name| !roster.contains(name))
+        .collect();
+    standalone.sort_unstable();
+    standalone.dedup();
+
+    let mut targets: Vec<String> = roster.to_vec();
+    targets.extend(
+        standalone
+            .into_iter()
+            .map(|name| format!("{name}{PLAYBOOK_MARKER}")),
+    );
+    targets
+}
+
+/// [`menu_targets`] behind the entry standing for the whole roster.
+fn menu_items(targets: Vec<String>) -> Vec<String> {
+    let mut items = vec![ALL_ENTRY.to_string()];
+    items.extend(targets);
+    items
+}
+
+fn push_unique(requested: &mut Vec<String>, name: String) {
+    if !requested.contains(&name) {
+        requested.push(name);
+    }
+}
+
+/// The names a menu selection stands for, with [`ALL_ENTRY`] expanded and the
+/// playbook marker stripped.
+///
+/// `[all apps]` expands to the roster and nothing else; a standalone playbook
+/// is opt-in by name, for the Preflight and guard reasons in ADR-0077.
+fn resolve_menu_selection(selected: &[String], roster: &[String]) -> Vec<String> {
+    let mut requested: Vec<String> = Vec::new();
+    for name in selected {
+        if name == ALL_ENTRY {
+            for app in roster {
+                push_unique(&mut requested, app.clone());
+            }
+            continue;
+        }
+        push_unique(
+            &mut requested,
+            name.strip_suffix(PLAYBOOK_MARKER)
+                .unwrap_or(name)
+                .to_string(),
+        );
+    }
+    requested
+}
+
+fn select_apps(roster: &[String], playbooks: &[String]) -> Result<Vec<String>> {
+    let targets = menu_targets(roster, playbooks);
+    if targets.len() == 1 {
+        return Ok(resolve_menu_selection(&targets, roster));
     }
 
-    let mut items: Vec<String> = vec![ALL_ENTRY.to_string()];
-    items.extend(available.iter().cloned());
-
     let selected = select_multi(
-        &items,
-        "Select app(s) to deploy (tab to toggle, enter to confirm)",
+        &menu_items(targets),
+        "Select app(s) or playbook(s) to deploy (tab to toggle, enter to confirm)",
     )
     .ok_or_else(|| eyre::eyre!("No apps selected"))?;
 
-    if selected.iter().any(|s| s == ALL_ENTRY) {
-        return Ok(available.to_vec());
-    }
-
-    Ok(selected)
+    Ok(resolve_menu_selection(&selected, roster))
 }
 
 /// The standalone playbooks this build will deploy: every one in the tree that
@@ -386,15 +455,17 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         eyre::bail!("No apps found in apps.yml");
     }
 
+    let playbooks = deployable_playbooks()?;
+
     let apps = if cmd.all {
         available_apps.clone()
     } else if cmd.apps.is_empty() {
-        select_apps(&available_apps)?
+        select_apps(&available_apps, &playbooks)?
     } else {
         validate_apps(
             &cmd.apps,
             &available_apps,
-            &deployable_playbooks()?,
+            &playbooks,
             &get_infrastructure_role_names()?,
         )?;
         cmd.apps.clone()
@@ -684,6 +755,157 @@ mod tests {
         runs.iter()
             .map(|run| run.path.file_name().unwrap().to_str().unwrap().to_string())
             .collect()
+    }
+
+    #[test]
+    fn test_menu_offers_the_roster_then_the_playbooks_the_roster_does_not_hold() {
+        let roster = vec!["paperless".to_string(), "calibre".to_string()];
+        let playbooks = vec![
+            "ruche".to_string(),
+            "calibre".to_string(),
+            "aoe".to_string(),
+        ];
+        assert_eq!(
+            menu_items(menu_targets(&roster, &playbooks)),
+            vec![
+                "[all apps]",
+                // Roster order, not sorted: it is apps.yml's own.
+                "paperless",
+                "calibre",
+                // calibre is both and appears once, bare — `split_routes`
+                // sends it through the roster either way.
+                "aoe (playbook)",
+                "ruche (playbook)",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_playbook_filed_under_both_spellings_is_offered_once() {
+        // `standalone_playbook_names` sorts but does not deduplicate, and
+        // `standalone_stem` strips `.yml` and `.yaml` alike — so one playbook
+        // written both ways reaches this function as its name, twice.
+        let roster = vec!["paperless".to_string()];
+        let playbooks = vec!["ruche".to_string(), "ruche".to_string()];
+        assert_eq!(
+            menu_targets(&roster, &playbooks),
+            vec!["paperless".to_string(), "ruche (playbook)".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_all_selects_the_roster_and_never_a_playbook() {
+        // The safety property. `run_deploy` builds a Preflight per run before
+        // the first task, so a plan holding ruche demands the agent tier's
+        // keys of whatever Host `--all` was pointed at (ADR-0075), and
+        // memsearch.yml carries no group guard at all.
+        let roster = vec!["paperless".to_string(), "freshrss".to_string()];
+        assert_eq!(
+            resolve_menu_selection(&[ALL_ENTRY.to_string()], &roster),
+            roster
+        );
+    }
+
+    #[test]
+    fn test_a_selected_playbook_resolves_to_the_bare_name() {
+        // The marker is presentation. `split_routes` matches against the
+        // roster by name, so a decorated one routes nowhere.
+        let roster = vec!["paperless".to_string()];
+        assert_eq!(
+            resolve_menu_selection(
+                &["paperless".to_string(), "ruche (playbook)".to_string()],
+                &roster
+            ),
+            vec!["paperless".to_string(), "ruche".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_all_alongside_a_playbook_keeps_both_and_deduplicates() {
+        let roster = vec!["paperless".to_string(), "freshrss".to_string()];
+        assert_eq!(
+            resolve_menu_selection(
+                &[
+                    "paperless".to_string(),
+                    ALL_ENTRY.to_string(),
+                    "ruche (playbook)".to_string(),
+                ],
+                &roster
+            ),
+            vec![
+                "paperless".to_string(),
+                "freshrss".to_string(),
+                "ruche".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_all_reaches_no_playbook_in_the_real_tree() {
+        // The same property against the names that actually exist, so the
+        // guarantee is `ruche` and `memsearch` rather than a fixture.
+        let roster = get_app_names().unwrap();
+        let playbooks = deployable_playbooks().unwrap();
+        let off_roster: Vec<&String> = playbooks
+            .iter()
+            .filter(|name| !roster.contains(name))
+            .collect();
+        assert!(
+            !off_roster.is_empty(),
+            "nothing off the roster to assert about; this test is vacuous"
+        );
+
+        let selected = resolve_menu_selection(&[ALL_ENTRY.to_string()], &roster);
+        for name in off_roster {
+            assert!(
+                !selected.contains(name),
+                "`{name}` reached `{ALL_ENTRY}`; its Preflight now runs against every Host"
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_deduplicates_against_a_pick_it_does_not_immediately_follow() {
+        // A consecutive-only dedup passes the case above and leaves this one
+        // duplicated, which would hand resolve_tags_to_playbook_runs the same
+        // tag twice.
+        let roster = vec!["paperless".to_string(), "freshrss".to_string()];
+        assert_eq!(
+            resolve_menu_selection(&["freshrss".to_string(), ALL_ENTRY.to_string()], &roster),
+            vec!["freshrss".to_string(), "paperless".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_the_menu_offers_the_agent_tier() {
+        // #803: bare `auberge deploy` never listed these, so the names
+        // ADR-0075 made valid were reachable only by typing them.
+        let offered = menu_targets(&get_app_names().unwrap(), &deployable_playbooks().unwrap());
+        for required in ["ruche", "aoe", "opencode", "memsearch"] {
+            assert!(
+                offered.contains(&format!("{required} (playbook)")),
+                "`{required}` missing from the menu: {offered:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_menu_entry_is_a_name_the_named_arg_path_accepts() {
+        // The two entry paths disagreeing about which names exist is #803's
+        // root cause. Assert agreement rather than either side's list.
+        let roster = get_app_names().unwrap();
+        let playbooks = deployable_playbooks().unwrap();
+        let selectable = menu_targets(&roster, &playbooks);
+
+        let requested = resolve_menu_selection(&selectable, &roster);
+        assert_eq!(requested.len(), selectable.len());
+        validate_apps(
+            &requested,
+            &roster,
+            &playbooks,
+            &get_infrastructure_role_names().unwrap(),
+        )
+        .unwrap();
     }
 
     #[test]
