@@ -45,7 +45,6 @@ auberge config set cloudflare_dns_api_token your-token
 auberge config set baikal_admin_password your-password
 auberge config set gokapi_admin_user admin
 auberge config set gokapi_admin_password your-password
-auberge config set tailscale_authkey your-authkey
 auberge config set ssh_port 22022
 ```
 
@@ -137,9 +136,20 @@ Required for DNS-01 ACME challenges via Lego certificate automation:
 
 ### Tailscale
 
-Required for VPN mesh networking:
+Required for VPN mesh networking.
 
-1. Generate auth key at [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
+On a self-hosted Headscale tailnet there is nothing to set: a run entering the
+`tailscale` role mints its own pre-auth key against the host serving Headscale
+and injects it (ADR-0063). Give the host a trust tier so the key is tagged:
+
+```bash
+auberge host add my-vps --ip 203.0.113.10 --tailnet-tag data
+```
+
+On Tailscale SaaS, or when bootstrapping the host that will _serve_ Headscale,
+store a key by hand:
+
+1. Generate an auth key at [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
 2. Set reusable and ephemeral flags as needed
 3. Store the key:
    ```bash

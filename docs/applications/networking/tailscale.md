@@ -12,7 +12,7 @@ auberge ansible run --tags tailscale
 
 ## Configuration
 
-Requires `tailscale_authkey` in `config.toml`. See [Environment Variables](configuration/environment-variables.md).
+Enrollment keys are [minted per run](applications/networking/headscale.md) against self-hosted Headscale; `tailscale_authkey` in `config.toml` is a fallback for the host that serves it, and the source on a Tailscale SaaS tailnet. See [Environment Variables](configuration/environment-variables.md).
 
 ### Optional: DNS Automation
 

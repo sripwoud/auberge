@@ -37,7 +37,7 @@ The CLI validates `config.toml` before running and exits with the missing keys.
 | -------------------- | ------------------------------------------------------- |
 | `bootstrap.yml`      | `admin_user_name`, `ssh_port`                           |
 | `hardening.yml`      | —                                                       |
-| `infrastructure.yml` | `admin_user_name`, `domain`, `tailscale_authkey`        |
+| `infrastructure.yml` | `admin_user_name`, `domain`                             |
 | `apps.yml`           | `admin_user_name`, `domain`, `cloudflare_dns_api_token` |
 | other                | `admin_user_name`, `domain`                             |
 
