@@ -196,14 +196,17 @@
     app_name: "{{ item.source | basename | regex_replace('\\.meta\\.yml$', '') }}"
     override_var: "{{ app_name + '_subdomain' }}"
     address_var: "{{ app_name + '_tailscale_ip' }}"
+    domain_var: "{{ parsed.domain_key | default('domain') }}"
     effective_subdomain: "{{ lookup('vars', override_var, default=parsed.subdomain | default('')) }}"
-    app_fqdn: "{{ effective_subdomain + '.' + domain }}"
+    app_domain: "{{ lookup('vars', domain_var, default='') }}"
+    app_fqdn: "{{ effective_subdomain + '.' + app_domain }}"
     app_address: "{{ lookup('vars', address_var, default='') }}"
   ansible.builtin.set_fact:
     blocky_tailscale_domain_addresses: "{{ blocky_tailscale_domain_addresses | combine({app_fqdn: app_address}) }}"
   when:
     - parsed.tailnet_only | default(false)
     - effective_subdomain | length > 0
+    - app_domain | length > 0
   loop: "{{ blocky_meta_slurped.results }}"
   loop_control:
     label: "{{ item.source | basename }}"

@@ -15,6 +15,16 @@ pub struct PlaybookMeta {
     pub tailnet_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subdomain: Option<String>,
+    /// The Key Registry key holding the App's parent domain, where that is not
+    /// the fleet's `domain`. The agent tier holds its own Cloudflare zone
+    /// (ADR-0068), so `essaim` composes against `agents_domain` and not against
+    /// the parent domain every other App shares.
+    ///
+    /// Read by both DNS Publication consumers — Blocky's `customDNS` map and
+    /// the deploy-time resolution check — because a declaration one of them
+    /// ignores publishes a name the other cannot find.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_key: Option<String>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub memory: HashMap<String, MemoryBudget>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -263,7 +273,16 @@ impl BackupRecipe {
     }
 }
 
+/// The Key Registry key an App's FQDN composes against when its Meta names
+/// none of its own.
+pub const DEFAULT_DOMAIN_KEY: &str = "domain";
+
 impl PlaybookMeta {
+    /// The Key Registry key holding this App's parent domain.
+    pub fn parent_domain_key(&self) -> &str {
+        self.domain_key.as_deref().unwrap_or(DEFAULT_DOMAIN_KEY)
+    }
+
     /// The units this App owns, as `systemctl` addresses them: names
     /// qualified, `{admin_user}` substituted, scope made explicit.
     pub fn owned_units(&self, admin_user: &str) -> Vec<OwnedUnit> {
@@ -822,6 +841,7 @@ version:
             backup: None,
             tailnet_only: false,
             subdomain: None,
+            domain_key: None,
             memory: HashMap::new(),
             units: Vec::new(),
         };

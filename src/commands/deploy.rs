@@ -9,6 +9,7 @@ use crate::services::ansible_runner::{InventoryHost, run_playbook};
 use crate::services::dependency_resolver::{
     PlaybookRun, get_app_names, get_infrastructure_role_names, resolve_tags_to_playbook_runs,
 };
+use crate::services::dns::app_parent_domain;
 use crate::services::dns_verify::{
     HickoryLookup, TailnetResolver, app_verify_config, format_dns_error, verify_a_record,
 };
@@ -174,14 +175,14 @@ fn run_dns_checks_for_run(
         return Ok(());
     }
 
-    let domain = config
-        .get_for_host("domain", Some(&host.name))
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
+    let playbooks_dir = run.path.parent().unwrap_or(&run.path).to_path_buf();
     let ansible_host = &host.vars.ansible_host;
     let mut errors: Vec<String> = Vec::new();
 
     for tag in &run.tags {
+        // Per App, not per run: the agent tier's Apps compose against their own
+        // zone (ADR-0068), so the run cannot resolve one domain for all of them.
+        let domain = app_parent_domain(&playbooks_dir, tag, config, Some(&host.name));
         let vc = match app_verify_config(
             tag,
             &domain,

@@ -1,9 +1,10 @@
 use crate::ansible_assets::AnsibleAssets;
 use crate::config::Config;
-use crate::playbook_meta::PlaybookMeta;
+use crate::playbook_meta::{DEFAULT_DOMAIN_KEY, PlaybookMeta};
 use eyre::Result;
 use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::path::Path;
 use std::time::Duration;
 
 /// How long `set_all` waits between writes, to stay inside the provider's
@@ -217,6 +218,39 @@ pub fn discover_all_subdomains() -> DiscoveredSubdomains {
         public,
         tailnet_only,
     }
+}
+
+/// The parent domain `app`'s FQDN composes against, read through `host`'s view
+/// of `Config` (ADR-0058): the Key Registry key the App's Meta names in
+/// `domain_key:`, or `domain` where it names none.
+///
+/// The agent tier holds its own Cloudflare zone (ADR-0068), so an App there
+/// composes against `agents_domain` while every other App composes against the
+/// domain the fleet shares. Blocky's `customDNS` map answers the same question
+/// off the same field, in ansible; a consumer that resolved only `domain` would
+/// verify a name nothing publishes.
+///
+/// Empty when the key has no answer — an operator who never onboarded the
+/// second zone — and empty when the App has no Meta, which is what the caller
+/// already treats an unset `domain` as.
+///
+/// `playbooks_dir` is passed rather than resolved here so the Meta the lookup
+/// reads is a test's to write; the deploy path hands over the directory the
+/// run's own playbook came out of.
+pub fn app_parent_domain(
+    playbooks_dir: &Path,
+    app: &str,
+    config: &Config,
+    host: Option<&str>,
+) -> String {
+    let key = PlaybookMeta::load(&playbooks_dir.join(format!("{app}.meta.yml")))
+        .map(|meta| meta.parent_domain_key().to_string())
+        .unwrap_or_else(|_| DEFAULT_DOMAIN_KEY.to_string());
+
+    config
+        .get_for_host(&key, host)
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default()
 }
 
 /// Public-App subdomains only. Thin wrapper for callers that don't need the
@@ -661,6 +695,86 @@ mod tests {
         assert_eq!(
             discovered["baikal"].subdomain, "baikal",
             "apps without a config override keep their meta default"
+        );
+    }
+
+    /// A Meta naming no `domain_key:` composes against the fleet's `domain`,
+    /// which is every App but the agent tier's.
+    #[test]
+    fn app_parent_domain_falls_back_to_the_fleet_domain() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("paperless.meta.yml"),
+            "required_keys: []\nsubdomain: docs\ntailnet_only: true\n",
+        )
+        .unwrap();
+        let config = Config::from_toml_str(
+            "domain = \"example.com\"\nagents_domain = \"agents-example.com\"\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            app_parent_domain(dir.path(), "paperless", &config, None),
+            "example.com"
+        );
+    }
+
+    /// A Meta naming one composes against that key, so the check verifies the
+    /// name Blocky publishes rather than the one the fleet's domain would make.
+    #[test]
+    fn app_parent_domain_reads_the_key_the_meta_names() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("aoe.meta.yml"),
+            "required_keys: []\nsubdomain: essaim\ndomain_key: agents_domain\ntailnet_only: true\n",
+        )
+        .unwrap();
+        let config = Config::from_toml_str(
+            "domain = \"example.com\"\nagents_domain = \"agents-example.com\"\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            app_parent_domain(dir.path(), "aoe", &config, None),
+            "agents-example.com"
+        );
+    }
+
+    /// A key with no answer resolves to nothing rather than to the fleet's
+    /// domain: an operator who never onboarded the second zone has no name
+    /// there to verify, and falling back would verify a name in the wrong zone.
+    #[test]
+    fn app_parent_domain_is_empty_when_its_key_is_unanswered() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("aoe.meta.yml"),
+            "required_keys: []\nsubdomain: essaim\ndomain_key: agents_domain\ntailnet_only: true\n",
+        )
+        .unwrap();
+        let config = Config::from_toml_str("domain = \"example.com\"\n").unwrap();
+
+        assert_eq!(app_parent_domain(dir.path(), "aoe", &config, None), "");
+    }
+
+    /// `[hosts.<name>]` scopes it like every other key (ADR-0058), so a Host
+    /// serving a second zone answers for itself.
+    #[test]
+    fn app_parent_domain_answers_per_host() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("aoe.meta.yml"),
+            "required_keys: []\nsubdomain: essaim\ndomain_key: agents_domain\ntailnet_only: true\n",
+        )
+        .unwrap();
+        let config = Config::from_toml_str(
+            "domain = \"example.com\"\nagents_domain = \"agents-example.com\"\n\n\
+             [hosts.ruche]\nagents_domain = \"swarm-example.com\"\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            app_parent_domain(dir.path(), "aoe", &config, Some("ruche")),
+            "swarm-example.com"
         );
     }
 
