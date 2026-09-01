@@ -197,6 +197,10 @@ keys:
     secret: false
     doc: "Subdomain for the Navidrome music server"
 
+  opencode_openrouter_api_key:
+    secret: true
+    doc: "OpenRouter API key the OpenCode agent runtime authenticates with; the sole model credential on the agent Host (ADR-0054)."
+
   paperless_admin_password:
     secret: true
     doc: "Password for the Paperless-ngx admin account"

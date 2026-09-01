@@ -47,9 +47,10 @@ Auberge deploys a curated stack of self-hosted FOSS applications. Services run n
 
 ## AI
 
-| Application                                 | Description                          |
-| ------------------------------------------- | ------------------------------------ |
-| [Hermes Agent](applications/apps/hermes.md) | Self-improving personal AI assistant |
+| Application                                 | Description                                |
+| ------------------------------------------- | ------------------------------------------ |
+| [Hermes Agent](applications/apps/hermes.md) | Self-improving personal AI assistant       |
+| [OpenCode](applications/apps/opencode.md)   | Agent runtime on the disposable agent Host |
 
 ## Deployment
 

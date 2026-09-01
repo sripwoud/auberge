@@ -1,0 +1,45 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "{{ opencode_model }}",
+  "small_model": "{{ opencode_small_model }}",
+  "autoupdate": false,
+  "instructions": ["{{ opencode_agents_md_path }}"],
+  "plugin": [{% for plugin in opencode_plugins %}"{{ plugin }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+  "provider": {
+    "openrouter": {
+      "options": {
+        "apiKey": "{file:{{ opencode_openrouter_key_path }}}"
+      }
+    }
+  },
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "sudo *": "deny",
+      "doas *": "deny",
+      "git push *--force*": "deny",
+      "git push *-f": "deny",
+      "git push *-f *": "deny",
+      "git push *+*": "deny",
+      "rm -rf /": "deny",
+      "rm -fr /": "deny",
+      "rm -rf /*": "deny",
+      "rm -fr /*": "deny",
+      "rm -rf ~*": "deny",
+      "rm -fr ~*": "deny",
+      "rm -rf $HOME*": "deny",
+      "rm -fr $HOME*": "deny",
+      "rm *--no-preserve-root*": "deny",
+      "mkfs*": "deny",
+      "dd *of=/dev/*": "deny"
+    },
+    "read": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow",
+      "{{ opencode_managed_config_dir }}/*": "deny"
+    },
+    "external_directory": "allow"
+  }
+}

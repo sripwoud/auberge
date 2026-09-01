@@ -473,6 +473,7 @@ mod tests {
             "gokapi",
             "hermes",
             "immich",
+            "opencode",
             "remove-radicale",
             "vibecoder",
         ] {

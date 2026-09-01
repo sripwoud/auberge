@@ -1,0 +1,21 @@
+---
+opencode_user: "{{ admin_user_name }}"
+opencode_group: "{{ admin_user_name }}"
+opencode_home: "/home/{{ opencode_user }}"
+
+opencode_install_dir: /usr/local/bin
+opencode_binary_path: "{{ opencode_install_dir }}/opencode"
+opencode_archive_name: "opencode-linux-x64.tar.gz"
+opencode_archive_url: "https://github.com/anomalyco/opencode/releases/download/v{{ opencode_version }}/{{ opencode_archive_name }}"
+opencode_archive_download_path: "/tmp/opencode-{{ opencode_version }}-linux-x64.tar.gz"
+
+opencode_managed_config_dir: /etc/opencode
+opencode_managed_config_path: "{{ opencode_managed_config_dir }}/opencode.json"
+opencode_openrouter_key_path: "{{ opencode_managed_config_dir }}/openrouter.key"
+
+opencode_workspace_dir: "{{ opencode_home }}/workspace"
+opencode_agents_md_path: "{{ opencode_workspace_dir }}/AGENTS.md"
+
+opencode_model: "openrouter/anthropic/claude-sonnet-5"
+opencode_small_model: "openrouter/anthropic/claude-haiku-4.5"
+opencode_plugins: []

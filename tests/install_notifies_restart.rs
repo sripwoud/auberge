@@ -515,6 +515,15 @@ const DECLARED_ROLES: &[DeclaredRole] = &[
               left on the old tree is the correct one -- there is no restart to demand",
         notifies: &[],
     },
+    // Cleared, not covered: the role installs no unit at all. OpenCode is a CLI
+    // an operator or aoe execs per session, so a replaced binary is live at the
+    // next invocation and there is nothing running across the install to bounce.
+    DeclaredRole {
+        role: "opencode",
+        why: "it installs a CLI binary no unit execs; sessions are started per invocation, \
+              so nothing is running out of the artifact for a restart to bridge",
+        notifies: &[],
+    },
     DeclaredRole {
         role: "yourls",
         why: "served by the system's php-fpm, installed by apt; the role templates no \

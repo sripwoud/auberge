@@ -6,72 +6,73 @@ Why Auberge is built the way it is. This file is the curated overview of foundat
 
 One number, one file. Every file in `meta/adr/` is listed here; a number that appears twice is a bug, enforced by `.github/scripts/check-adr-numbering.sh`.
 
-| #    | Decision                                                                                                                                                       |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0001 | [Declarative YAML backup recipes, not a Rust trait](./adr/0001-declarative-backup-recipes.md)                                                                  |
-| 0002 | [Three small utilities, not a god-runner, for command orchestration](./adr/0002-no-god-runner-for-commands.md)                                                 |
-| 0003 | [Tailnet-only Apps publish DNS via Blocky only](./adr/0003-tailnet-only-app-dns.md)                                                                            |
-| 0004 | [CLI structured output is `--output {human,json}`](./adr/0004-cli-structured-output.md)                                                                        |
-| 0005 | [Substrate Apps live in `infrastructure.yml`](./adr/0005-substrate-apps-in-infrastructure.md)                                                                  |
-| 0006 | [Bichon archive feeds the Backup Recipe; internal store is not backed up](./adr/0006-bichon-archive-feeds-backup-recipe.md)                                    |
-| 0007 | [Auberge owns folder reconcile; expunge and verification stay external](./adr/0007-auberge-folder-reconcile-scope.md)                                          |
-| 0008 | [WebDAV role removed in favor of Gokapi](./adr/0008-webdav-removed-in-favor-of-gokapi.md)                                                                      |
-| 0009 | [Gokapi headless first-deploy via templated config](./adr/0009-gokapi-headless-bootstrap.md)                                                                   |
-| 0010 | [Baikal Busy Feed — host-sanitized availability, external consumer](./adr/0010-baikal-busy-feed-host-sanitized-external-consumer.md)                           |
-| 0011 | [Exclude `rust/cleartext-logging` via advanced CodeQL setup](./adr/0011-suppress-codeql-cleartext-logging-on-cli-stdout.md)                                    |
-| 0012 | [Email Archive splits immutable bodies from mutable metadata](./adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md)                             |
-| 0013 | [Archive message identity is the Message-ID, read from the body](./adr/0013-archive-message-identity-is-the-message-id.md)                                     |
-| 0014 | [The UIDVALIDITY rebuild alert is a latched failing unit](./adr/0014-uidvalidity-rebuild-alert-is-a-latched-failing-unit.md)                                   |
-| 0015 | [The Archive publishes a downloaded body only if it is a message](./adr/0015-archive-publishes-a-body-only-if-it-is-a-message.md)                              |
-| 0016 | [Actual deploys bare-metal from npm; bank sync uses Enable Banking](./adr/0016-actual-bare-metal-npm-enable-banking.md)                                        |
-| 0017 | [App Versions are declared in Playbook Meta; Tool Versions stay in role defaults](./adr/0017-app-versions-declared-in-playbook-meta.md)                        |
-| 0018 | [Shell completion is static, generated at runtime by a `completions` subcommand](./adr/0018-static-shell-completion-via-completions-subcommand.md)             |
-| 0019 | [The Archive's download skip is a Message-ID membership test](./adr/0019-archive-download-skip-is-a-message-id-membership-test.md)                             |
-| 0020 | [A Station is an m3u file in `Stations/`; broadcast is opt-in by directory](./adr/0020-station-is-an-m3u-in-stations-broadcast-opt-in.md)                      |
-| 0021 | [Memory Budgets are declared in Playbook Meta](./adr/0021-memory-budgets-declared-in-playbook-meta.md)                                                         |
-| 0022 | [The music sync blocklists hidden entries as a class](./adr/0022-music-sync-blocklists-hidden-entries-as-a-class.md)                                           |
-| 0023 | [Backup Recipes reference the admin user via a `{admin_user}` placeholder](./adr/0023-admin-user-placeholder-in-backup-recipes.md)                             |
-| 0024 | [Host rename recovers by rerun, never by rollback or history rewrite](./adr/0024-host-rename-recovers-by-rerun.md)                                             |
-| 0025 | [Containers are per-app exceptions, granted only when the App is required and upstream supports nothing else](./adr/0025-containers-are-per-app-exceptions.md) |
-| 0026 | [A restore restores what the staged backup holds](./adr/0026-restore-restores-what-the-staged-backup-holds.md)                                                 |
-| 0027 | [An installed version is read from the artifact, never from a note the role wrote](./adr/0027-installed-version-is-read-from-the-artifact.md)                  |
-| 0028 | [A restart the fence cannot prove is declared, not documented](./adr/0028-unproven-restarts-are-declared-not-documented.md)                                    |
-| 0029 | [An install that destroys what a unit is executing stops it first](./adr/0029-a-destructive-install-stops-what-runs-across-it.md)                              |
-| 0030 | [The JRE pin tracks Temurin's per-major release repo](./adr/0030-jre-pin-tracks-temurins-per-major-release-repo.md)                                            |
-| 0031 | [Bichon's internal store joins the Backup Recipe](./adr/0031-bichon-internal-store-joins-the-backup-recipe.md)                                                 |
-| 0032 | [A Backup Recipe quiesces triggers, not just servers](./adr/0032-a-recipe-quiesces-triggers-not-just-servers.md)                                               |
-| 0033 | [A Recipe path the App owns is verified against the App, not trusted from the role](./adr/0033-app-owned-paths-are-verified-not-trusted.md)                    |
-| 0034 | [The extracted assets tree is addressed by its fingerprint, never rewritten in place](./adr/0034-assets-tree-is-fingerprint-addressed.md)                      |
-| 0035 | [A service-owned directory carries a declared classification](./adr/0035-service-owned-directories-carry-a-declared-classification.md)                         |
-| 0036 | [A directory a container owns is created by ansible, never maintained by it](./adr/0036-container-owned-directories-are-created-not-maintained.md)             |
-| 0037 | [Liquidsoap installs from the Debian archive](./adr/0037-liquidsoap-installs-from-the-debian-archive.md)                                                       |
-| 0038 | [A clean shutdown's exit status is declared per runtime](./adr/0038-clean-shutdown-exit-status-is-declared-per-runtime.md)                                     |
-| 0039 | [A Python suite runs under the Host's interpreter, from the role's dependency list](./adr/0039-python-suites-run-under-the-hosts-interpreter.md)               |
-| 0040 | [A restarting unit declares whether it gives up](./adr/0040-a-restarting-unit-declares-whether-it-gives-up.md)                                                 |
-| 0041 | [A removed unit clears its own failed state](./adr/0041-a-removed-unit-clears-its-failed-state.md)                                                             |
-| 0042 | [Unit Ownership is declared in Playbook Meta](./adr/0042-unit-ownership-is-declared-in-playbook-meta.md)                                                       |
-| 0043 | [A vendor client is reached through a crate-local trait](./adr/0043-vendor-types-stop-at-their-adapter.md)                                                     |
-| 0044 | [A run's JSON body names its outcome and carries its plan](./adr/0044-a-runs-json-body-names-its-outcome.md)                                                   |
-| 0045 | [Required config keys are declared in Playbook Meta](./adr/0045-required-keys-are-declared-in-playbook-meta.md)                                                |
-| 0046 | [A fence imports the crate it fences](./adr/0046-a-fence-imports-the-crate-it-fences.md)                                                                       |
-| 0047 | [A test seam is injected, never a compile-time `cfg`](./adr/0047-a-test-seam-is-injected-not-a-cfg.md)                                                         |
-| 0048 | [CodeQL extracts the crate that ships, not the test binary](./adr/0048-codeql-extracts-the-crate-that-ships.md)                                                |
-| 0049 | [The tailnet control plane is self-hosted, not Tailscale SaaS](./adr/0049-the-tailnet-control-plane-is-self-hosted.md)                                         |
-| 0050 | [A remote CLI's contract is pinned to the release it was verified against](./adr/0050-a-remote-cli-contract-is-pinned-to-a-release.md)                         |
-| 0051 | [The headscale deploy gate is real, and config alone answers it](./adr/0051-the-headscale-gate-is-real-and-config-owned.md)                                    |
-| 0052 | [The tailnet's global resolver is the Host's own Blocky](./adr/0052-the-tailnets-global-resolver-is-the-hosts-blocky.md)                                       |
-| 0053 | [A Serving Unit is probed, or named in the ratchet](./adr/0053-a-serving-unit-is-probed-or-named-in-the-ratchet.md)                                            |
-| 0054 | [Agent workloads run on a dedicated disposable Host](./adr/0054-agent-workloads-run-on-a-dedicated-disposable-host.md)                                         |
-| 0055 | [The tailnet runs a tag-based ACL policy](./adr/0055-the-tailnet-runs-a-tag-based-acl-policy.md)                                                               |
-| 0056 | [The GitHub machine user's access is CLI-provisioned from declared config](./adr/0056-github-machine-user-access-is-cli-provisioned.md)                        |
-| 0057 | [A Host's name is its remote hostname](./adr/0057-a-hosts-name-is-its-remote-hostname.md)                                                                      |
-| 0058 | [Config answers per Host](./adr/0058-config-answers-per-host.md)                                                                                               |
-| 0059 | [DNS Publication resolves a Tailnet-only App's address per App](./adr/0059-a-tailnet-only-apps-address-is-per-app.md)                                          |
-| 0060 | [The tailnet DNS check queries the resolver's Host, not the App's](./adr/0060-the-tailnet-dns-check-queries-the-resolver-host.md)                              |
-| 0061 | [A first ACL policy is rolled out in two stages](./adr/0061-a-first-acl-policy-is-rolled-out-in-two-stages.md)                                                 |
-| 0062 | [A Host's trust tier is a typed roster field](./adr/0062-a-hosts-trust-tier-is-a-typed-roster-field.md)                                                        |
-| 0063 | [A pre-auth key is minted per run, not stored](./adr/0063-a-pre-auth-key-is-minted-per-run-not-stored.md)                                                      |
-| 0064 | [Agent memory pools in one directory; capture state and the index stay per-worktree](./adr/0064-agent-memory-pools-in-one-directory.md)                        |
+| #    | Decision                                                                                                                                                        |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0001 | [Declarative YAML backup recipes, not a Rust trait](./adr/0001-declarative-backup-recipes.md)                                                                   |
+| 0002 | [Three small utilities, not a god-runner, for command orchestration](./adr/0002-no-god-runner-for-commands.md)                                                  |
+| 0003 | [Tailnet-only Apps publish DNS via Blocky only](./adr/0003-tailnet-only-app-dns.md)                                                                             |
+| 0004 | [CLI structured output is `--output {human,json}`](./adr/0004-cli-structured-output.md)                                                                         |
+| 0005 | [Substrate Apps live in `infrastructure.yml`](./adr/0005-substrate-apps-in-infrastructure.md)                                                                   |
+| 0006 | [Bichon archive feeds the Backup Recipe; internal store is not backed up](./adr/0006-bichon-archive-feeds-backup-recipe.md)                                     |
+| 0007 | [Auberge owns folder reconcile; expunge and verification stay external](./adr/0007-auberge-folder-reconcile-scope.md)                                           |
+| 0008 | [WebDAV role removed in favor of Gokapi](./adr/0008-webdav-removed-in-favor-of-gokapi.md)                                                                       |
+| 0009 | [Gokapi headless first-deploy via templated config](./adr/0009-gokapi-headless-bootstrap.md)                                                                    |
+| 0010 | [Baikal Busy Feed — host-sanitized availability, external consumer](./adr/0010-baikal-busy-feed-host-sanitized-external-consumer.md)                            |
+| 0011 | [Exclude `rust/cleartext-logging` via advanced CodeQL setup](./adr/0011-suppress-codeql-cleartext-logging-on-cli-stdout.md)                                     |
+| 0012 | [Email Archive splits immutable bodies from mutable metadata](./adr/0012-archive-splits-immutable-bodies-from-mutable-metadata.md)                              |
+| 0013 | [Archive message identity is the Message-ID, read from the body](./adr/0013-archive-message-identity-is-the-message-id.md)                                      |
+| 0014 | [The UIDVALIDITY rebuild alert is a latched failing unit](./adr/0014-uidvalidity-rebuild-alert-is-a-latched-failing-unit.md)                                    |
+| 0015 | [The Archive publishes a downloaded body only if it is a message](./adr/0015-archive-publishes-a-body-only-if-it-is-a-message.md)                               |
+| 0016 | [Actual deploys bare-metal from npm; bank sync uses Enable Banking](./adr/0016-actual-bare-metal-npm-enable-banking.md)                                         |
+| 0017 | [App Versions are declared in Playbook Meta; Tool Versions stay in role defaults](./adr/0017-app-versions-declared-in-playbook-meta.md)                         |
+| 0018 | [Shell completion is static, generated at runtime by a `completions` subcommand](./adr/0018-static-shell-completion-via-completions-subcommand.md)              |
+| 0019 | [The Archive's download skip is a Message-ID membership test](./adr/0019-archive-download-skip-is-a-message-id-membership-test.md)                              |
+| 0020 | [A Station is an m3u file in `Stations/`; broadcast is opt-in by directory](./adr/0020-station-is-an-m3u-in-stations-broadcast-opt-in.md)                       |
+| 0021 | [Memory Budgets are declared in Playbook Meta](./adr/0021-memory-budgets-declared-in-playbook-meta.md)                                                          |
+| 0022 | [The music sync blocklists hidden entries as a class](./adr/0022-music-sync-blocklists-hidden-entries-as-a-class.md)                                            |
+| 0023 | [Backup Recipes reference the admin user via a `{admin_user}` placeholder](./adr/0023-admin-user-placeholder-in-backup-recipes.md)                              |
+| 0024 | [Host rename recovers by rerun, never by rollback or history rewrite](./adr/0024-host-rename-recovers-by-rerun.md)                                              |
+| 0025 | [Containers are per-app exceptions, granted only when the App is required and upstream supports nothing else](./adr/0025-containers-are-per-app-exceptions.md)  |
+| 0026 | [A restore restores what the staged backup holds](./adr/0026-restore-restores-what-the-staged-backup-holds.md)                                                  |
+| 0027 | [An installed version is read from the artifact, never from a note the role wrote](./adr/0027-installed-version-is-read-from-the-artifact.md)                   |
+| 0028 | [A restart the fence cannot prove is declared, not documented](./adr/0028-unproven-restarts-are-declared-not-documented.md)                                     |
+| 0029 | [An install that destroys what a unit is executing stops it first](./adr/0029-a-destructive-install-stops-what-runs-across-it.md)                               |
+| 0030 | [The JRE pin tracks Temurin's per-major release repo](./adr/0030-jre-pin-tracks-temurins-per-major-release-repo.md)                                             |
+| 0031 | [Bichon's internal store joins the Backup Recipe](./adr/0031-bichon-internal-store-joins-the-backup-recipe.md)                                                  |
+| 0032 | [A Backup Recipe quiesces triggers, not just servers](./adr/0032-a-recipe-quiesces-triggers-not-just-servers.md)                                                |
+| 0033 | [A Recipe path the App owns is verified against the App, not trusted from the role](./adr/0033-app-owned-paths-are-verified-not-trusted.md)                     |
+| 0034 | [The extracted assets tree is addressed by its fingerprint, never rewritten in place](./adr/0034-assets-tree-is-fingerprint-addressed.md)                       |
+| 0035 | [A service-owned directory carries a declared classification](./adr/0035-service-owned-directories-carry-a-declared-classification.md)                          |
+| 0036 | [A directory a container owns is created by ansible, never maintained by it](./adr/0036-container-owned-directories-are-created-not-maintained.md)              |
+| 0037 | [Liquidsoap installs from the Debian archive](./adr/0037-liquidsoap-installs-from-the-debian-archive.md)                                                        |
+| 0038 | [A clean shutdown's exit status is declared per runtime](./adr/0038-clean-shutdown-exit-status-is-declared-per-runtime.md)                                      |
+| 0039 | [A Python suite runs under the Host's interpreter, from the role's dependency list](./adr/0039-python-suites-run-under-the-hosts-interpreter.md)                |
+| 0040 | [A restarting unit declares whether it gives up](./adr/0040-a-restarting-unit-declares-whether-it-gives-up.md)                                                  |
+| 0041 | [A removed unit clears its own failed state](./adr/0041-a-removed-unit-clears-its-failed-state.md)                                                              |
+| 0042 | [Unit Ownership is declared in Playbook Meta](./adr/0042-unit-ownership-is-declared-in-playbook-meta.md)                                                        |
+| 0043 | [A vendor client is reached through a crate-local trait](./adr/0043-vendor-types-stop-at-their-adapter.md)                                                      |
+| 0044 | [A run's JSON body names its outcome and carries its plan](./adr/0044-a-runs-json-body-names-its-outcome.md)                                                    |
+| 0045 | [Required config keys are declared in Playbook Meta](./adr/0045-required-keys-are-declared-in-playbook-meta.md)                                                 |
+| 0046 | [A fence imports the crate it fences](./adr/0046-a-fence-imports-the-crate-it-fences.md)                                                                        |
+| 0047 | [A test seam is injected, never a compile-time `cfg`](./adr/0047-a-test-seam-is-injected-not-a-cfg.md)                                                          |
+| 0048 | [CodeQL extracts the crate that ships, not the test binary](./adr/0048-codeql-extracts-the-crate-that-ships.md)                                                 |
+| 0049 | [The tailnet control plane is self-hosted, not Tailscale SaaS](./adr/0049-the-tailnet-control-plane-is-self-hosted.md)                                          |
+| 0050 | [A remote CLI's contract is pinned to the release it was verified against](./adr/0050-a-remote-cli-contract-is-pinned-to-a-release.md)                          |
+| 0051 | [The headscale deploy gate is real, and config alone answers it](./adr/0051-the-headscale-gate-is-real-and-config-owned.md)                                     |
+| 0052 | [The tailnet's global resolver is the Host's own Blocky](./adr/0052-the-tailnets-global-resolver-is-the-hosts-blocky.md)                                        |
+| 0053 | [A Serving Unit is probed, or named in the ratchet](./adr/0053-a-serving-unit-is-probed-or-named-in-the-ratchet.md)                                             |
+| 0054 | [Agent workloads run on a dedicated disposable Host](./adr/0054-agent-workloads-run-on-a-dedicated-disposable-host.md)                                          |
+| 0055 | [The tailnet runs a tag-based ACL policy](./adr/0055-the-tailnet-runs-a-tag-based-acl-policy.md)                                                                |
+| 0056 | [The GitHub machine user's access is CLI-provisioned from declared config](./adr/0056-github-machine-user-access-is-cli-provisioned.md)                         |
+| 0057 | [A Host's name is its remote hostname](./adr/0057-a-hosts-name-is-its-remote-hostname.md)                                                                       |
+| 0058 | [Config answers per Host](./adr/0058-config-answers-per-host.md)                                                                                                |
+| 0059 | [DNS Publication resolves a Tailnet-only App's address per App](./adr/0059-a-tailnet-only-apps-address-is-per-app.md)                                           |
+| 0060 | [The tailnet DNS check queries the resolver's Host, not the App's](./adr/0060-the-tailnet-dns-check-queries-the-resolver-host.md)                               |
+| 0061 | [A first ACL policy is rolled out in two stages](./adr/0061-a-first-acl-policy-is-rolled-out-in-two-stages.md)                                                  |
+| 0062 | [A Host's trust tier is a typed roster field](./adr/0062-a-hosts-trust-tier-is-a-typed-roster-field.md)                                                         |
+| 0063 | [A pre-auth key is minted per run, not stored](./adr/0063-a-pre-auth-key-is-minted-per-run-not-stored.md)                                                       |
+| 0064 | [Agent memory pools in one directory; capture state and the index stay per-worktree](./adr/0064-agent-memory-pools-in-one-directory.md)                         |
+| 0065 | [The agent's permission baseline is a guard rail, and the boundaries are elsewhere](./adr/0065-the-agent-permission-baseline-is-a-guard-rail-not-a-boundary.md) |
 
 ## Native systemd by default
 
