@@ -89,6 +89,32 @@ pub fn migrate_alias(alias: &str, legacy_target: &str) -> Result<bool> {
     Ok(true)
 }
 
+/// Walks the whole roster through [`migrate_alias`], so every Host the user
+/// has already verified keeps its trust once the generated include starts
+/// advertising a `HostKeyAlias` (#785).
+///
+/// `Host::address` here is deliberately the declaration, not a resolved
+/// `Route`: it names where the key *used* to be stored, which no routing
+/// policy (#787) may move.
+///
+/// Bound to `HostManager::save_hosts` (#786) alongside the include
+/// regeneration, so the two stay on one cadence. A Host whose roster entry
+/// has not been written since the upgrade stays unmigrated — its first
+/// connection accept-news under the alias like a fresh host, exactly once.
+pub fn migrate_roster(hosts: &[crate::hosts::Host]) -> Result<()> {
+    for host in hosts {
+        migrate_alias(&host.name, &legacy_target(&host.address, host.port)).wrap_err_with(
+            || {
+                format!(
+                    "Failed to migrate the known_hosts alias for host '{}'",
+                    host.name
+                )
+            },
+        )?;
+    }
+    Ok(())
+}
+
 /// The real key lines `ssh-keygen -F <target>` finds — its own `# Host ...
 /// found` header stripped, so a caller never mistakes it for key material.
 fn key_lines(target: &str) -> Result<Vec<String>> {

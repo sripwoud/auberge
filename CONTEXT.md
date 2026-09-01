@@ -45,7 +45,7 @@ The list of Hosts commands run against: user-local `hosts.toml` when present, el
 _Avoid_: Hostlist, fleet
 
 **SSH Include**:
-The CLI-owned ssh client config (`~/.ssh/config.d/auberge.conf`), regenerated from `hosts.toml` by every `host add|edit|rename|remove` so each Host gets an ssh alias (`ssh <name>`). Loaded via one `Include` line the user adds at the top of `~/.ssh/config` — the CLI never writes that file, only prints the line while missing.
+The CLI-owned ssh client config (`~/.ssh/config.d/auberge.conf`), regenerated from `hosts.toml` so each Host gets an ssh alias (`ssh <name>`). Every directive that decides where the connection goes — `HostName`, `Port`, `User` — is the Host's resolved **Route**, so interactive ssh and the CLI cannot disagree about how to reach one Host; `IdentityFile` stays Host-derived, because it answers what to _write_ in `~`-form rather than what to open (ADR-0070). **Regeneration is bound to the roster write, not to the command**: `HostManager::save_hosts` is the one writer of `hosts.toml` and regenerates the include from the same slice, so no `host` subcommand has to remember — `detect-tailscale-ip` shipped without the call for exactly as long as remembering was the contract, and it is the command #787 makes move addresses. Fenced by `tests/the_include_follows_the_roster.rs`. Loaded via one `Include` line the user adds at the top of `~/.ssh/config` — the CLI never writes that file, only prints the line while missing.
 _Avoid_: ssh aliases file, generated ssh config, config.d
 
 **App**:

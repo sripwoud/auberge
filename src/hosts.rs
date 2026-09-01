@@ -3,7 +3,7 @@ use eyre::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A Host's tailnet trust tier: ADR-0055's four, spelled bare (`agent`), which
 /// is the vocabulary `ansible/roles/headscale/files/policy.hujson` declares
@@ -217,26 +217,59 @@ impl HostManager {
         Ok(config.hosts)
     }
 
+    /// The one write of the roster — `add_host`, `remove_host`, `update_host`
+    /// and `host rename` all land here — and so, by [`Self::write_roster`],
+    /// the one regeneration of the generated ssh include (#786).
+    ///
+    /// The known_hosts migration runs first, and outside `write_roster`,
+    /// because it reaches the real `~/.ssh/known_hosts` through `ssh-keygen`
+    /// rather than through any path a caller could hand in. It is additive and
+    /// idempotent, so a roster write that fails after it leaves only alias
+    /// entries the next successful write would have made anyway.
     pub fn save_hosts(hosts: &[Host]) -> Result<()> {
-        let config_path = Self::config_path()?;
+        let home =
+            dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
+        crate::services::known_hosts::migrate_roster(hosts)?;
+        Self::write_roster(&Self::config_path()?, &home.join(".ssh"), hosts)
+    }
 
+    /// `hosts.toml` and `~/.ssh/config.d/auberge.conf` are written from the
+    /// same slice, by this one function, so no mutation path can *omit* the
+    /// regeneration. Regeneration is bound to the write rather than remembered
+    /// by each command: `host detect-tailscale-ip` shipped without the call
+    /// for exactly as long as remembering was the contract, and it is the
+    /// command that will start moving addresses (#787).
+    ///
+    /// The two writes are not atomic. The roster goes first, so a regeneration
+    /// that then fails leaves it one edit ahead of the include — reported, not
+    /// silent, and repaired by rerunning any host subcommand. That order is
+    /// deliberate: the reverse leaves an include advertising a Host the roster
+    /// does not have, which the next mutation would quietly revert. ADR-0070
+    /// records the trade.
+    ///
+    /// Nothing outside this module can write the roster instead -
+    /// `HostsConfig` is private to it — and nothing outside it regenerates the
+    /// include, fenced by `tests/the_include_follows_the_roster.rs`.
+    ///
+    /// Both paths are parameters rather than resolved here: that is what lets
+    /// the binding be asserted against a pair of temp directories instead of
+    /// the developer's own `$HOME`.
+    fn write_roster(config_path: &Path, ssh_dir: &Path, hosts: &[Host]) -> Result<()> {
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent).wrap_err_with(|| {
                 format!("Failed to create config directory: {}", parent.display())
             })?;
         }
 
-        let config = HostsConfig {
+        let contents = toml::to_string_pretty(&HostsConfig {
             hosts: hosts.to_vec(),
-        };
+        })
+        .wrap_err("Failed to serialize hosts config")?;
 
-        let contents =
-            toml::to_string_pretty(&config).wrap_err("Failed to serialize hosts config")?;
-
-        fs::write(&config_path, contents)
+        fs::write(config_path, contents)
             .wrap_err_with(|| format!("Failed to write hosts config: {}", config_path.display()))?;
 
-        Ok(())
+        crate::services::ssh_include::sync(ssh_dir, hosts)
     }
 
     pub fn add_host(host: Host) -> Result<()> {
@@ -336,6 +369,61 @@ pub fn select_or_arg(arg: Option<String>, argument: &str) -> eyre::Result<Host> 
 mod tests {
     use super::*;
     use crate::config::Config;
+
+    /// The bind #786 exists for: one call writes the roster *and* regenerates
+    /// the include from the same slice. Mutation-test it by deleting the
+    /// `ssh_include::sync` line from `write_roster` — the roster assertion
+    /// alone still passes, this one does not.
+    #[test]
+    fn write_roster_regenerates_the_ssh_include_from_the_same_hosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("auberge/hosts.toml");
+        let ssh_dir = dir.path().join(".ssh");
+        let hosts = [Host::fixture("auberge", None), Host::fixture("ruche", None)];
+
+        HostManager::write_roster(&config_path, &ssh_dir, &hosts).unwrap();
+
+        let roster = fs::read_to_string(&config_path).unwrap();
+        assert!(roster.contains(r#"name = "auberge""#), "{roster}");
+        assert!(roster.contains(r#"name = "ruche""#), "{roster}");
+
+        let include =
+            fs::read_to_string(crate::services::ssh_include::include_file_path(&ssh_dir)).unwrap();
+        for expected in [
+            "Host auberge\n",
+            "Host ruche\n",
+            "  HostName 203.0.113.10\n",
+            "  HostKeyAlias ruche\n",
+        ] {
+            assert!(
+                include.contains(expected),
+                "missing {expected:?}:\n{include}"
+            );
+        }
+    }
+
+    /// A roster the include no longer matches is the failure #780 comes from,
+    /// so a regeneration that cannot happen must stop the command rather than
+    /// leave the two disagreeing quietly.
+    #[test]
+    fn write_roster_fails_when_the_include_cannot_be_regenerated() {
+        let dir = tempfile::tempdir().unwrap();
+        let ssh_dir = dir.path().join(".ssh");
+        fs::create_dir_all(&ssh_dir).unwrap();
+        fs::write(ssh_dir.join("config.d"), "not a directory").unwrap();
+
+        let err = HostManager::write_roster(
+            &dir.path().join("auberge/hosts.toml"),
+            &ssh_dir,
+            &[Host::fixture("auberge", None)],
+        )
+        .unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("auberge.conf"),
+            "the error must name the file that went stale: {err:#}"
+        );
+    }
 
     fn names<'a>(hosts: &[&'a Host]) -> Vec<&'a str> {
         hosts.iter().map(|h| h.name.as_str()).collect()

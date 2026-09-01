@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, 2026-09-01. Slice 1 of 4 from the #780 tailnet-transport design. Pure seam: no observable behaviour changes in this slice. #785–#787 build on it; #787 is the only slice with a real policy.
+Accepted, 2026-09-01. Slice 1 of 4 from the #780 tailnet-transport design. Pure seam: no observable behaviour changes in this slice. #785–#787 build on it; #787 is the only slice with a real policy. Partially superseded by ADR-0070 (the ssh include's `Port` and `User` directives).
 
 ## Decision
 
@@ -15,7 +15,7 @@ Accepted, 2026-09-01. Slice 1 of 4 from the #780 tailnet-transport design. Pure 
 - `SshTransport` and `LiveSshSession` hold a `Route` and a `become_method: &str`, not a `Host`. `become_method` stays separate — it is an escalation policy (#776), unrelated to where the CLI connects.
 - `ansible_runner::InventoryHost` holds `route: Route` instead of duplicate `address`/`port`/`user` fields, so its own internal reads (`known_hosts` lookups, the written inventory YAML) go through the same type rather than a second copy of the same three primitives.
 - `services::inventory::convert_xdg_host_to_inventory_host` resolves a `Route` before populating `ansible_host`/`ansible_port`.
-- `services::ssh_include::render` resolves a `Route` per Host for the generated config's `HostName` line. `Port`/`User`/`IdentityFile` stay Host-derived — the issue is address provenance, not the whole stanza.
+- `services::ssh_include::render` resolves a `Route` per Host for the generated config's `HostName` line. `Port`/`User`/`IdentityFile` stay Host-derived — the issue is address provenance, not the whole stanza. **`Port` and `User` superseded by [ADR-0070](./0070-the-ssh-include-is-regenerated-by-the-roster-write.md)**: they are connection directives too, and leaving them on the declaration would let #787 publish a tailnet address with the public host's port. `IdentityFile` stays Host-derived, for the reason given under _Why `key_path` is optional_.
 
 **The declared exception is bootstrap** (`commands/ansible.rs::run_ansible_bootstrap`): a virgin host has no tailnet yet and no verified `hosts.toml` identity of its own — the operator confirms an IP at a prompt — so it constructs its `Route` literal directly rather than resolving one, marked `#780`. It is the _only_ hand-built `Route` literal in the crate: `run_ansible_bootstrap`'s two steady-state siblings (`run_auto_resolved`, `run_single_playbook`) and `commands/deploy.rs::run_deploy` build an `InventoryHost` from `services::inventory::Host` too, but from an already-provisioned Host, so they go through the new `services::inventory::Host::route()` — a companion to the pre-existing `Host::ssh_target`, for the same reason: neither call site holds a `crate::hosts::Host` to hand `route::resolve`.
 

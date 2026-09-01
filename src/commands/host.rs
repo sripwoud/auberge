@@ -2,7 +2,6 @@ use crate::hosts::{Host, HostManager, TailnetTag};
 use crate::output;
 use crate::output::OutputFormat;
 use crate::prompt::{Choice, confirm, select_item};
-use crate::services::known_hosts;
 use crate::services::ssh::{CONNECT_TIMEOUT, LiveSshSession, SshSession};
 use clap::Subcommand;
 use dialoguer::{Input, Select, theme::ColorfulTheme};
@@ -305,7 +304,6 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         name,
         config_path.display()
     ));
-    sync_ssh_include()?;
 
     Ok(())
 }
@@ -344,7 +342,6 @@ pub fn run_host_remove(name: Option<String>, yes: bool) -> Result<()> {
 
     HostManager::remove_host(&host.name)?;
     output::success(&format!("Host '{}' removed", host.name));
-    sync_ssh_include()?;
 
     Ok(())
 }
@@ -376,53 +373,6 @@ pub fn run_host_detect_tailscale_ip(name_arg: Option<String>) -> Result<()> {
         "Cached tailscale_ip={} for host '{}'",
         detected, host.name
     ));
-    Ok(())
-}
-
-/// Regenerates the CLI-owned ~/.ssh/config.d/auberge.conf from the hosts.toml
-/// on disk after every host mutation (#534). The user's ~/.ssh/config is never
-/// written; when it lacks the Include line, only a hint is printed.
-fn sync_ssh_include() -> Result<()> {
-    let hosts = HostManager::load_hosts()?;
-    migrate_known_hosts_aliases(&hosts)?;
-    let home = dirs::home_dir().ok_or_else(|| eyre::eyre!("Could not determine home directory"))?;
-    let ssh_dir = home.join(".ssh");
-    crate::services::ssh_include::write_include_file(&ssh_dir, &hosts).wrap_err(
-        "hosts.toml was updated but ~/.ssh/config.d/auberge.conf could not be regenerated; rerun any host subcommand after fixing",
-    )?;
-    if !crate::services::ssh_include::main_config_has_include(&ssh_dir)? {
-        output::info(
-            "ssh aliases inactive: add this line at the top of ~/.ssh/config (first-obtained value wins):",
-        );
-        output::info(&format!("  {}", crate::services::ssh_include::INCLUDE_LINE));
-    }
-    Ok(())
-}
-
-/// Copies each host's already-verified known_hosts key onto its
-/// `HostKeyAlias` (#785) before the include can start advertising one, so
-/// `StrictHostKeyChecking accept-new` never silently re-trusts a host this
-/// roster already knows.
-///
-/// Deliberately scoped to this one choke point rather than every ssh/scp/
-/// rsync call site: every live connection already sends `-o
-/// HostKeyAlias=<name>` unconditionally (`SshTransport`,
-/// `ansible_ssh_extra_args`), so a host that has never gone through
-/// `add`/`edit`/`rename`/`remove` since upgrading to this version stays
-/// unmigrated — its first post-upgrade connection accept-news under the
-/// alias like a fresh host, exactly once, until one of those commands
-/// runs for it. Run any host mutation for the whole roster right after
-/// upgrading if that gap matters to you.
-fn migrate_known_hosts_aliases(hosts: &[Host]) -> Result<()> {
-    for host in hosts {
-        let legacy_target = known_hosts::legacy_target(&host.address, host.port);
-        known_hosts::migrate_alias(&host.name, &legacy_target).wrap_err_with(|| {
-            format!(
-                "Failed to migrate the known_hosts alias for host '{}'",
-                host.name
-            )
-        })?;
-    }
     Ok(())
 }
 
@@ -593,7 +543,6 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
 
     HostManager::update_host(&host.name, updated_host)?;
     output::success(&format!("Host '{}' updated", host.name));
-    sync_ssh_include()?;
 
     Ok(())
 }
@@ -658,7 +607,6 @@ pub fn run_host_rename(old: String, new: String, yes: bool) -> Result<()> {
     HostManager::save_hosts(&updated)?;
 
     output::success(&format!("Host '{}' renamed to '{}'", old, new));
-    sync_ssh_include()?;
     print_rename_follow_ups(&old, &new);
     Ok(())
 }
