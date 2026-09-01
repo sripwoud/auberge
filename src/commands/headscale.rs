@@ -2519,6 +2519,7 @@ mod tests {
             become_method: "sudo".to_string(),
             tailscale_ip: None,
             tailnet_tag: None,
+            unknown: toml::Table::new(),
         }
     }
 
