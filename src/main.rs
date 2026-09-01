@@ -163,6 +163,7 @@ async fn main() -> Result<()> {
                 ssh_key,
                 tags,
                 description,
+                tailnet_tag,
                 no_input,
             } => run_host_add(AddHostArgs {
                 name,
@@ -172,6 +173,7 @@ async fn main() -> Result<()> {
                 ssh_key,
                 tags,
                 description,
+                tailnet_tag,
                 no_input,
             }),
             HostCommands::List { tags, output } => run_host_list(tags, output),

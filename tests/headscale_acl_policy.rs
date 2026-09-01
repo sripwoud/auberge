@@ -14,21 +14,34 @@
 //!
 //! Trust is a tag, and node→tag mapping is a pre-auth-key concern, not a
 //! policy-file one — so the policy names tiers, never nodes, and every
-//! assertion below is about a tier. The four tiers and the one carve-out are
-//! written out as literals rather than read back from the file, so widening the
-//! policy is a decision made twice (ADR-0046).
+//! assertion below is about a tier. Which tier plays which part (resolver,
+//! confined) is written out as a literal rather than read back from the file,
+//! so widening the policy is a decision made twice (ADR-0046).
+//!
+//! The tier *vocabulary* is the crate's, reached with `use` (ADR-0046): #767
+//! types a Host's trust tier as [`TailnetTag`], and a roster entry is validated
+//! against that type rather than against the deployed policy — `TagExists` is a
+//! runtime gate on a *loaded* policy (ADR-0061), so it cannot answer for a
+//! declaration. This file is what makes the static check honest: the crate's
+//! four variants and the shipped policy's `tagOwners` are held equal, in both
+//! directions, so neither can widen alone.
 
 use std::fs;
 use std::path::PathBuf;
 
+use auberge::hosts::TailnetTag;
 use serde_json::Value;
 
 mod common;
 
 use common::{Plays, Task, field, role_dir, strings, tasks_in};
 
-/// The trust tiers ADR-0055 declares, and the only tags the policy may name.
-const TRUST_TIERS: [&str; 4] = ["tag:trusted", "tag:data", "tag:agent", "tag:standby"];
+/// The trust tiers ADR-0055 declares, and the only tags the policy may name —
+/// as the crate spells them, so the policy file is compared against the type
+/// `hosts.toml` validates against rather than against a second literal.
+fn trust_tiers() -> Vec<String> {
+    TailnetTag::ALL.iter().map(|tier| tier.acl_tag()).collect()
+}
 
 /// The tier that runs the tailnet's global resolver (ADR-0052): the data
 /// host's Blocky. Every node reaches it on 53, and nothing else.
@@ -185,8 +198,10 @@ fn test_the_four_trust_tiers_are_the_only_declared_tags() {
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(
         owners,
-        TRUST_TIERS.iter().map(|t| t.to_string()).collect(),
-        "the policy names exactly the ADR-0055 tiers — no more, no fewer"
+        trust_tiers().into_iter().collect(),
+        "the policy's tagOwners and TailnetTag's variants are one vocabulary: a tier in the \
+         type but not the policy is a hosts.toml value headscale will refuse, and a tier in the \
+         policy but not the type is one no Host can be declared with"
     );
 }
 
@@ -196,9 +211,9 @@ fn test_the_four_trust_tiers_are_the_only_declared_tags() {
 #[test]
 fn test_tags_are_admin_owned_not_operator_named() {
     let owners = policy()["tagOwners"].clone();
-    for tier in TRUST_TIERS {
+    for tier in trust_tiers() {
         assert_eq!(
-            owners[tier].as_array().map(Vec::len),
+            owners[&tier].as_array().map(Vec::len),
             Some(0),
             "{tier} must be admin-owned (empty list), not owned by a named user"
         );
@@ -262,10 +277,9 @@ fn test_the_agent_tier_initiates_nothing_of_its_own() {
 /// that reach as the rollback surface. Neither ever initiates toward agent.
 #[test]
 fn test_data_and_standby_reach_every_tier_but_the_agent() {
-    let non_agent: std::collections::BTreeSet<String> = TRUST_TIERS
-        .iter()
-        .filter(|tier| **tier != CONFINED_TIER)
-        .map(|tier| tier.to_string())
+    let non_agent: std::collections::BTreeSet<String> = trust_tiers()
+        .into_iter()
+        .filter(|tier| tier != CONFINED_TIER)
         .collect();
     for src_tier in ["tag:data", "tag:standby"] {
         let rule = acls(&policy())
