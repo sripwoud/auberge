@@ -96,6 +96,7 @@ impl<'a> SshTransport<'a> {
 
     pub fn ssh_args(&self) -> Vec<OsString> {
         let mut args = self.sharing_args();
+        args.extend(self.host_key_alias_args());
         args.extend([
             "-i".into(),
             self.ssh_key.into(),
@@ -104,6 +105,16 @@ impl<'a> SshTransport<'a> {
             format!("{}@{}", self.host.user, self.host.address).into(),
         ]);
         args
+    }
+
+    /// `-o HostKeyAlias=<name>` — every connection checks and saves the host
+    /// key under the Host's name (#785), so a route change (tailnet vs
+    /// public address) can never present as a changed key.
+    fn host_key_alias_args(&self) -> Vec<OsString> {
+        vec![
+            "-o".into(),
+            format!("HostKeyAlias={}", self.host.name).into(),
+        ]
     }
 
     /// argv for a bounded, non-interactive connect: the session's own options
@@ -210,11 +221,16 @@ impl<'a> SshTransport<'a> {
             .collect::<Vec<_>>()
             .join(" ");
         let key = shell_escape::escape(self.ssh_key.display().to_string().into());
-        format!("ssh {} -i {} -p {}", mux, key, self.host.port)
+        let alias = shell_escape::escape(self.host.name.clone().into());
+        format!(
+            "ssh {} -o HostKeyAlias={} -i {} -p {}",
+            mux, alias, key, self.host.port
+        )
     }
 
     pub fn scp_args(&self) -> Vec<OsString> {
         let mut args = self.sharing_args();
+        args.extend(self.host_key_alias_args());
         args.extend([
             "-i".into(),
             self.ssh_key.into(),
@@ -356,6 +372,40 @@ mod tests {
         assert!(strs.contains(&"/home/user/.ssh/id_ed25519".to_string()));
         assert!(strs.contains(&"2222".to_string()));
         assert!(strs.contains(&"deploy@192.0.2.1".to_string()));
+    }
+
+    #[test]
+    fn test_ssh_args_pins_the_host_key_lookup_to_the_hosts_name() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshTransport::new(&host, key);
+        let strs = strings(&session.ssh_args());
+        assert!(strs.contains(&"HostKeyAlias=test".to_string()), "{strs:?}");
+    }
+
+    #[test]
+    fn test_first_contact_also_pins_the_host_key_alias() {
+        let host = test_host();
+        let key = Path::new("/tmp/chosen_key");
+        let strs = strings(&SshTransport::first_contact(&host, key).ssh_args());
+        assert!(strs.contains(&"HostKeyAlias=test".to_string()), "{strs:?}");
+    }
+
+    #[test]
+    fn test_scp_args_pins_the_host_key_lookup_to_the_hosts_name() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshTransport::new(&host, key);
+        let strs = strings(&session.scp_args());
+        assert!(strs.contains(&"HostKeyAlias=test".to_string()), "{strs:?}");
+    }
+
+    #[test]
+    fn test_rsync_e_arg_pins_the_host_key_lookup_to_the_hosts_name() {
+        let host = test_host();
+        let key = Path::new("/home/user/.ssh/id_ed25519");
+        let e_arg = SshTransport::new(&host, key).rsync_e_arg();
+        assert!(e_arg.contains("HostKeyAlias=test"), "{e_arg}");
     }
 
     #[test]
