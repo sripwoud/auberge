@@ -4,14 +4,31 @@
 
 `auberge ansible bootstrap` and `auberge ansible run --playbook bootstrap.yml` compare `~/.ssh/known_hosts` against the key the target offers. On a mismatch it prints the stale and offered fingerprints and asks whether to drop the entry; `--force` drops it and warns. Declining, or a non-TTY run without `--force`, aborts with the exact `ssh-keygen -R` to run. Entries are keyed by the host's name (`HostKeyAlias`), independent of its address or port.
 
-| Symptom                              | Likely cause                | Fix                                                                                                                 |
-| ------------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `Connection refused`                 | Wrong port after bootstrap  | `auberge config get ssh_port`; connect with `-p PORT`                                                               |
-| `Permission denied (publickey)`      | Wrong or missing key        | `ssh -i ~/.ssh/identities/vps/ansible ansible@vps-ip -p $SSH_PORT`                                                  |
-| `Host key verification failed`       | VPS reinstalled             | Bootstrap shows both fingerprints and offers removal; else `ssh-keygen -R <host-name>`                              |
-| `Connection timed out`               | Wrong IP or VPS offline     | `auberge host list`; check provider console                                                                         |
-| Ansible hangs (ControlPersist)       | Stale socket                | `rm -rf ~/.ssh/ctl-*`                                                                                               |
-| Unreachable at a `100.x.x.x` address | Stale or down tailnet route | `auberge --via public host detect-tailscale-ip <name>`; see [Tailnet Transport](configuration/tailnet-transport.md) |
+| Symptom                                               | Likely cause                   | Fix                                                                                                                 |
+| ----------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `Connection refused`                                  | Wrong port after bootstrap     | `auberge config get ssh_port`; connect with `-p PORT`                                                               |
+| `Permission denied (publickey)`                       | Wrong or missing key           | `ssh -i ~/.ssh/identities/vps/ansible ansible@vps-ip -p $SSH_PORT`                                                  |
+| `Host key verification failed`                        | VPS reinstalled                | Bootstrap shows both fingerprints and offers removal; else `ssh-keygen -R <host-name>`                              |
+| `Host key verification failed` right after an upgrade | Alias not yet in `known_hosts` | Self-repairing — any command that reads the roster migrates it; see below                                           |
+| `Connection timed out`                                | Wrong IP or VPS offline        | `auberge host list`; check provider console                                                                         |
+| Ansible hangs (ControlPersist)                        | Stale socket                   | `rm -rf ~/.ssh/ctl-*`                                                                                               |
+| Unreachable at a `100.x.x.x` address                  | Stale or down tailnet route    | `auberge --via public host detect-tailscale-ip <name>`; see [Tailnet Transport](configuration/tailnet-transport.md) |
+
+## `Host key verification failed` right after an upgrade
+
+Every connection is checked under the host's **name** (`HostKeyAlias`), not its address, so `~/.ssh/known_hosts` needs an entry keyed by that name. Entries predating the change are keyed by address, and are copied onto the name the first time a command reads `hosts.toml` — `host list` is enough, and so is the failing command itself on its next run.
+
+Confirm the entry landed:
+
+```bash
+ssh-keygen -F <host-name>   # exit 0 and one key line once migrated
+```
+
+Nothing is removed: the address-keyed entry stays where it is. If the name genuinely has no key to inherit — a host you have never connected to — connect once by name so the generated include's `accept-new` applies:
+
+```bash
+ssh <host-name> true
+```
 
 ## After-bootstrap lockout
 
