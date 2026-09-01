@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0](https://github.com/sripwoud/auberge/compare/v0.16.5...v0.17.0) - 2026-09-01
+
+### Added
+
+- *(ruche)* deploy the agent tier as one guarded composition ([#801](https://github.com/sripwoud/auberge/pull/801))
+- *(host)* prefer a host's tailnet address for the ssh transport ([#798](https://github.com/sripwoud/auberge/pull/798))
+- *(aoe)* agent dashboard, tailnet-only at essaim ([#796](https://github.com/sripwoud/auberge/pull/796))
+- *(dns)* agent tier holds its own Cloudflare zone and token ([#792](https://github.com/sripwoud/auberge/pull/792))
+- *(opencode)* install the runtime with a fenced permission baseline ([#778](https://github.com/sripwoud/auberge/pull/778))
+- *(memsearch)* a box-global agent memory store with off-box egress ([#782](https://github.com/sripwoud/auberge/pull/782))
+- *(headscale)* mint the enrollment key per run, drop the config key ([#777](https://github.com/sripwoud/auberge/pull/777))
+- *(host)* a host's tailnet trust tier is its own field ([#773](https://github.com/sripwoud/auberge/pull/773))
+- *(headscale)* roll out the ACL policy via a bridge, with executable acceptance ([#772](https://github.com/sripwoud/auberge/pull/772))
+- *(headscale)* tag an already-enrolled node from the CLI ([#771](https://github.com/sripwoud/auberge/pull/771))
+- *(dns)* resolve a tailnet-only app's address per app, not per host ([#761](https://github.com/sripwoud/auberge/pull/761))
+- *(config)* host-scoped overrides via [hosts.<name>] ([#758](https://github.com/sripwoud/auberge/pull/758))
+- *(github)* provision the machine user via `auberge github invite|verify` ([#748](https://github.com/sripwoud/auberge/pull/748))
+- *(headscale)* deploy a tag-based ACL policy ([#750](https://github.com/sripwoud/auberge/pull/750))
+
+### Fixed
+
+- *(ssh)* migrate known_hosts aliases on the roster read ([#802](https://github.com/sripwoud/auberge/pull/802))
+- *(backup)* arm the host-side deadman around restore's quiesce window ([#797](https://github.com/sripwoud/auberge/pull/797))
+- *(ssh)* regenerate the ssh include from the roster write, not the command ([#795](https://github.com/sripwoud/auberge/pull/795))
+- *(hosts)* preserve unrecognized fields on save ([#794](https://github.com/sripwoud/auberge/pull/794))
+- *(backup)* report an unreachable host once, not once per app ([#789](https://github.com/sripwoud/auberge/pull/789))
+- *(backup)* the deadman honors a host's configured become_method
+- *(backup)* restart quiesced units when the driver process dies ([#779](https://github.com/sripwoud/auberge/pull/779))
+- *(ssh)* honor a host's configured become_method ([#783](https://github.com/sripwoud/auberge/pull/783))
+- *(bootstrap)* the bootstrap subcommand fails on a changed host key ([#766](https://github.com/sripwoud/auberge/pull/766))
+- *(deploy)* query the tailnet resolver, not the app's own host ([#762](https://github.com/sripwoud/auberge/pull/762))
+- *(host)* [**breaking**] derive the remote hostname from the host's name ([#757](https://github.com/sripwoud/auberge/pull/757))
+
+### Other
+
+- *(paperless)* bump to 3.1.2 ([#793](https://github.com/sripwoud/auberge/pull/793))
+- *(ssh)* one resolved route to a host ([#791](https://github.com/sripwoud/auberge/pull/791))
+- *(ssh)* a host's identity is its name, not its address ([#790](https://github.com/sripwoud/auberge/pull/790))
+- *(actual)* bump to 26.9.0 ([#770](https://github.com/sripwoud/auberge/pull/770))
+- *(blocky)* bump to 5.4.1 ([#749](https://github.com/sripwoud/auberge/pull/749))
+- *(uv)* bump to 0.12.8 ([#763](https://github.com/sripwoud/auberge/pull/763))
+- *(backup)* make offsite storage provider agnostic ([#759](https://github.com/sripwoud/auberge/pull/759))
+- *(hermes)* bump to v2026.8.31 ([#754](https://github.com/sripwoud/auberge/pull/754))
+- release v0.16.5 ([#737](https://github.com/sripwoud/auberge/pull/737))
+
 ## [0.16.5](https://github.com/sripwoud/auberge/compare/v0.16.4...v0.16.5) - 2026-08-31
 
 ### Fixed
