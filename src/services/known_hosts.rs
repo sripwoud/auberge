@@ -62,31 +62,42 @@ pub fn forget(alias: &str) -> Result<()> {
     }
 }
 
-/// Copies whatever key `legacy_target` already holds onto `alias`, so a
-/// known_hosts entry keyed by address survives the move to a name-keyed
-/// `HostKeyAlias` (#785) without ssh re-verifying the target over the
-/// network — `StrictHostKeyChecking accept-new` would otherwise trust
-/// whatever answers under the unfamiliar alias, and the CLI's own transport
-/// connects by address, so that option never even reaches it.
+/// Copies whatever key a `legacy_targets` entry already holds onto `alias`,
+/// so a known_hosts entry keyed by address survives the move to a name-keyed
+/// `HostKeyAlias` (#785) without ssh re-verifying the target over the network.
+///
+/// Copied rather than re-accepted, because there is nothing to re-accept it
+/// with: `StrictHostKeyChecking accept-new` reaches only the generated
+/// include's `Host <name>` stanza, and the CLI's transport connects to
+/// `user@<address>`, so ssh's default `ask` governs and a non-interactive run
+/// fails outright (#800). Opting the transport in instead would trust whatever
+/// answers under an alias it has never seen (#780).
 ///
 /// A no-op — safe to call for every host on every roster read — when `alias`
-/// already has an entry (already migrated), or when `legacy_target` never did
-/// (nothing trusted yet, including a `known_hosts` that does not exist).
-fn migrate_alias(known_hosts: &Path, alias: &str, legacy_target: &str) -> Result<bool> {
+/// already has an entry (already migrated), or when none of `legacy_targets`
+/// ever did (nothing trusted yet, including a `known_hosts` that does not
+/// exist).
+///
+/// `legacy_targets` is tried in order and the first hit wins, because that is
+/// how ssh resolves them: the alias must inherit the key a connection would
+/// actually have been checked against.
+fn migrate_alias(known_hosts: &Path, alias: &str, legacy_targets: &[String]) -> Result<bool> {
     if !key_lines(known_hosts, alias)?.is_empty() {
         return Ok(false);
     }
 
-    let migrated: Vec<String> = key_lines(known_hosts, legacy_target)?
-        .iter()
-        .filter_map(|line| rewrite_host_field(line, alias))
-        .collect();
-    if migrated.is_empty() {
-        return Ok(false);
+    for target in legacy_targets {
+        let migrated: Vec<String> = key_lines(known_hosts, target)?
+            .iter()
+            .filter_map(|line| rewrite_host_field(line, alias))
+            .collect();
+        if !migrated.is_empty() {
+            append_known_hosts(known_hosts, &migrated)?;
+            return Ok(true);
+        }
     }
 
-    append_known_hosts(known_hosts, &migrated)?;
-    Ok(true)
+    Ok(false)
 }
 
 /// Walks the whole roster through [`migrate_alias`], so every Host the user
@@ -108,7 +119,7 @@ pub fn migrate_roster(known_hosts: &Path, hosts: &[crate::hosts::Host]) -> Resul
         migrate_alias(
             known_hosts,
             &host.name,
-            &legacy_target(&host.address, host.port),
+            &legacy_targets(&host.address, host.port),
         )
         .wrap_err_with(|| {
             format!(
@@ -223,15 +234,25 @@ fn fingerprints_of(key_lines: &str) -> Result<Vec<Fingerprint>> {
     Ok(parse_fingerprints(&String::from_utf8_lossy(&out.stdout)))
 }
 
-/// The pre-#785 `known_hosts` key for `(address, port)`, in ssh's own
-/// bracketed form for any non-default port. Only [`migrate_alias`] still
-/// reads this: it is where an already-verified key lived before every
-/// connection switched to a name-keyed `HostKeyAlias`.
-pub fn legacy_target(address: &str, port: u16) -> String {
+/// Every pre-#785 `known_hosts` key `(address, port)` may be filed under,
+/// most specific first. Only [`migrate_alias`] reads this: it is where an
+/// already-verified key lived before every connection switched to a
+/// name-keyed `HostKeyAlias`.
+///
+/// **Two spellings, not one.** ssh writes `[address]:port` for a non-default
+/// port, but it *accepts* a bare-address entry for such a connection too —
+/// OpenSSH 10.5p1 matches `135.125.107.230` for a connection on port 59865 —
+/// and that is how the entries on the fleet #800 was filed against are
+/// actually stored. Looking only under the bracketed form left the migration
+/// running and finding nothing, on two of three hosts, with no output to say
+/// so. Order matters for the same reason: where both exist ssh checks the
+/// port-keyed one, so the alias must inherit that key and not a leftover from
+/// a port-22 era.
+pub fn legacy_targets(address: &str, port: u16) -> Vec<String> {
     if port == 22 {
-        address.to_string()
+        vec![address.to_string()]
     } else {
-        format!("[{address}]:{port}")
+        vec![format!("[{address}]:{port}"), address.to_string()]
     }
 }
 
@@ -382,19 +403,26 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_target_omits_port_22() {
-        assert_eq!(legacy_target("198.51.100.1", 22), "198.51.100.1");
+    fn legacy_targets_on_port_22_is_the_bare_address_alone() {
+        assert_eq!(legacy_targets("198.51.100.1", 22), ["198.51.100.1"]);
+    }
+
+    /// Both spellings, most specific first — ssh's own resolution order.
+    #[test]
+    fn legacy_targets_on_another_port_tries_the_bracketed_form_then_the_bare_one() {
+        assert_eq!(
+            legacy_targets("198.51.100.1", 2222),
+            ["[198.51.100.1]:2222", "198.51.100.1"]
+        );
     }
 
     #[test]
-    fn test_legacy_target_brackets_non_default_port() {
-        assert_eq!(legacy_target("198.51.100.1", 2222), "[198.51.100.1]:2222");
-    }
-
-    #[test]
-    fn test_legacy_target_brackets_ipv6_with_port() {
-        assert_eq!(legacy_target("2001:db8::1", 2222), "[2001:db8::1]:2222");
-        assert_eq!(legacy_target("2001:db8::1", 22), "2001:db8::1");
+    fn legacy_targets_brackets_ipv6_with_a_port() {
+        assert_eq!(
+            legacy_targets("2001:db8::1", 2222),
+            ["[2001:db8::1]:2222", "2001:db8::1"]
+        );
+        assert_eq!(legacy_targets("2001:db8::1", 22), ["2001:db8::1"]);
     }
 
     const KEYGEN_F_HEADER_AND_LINE: &str =
@@ -465,7 +493,7 @@ mod tests {
     fn migrate_alias_copies_a_legacy_entry_onto_the_alias() {
         let (_dir, path) = known_hosts_holding("203.0.113.10");
 
-        assert!(migrate_alias(&path, "auberge", "203.0.113.10").unwrap());
+        assert!(migrate_alias(&path, "auberge", &legacy_targets("203.0.113.10", 22)).unwrap());
 
         let written = std::fs::read_to_string(&path).unwrap();
         assert!(
@@ -483,10 +511,10 @@ mod tests {
     #[test]
     fn migrate_alias_is_a_no_op_once_the_alias_is_known() {
         let (_dir, path) = known_hosts_holding("203.0.113.10");
-        migrate_alias(&path, "auberge", "203.0.113.10").unwrap();
+        migrate_alias(&path, "auberge", &legacy_targets("203.0.113.10", 22)).unwrap();
         let after_first = std::fs::read_to_string(&path).unwrap();
 
-        assert!(!migrate_alias(&path, "auberge", "203.0.113.10").unwrap());
+        assert!(!migrate_alias(&path, "auberge", &legacy_targets("203.0.113.10", 22)).unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), after_first);
     }
 
@@ -496,7 +524,7 @@ mod tests {
     fn migrate_alias_is_a_no_op_when_nothing_was_trusted() {
         let (_dir, path) = known_hosts_holding("198.51.100.7");
 
-        assert!(!migrate_alias(&path, "auberge", "203.0.113.10").unwrap());
+        assert!(!migrate_alias(&path, "auberge", &legacy_targets("203.0.113.10", 22)).unwrap());
         assert!(
             !std::fs::read_to_string(&path).unwrap().contains("auberge "),
             "an unverified Host must not gain an alias entry"
@@ -511,24 +539,68 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("known_hosts");
 
-        assert!(!migrate_alias(&path, "auberge", "203.0.113.10").unwrap());
+        assert!(!migrate_alias(&path, "auberge", &legacy_targets("203.0.113.10", 22)).unwrap());
         assert!(
             !path.exists(),
             "the migration must not create an empty trust store"
         );
     }
 
-    /// The pre-#785 key for a non-default port is the bracketed form, and it
-    /// is the form `ssh-keygen -F` has to be handed back to find it.
+    /// The pre-#785 key for a non-default port may be the bracketed form.
     #[test]
-    fn migrate_alias_finds_a_legacy_entry_stored_under_a_non_default_port() {
+    fn migrate_alias_finds_a_legacy_entry_stored_under_the_bracketed_form() {
         let (_dir, path) = known_hosts_holding("[203.0.113.10]:2222");
 
-        assert!(migrate_alias(&path, "auberge", &legacy_target("203.0.113.10", 2222)).unwrap());
+        assert!(migrate_alias(&path, "auberge", &legacy_targets("203.0.113.10", 2222)).unwrap());
         assert!(
             std::fs::read_to_string(&path)
                 .unwrap()
                 .contains(&format!("auberge {LEGACY_KEY}"))
+        );
+    }
+
+    /// And it may equally be the bare address, on a Host reached at a
+    /// non-default port — which is how every entry on the real fleet #800 was
+    /// filed against is actually stored. ssh accepts it (OpenSSH 10.5p1
+    /// matched `135.125.107.230` for a connection on port 59865), so it is the
+    /// trust in force and the migration has to carry it forward. Looking only
+    /// under the bracketed form migrated nothing, silently, on two of three
+    /// hosts.
+    #[test]
+    fn migrate_alias_finds_a_legacy_entry_stored_under_the_bare_address() {
+        let (_dir, path) = known_hosts_holding("203.0.113.10");
+
+        assert!(migrate_alias(&path, "auberge", &legacy_targets("203.0.113.10", 2222)).unwrap());
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains(&format!("auberge {LEGACY_KEY}"))
+        );
+    }
+
+    /// When both exist, the port-keyed one wins — the order ssh resolves them
+    /// in, so the alias inherits the key a connection would actually have
+    /// checked against rather than a leftover from a port-22 era.
+    #[test]
+    fn migrate_alias_prefers_the_port_keyed_entry_over_the_bare_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("known_hosts");
+        std::fs::write(
+            &path,
+            format!("203.0.113.10 ssh-ed25519 AAAASTALE stale\n[203.0.113.10]:2222 {LEGACY_KEY}\n"),
+        )
+        .unwrap();
+
+        assert!(migrate_alias(&path, "auberge", &legacy_targets("203.0.113.10", 2222)).unwrap());
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            written.contains(&format!("auberge {LEGACY_KEY}")),
+            "{written}"
+        );
+        assert!(
+            !written.contains("auberge ssh-ed25519 AAAASTALE"),
+            "{written}"
         );
     }
 

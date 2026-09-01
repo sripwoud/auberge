@@ -12,6 +12,8 @@ Accepted, 2026-09-01. Closes #800, a defect in [ADR-0070](./0070-the-ssh-include
 
 The read and the migration sit in one private function, `read_roster(config_path, known_hosts)`. Both paths are parameters for the reason `write_roster`'s are: it is what lets the binding be asserted against temp files instead of the developer's `$HOME`. Making that possible took one change in `services::known_hosts` — `ssh-keygen -F` takes `-f <file>`, so the trust store became a parameter and the migration became observable at all.
 
+**A pre-#785 key is looked for under both spellings ssh accepts**, most specific first: `[address]:port`, then the bare `address`. `legacy_target` returned only the first for a non-default port; `legacy_targets` returns both.
+
 **`inspect` and `forget` keep ssh's default file.** They neither write nor sit inside a binding a test has to observe, and threading a path through them would be churn with no assertion to serve.
 
 ## Why
@@ -35,6 +37,21 @@ Same target, same second. The alias is the whole cause: without it the connectio
 
 It is the same split #780 exists over, one layer down: the path a human tests by hand (`ssh auberge`, matching the stanza) is the one that works, and the CLI's own path is the one that does not.
 
+### Why two legacy spellings
+
+Moving the trigger was necessary and not sufficient. On the first real run the migration fired, walked all three Hosts, and wrote nothing — because `legacy_target` built `[159.195.111.227]:59865` and the key is filed under the bare `159.195.111.227`.
+
+ssh writes the bracketed form for a non-default port but does not require it. OpenSSH 10.5p1, connecting to port 59865 with no user config in play:
+
+```
+debug1: Host '135.125.107.230' is known and matches the ED25519 host key.
+debug1: Found key in /home/sripwoud/.ssh/known_hosts:14
+```
+
+Two of the three Hosts on this fleet are stored that way. A bare-address entry that ssh honours _is_ the trust the operator has, so the migration has to carry it; looking under one spelling left the fix running and doing nothing, with no output to say so. Order is ssh's own: where both entries exist ssh checks the port-keyed one, so the alias inherits that key rather than a leftover from a port-22 era.
+
+The general shape is worth naming, because the first fix had it: a migration whose trigger is right and whose lookup is wrong fails exactly like one that never ran, and both are silent. The verification that caught it was running the binary against the real trust store and re-running the issue's own command — not the unit tests, which agreed with the bug.
+
 ### Why the read
 
 The trigger has to be an event the upgraded binary actually has. Reading the roster is that event, and it is the only one every affected command shares — `deploy`, `ansible run`, `sync`, `headscale`, `backup` and the nightly `auberge-backup.service` all resolve a Host before they connect. Binding at `load_hosts` rather than at `main` also keeps the trigger where the data is, so a command that reads the roster from a future entry point inherits it instead of remembering it.
@@ -57,7 +74,7 @@ That every sender is _downstream_ of the read is left to the compiler rather tha
 
 ## What it costs
 
-- One `ssh-keygen -F` per Host per read, on every command that resolves a Host — three on this fleet, short-circuiting after the first run because `migrate_alias` returns early once the alias has an entry. `load_hosts` is called more than once by some commands, so the real figure is a small multiple of that. Measured against an ansible run it is noise; it is still work `auberge host list` did not do before.
+- One `ssh-keygen -F` per Host per read in the steady state — the alias lookup hits and returns early. An unmigrated Host on a non-default port costs three (alias, bracketed, bare), once. `load_hosts` is called more than once by some commands, so the real figure is a small multiple. Measured against an ansible run it is noise; it is still work `auberge host list` did not do before.
 - `load_hosts` now resolves `dirs::home_dir()` and shells out, so a command that only lists Hosts fails on a broken `ssh-keygen` where it used to succeed. Fail-fast, and consistent with `save_hosts` since ADR-0070, but it is a wider blast radius for the same class of breakage.
 - The roster module's read path now touches `~/.ssh`, where before only its write path did. `hosts.rs` was already coupled to `services::known_hosts`; the coupling is now on both directions of the roster boundary.
 - `read_roster` takes two paths its only caller immediately resolves from the environment. The indirection exists for the test, and is stated as such rather than dressed up as configurability.
@@ -74,5 +91,6 @@ That every sender is _downstream_ of the read is left to the compiler rather tha
 ## References
 
 - Issue #800 — the defect; #785 — the alias; #786 / [ADR-0070](./0070-the-ssh-include-is-regenerated-by-the-roster-write.md) — the binding this moves.
+- Verified on the fleet: `auberge --via public headscale list-nodes`, the command #800 reproduces with, fails `Host key verification failed` before and returns the node list after.
 - Issue #780 — the settled tailnet-transport design; #799 — the rollout this unblocks; #751 — the release that must not ship without it.
 - CONTEXT.md — **Route**, **SSH Include**.
