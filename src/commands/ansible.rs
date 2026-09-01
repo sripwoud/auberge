@@ -630,7 +630,7 @@ pub fn run_ansible_bootstrap(
         (None, true) => {
             eyre::bail!("--ip is required when using --force")
         }
-        (None, false) => prompt_for_ip(&host_name, &host.vars.ansible_host)?,
+        (None, false) => prompt_for_ip(&host_name, &host.vars.public_address)?,
     };
 
     let bootstrap_user = user

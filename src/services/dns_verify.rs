@@ -200,7 +200,7 @@ impl TailnetResolver {
 pub fn app_verify_config(
     app: &str,
     domain: &str,
-    ansible_host: &str,
+    public_address: &str,
     config: &Config,
     host: Option<&str>,
     verify_public: bool,
@@ -238,7 +238,7 @@ pub fn app_verify_config(
         return Ok(Some(AppVerifyConfig {
             fqdn,
             resolver_ip: "1.1.1.1".to_string(),
-            expected_ip: ansible_host.to_string(),
+            expected_ip: public_address.to_string(),
         }));
     }
 

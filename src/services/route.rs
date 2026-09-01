@@ -209,9 +209,10 @@ fn route_over(host: &Host, key_path: Option<PathBuf>, via: Via, chose: &str) -> 
 /// `--via public` falls back to — regardless of where the CLI connects.
 ///
 /// Not a [`Route`], and deliberately not spelled `host.address` at its call
-/// sites: `ansible_host` in the Inventory carries both meanings, and a reader
-/// who assumes the routing one publishes `100.64.0.1` as a public A record.
-/// Naming the question is what keeps the two apart (#787).
+/// sites: the Inventory's address carried both meanings until #787 split it
+/// into `public_address` and `connect_address`, and a reader who assumes the
+/// routing one publishes `100.64.0.1` as a public A record. Naming the
+/// question is what keeps the two apart.
 pub fn public_address(host: &Host) -> String {
     host.address.clone()
 }

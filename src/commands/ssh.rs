@@ -236,9 +236,12 @@ pub fn run_ssh_add_key(
 
     output::info("Adding key to remote host");
 
-    let target = host.ssh_target(&user);
-    let route = crate::services::route::resolve(&target, Some(connect_key))?;
-    let session = LiveSshSession::first_contact(&route, &target.become_method)?;
+    // The Inventory Host's own Route, not a re-resolution of one:
+    // `connect_address` already carries #787's policy and any `--via`, and
+    // resolving it a second time would ask the policy about a Host that
+    // never held the facts it decides from.
+    let route = host.route_as(&user, Some(connect_key));
+    let session = LiveSshSession::first_contact(&route, "sudo")?;
     authorize_key(&session, pubkey_content.trim())?;
 
     output::success(&format!(

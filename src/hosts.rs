@@ -647,7 +647,7 @@ blocky_subdomain = "dns"
         let mut host = Host::fixture("ruche", None).preferring_tailnet();
         host.tailscale_ip = None;
 
-        HostManager::write_roster(&config_path, &ssh_dir, &[host]).unwrap_err();
+        let _refused = HostManager::write_roster(&config_path, &ssh_dir, &[host]).unwrap_err();
 
         assert!(!config_path.exists());
         assert!(!crate::services::ssh_include::include_file_path(&ssh_dir).exists());

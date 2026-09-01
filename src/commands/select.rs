@@ -33,7 +33,7 @@ pub fn run_select_host(group: Option<String>) -> Result<()> {
         |h: &Host| {
             format!(
                 "{} ({}:{})",
-                h.name, h.vars.ansible_host, h.vars.ansible_port
+                h.name, h.vars.public_address, h.vars.ansible_port
             )
         },
         Choice::new("host"),

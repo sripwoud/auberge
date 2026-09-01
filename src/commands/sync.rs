@@ -168,11 +168,10 @@ pub fn run_sync_music(
     // what actually needs testing here — the flag set, the progress parser,
     // and the scan/transfer drive — already has seams of its own
     // (`music_rsync_command`, `services::rsync`, `drive_music_sync`).
-    // `connect_address`, not `vars.ansible_host`: the latter is the Host's
-    // public address, which #787 lets diverge from where the CLI connects.
-    // This rsync is a connection, so it follows the route like everything
-    // else — a transfer left on the old address is exactly the split #780
-    // exists to close.
+    // `connect_address`, not the Inventory's declared `public_address`: #787
+    // lets the two diverge, and this rsync is a connection, so it follows the
+    // route like everything else. A transfer left on the old address is
+    // exactly the split #780 exists to close.
     let ssh_arg = format!("ssh -p {} -i {}", host.vars.ansible_port, ssh_key.display());
     let destination = format!("{}@{}:{}", ansible_user, host.connect_address, remote_path);
 
