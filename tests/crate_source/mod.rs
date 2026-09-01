@@ -1,11 +1,12 @@
 //! The crate's own source, as the fences read it.
 //!
-//! Six fences ask a question of `src/**/*.rs` — which call sites discard an
+//! Seven fences ask a question of `src/**/*.rs` — which call sites discard an
 //! `AnsibleAssets` guard, which modules name a vendor crate, which modules
 //! spawn ssh or scp, which modules carry a compile-time seam, which modules
-//! read a Host's address, and which modules regenerate the ssh include — and
+//! read a Host's address, which modules regenerate the ssh include, and which
+//! modules send a host key alias — and
 //! the first two each carried its own copy of the walk that answers it. The walk is the
-//! shared premise underneath all six, and a premise that quietly stops
+//! shared premise underneath all seven, and a premise that quietly stops
 //! reaching somewhere does not fail. It shrinks the domain, and every fence
 //! over it goes on passing, vacuously. `tests/common/mod.rs` is the same lesson
 //! learned on the ansible tree, where six copies had already diverged far
@@ -13,11 +14,12 @@
 //! 83 tasks apart (#654). That module is scoped to `ansible/`; this one is the
 //! crate's own source, so it stands beside it rather than inside it.
 //!
-//! The count is load-bearing prose, so it is stated as a count: four of the six
-//! arrived after this module did (`ssh_stays_in_the_transport` with #669,
+//! The count is load-bearing prose, so it is stated as a count: five of the
+//! seven arrived after this module did (`ssh_stays_in_the_transport` with #669,
 //! `seams_are_injected` with #670, `one_route_to_a_host` with #784,
-//! `the_include_follows_the_roster` with #786), and a reader who trusts a
-//! stale one is reading about a domain smaller than the real one.
+//! `the_include_follows_the_roster` with #786, `the_alias_follows_the_binary`
+//! with #800), and a reader who trusts a stale one is reading about a domain
+//! smaller than the real one.
 //!
 //! Only one of the two copies pinned its reach: `vendor_types_stay_in_adapter`
 //! asserted the walked set equals [`CRATE_MODULES`] by difference in both
