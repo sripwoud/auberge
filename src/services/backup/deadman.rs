@@ -1,14 +1,19 @@
-//! A Host-side deadman that guards a backup's quiesce window independently of
-//! the driver process (ADR-0066).
+//! A Host-side deadman that guards a quiesce window independently of the
+//! driver process (ADR-0066).
 //!
-//! `RecipeExecutor::backup`'s own restart-on-`Err` is a property of the Rust
-//! process staying alive to run it. Two real outages happened because the
-//! process itself died mid-window — laptop suspend, a Ctrl-C that exits
-//! straight to `std::process::exit` — cases no in-process error handling can
-//! reach. This module arms a `systemd-run --on-active` timer on the target
-//! Host itself before `RecipeExecutor::backup` quiesces an App's units, and
-//! re-arms it at every step boundary; if the driver never disarms it in time,
-//! the timer fires on the Host alone and brings the units back.
+//! `RecipeExecutor`'s own restart-on-`Err` is a property of the Rust process
+//! staying alive to run it. Two real outages happened because the process
+//! itself died mid-window — laptop suspend, a Ctrl-C that exits straight to
+//! `std::process::exit` — cases no in-process error handling can reach. This
+//! module arms a `systemd-run --on-active` timer on the target Host itself
+//! before an App's units are quiesced, and re-arms it at every step boundary;
+//! if the driver never disarms it in time, the timer fires on the Host alone
+//! and brings the units back.
+//!
+//! Both of the executor's quiesce windows are guarded — `backup`'s and
+//! `restore`'s. Which one armed a timer is recorded in the fire marker,
+//! because an interrupted backup and an interrupted restore leave the App in
+//! entirely different states (#775).
 
 use crate::services::progress::Progress;
 use crate::services::ssh::SshSession;
@@ -21,16 +26,58 @@ use std::time::Duration;
 /// generous rather than tuned.
 pub const TIMEOUT: Duration = Duration::from_secs(3600);
 
-/// Where a fired deadman's record lives on the Host, for the next
-/// `auberge backup` run to find. A file, not driver memory, because the
+/// Which quiesce window a deadman is guarding. Written into the fire marker
+/// so the run that finds it can say what died, not only when: an interrupted
+/// backup leaves a snapshot that may be incomplete, an interrupted restore
+/// leaves the App itself half-overwritten (#775).
+#[derive(Clone, Copy, Debug)]
+pub enum Operation {
+    Backup,
+    Restore,
+}
+
+impl Operation {
+    /// Every operation a deadman can guard. The one list [`Self::parse`] and
+    /// the tests scan, so a new variant is reachable everywhere the moment
+    /// [`Self::as_str`] stops compiling without it.
+    const ALL: [Self; 2] = [Self::Backup, Self::Restore];
+
+    /// The token this operation writes into its fire marker.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Backup => "backup",
+            Self::Restore => "restore",
+        }
+    }
+
+    /// The operation a marker's leading token names, or `None` for one that
+    /// names none — every marker written before #775 held a bare timestamp.
+    fn parse(token: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|op| op.as_str() == token)
+    }
+}
+
+/// Where a fired deadman's record lives on the Host, for the next guarded run
+/// against the same App to find. A file, not driver memory, because the
 /// process that armed the timer is exactly what a fire means is gone.
 const MARKER_DIR: &str = "/var/lib/auberge/deadman";
+
+/// What every transient unit a deadman arms is named after, whichever App and
+/// whichever operation.
+const UNIT_PREFIX: &str = "auberge-deadman-";
 
 /// The transient unit name a deadman arms for `app`. Fixed per App — re-arming
 /// replaces the previous timer under the same name rather than stacking a
 /// second one alongside it.
 fn unit(app: &str) -> String {
-    format!("auberge-deadman-{app}")
+    format!("{UNIT_PREFIX}{app}")
+}
+
+/// The write a fired deadman makes to its marker: one line, the operation
+/// leading, so [`check_and_report`] can split it off the front without
+/// parsing `date`'s own field count.
+fn marker_write(operation: Operation) -> String {
+    format!("echo \"{} $(date -u)\"", operation.as_str())
 }
 
 fn marker(app: &str) -> String {
@@ -67,7 +114,7 @@ pub(crate) fn disarm_command(app: &str, become_method: &str) -> String {
 /// exists". `systemd-run` itself is what needs escalating: once it runs as
 /// root, the transient unit's own `systemctl`/`mkdir`/`date` inherit that,
 /// with no further escalation needed inside it.
-fn arm_command(app: &str, units: &[String], become_method: &str) -> String {
+fn arm_command(app: &str, operation: Operation, units: &[String], become_method: &str) -> String {
     let unit = unit(app);
     let marker = marker(app);
     let recovery = units
@@ -77,9 +124,10 @@ fn arm_command(app: &str, units: &[String], become_method: &str) -> String {
         .join("; ");
     format!(
         "{disarm}; {become_method} systemd-run --on-active={secs} --unit={unit} /bin/sh -c \
-         '{recovery}; mkdir -p {MARKER_DIR}; date -u > {marker}'",
+         '{recovery}; mkdir -p {MARKER_DIR}; {write} > {marker}'",
         disarm = disarm_command(app, become_method),
         secs = TIMEOUT.as_secs(),
+        write = marker_write(operation),
     )
 }
 
@@ -99,8 +147,13 @@ fn fire_check_command(app: &str, become_method: &str) -> String {
 /// detached ([`SshSession::run_detached`]): the timer must be scheduled and
 /// left running on the Host regardless of what the driver does next,
 /// including a slow or hung ssh round trip.
-pub fn arm<S: SshSession + ?Sized>(session: &S, app: &str, units: &[String]) -> Result<()> {
-    session.run_detached(&arm_command(app, units, session.become_method()))
+pub fn arm<S: SshSession + ?Sized>(
+    session: &S,
+    app: &str,
+    operation: Operation,
+    units: &[String],
+) -> Result<()> {
+    session.run_detached(&arm_command(app, operation, units, session.become_method()))
 }
 
 /// Cancels `app`'s armed deadman. Best-effort: a disarm that fails to reach
@@ -126,12 +179,82 @@ pub fn check_and_report<S: SshSession + ?Sized>(
     if !result.success || recorded.is_empty() {
         return Ok(());
     }
-    progress.warn(&format!(
-        "{app}: a previous backup's host-side deadman fired ({recorded}) — its driver died \
-         mid-quiesce and this Host restarted {app}'s units on its own; treat that run's backup \
-         as possibly incomplete"
-    ));
+    progress.warn(&fire_warning(app, recorded));
     Ok(())
+}
+
+/// The account a fired marker gets: what died, when, and what it leaves the
+/// operator holding. The operation is the marker's first field; a marker that
+/// does not start with one — a legacy timestamp-only marker written before
+/// #775, or anything else unparseable — still warns, because a fire nobody is
+/// told about is the one outcome this whole mechanism exists to prevent.
+fn fire_warning(app: &str, recorded: &str) -> String {
+    let named = recorded
+        .split_once(' ')
+        .and_then(|(token, when)| Operation::parse(token).map(|op| (op, when)));
+    let (subject, when, consequence) = match named {
+        Some((op @ Operation::Backup, when)) => (
+            op.as_str(),
+            when,
+            "treat that run's backup as possibly incomplete".to_string(),
+        ),
+        Some((op @ Operation::Restore, when)) => (
+            op.as_str(),
+            when,
+            format!(
+                "that restore was interrupted mid-apply, so {app} may be half-overwritten — \
+                 re-run the restore, or roll back from the emergency backup a cross-host \
+                 restore takes first"
+            ),
+        ),
+        None => (
+            "run",
+            recorded,
+            format!(
+                "the marker does not name the operation that armed it, so treat both the \
+                 snapshot it may have been taking and {app}'s own state as suspect"
+            ),
+        ),
+    };
+    format!(
+        "{app}: a previous {subject}'s host-side deadman fired ({when}) — its driver died \
+         mid-quiesce and this Host restarted {app}'s units on its own; {consequence}"
+    )
+}
+
+/// How a deadman's own SSH calls are picked out of a call log.
+///
+/// Here, beside the commands that produce them, because three test modules
+/// need to tell a deadman's traffic from the App's own: a marker path or unit
+/// name changed in one place and re-spelled in three would not fail those
+/// tests, it would make them pass over nothing.
+#[cfg(test)]
+pub mod recognise {
+    use super::{MARKER_DIR, Operation, UNIT_PREFIX, marker_write};
+    use crate::services::ssh::SshOp;
+
+    #[derive(Debug)]
+    pub enum DeadmanOp {
+        FireCheck,
+        Arm(Operation),
+        Disarm,
+    }
+
+    /// Which deadman call this is, or `None` for a call belonging to the App's
+    /// own stop/transfer/restart sequence.
+    pub fn of(call: &SshOp) -> Option<DeadmanOp> {
+        match call {
+            SshOp::RunDetached(cmd) => Operation::ALL
+                .into_iter()
+                .find(|op| cmd.contains(&marker_write(*op)))
+                .map(DeadmanOp::Arm),
+            SshOp::Run(cmd) if cmd.starts_with(&format!("cat {MARKER_DIR}")) => {
+                Some(DeadmanOp::FireCheck)
+            }
+            SshOp::Run(cmd) if cmd.contains(UNIT_PREFIX) => Some(DeadmanOp::Disarm),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -152,7 +275,12 @@ mod tests {
 
     #[test]
     fn arm_command_disarms_before_arming_under_the_same_unit_name() {
-        let cmd = arm_command("paperless", &["paperless-webserver".to_string()], "sudo");
+        let cmd = arm_command(
+            "paperless",
+            Operation::Backup,
+            &["paperless-webserver".to_string()],
+            "sudo",
+        );
         let disarm_pos = cmd
             .find("systemctl stop auberge-deadman-paperless.timer")
             .unwrap();
@@ -162,14 +290,14 @@ mod tests {
 
     #[test]
     fn arm_command_carries_the_fixed_timeout_and_a_dedicated_unit_name() {
-        let cmd = arm_command("bichon", &["bichon".to_string()], "sudo");
+        let cmd = arm_command("bichon", Operation::Backup, &["bichon".to_string()], "sudo");
         assert!(cmd.contains("--on-active=3600"), "{cmd}");
         assert!(cmd.contains("--unit=auberge-deadman-bichon"), "{cmd}");
     }
 
     #[test]
     fn arm_and_disarm_commands_use_the_hosts_configured_become_method() {
-        let arm = arm_command("bichon", &["bichon".to_string()], "doas");
+        let arm = arm_command("bichon", Operation::Backup, &["bichon".to_string()], "doas");
         let disarm = disarm_command("bichon", "doas");
         assert!(
             arm.contains("doas systemctl stop auberge-deadman-bichon"),
@@ -192,6 +320,7 @@ mod tests {
     fn arm_command_replays_units_in_the_given_order_reset_failed_then_start() {
         let cmd = arm_command(
             "bichon",
+            Operation::Backup,
             &["bichon-archive.timer".to_string(), "bichon".to_string()],
             "sudo",
         );
@@ -214,7 +343,12 @@ mod tests {
 
     #[test]
     fn arm_command_never_says_restart_or_stop_against_the_guarded_units() {
-        let cmd = arm_command("paperless", &["paperless-webserver".to_string()], "sudo");
+        let cmd = arm_command(
+            "paperless",
+            Operation::Backup,
+            &["paperless-webserver".to_string()],
+            "sudo",
+        );
         let recovery_start = cmd.find("/bin/sh -c '").unwrap();
         let recovery = &cmd[recovery_start..];
         assert!(!recovery.contains("restart"), "{cmd}");
@@ -222,11 +356,33 @@ mod tests {
     }
 
     #[test]
-    fn arm_command_writes_a_marker_the_next_run_can_read() {
-        let cmd = arm_command("paperless", &["paperless-webserver".to_string()], "sudo");
+    fn arm_command_writes_a_marker_naming_the_operation_and_the_time() {
+        let cmd = arm_command(
+            "paperless",
+            Operation::Backup,
+            &["paperless-webserver".to_string()],
+            "sudo",
+        );
         assert!(cmd.contains("mkdir -p /var/lib/auberge/deadman"), "{cmd}");
         assert!(
-            cmd.contains("date -u > /var/lib/auberge/deadman/paperless.fired"),
+            cmd.contains("echo \"backup $(date -u)\" > /var/lib/auberge/deadman/paperless.fired"),
+            "{cmd}"
+        );
+    }
+
+    /// The whole point of the payload: the same App, the same unit name, the
+    /// same marker path — only the operation separates a fired backup from a
+    /// fired restore.
+    #[test]
+    fn arm_command_records_restore_as_the_operation_when_restore_arms_it() {
+        let cmd = arm_command(
+            "paperless",
+            Operation::Restore,
+            &["paperless-webserver".to_string()],
+            "sudo",
+        );
+        assert!(
+            cmd.contains("echo \"restore $(date -u)\" > /var/lib/auberge/deadman/paperless.fired"),
             "{cmd}"
         );
     }
@@ -244,7 +400,13 @@ mod tests {
     #[test]
     fn arm_sends_the_arm_command_detached() {
         let mock = MockSshSession::new();
-        arm(&mock, "paperless", &["paperless-webserver".to_string()]).unwrap();
+        arm(
+            &mock,
+            "paperless",
+            Operation::Backup,
+            &["paperless-webserver".to_string()],
+        )
+        .unwrap();
 
         let calls = mock.calls();
         assert_eq!(calls.len(), 1);
@@ -254,7 +416,13 @@ mod tests {
     #[test]
     fn arm_escalates_with_the_sessions_configured_become_method() {
         let mock = MockSshSession::with_become_method("doas");
-        arm(&mock, "paperless", &["paperless-webserver".to_string()]).unwrap();
+        arm(
+            &mock,
+            "paperless",
+            Operation::Backup,
+            &["paperless-webserver".to_string()],
+        )
+        .unwrap();
 
         let calls = mock.calls();
         assert!(
@@ -289,7 +457,9 @@ mod tests {
     #[test]
     fn check_and_report_warns_and_clears_when_a_marker_is_present() {
         let mock = MockSshSession::new();
-        mock.stage_run_result(CommandResult::from_stdout("Mon Sep  1 12:00:00 UTC 2026\n"));
+        mock.stage_run_result(CommandResult::from_stdout(
+            "backup Mon Sep  1 12:00:00 UTC 2026\n",
+        ));
         let mut progress = MockProgress::new();
 
         check_and_report(&mock, "paperless", &mut progress).unwrap();
@@ -348,5 +518,72 @@ mod tests {
                 .iter()
                 .all(|e| !matches!(e, ProgressEvent::Warn(_)))
         );
+    }
+
+    fn warning_for(marker: &str) -> String {
+        let mock = MockSshSession::new();
+        mock.stage_run_result(CommandResult::from_stdout(marker));
+        let mut progress = MockProgress::new();
+
+        check_and_report(&mock, "paperless", &mut progress).unwrap();
+
+        let mut warnings = progress.events().into_iter().filter_map(|e| match e {
+            ProgressEvent::Warn(msg) => Some(msg),
+            _ => None,
+        });
+        let warning = warnings.next().expect("a fire is always reported");
+        assert!(warnings.next().is_none(), "a fire is reported exactly once");
+        warning
+    }
+
+    #[test]
+    fn a_fired_backup_marker_says_the_snapshot_may_be_incomplete() {
+        let warning = warning_for("backup Mon Sep  1 12:00:00 UTC 2026\n");
+        assert!(
+            warning.contains("a previous backup's host-side deadman fired"),
+            "{warning}"
+        );
+        assert!(
+            warning.contains("Mon Sep  1 12:00:00 UTC 2026"),
+            "{warning}"
+        );
+        assert!(
+            warning.contains("treat that run's backup as possibly incomplete"),
+            "{warning}"
+        );
+    }
+
+    /// A restore that died mid-apply leaves the App itself wrong, not just a
+    /// suspect snapshot — the operator needs to be told which way out exists.
+    #[test]
+    fn a_fired_restore_marker_says_the_app_may_be_half_overwritten() {
+        let warning = warning_for("restore Mon Sep  1 12:00:00 UTC 2026\n");
+        assert!(
+            warning.contains("a previous restore's host-side deadman fired"),
+            "{warning}"
+        );
+        assert!(
+            warning.contains("Mon Sep  1 12:00:00 UTC 2026"),
+            "{warning}"
+        );
+        assert!(warning.contains("half-overwritten"), "{warning}");
+        assert!(warning.contains("emergency backup"), "{warning}");
+        assert!(
+            !warning.contains("possibly incomplete"),
+            "backup's wording must not leak onto a restore fire: {warning}"
+        );
+    }
+
+    /// A marker written by a pre-#775 binary carries a bare timestamp. It is
+    /// still a fire, and the one thing that must never happen to a fire is
+    /// going unreported.
+    #[test]
+    fn a_marker_holding_only_a_timestamp_still_warns() {
+        let warning = warning_for("Mon Sep  1 12:00:00 UTC 2026\n");
+        assert!(
+            warning.contains("Mon Sep  1 12:00:00 UTC 2026"),
+            "{warning}"
+        );
+        assert!(warning.contains("does not name the operation"), "{warning}");
     }
 }
