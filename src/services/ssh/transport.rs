@@ -262,15 +262,23 @@ impl<'a> SshTransport<'a> {
         Ok(())
     }
 
+    /// The remote argv systemctl runs, escalated with the acting Host's
+    /// `become_method` (`sudo` by default, see #776).
+    fn systemctl_remote_args<'b>(&'b self, action: &'b str, service: &'b str) -> Vec<&'b str> {
+        vec![
+            self.host.become_method.as_str(),
+            "systemctl",
+            action,
+            service,
+        ]
+    }
+
     pub fn systemctl(&self, action: &str, service: &str) -> Result<()> {
         let result = output::run_piped(
             "systemctl",
             Command::new("ssh")
                 .args(self.ssh_args())
-                .arg("sudo")
-                .arg("systemctl")
-                .arg(action)
-                .arg(service),
+                .args(self.systemctl_remote_args(action, service)),
         )
         .wrap_err_with(|| format!("Failed to {} service {}", action, service))?;
         if result.status.success() {
@@ -424,6 +432,31 @@ mod tests {
         let key = Path::new("/tmp/key");
         let strs = strings(&SshTransport::first_contact(&host, key).scp_args());
         assert!(strs.contains(&"ControlPath=none".to_string()), "{strs:?}");
+    }
+
+    #[test]
+    fn test_systemctl_remote_args_defaults_to_sudo() {
+        let host = test_host();
+        let key = Path::new("/tmp/key");
+        let session = SshTransport::new(&host, key);
+        assert_eq!(
+            session.systemctl_remote_args("restart", "paperless-webserver"),
+            vec!["sudo", "systemctl", "restart", "paperless-webserver"]
+        );
+    }
+
+    #[test]
+    fn test_systemctl_remote_args_uses_configured_become_method() {
+        let host = Host {
+            become_method: "doas".to_string(),
+            ..test_host()
+        };
+        let key = Path::new("/tmp/key");
+        let session = SshTransport::new(&host, key);
+        assert_eq!(
+            session.systemctl_remote_args("restart", "paperless-webserver"),
+            vec!["doas", "systemctl", "restart", "paperless-webserver"]
+        );
     }
 
     #[test]
