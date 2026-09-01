@@ -258,13 +258,8 @@ impl From<&HeadscaleNode> for NodeDisplay {
 /// (ADR-0058), when exactly one does. Zero or several answers mean the
 /// caller has to ask.
 fn only_serving_host(hosts: &[Host], config: &Config) -> Option<Host> {
-    let mut serving = hosts.iter().filter(|h| {
-        config
-            .get_for_host("headscale_subdomain", Some(&h.name))
-            .is_some_and(|v| !v.trim().is_empty())
-    });
-    match (serving.next(), serving.next()) {
-        (Some(only), None) => Some(only.clone()),
+    match crate::hosts::serving_hosts(hosts, config, "headscale_subdomain").as_slice() {
+        [only] => Some((*only).clone()),
         _ => None,
     }
 }

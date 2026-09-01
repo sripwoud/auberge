@@ -1,6 +1,6 @@
 use crate::ansible_assets::AnsibleAssets;
 use crate::config::Config;
-use crate::hosts::HOST_FLAG;
+use crate::hosts::{HOST_FLAG, HostManager};
 use crate::output;
 use crate::playbook_meta::{app_memory_vars, app_version_vars};
 use crate::prompt::{confirm, select_multi};
@@ -9,7 +9,7 @@ use crate::services::dependency_resolver::{
     PlaybookRun, get_app_names, get_infrastructure_role_names, resolve_tags_to_playbook_runs,
 };
 use crate::services::dns_verify::{
-    AppVerifyConfig, HickoryLookup, app_verify_config, format_dns_error, verify_a_record,
+    HickoryLookup, TailnetResolver, app_verify_config, format_dns_error, verify_a_record,
 };
 use crate::services::inventory::{Host, hosts_ignoreip_var, select_or_arg};
 use clap::Args;
@@ -167,6 +167,7 @@ fn run_dns_checks_for_run(
     config: &Config,
     host: &Host,
     verify_public: bool,
+    tailnet_resolver: &TailnetResolver,
 ) -> Result<()> {
     if !run.is_apps() || run.tags.is_empty() {
         return Ok(());
@@ -180,15 +181,21 @@ fn run_dns_checks_for_run(
     let mut errors: Vec<String> = Vec::new();
 
     for tag in &run.tags {
-        let Some(vc): Option<AppVerifyConfig> = app_verify_config(
+        let vc = match app_verify_config(
             tag,
             &domain,
             ansible_host,
             config,
             Some(&host.name),
             verify_public,
-        ) else {
-            continue;
+            tailnet_resolver,
+        ) {
+            Ok(Some(vc)) => vc,
+            Ok(None) => continue,
+            Err(e) => {
+                errors.push(e.to_string());
+                continue;
+            }
         };
 
         let kind = if vc.is_tailnet() { "tailnet" } else { "public" };
@@ -303,6 +310,8 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         groups: host.groups.clone(),
     };
 
+    let tailnet_resolver = TailnetResolver::locate(&HostManager::load_hosts()?, &config);
+
     let playbooks_dir = assets.playbooks_dir();
     let app_versions = app_version_vars(&playbooks_dir)?;
     let memory_budgets = app_memory_vars(&playbooks_dir)?;
@@ -380,7 +389,13 @@ pub fn run_deploy(cmd: DeployCmd) -> Result<()> {
         output::success(&format!("{} completed successfully", playbook_name));
 
         if !cmd.check {
-            run_dns_checks_for_run(run, &config, &host, cmd.verify_public_dns)?;
+            run_dns_checks_for_run(
+                run,
+                &config,
+                &host,
+                cmd.verify_public_dns,
+                &tailnet_resolver,
+            )?;
         }
     }
 
