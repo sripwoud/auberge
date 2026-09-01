@@ -11,7 +11,7 @@ auberge host edit [NAME]
 
 ## Description
 
-Opens an interactive prompt to edit an existing host's configuration. Allows updating address, user, port, SSH key, tags, and description.
+Opens an interactive prompt to edit an existing host's configuration. Allows updating address, user, port, SSH key, tags, description, and tailnet trust tier.
 
 If `NAME` is omitted, you'll be prompted to select a host.
 
@@ -31,6 +31,7 @@ Note: Host name cannot be changed through this command — the name is a foreign
 - **SSH key**: Private key path, pre-filled with the current value (clear it to use the derived default `~/.ssh/identities/{hostname}/{user}`)
 - **Tags**: Comma-separated tags
 - **Description**: Host description
+- **Tailnet trust tier**: picked from `(none)`, `trusted`, `data`, `agent`, `standby` (ADR-0055), current value preselected. A picker rather than a text field because the set is closed — a typo would otherwise surface as a `hosts.toml` parse failure on some later, unrelated command
 
 ## Examples
 
@@ -51,5 +52,11 @@ SSH port [2222]: 22
 SSH key (empty for derived default): ~/.ssh/identities/myserver/deploy
 Tags (comma-separated) [production, web]: production, api
 Description [Production web server]: Main API server
+? Tailnet trust tier ›
+  (none)
+  trusted
+❯ data
+  agent
+  standby
 ✓ Host 'myserver' updated
 ```

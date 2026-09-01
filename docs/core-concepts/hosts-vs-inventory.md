@@ -2,10 +2,10 @@
 
 `hosts.toml` is the single source of truth for host data. `inventory.yml` provides Ansible group-level vars only.
 
-| File            | Path                           | Scope                                                                               | Version controlled |
-| --------------- | ------------------------------ | ----------------------------------------------------------------------------------- | ------------------ |
-| `hosts.toml`    | `~/.config/auberge/hosts.toml` | Per-user host registry (name, IP, user, port, SSH key, tags) — used by every CLI op | ❌                 |
-| `inventory.yml` | `ansible/inventory.yml`        | Shared Ansible group vars (`ansible_user`, `ansible_python_interpreter`, …)         | ✅                 |
+| File            | Path                           | Scope                                                                                             | Version controlled |
+| --------------- | ------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------ |
+| `hosts.toml`    | `~/.config/auberge/hosts.toml` | Per-user host registry (name, IP, user, port, SSH key, tags, tailnet tier) — used by every CLI op | ❌                 |
+| `inventory.yml` | `ansible/inventory.yml`        | Shared Ansible group vars (`ansible_user`, `ansible_python_interpreter`, …)                       | ✅                 |
 
 At runtime the CLI generates a temporary inventory from `hosts.toml` and merges it with `inventory.yml`.
 
@@ -19,7 +19,10 @@ user = "sripwoud"
 port = 59865
 ssh_key = "~/.ssh/identities/my-vps/sripwoud"
 tags = ["production"]
+tailnet_tag = "data"
 ```
+
+`tags` become Ansible inventory groups; `tailnet_tag` is the ACL trust tier and never reaches Ansible (ADR-0062).
 
 Manage with: `auberge host {add,list,show,edit,remove}`.
 

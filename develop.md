@@ -90,6 +90,7 @@ user = "sripwoud"
 port = 22
 tags = ["production"]
 description = "Main VPS"
+tailnet_tag = "data"
 ```
 
 ### Option 2: Ansible Inventory (Recommended for developers)
