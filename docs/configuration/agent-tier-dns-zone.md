@@ -11,10 +11,13 @@ The AI agent fleet ([ruche](https://github.com/sripwoud/auberge/issues/747)) ans
 
 ## Config keys
 
-| Key                               | Secret | Holds                                                  |
-| --------------------------------- | ------ | ------------------------------------------------------ |
-| `agents_domain`                   | no     | the agent tier's own domain, e.g. `agents-example.com` |
-| `agents_cloudflare_dns_api_token` | yes    | API token scoped to the `agents_domain` zone only      |
+| Key                               | Secret | Holds                                                        |
+| --------------------------------- | ------ | ------------------------------------------------------------ |
+| `agents_domain`                   | no     | the agent tier's own domain, e.g. `agents-example.com`       |
+| `agents_cloudflare_dns_api_token` | yes    | API token scoped to the `agents_domain` zone only            |
+| `aoe_subdomain`                   | no     | the agent tier's serving gate — **host-scope it**, see below |
+
+`aoe_subdomain` decides which Host's Caddy answers for this zone. Set it under [`[hosts.<name>]`](configuration/host-scoped-config.md), never fleet-wide: a fleet-wide answer points _every_ Host's Caddy at the agent tier's token, and the parent domain's certificates then fail to renew.
 
 ## Provisioning
 
@@ -46,8 +49,15 @@ Getting a domain onto Cloudflare and minting a scoped token both sit behind an i
    # expect exactly: agents-example.com
    ```
 
-5. `ruche`'s meta role (#743) resolves `agents_cloudflare_dns_api_token` at deploy time; Caddy's `caddy_dns_api_token` indirection (#740) is what points the agent tier's Caddy at this token instead of the parent domain's.
+5. **Point the agent Host's Caddy at it**, by host-scoping the serving gate. `auberge config set` writes only top-level keys, so this one is edited in the file — `auberge config edit`:
+
+   ```toml
+   [hosts.ruche]
+   aoe_subdomain = "essaim"
+   ```
+
+   `infrastructure.yml` reads that gate and resolves Caddy's `caddy_dns_api_token` to `agents_cloudflare_dns_api_token` on that Host alone; every other Host keeps `cloudflare_dns_api_token` ([ADR-0072](https://github.com/sripwoud/auberge/blob/master/meta/adr/0072-the-agent-tiers-caddy-answers-for-its-own-zone.md)). `tests/caddy_acme_token.rs` asserts both directions.
 
 ## Rotation
 
-Cloudflare tokens carry no forced expiry unless one is set at creation — set a TTL when minting and note the rotation date. To rotate: create a replacement token scoped to `agents_domain` the same way, `auberge config set agents_cloudflare_dns_api_token NEW_TOKEN`, revoke the old token, then redeploy the agent tier once #740 lands.
+Cloudflare tokens carry no forced expiry unless one is set at creation — set a TTL when minting and note the rotation date. To rotate: create a replacement token scoped to `agents_domain` the same way, `auberge config set agents_cloudflare_dns_api_token NEW_TOKEN`, revoke the old token, then `auberge deploy --tags caddy -H ruche` to rewrite the drop-in.

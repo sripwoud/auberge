@@ -16,6 +16,18 @@
       tags: [infrastructure, shell, bash]
     - role: caddy
       tags: [infrastructure, web, proxy, caddy]
+      vars:
+        # A Cloudflare token is zone-scoped, so the Host serving the agent tier
+        # answers DNS-01 for the agent tier's zone and must never hold the
+        # parent domain's token (ADR-0068). `aoe_subdomain` is that Host's
+        # serving gate — config alone answers it and a blank value is no answer
+        # (ADR-0051) — scoped under `[hosts.<name>]` like every other one
+        # (ADR-0058). Jinja evaluates only the branch it takes, so an operator
+        # with no agent tier never reads the token they never minted.
+        caddy_dns_api_token: >-
+          {{ agents_cloudflare_dns_api_token
+             if aoe_subdomain | default('') | trim | length > 0
+             else cloudflare_dns_api_token }}
     - role: blocky
       tags: [infrastructure, network, dns, blocky]
       when: blocky_subdomain is defined and blocky_subdomain | length > 0

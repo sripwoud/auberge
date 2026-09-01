@@ -27,6 +27,28 @@ keys:
     secret: false
     doc: "Domain dedicated to the agent tier's own Cloudflare zone (ADR-0068), e.g. agents-example.com. essaim.{agents_domain} is aoe's PWA origin (#740)."
 
+  aoe_passphrase:
+    secret: true
+    doc: >-
+      Login passphrase for the agent-of-empires dashboard (AOE_SERVE_PASSPHRASE), the second
+      factor beside the server-generated URL token. Minimum 8 characters upstream; changing it
+      signs every device out.
+
+  aoe_subdomain:
+    secret: false
+    doc: >-
+      Subdomain of agents_domain serving the agent-of-empires dashboard (default essaim).
+      Host-scope it under [hosts.<name>]: it is the agent tier's serving gate, and what points
+      that Host's Caddy at agents_cloudflare_dns_api_token instead of the parent domain's
+      (ADR-0072).
+
+  aoe_tailscale_ip:
+    secret: false
+    doc: >-
+      Tailscale IPv4 of the Host running the agent-of-empires dashboard. Fleet-wide, never
+      host-scoped: the resolver that publishes the name runs on another Host and cannot read a
+      value scoped to this one (ADR-0059).
+
   baikal_admin_password:
     secret: true
     doc: "Password for the Baïkal CalDAV/CardDAV admin interface"

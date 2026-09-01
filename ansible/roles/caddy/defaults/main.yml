@@ -4,6 +4,13 @@ caddy_l4_version: "v0.1.2"
 # renovate: datasource=go depName=github.com/caddy-dns/cloudflare
 caddy_cloudflare_plugin_version: "v0.2.4"
 
+# The token caddy answers DNS-01 ACME challenges with. An indirection rather
+# than a direct read of `cloudflare_dns_api_token`, because a Cloudflare token
+# is zone-scoped and a Host serving a zone of its own must not hold the parent
+# domain's (ADR-0068). `infrastructure.yml` points it at the agent tier's token
+# on the Host whose config answers the agent tier's serving gate (ADR-0072).
+caddy_dns_api_token: "{{ cloudflare_dns_api_token }}"
+
 caddy_binary: /usr/local/bin/caddy
 caddy_build_id_file: /usr/local/bin/.caddy-build-id
 caddy_build_id: "l4-{{ caddy_l4_version }}-cf-{{ caddy_cloudflare_plugin_version }}"
