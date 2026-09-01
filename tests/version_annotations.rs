@@ -16,6 +16,7 @@ const TOOL_VERSIONS: &[&str] = &[
     "caddy_l4_version",
     "grimmory_java_version",
     "hermes_uv_version",
+    "memsearch_uv_version",
     "tgtg_uv_version",
 ];
 

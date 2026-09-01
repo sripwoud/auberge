@@ -2,8 +2,89 @@
 syncthing_user: "{{ admin_user_name | default(ansible_user | default(ansible_ssh_user)) }}"
 syncthing_config_path: "/home/{{ syncthing_user }}/.local/state/syncthing"
 syncthing_listen_all_interfaces: false
+syncthing_discovery_enabled: ~
 syncthing_configure_workspace: false
 syncthing_workspace_id: ""
 syncthing_workspace_label: ""
 syncthing_workspace_path: ""
 syncthing_device_id: ""
+syncthing_device_name: ""
+
+# Derived from what the API reports, not knobs: a deploy compares these against
+# the running configuration and writes only when they differ, so a converged
+# Host reports no change.
+syncthing_api: "http://127.0.0.1:8384/rest"
+
+syncthing_listen_address: "0.0.0.0:8384"
+
+syncthing_listen_is_current: >-
+  {{ syncthing_running.json.gui.address == syncthing_listen_address }}
+
+syncthing_discovery_is_current: >-
+  {{ [syncthing_running.json.options.globalAnnounceEnabled,
+      syncthing_running.json.options.localAnnounceEnabled,
+      syncthing_running.json.options.relaysEnabled,
+      syncthing_running.json.options.natEnabled]
+     | unique | list == [syncthing_discovery_enabled | bool] }}
+
+# Syncthing canonicalizes a device ID on parse -- uppercased, re-dashed, with
+# 0/1 mapped to O/I -- so the text an operator pasted into config.toml is not
+# necessarily the text `/rest/config` reports back. Comparing the two verbatim
+# makes a PUT that worked look like one that never converged, and the write
+# then reports `changed` on every deploy forever. Every comparison below runs
+# on the dash-stripped, upper-cased form; every write sends the raw value and
+# lets Syncthing canonicalize it.
+syncthing_device_key: "{{ syncthing_device_id | replace('-', '') | upper }}"
+
+syncthing_declared_device: >-
+  {{ syncthing_running.json.devices | map(attribute='deviceID')
+     | map('replace', '-', '') | map('upper') | list
+     | zip(syncthing_running.json.devices)
+     | selectattr('0', 'eq', syncthing_device_key)
+     | map(attribute='1') | list | first | default({}) }}
+
+syncthing_device_is_current: >-
+  {{ syncthing_declared_device.name | default('') == syncthing_device_name
+     and syncthing_declared_device.addresses | default([]) == ['dynamic'] }}
+
+# The local device is named explicitly rather than left to Syncthing's own
+# normalisation, so the comparison below reads the same list it wrote.
+syncthing_folder_devices: >-
+  {{ [syncthing_status.json.myID, syncthing_device_id] | select | list
+     | map('community.general.dict_kv', 'deviceID') | list }}
+
+syncthing_folder_device_keys: >-
+  {{ [syncthing_status.json.myID, syncthing_device_id] | select
+     | map('replace', '-', '') | map('upper') | list | sort }}
+
+# Everything the folder write sends is compared before it is sent. A field in
+# the body but not in the check is a field a human can change in the web UI and
+# keep: `paused` above all, which stops replication while every later deploy
+# reports the folder converged.
+syncthing_desired_folder:
+  id: "{{ syncthing_workspace_id }}"
+  label: "{{ syncthing_workspace_label }}"
+  path: "{{ syncthing_workspace_path }}"
+  type: sendreceive
+  paused: false
+  fsWatcherEnabled: true
+  fsWatcherDelayS: 10
+  rescanIntervalS: 60
+  devices: "{{ syncthing_folder_devices }}"
+
+syncthing_declared_folder: >-
+  {{ syncthing_running.json.folders
+     | selectattr('id', 'eq', syncthing_workspace_id)
+     | list | first | default({}) }}
+
+syncthing_folder_is_current: >-
+  {{ syncthing_declared_folder.path | default('') == syncthing_workspace_path
+     and syncthing_declared_folder.label | default('') == syncthing_workspace_label
+     and syncthing_declared_folder.type | default('') == 'sendreceive'
+     and syncthing_declared_folder.paused | default(true) == false
+     and syncthing_declared_folder.fsWatcherEnabled | default(false) == true
+     and syncthing_declared_folder.fsWatcherDelayS | default(0) == 10
+     and syncthing_declared_folder.rescanIntervalS | default(0) == 60
+     and syncthing_declared_folder.devices | default([])
+         | map(attribute='deviceID') | map('replace', '-', '') | map('upper')
+         | list | sort == syncthing_folder_device_keys }}

@@ -1,0 +1,19 @@
+---
+memsearch_user: "{{ admin_user_name | default(ansible_user | default(ansible_ssh_user)) }}"
+memsearch_home: "/home/{{ memsearch_user }}"
+
+memsearch_store_dir: /srv/agent-memory/.memsearch
+memsearch_memory_dir: "{{ memsearch_store_dir }}/memory"
+
+memsearch_state_dir: "{{ memsearch_home }}/.memsearch"
+memsearch_index_uri: "{{ memsearch_state_dir }}/milvus.db"
+memsearch_collection: agent_memory
+
+memsearch_embedding_model: gpahal/bge-m3-onnx-int8
+
+memsearch_bin: "{{ memsearch_home }}/.local/bin/memsearch"
+memsearch_uv_bin: "{{ memsearch_home }}/.local/bin/uv"
+memsearch_path_link: /usr/local/bin/memsearch
+
+# renovate: datasource=github-releases depName=astral-sh/uv
+memsearch_uv_version: "0.12.8"

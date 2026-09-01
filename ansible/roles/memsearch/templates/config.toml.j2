@@ -1,0 +1,8 @@
+# Managed by ansible (auberge role: memsearch). Manual edits are overwritten.
+[milvus]
+uri = "{{ memsearch_index_uri }}"
+collection = "{{ memsearch_collection }}"
+
+[embedding]
+provider = "onnx"
+model = "{{ memsearch_embedding_model }}"

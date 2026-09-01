@@ -21,22 +21,23 @@ Auberge deploys a curated stack of self-hosted FOSS applications. Services run n
 
 ## Apps
 
-| Application                                     | Description                             |
-| ----------------------------------------------- | --------------------------------------- |
-| [Actual Budget](applications/apps/actual.md)    | Budgeting with EU bank sync             |
-| [Baikal](applications/apps/baikal.md)           | CalDAV/CardDAV server                   |
-| [Bichon](applications/apps/bichon.md)           | Email archiving and search              |
-| [Grimmory](applications/apps/grimmory.md)       | Multi-user digital library              |
-| [Calibre](applications/apps/calibre.md)         | Ebook library (alternative to Grimmory) |
-| [Colporteur](applications/apps/colporteur.md)   | Newsletter-to-feed converter            |
-| [FreshRSS](applications/apps/freshrss.md)       | RSS feed aggregator                     |
-| [Immich](applications/apps/immich.md)           | Photo and video management              |
-| [Navidrome](applications/apps/navidrome.md)     | Music streaming server                  |
-| [Paperless-ngx](applications/apps/paperless.md) | Document management system              |
-| [Radio](applications/apps/radio.md)             | Password-gated music streams            |
-| [Syncthing](applications/apps/syncthing.md)     | Continuous file synchronization         |
-| [Gokapi](applications/apps/gokapi.md)           | Expiring-link file sharing              |
-| [YOURLS](applications/apps/yourls.md)           | URL shortener                           |
+| Application                                     | Description                                 |
+| ----------------------------------------------- | ------------------------------------------- |
+| [Actual Budget](applications/apps/actual.md)    | Budgeting with EU bank sync                 |
+| [Baikal](applications/apps/baikal.md)           | CalDAV/CardDAV server                       |
+| [Bichon](applications/apps/bichon.md)           | Email archiving and search                  |
+| [Grimmory](applications/apps/grimmory.md)       | Multi-user digital library                  |
+| [Calibre](applications/apps/calibre.md)         | Ebook library (alternative to Grimmory)     |
+| [Colporteur](applications/apps/colporteur.md)   | Newsletter-to-feed converter                |
+| [FreshRSS](applications/apps/freshrss.md)       | RSS feed aggregator                         |
+| [Immich](applications/apps/immich.md)           | Photo and video management                  |
+| [Navidrome](applications/apps/navidrome.md)     | Music streaming server                      |
+| [Paperless-ngx](applications/apps/paperless.md) | Document management system                  |
+| [Radio](applications/apps/radio.md)             | Password-gated music streams                |
+| [memsearch](applications/apps/memsearch.md)     | Agent memory: markdown store + on-box index |
+| [Syncthing](applications/apps/syncthing.md)     | Continuous file synchronization             |
+| [Gokapi](applications/apps/gokapi.md)           | Expiring-link file sharing                  |
+| [YOURLS](applications/apps/yourls.md)           | URL shortener                               |
 
 ## Notifications
 

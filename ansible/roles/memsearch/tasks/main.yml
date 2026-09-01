@@ -1,0 +1,139 @@
+---
+- name: Install system dependencies
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - python3
+    state: present
+
+- name: Read installed uv version
+  become: true
+  become_user: "{{ memsearch_user }}"
+  ansible.builtin.command: "{{ memsearch_uv_bin }} --version"
+  register: memsearch_uv_check
+  changed_when: false
+  failed_when: false
+  environment:
+    HOME: "{{ memsearch_home }}"
+
+- name: Set installed uv version fact
+  ansible.builtin.set_fact:
+    memsearch_uv_installed_version: >-
+      {{ memsearch_uv_check.stdout | default('')
+         | regex_search('(?<=uv )\S+')
+         | default('', true) }}
+
+- name: Create secure temp directory for uv installer
+  become: true
+  become_user: "{{ memsearch_user }}"
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: _uv_install
+  register: memsearch_uv_tmpdir
+  when: memsearch_uv_installed_version != memsearch_uv_version
+
+- name: Download uv install script
+  become: true
+  become_user: "{{ memsearch_user }}"
+  ansible.builtin.get_url:
+    url: "https://astral.sh/uv/{{ memsearch_uv_version }}/install.sh"
+    dest: "{{ memsearch_uv_tmpdir.path }}/install.sh"
+    mode: "0755"
+  when: memsearch_uv_installed_version != memsearch_uv_version
+
+- name: Install uv package manager
+  become: true
+  become_user: "{{ memsearch_user }}"
+  ansible.builtin.command: "{{ memsearch_uv_tmpdir.path }}/install.sh"
+  when: memsearch_uv_installed_version != memsearch_uv_version
+  changed_when: true
+  environment:
+    HOME: "{{ memsearch_home }}"
+
+- name: Clean up uv installer
+  become: true
+  become_user: "{{ memsearch_user }}"
+  ansible.builtin.file:
+    path: "{{ memsearch_uv_tmpdir.path }}"
+    state: absent
+  when: memsearch_uv_tmpdir.path is defined
+
+# The store root is created in its own right, not left to the implicit parent
+# `state: directory` would make: an implicit parent lands root-owned, and
+# memsearch writes `.index-state.json` beside `memory/`, as the store's user.
+# That write is suppressed on OSError, so a root-owned root costs the
+# diagnostics silently -- and costs a by-hand `memsearch index` outright.
+- name: Create the box-global store root
+  ansible.builtin.file:
+    path: "{{ memsearch_store_dir }}"
+    state: directory
+    owner: "{{ memsearch_user }}"
+    group: "{{ memsearch_user }}"
+    mode: "0750"
+
+- name: Create the box-global memory directory
+  ansible.builtin.file:
+    path: "{{ memsearch_memory_dir }}"
+    state: directory
+    owner: "{{ memsearch_user }}"
+    group: "{{ memsearch_user }}"
+    mode: "0750"
+
+- name: Create the memsearch state directory
+  ansible.builtin.file:
+    path: "{{ memsearch_state_dir }}"
+    state: directory
+    owner: "{{ memsearch_user }}"
+    group: "{{ memsearch_user }}"
+    mode: "0750"
+
+- name: Read installed memsearch version
+  become: true
+  become_user: "{{ memsearch_user }}"
+  ansible.builtin.command: "{{ memsearch_bin }} --version"
+  register: memsearch_check
+  changed_when: false
+  failed_when: false
+  environment:
+    HOME: "{{ memsearch_home }}"
+
+- name: Set installed memsearch version fact
+  ansible.builtin.set_fact:
+    memsearch_installed_version: >-
+      {{ memsearch_check.stdout | default('')
+         | regex_search('(?<=version )\S+')
+         | default('', true) }}
+
+- name: Install memsearch with the local ONNX embedder
+  become: true
+  become_user: "{{ memsearch_user }}"
+  ansible.builtin.command: >
+    {{ memsearch_uv_bin }} tool install --force
+    memsearch[onnx]=={{ memsearch_version }}
+  when: memsearch_installed_version != memsearch_version
+  changed_when: true
+  environment:
+    HOME: "{{ memsearch_home }}"
+
+- name: Put memsearch on every PATH
+  ansible.builtin.file:
+    src: "{{ memsearch_bin }}"
+    dest: "{{ memsearch_path_link }}"
+    state: link
+
+- name: Pin the store, the index and the embedder
+  ansible.builtin.template:
+    src: config.toml.j2
+    dest: "{{ memsearch_state_dir }}/config.toml"
+    owner: "{{ memsearch_user }}"
+    group: "{{ memsearch_user }}"
+    mode: "0640"
+
+- name: Index the store, downloading the ONNX model on a fresh box
+  become: true
+  become_user: "{{ memsearch_user }}"
+  ansible.builtin.command: "{{ memsearch_bin }} index {{ memsearch_memory_dir }}"
+  changed_when: false
+  environment:
+    HOME: "{{ memsearch_home }}"

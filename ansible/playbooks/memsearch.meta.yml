@@ -1,0 +1,10 @@
+required_keys:
+  - admin_user_name
+  - memsearch_sync_device_id
+  - memsearch_sync_device_name
+version:
+  value: "0.4.19"
+  datasource: github-releases
+  depName: "zilliztech/memsearch"
+  extractVersion: "^v(?<version>.+)$"
+units: []
