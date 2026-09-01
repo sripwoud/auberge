@@ -140,6 +140,7 @@ fn declared_for(runtime: &str) -> Option<&'static CleanShutdownExit> {
 /// name which unit moved.
 const FLEET_SERVICES: &[&str] = &[
     "actual/actual.service",
+    "aoe/aoe.service",
     "baikal/baikal-birthday-sync.service",
     "baikal/baikal-busy-sync.service",
     "bichon/bichon-archive.service",

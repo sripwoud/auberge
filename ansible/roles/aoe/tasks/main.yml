@@ -1,0 +1,190 @@
+---
+# The length is aoe's own floor. The quote is systemd's: the passphrase reaches
+# the process through a single-quoted EnvironmentFile value, which carries every
+# character but that one verbatim.
+- name: Require a passphrase upstream and systemd will both accept
+  ansible.builtin.assert:
+    that:
+      - aoe_passphrase | default('') | length >= 8
+      - "\"'\" not in aoe_passphrase | default('')"
+    fail_msg: >-
+      aoe_passphrase must be at least 8 characters and carry no single quote.
+      aoe refuses a shorter one and `aoe serve` would exit before the dashboard
+      ever listened; a single quote would truncate the value systemd hands it.
+      Set it with: auberge config set aoe_passphrase <VALUE>
+  no_log: true
+
+# The address Caddy binds and the address Blocky publishes are one config key,
+# read by two runs on two Hosts (ADR-0059). A stale value fails the bind here,
+# loudly, rather than resolving the dashboard's name to the wrong Host.
+- name: Require the dashboard's address to be a tailnet one
+  ansible.builtin.assert:
+    that:
+      - aoe_tailscale_ip is match('^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.')
+    fail_msg: >-
+      aoe_tailscale_ip must be this Host's Tailscale IPv4, inside
+      100.64.0.0/10; got '{{ aoe_tailscale_ip | default('undefined') }}'.
+      `auberge host list` shows the address the roster cached.
+
+- name: Install tmux, the session substrate aoe drives
+  ansible.builtin.apt:
+    name: tmux
+    state: present
+
+- name: Read installed aoe version
+  ansible.builtin.command: "{{ aoe_binary_path }} --version"
+  register: aoe_version_output
+  changed_when: false
+  failed_when: false
+
+- name: Set installed aoe version fact
+  ansible.builtin.set_fact:
+    aoe_installed_version: >-
+      {{ aoe_version_output.stdout | default('')
+         | regex_search('(?<=aoe )\S+')
+         | default('', true) }}
+
+- name: Fetch the published checksum for the declared aoe release
+  when: aoe_installed_version != aoe_version
+  become: false
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "{{ aoe_archive_url }}.sha256"
+    method: GET
+    return_content: true
+  register: aoe_published_checksum
+
+- name: Extract the aoe archive SHA256
+  when: aoe_installed_version != aoe_version
+  delegate_to: localhost
+  ansible.builtin.set_fact:
+    aoe_archive_sha256: "{{ aoe_published_checksum.content | split() | first }}"
+
+- name: Download the aoe release archive
+  when: aoe_installed_version != aoe_version
+  ansible.builtin.get_url:
+    url: "{{ aoe_archive_url }}"
+    dest: "{{ aoe_archive_path }}"
+    checksum: "sha256:{{ aoe_archive_sha256 }}"
+    mode: "0644"
+
+- name: Create the aoe staging directory
+  when: aoe_installed_version != aoe_version
+  ansible.builtin.file:
+    path: "{{ aoe_staging_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Unpack the aoe release archive into staging
+  when: aoe_installed_version != aoe_version
+  ansible.builtin.unarchive:
+    src: "{{ aoe_archive_path }}"
+    dest: "{{ aoe_staging_dir }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the aoe binary
+  when: aoe_installed_version != aoe_version
+  ansible.builtin.copy:
+    src: "{{ aoe_unpacked_binary }}"
+    dest: "{{ aoe_binary_path }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart aoe
+
+- name: Remove the aoe download and its staging directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ aoe_archive_path }}"
+    - "{{ aoe_staging_dir }}"
+
+- name: Get the aoe user's UID
+  ansible.builtin.command: "id -u {{ aoe_user }}"
+  register: aoe_user_uid
+  changed_when: false
+
+# Without lingering the user manager is torn down at logout, which takes the
+# dashboard with it on every SSH disconnect.
+- name: Check whether lingering is enabled for the aoe user
+  ansible.builtin.stat:
+    path: "/var/lib/systemd/linger/{{ aoe_user }}"
+  register: aoe_linger_file
+
+- name: Enable lingering for the aoe user
+  ansible.builtin.command: "loginctl enable-linger {{ aoe_user }}"
+  when: not aoe_linger_file.stat.exists
+  changed_when: true
+
+- name: Create the aoe config directory
+  ansible.builtin.file:
+    path: "{{ aoe_config_dir }}"
+    state: directory
+    owner: "{{ aoe_user }}"
+    group: "{{ aoe_group }}"
+    mode: "0700"
+
+- name: Deploy the aoe serve environment file
+  ansible.builtin.template:
+    src: serve.env.j2
+    dest: "{{ aoe_env_path }}"
+    owner: "{{ aoe_user }}"
+    group: "{{ aoe_group }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart aoe
+
+- name: Create the systemd user unit directory
+  ansible.builtin.file:
+    path: "{{ aoe_systemd_user_dir }}"
+    state: directory
+    owner: "{{ aoe_user }}"
+    group: "{{ aoe_group }}"
+    mode: "0755"
+
+- name: Deploy the aoe systemd user unit
+  ansible.builtin.template:
+    src: aoe.service.j2
+    dest: "{{ aoe_systemd_user_dir }}/aoe.service"
+    owner: "{{ aoe_user }}"
+    group: "{{ aoe_group }}"
+    mode: "0644"
+  notify:
+    - Reload aoe systemd user
+    - Restart aoe
+
+- name: Enable and start the aoe dashboard
+  become: true
+  become_user: "{{ aoe_user }}"
+  ansible.builtin.systemd:
+    name: aoe
+    enabled: true
+    state: started
+    scope: user
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ aoe_user_uid.stdout }}"
+
+- name: Flush handlers so a pending aoe restart lands before the probe
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the aoe dashboard to listen on its loopback port
+  ansible.builtin.wait_for:
+    host: "{{ aoe_bind_host }}"
+    port: "{{ aoe_port }}"
+    timeout: 60
+
+- name: Deploy the aoe Caddy site configuration
+  ansible.builtin.template:
+    src: aoe.caddyfile.j2
+    dest: "/etc/caddy/sites/{{ aoe_domain }}.caddyfile"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart caddy

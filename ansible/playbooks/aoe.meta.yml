@@ -1,0 +1,18 @@
+required_keys:
+  - admin_user_name
+  - agents_cloudflare_dns_api_token
+  - agents_domain
+  - aoe_passphrase
+  - aoe_subdomain
+  - aoe_tailscale_ip
+subdomain: essaim
+domain_key: agents_domain
+tailnet_only: true
+version:
+  value: "1.15.1"
+  datasource: github-releases
+  depName: "agent-of-empires/agent-of-empires"
+  extractVersion: "^v(?<version>.+)$"
+units: [{ name: aoe, scope: user }]
+memory:
+  aoe: { high: 4G }

@@ -345,6 +345,7 @@ fn installed_by(role: &str, vars: &BTreeMap<String, String>) -> Vec<InstalledUni
 /// anything here.
 pub const FLEET_UNIT_FILES: &[&str] = &[
     "actual/actual.service",
+    "aoe/aoe.service (user)",
     "baikal/baikal-birthday-sync.service",
     "baikal/baikal-birthday-sync.timer",
     "baikal/baikal-busy-sync.service",

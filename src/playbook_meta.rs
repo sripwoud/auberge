@@ -15,6 +15,16 @@ pub struct PlaybookMeta {
     pub tailnet_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subdomain: Option<String>,
+    /// The Key Registry key holding the App's parent domain, where that is not
+    /// the fleet's `domain`. The agent tier holds its own Cloudflare zone
+    /// (ADR-0068), so `essaim` composes against `agents_domain` and not against
+    /// the parent domain every other App shares.
+    ///
+    /// Read by both DNS Publication consumers — Blocky's `customDNS` map and
+    /// the deploy-time resolution check — because a declaration one of them
+    /// ignores publishes a name the other cannot find.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_key: Option<String>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub memory: HashMap<String, MemoryBudget>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -115,10 +125,20 @@ pub fn unit_file_name(unit: &str) -> String {
 /// A Memory Budget: one systemd unit's `MemoryHigh=` (throttle-and-reclaim
 /// ceiling) and `MemoryMax=` (OOM-kill line), declared per unit in the App's
 /// Playbook Meta and injected at deploy like an App Version (ADR-0021).
+///
+/// `max` is optional, and omitting it is a statement rather than an oversight:
+/// `MemoryHigh=` throttles and reclaims, so a unit that overshoots it is slow;
+/// `MemoryMax=` is where the kernel kills. A unit that supervises processes it
+/// did not fork — `aoe serve` and the tmux sessions under it — cannot be given
+/// a kill line before it is known which cgroup those processes land in, since
+/// the wrong guess OOM-kills an agent mid-run. An absent `max` injects no
+/// `<unit>_memory_max`, so a template that reads one fails loudly instead of
+/// rendering an empty `MemoryMax=`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MemoryBudget {
     pub high: String,
-    pub max: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<String>,
 }
 
 /// A Pinned version: the exact value plus the upstream coordinates Renovate
@@ -253,7 +273,16 @@ impl BackupRecipe {
     }
 }
 
+/// The Key Registry key an App's FQDN composes against when its Meta names
+/// none of its own.
+pub const DEFAULT_DOMAIN_KEY: &str = "domain";
+
 impl PlaybookMeta {
+    /// The Key Registry key holding this App's parent domain.
+    pub fn parent_domain_key(&self) -> &str {
+        self.domain_key.as_deref().unwrap_or(DEFAULT_DOMAIN_KEY)
+    }
+
     /// The units this App owns, as `systemctl` addresses them: names
     /// qualified, `{admin_user}` substituted, scope made explicit.
     pub fn owned_units(&self, admin_user: &str) -> Vec<OwnedUnit> {
@@ -320,14 +349,17 @@ pub fn declared_app_versions(playbooks_dir: &Path) -> Result<Vec<(String, Versio
 /// Collect every declared Memory Budget as `<unit>_memory_high` /
 /// `<unit>_memory_max` extra-var pairs (unit-name hyphens become
 /// underscores), sorted by name. Injected at deploy through the same
-/// `extra_vars` seam as App Versions (ADR-0021).
+/// `extra_vars` seam as App Versions (ADR-0021). A Budget that declares no
+/// `max` contributes only its `_memory_high` half.
 pub fn app_memory_vars(playbooks_dir: &Path) -> Result<Vec<(String, String)>> {
     let mut vars = Vec::new();
     for (_, meta) in load_all_metas(playbooks_dir)? {
         for (unit, budget) in meta.memory {
             let prefix = unit.replace('-', "_");
             vars.push((format!("{prefix}_memory_high"), budget.high));
-            vars.push((format!("{prefix}_memory_max"), budget.max));
+            if let Some(max) = budget.max {
+                vars.push((format!("{prefix}_memory_max"), max));
+            }
         }
     }
     vars.sort();
@@ -552,6 +584,35 @@ mod tests {
         );
     }
 
+    /// The agent tier holds nothing irreplaceable by construction (ADR-0054):
+    /// transcripts leave the box by syncthing, the index rebuilds, and a
+    /// rebuild is a re-auth and a re-clone. A Recipe here would put a nightly
+    /// stopped-unit pull of a disposable Host into `backup sync`'s default app
+    /// set — following the immich precedent below.
+    #[test]
+    fn test_aoe_meta_declares_no_backup_recipe() {
+        let meta = load_meta("aoe");
+        assert!(meta.tailnet_only);
+        assert_eq!(meta.subdomain.as_deref(), Some("essaim"));
+        assert_eq!(meta.parent_domain_key(), "agents_domain");
+        assert!(
+            meta.backup.is_none(),
+            "the agent Host is disposable by design; nothing on it is worth a \
+             Backup Recipe, and aoe's VAPID keypair is deliberately unbacked-up"
+        );
+        let budget = meta
+            .memory
+            .get("aoe")
+            .expect("aoe declares a Memory Budget");
+        assert_eq!(budget.high, "4G");
+        assert_eq!(
+            budget.max, None,
+            "aoe supervises tmux sessions running agents it did not fork; until it \
+             is known which cgroup those land in, a kill line risks OOM-killing an \
+             agent mid-run (#740)"
+        );
+    }
+
     #[test]
     fn test_immich_meta_declares_no_backup_recipe() {
         let meta = load_meta("immich");
@@ -707,14 +768,14 @@ mod tests {
         assert_eq!(memory.len(), 4);
         let task_queue = memory.get("paperless-task-queue").unwrap();
         assert_eq!(task_queue.high, "768M");
-        assert_eq!(task_queue.max, "1G");
+        assert_eq!(task_queue.max.as_deref(), Some("1G"));
         let webserver = memory.get("paperless-webserver").unwrap();
         assert_eq!(webserver.high, "512M");
-        assert_eq!(webserver.max, "768M");
+        assert_eq!(webserver.max.as_deref(), Some("768M"));
         for unit in ["paperless-consumer", "paperless-scheduler"] {
             let budget = memory.get(unit).unwrap();
             assert_eq!(budget.high, "192M");
-            assert_eq!(budget.max, "256M");
+            assert_eq!(budget.max.as_deref(), Some("256M"));
         }
     }
 
@@ -809,6 +870,7 @@ version:
             backup: None,
             tailnet_only: false,
             subdomain: None,
+            domain_key: None,
             memory: HashMap::new(),
             units: Vec::new(),
         };
@@ -1227,8 +1289,21 @@ memory:
         let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
         let budget = meta.memory.get("paperless-task-queue").unwrap();
         assert_eq!(budget.high, "768M");
-        assert_eq!(budget.max, "1G");
+        assert_eq!(budget.max.as_deref(), Some("1G"));
         assert_eq!(meta.memory.len(), 2);
+    }
+
+    /// A Budget may declare a throttle line and no kill line. The absence has
+    /// to survive parsing as an absence: defaulting it to an empty string
+    /// would inject `<unit>_memory_max=` and render `MemoryMax=`, which
+    /// systemd reads as a reset to `infinity` and which nothing would report.
+    #[test]
+    fn test_meta_memory_block_parses_a_budget_without_a_max() {
+        let yaml = "required_keys: []\nmemory:\n  aoe: {high: 3G}\n";
+        let meta: PlaybookMeta = serde_yaml::from_str(yaml).unwrap();
+        let budget = meta.memory.get("aoe").unwrap();
+        assert_eq!(budget.high, "3G");
+        assert_eq!(budget.max, None);
     }
 
     #[test]
@@ -1451,6 +1526,26 @@ units:
         );
     }
 
+    /// A Budget with no `max` injects only its throttle half. Injecting an
+    /// empty `_memory_max` beside it would let a template render
+    /// `MemoryMax=`, which resets the setting to `infinity` — the same
+    /// unbounded unit the omission asks for, reached by a line that reads
+    /// like a limit.
+    #[test]
+    fn test_app_memory_vars_omits_the_max_a_budget_does_not_declare() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("aoe.meta.yml"),
+            "required_keys: []\nmemory:\n  aoe: {high: 3G}\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            app_memory_vars(dir.path()).unwrap(),
+            vec![("aoe_memory_high".to_string(), "3G".to_string())]
+        );
+    }
+
     fn parse_systemd_size(value: &str) -> Option<u64> {
         let (digits, multiplier) = match value.as_bytes().last()? {
             b'K' => (&value[..value.len() - 1], 1u64 << 10),
@@ -1470,14 +1565,16 @@ units:
                 let high = parse_systemd_size(&budget.high).unwrap_or_else(|| {
                     panic!("{app}: {unit} high {:?} is not a systemd size", budget.high)
                 });
-                let max = parse_systemd_size(&budget.max).unwrap_or_else(|| {
-                    panic!("{app}: {unit} max {:?} is not a systemd size", budget.max)
+                let Some(declared) = budget.max.as_deref() else {
+                    continue;
+                };
+                let max = parse_systemd_size(declared).unwrap_or_else(|| {
+                    panic!("{app}: {unit} max {declared:?} is not a systemd size")
                 });
                 assert!(
                     high <= max,
-                    "{app}: {unit} declares high {} above max {}",
+                    "{app}: {unit} declares high {} above max {declared}",
                     budget.high,
-                    budget.max
                 );
             }
         }
@@ -1651,7 +1748,7 @@ units:
         let memory = load_meta("grimmory").memory;
         let budget = memory.get("grimmory").unwrap();
         assert_eq!(budget.high, "1100M");
-        assert_eq!(budget.max, "1200M");
+        assert_eq!(budget.max.as_deref(), Some("1200M"));
     }
 
     #[test]
@@ -1659,7 +1756,7 @@ units:
         let memory = load_meta("navidrome").memory;
         let budget = memory.get("navidrome").unwrap();
         assert_eq!(budget.high, "256M");
-        assert_eq!(budget.max, "384M");
+        assert_eq!(budget.max.as_deref(), Some("384M"));
     }
 
     #[test]
@@ -1681,10 +1778,10 @@ units:
         assert_eq!(memory.len(), 2);
         let liquidsoap = memory.get("liquidsoap").unwrap();
         assert_eq!(liquidsoap.high, "320M");
-        assert_eq!(liquidsoap.max, "384M");
+        assert_eq!(liquidsoap.max.as_deref(), Some("384M"));
         let icecast = memory.get("icecast2").unwrap();
         assert_eq!(icecast.high, "32M");
-        assert_eq!(icecast.max, "64M");
+        assert_eq!(icecast.max.as_deref(), Some("64M"));
     }
 
     #[test]
@@ -1738,16 +1835,30 @@ units:
     fn test_declared_memory_budgets_render_into_role_templates() {
         let templates = role_template_bodies();
         for (app, meta) in load_all_metas(&playbooks_dir()).unwrap() {
-            for unit in meta.memory.keys() {
+            for (unit, budget) in &meta.memory {
                 let prefix = unit.replace('-', "_");
                 let high = format!("MemoryHigh={{{{ {prefix}_memory_high }}}}");
                 let max = format!("MemoryMax={{{{ {prefix}_memory_max }}}}");
-                assert!(
-                    templates
-                        .iter()
-                        .any(|(_, body)| body.contains(&high) && body.contains(&max)),
-                    "{app}: no role template renders both {high} and {max}"
-                );
+                let renders =
+                    |needle: &str| templates.iter().any(|(_, body)| body.contains(needle));
+
+                assert!(renders(&high), "{app}: no role template renders {high}");
+                match budget.max {
+                    Some(_) => assert!(
+                        templates
+                            .iter()
+                            .any(|(_, body)| body.contains(&high) && body.contains(&max)),
+                        "{app}: no role template renders both {high} and {max}"
+                    ),
+                    // A Budget with no kill line injects no `<unit>_memory_max`
+                    // (ADR-0021), so a template still reading one renders
+                    // `MemoryMax=` — which systemd reads as a reset to
+                    // `infinity` rather than as an error.
+                    None => assert!(
+                        !renders(&max),
+                        "{app}: {unit} declares no max, so no template may render {max}"
+                    ),
+                }
             }
         }
     }

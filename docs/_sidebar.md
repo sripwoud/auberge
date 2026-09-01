@@ -83,6 +83,7 @@
 
 - Applications
   - [Overview](applications/overview.md)
+  - [Agent of Empires](applications/apps/aoe.md)
 
 - Troubleshooting
   - [Common Issues](troubleshooting/common-issues.md)
