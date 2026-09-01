@@ -213,7 +213,8 @@ fn emergency_backup<S: SshSession + ?Sized>(
             parameters,
         },
         |app| progress_for(RestorePhase::EmergencyBackup, app),
-    );
+    )
+    .without_reachability_probe();
 
     let outcome = session.create()?;
     let failed = outcome.failed_apps();
@@ -378,6 +379,31 @@ mod tests {
             .join("2026-08-28_09-00-00")
             .join("baikal");
         assert!(staged.is_dir(), "the emergency backup must stage locally");
+    }
+
+    #[test]
+    fn cross_host_restore_does_not_reprobe_reachability() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock = MockSshSession::new();
+        let plan = two_app_plan();
+        let events = MockProgress::new();
+
+        let session = RestoreSession::new(
+            &mock,
+            &plan,
+            opts(tmp.path(), true),
+            recording(&events),
+            || RedeployOutcome::Completed,
+            |_| panic!("the emergency backup succeeded, no decision to make"),
+        );
+        session.restore();
+
+        assert!(
+            !mock
+                .calls()
+                .iter()
+                .any(|c| matches!(c, SshOp::Reachable(_)))
+        );
     }
 
     // ADR-0026: the emergency backup's coverage must equal the restore's blast
