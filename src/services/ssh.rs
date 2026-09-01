@@ -472,6 +472,8 @@ pub struct MockSshSession {
     calls: std::cell::RefCell<Vec<SshOp>>,
     run_results: std::cell::RefCell<std::collections::VecDeque<CommandResult>>,
     fail_run_detached: std::cell::Cell<bool>,
+    fail_systemctl_action: std::cell::RefCell<Option<String>>,
+    fail_rsync_to: std::cell::Cell<bool>,
     become_method: String,
 }
 
@@ -482,6 +484,8 @@ impl MockSshSession {
             calls: std::cell::RefCell::new(Vec::new()),
             run_results: std::cell::RefCell::new(std::collections::VecDeque::new()),
             fail_run_detached: std::cell::Cell::new(false),
+            fail_systemctl_action: std::cell::RefCell::new(None),
+            fail_rsync_to: std::cell::Cell::new(false),
             become_method: "sudo".to_string(),
         }
     }
@@ -505,6 +509,20 @@ impl MockSshSession {
     /// deadman (ADR-0066) can fail.
     pub fn fail_run_detached(&self) {
         self.fail_run_detached.set(true);
+    }
+
+    /// Makes every `systemctl <action> ...` call fail, leaving every other
+    /// action working — a unit that will not stop while the rest of the Host
+    /// is fine, which is what separates a failed-quiesce exit path from a
+    /// Host that is simply unreachable.
+    pub fn fail_systemctl(&self, action: &str) {
+        *self.fail_systemctl_action.borrow_mut() = Some(action.to_string());
+    }
+
+    /// Makes every push to the Host fail, as a restore whose transfer dies
+    /// part-way through does.
+    pub fn fail_rsync_to(&self) {
+        self.fail_rsync_to.set(true);
     }
 
     pub fn calls(&self) -> Vec<SshOp> {
@@ -605,6 +623,9 @@ impl SshSession for MockSshSession {
             action: action.to_string(),
             service: service.to_string(),
         });
+        if self.fail_systemctl_action.borrow().as_deref() == Some(action) {
+            eyre::bail!("Failed to {action} {service}");
+        }
         Ok(())
     }
 
@@ -637,6 +658,9 @@ impl SshSession for MockSshSession {
             local: local.to_path_buf(),
             remote: remote.to_string(),
         });
+        if self.fail_rsync_to.get() {
+            eyre::bail!("rsync to {remote} failed");
+        }
         Ok(())
     }
 
