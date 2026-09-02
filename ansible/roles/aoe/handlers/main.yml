@@ -17,3 +17,8 @@
     scope: user
   environment:
     XDG_RUNTIME_DIR: "/run/user/{{ aoe_user_uid.stdout }}"
+
+- name: Restart caddy
+  ansible.builtin.systemd_service:
+    name: caddy
+    state: restarted
