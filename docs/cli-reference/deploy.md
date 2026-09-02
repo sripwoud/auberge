@@ -10,9 +10,9 @@ auberge deploy [apps...] [OPTIONS]
 
 | Option                | Description                                    | Default     |
 | --------------------- | ---------------------------------------------- | ----------- |
-| `apps...`             | App names (positional, variadic)               | Interactive |
+| `apps...`             | App or playbook names (positional, variadic)   | Interactive |
 | `-H, --host HOST`     | Target host                                    | Interactive |
-| `--all`               | Deploy every app                               | `false`     |
+| `--all`               | Deploy every `apps.yml` app                    | `false`     |
 | `-C, --check`         | Dry-run (ansible check mode)                   | `false`     |
 | `-f, --force`         | Skip confirmation prompt                       | `false`     |
 | `--verify-public-dns` | Verify each app's public A record after deploy | `false`     |
@@ -68,6 +68,26 @@ Two playbooks are deliberately not deploy targets, because each is a lifecycle o
 
 A name that is _both_ an apps.yml role and a standalone playbook (calibre, immich, gokapi, hermes) keeps going through the roster, which is where those apps have always deployed from.
 
+## Interactive selection
+
+`auberge deploy` with no positional args offers every target — the `apps.yml` roster in declaration order, then the standalone playbooks the roster does not already hold, marked as such:
+
+```
+Select app(s) or playbook(s) to deploy (tab to toggle, enter to confirm)>
+  [all apps]
+  paperless
+  freshrss
+  …
+  aoe (playbook)
+  memsearch (playbook)
+  opencode (playbook)
+  ruche (playbook)
+```
+
+The marker reads `(playbook)` and not `(composition)` because only `ruche` is a Composition — a Playbook whose roster is several Apps. `aoe`, `opencode` and `memsearch` are plain standalone Playbooks, and one word has to cover all four.
+
+`[all apps]` selects the roster and nothing else — the same set `--all` deploys. A playbook is opt-in by name, because a deploy builds its [Preflight](cli-reference/config/overview.md) for the whole plan before the first task runs: sweeping `ruche` into `[all apps]` would make every host in the fleet demand `aoe_passphrase`, `opencode_openrouter_api_key` and `agents_domain` ([ADR-0077](https://github.com/sripwoud/auberge/blob/master/meta/adr/0077-the-deploy-menu-offers-every-target-but-all-stays-the-roster.md)). Picking `[all apps]` alongside individual entries deploys the union.
+
 ## Substrate Apps
 
 Substrate Apps (Caddy, Blocky, Headscale) are declared in `infrastructure.yml`, not `apps.yml`, so they are not valid `deploy` targets — they deploy on every `auberge deploy <app>` run instead. To push one alone:
@@ -95,4 +115,4 @@ So does not knowing which host answers for the tailnet — a tailnet-only app's 
 Cannot verify essaim.example.com on the tailnet: 2 Hosts answer `blocky_subdomain` (auberge, ruche), but the tailnet has one resolver (ADR-0052); withdraw the gate on the others with `[hosts.<name>] blocky_subdomain = ""`
 ```
 
-?> App names are derived from roles in `apps.yml`, plus the standalone playbooks above. Run `auberge deploy` without args to see the multi-select list of apps. Roles declared in `infrastructure.yml` are rejected with a pointer to [`auberge ansible run`](cli-reference/ansible/run.md) `-t <role>`.
+?> App names are derived from roles in `apps.yml`, plus the standalone playbooks above. Run `auberge deploy` without args to see the multi-select list; it offers both. Roles declared in `infrastructure.yml` are rejected with a pointer to [`auberge ansible run`](cli-reference/ansible/run.md) `-t <role>`.
