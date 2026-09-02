@@ -56,6 +56,37 @@ ssh ruche 'aoe url --token-only' # just the token, to paste into the PWA
 
 Pairing binds the device, and a bound device stays signed in across token rotations. Changing `aoe_passphrase` signs **every** device out.
 
+> [!TIP]
+> Wrap the two commands above into one-command pairing — open the dashboard directly, or print a QR code (`--qr`) for a phone, which beats typing a 64-character token on a keyboard that isn't there. `-h`/`--help` prints usage without touching the network:
+>
+> ```bash
+> #!/bin/bash
+>
+> readonly AOE_URL="https://essaim.{agents_domain}"
+>
+> main() {
+>   local token url
+>
+>   case "${1:-}" in
+>     -h | --help)
+>       echo "Usage: $(basename "$0") [--qr]"
+>       exit 0
+>       ;;
+>   esac
+>
+>   token="$(ssh ruche 'aoe url --token-only')" || exit 1
+>   url="${AOE_URL}/?token=${token}"
+>
+>   if [[ "${1:-}" == "--qr" ]]; then
+>     qrencode -t ansiutf8 "$url"
+>   else
+>     xdg-open "$url"
+>   fi
+> }
+>
+> main "$@"
+> ```
+
 !> The token rides in the query string, so the vhost's access log cuts the whole query out of every logged request (`format filter` over `request>uri`). Caddy redacts `Authorization` and `Cookie` on its own and nothing else. `tests/aoe_dashboard_exposure.rs` runs the filter's own regexp over a URI carrying a token and asserts the path survives and the token does not.
 
 ## Reachability
