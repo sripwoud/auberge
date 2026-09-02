@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.2](https://github.com/sripwoud/auberge/compare/v0.17.1...v0.17.2) - 2026-09-02
+
+### Fixed
+
+- *(ingress-gate)* flush handlers before checking ingress ([#812](https://github.com/sripwoud/auberge/pull/812))
+- *(aoe)* define the missing Restart caddy handler ([#809](https://github.com/sripwoud/auberge/pull/809))
+
 ## [0.17.1](https://github.com/sripwoud/auberge/compare/v0.17.0...v0.17.1) - 2026-09-02
 
 ### Fixed
