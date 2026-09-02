@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1](https://github.com/sripwoud/auberge/compare/v0.17.0...v0.17.1) - 2026-09-02
+
+### Fixed
+
+- *(deploy)* offer standalone playbooks in the interactive selector ([#804](https://github.com/sripwoud/auberge/pull/804))
+
+### Other
+
+- *(uv)* bump to 0.12.9 ([#806](https://github.com/sripwoud/auberge/pull/806))
+- *(opencode)* bump to 1.18.26 ([#805](https://github.com/sripwoud/auberge/pull/805))
+
 ## [0.17.0](https://github.com/sripwoud/auberge/compare/v0.16.5...v0.17.0) - 2026-09-01
 
 ### Added
