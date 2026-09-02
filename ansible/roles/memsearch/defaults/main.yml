@@ -16,4 +16,4 @@ memsearch_uv_bin: "{{ memsearch_home }}/.local/bin/uv"
 memsearch_path_link: /usr/local/bin/memsearch
 
 # renovate: datasource=github-releases depName=astral-sh/uv
-memsearch_uv_version: "0.12.8"
+memsearch_uv_version: "0.12.9"
