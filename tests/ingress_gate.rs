@@ -6,7 +6,7 @@ use serde_yaml::{Mapping, Value};
 
 mod common;
 
-use common::{all_roles, field, playbook_files, role_dir, yml_files};
+use common::{all_roles, field, playbook_files, role_dir, role_tasks, yml_files};
 
 /// The role a play must run in `post_tasks` once any of its roles can restart caddy.
 const GATE_ROLE: &str = "ingress_gate";
@@ -133,4 +133,35 @@ fn test_every_play_that_restarts_caddy_gates_on_ingress() {
             );
         }
     }
+}
+
+/// Ansible flushes handlers notified during `pre_tasks`/`roles`/`tasks` only once,
+/// at the very end of the play -- after `post_tasks`, not before them. A `roles:`
+/// entry that notifies `Restart caddy` therefore leaves it still pending when this
+/// gate's own `post_task` reads port {{ ingress_gate_port }}, unless something
+/// flushes handlers first.
+///
+/// Invisible on a host where caddy already holds the port from an earlier vhost --
+/// the assertion below passes on the stale listener regardless. Fatal on the first
+/// vhost a host ever gets, since nothing has bound the port yet (aoe's rollout onto
+/// `ruche`, a virgin host, is what surfaced it).
+///
+/// The gate role is the one place every consumer already funnels through
+/// (`test_every_play_that_restarts_caddy_gates_on_ingress` above), so the flush
+/// belongs at the top of its own tasks rather than repeated in every playbook that
+/// includes it.
+#[test]
+fn test_the_gate_flushes_handlers_before_checking_ingress() {
+    let tasks = role_tasks(GATE_ROLE);
+    let first = tasks
+        .first()
+        .unwrap_or_else(|| panic!("{GATE_ROLE} has no tasks"));
+    assert_eq!(
+        field(&first.body, "ansible.builtin.meta").and_then(Value::as_str),
+        Some("flush_handlers"),
+        "{GATE_ROLE}'s first task must be `ansible.builtin.meta: flush_handlers`, so a \
+         `Restart caddy` notified earlier in the same play lands before this gate checks \
+         port {{{{ ingress_gate_port }}}} — otherwise the check reads the ingress unit's \
+         state from before the restart it is meant to verify."
+    );
 }

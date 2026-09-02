@@ -1,4 +1,7 @@
 ---
+- name: Flush handlers so a pending ingress restart lands before this gate checks it
+  ansible.builtin.meta: flush_handlers
+
 - name: Verify the ingress unit still serves every vhost on this host
   when: not ansible_check_mode
   block:
