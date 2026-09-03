@@ -460,6 +460,28 @@ mod tests {
     /// parse working is serde ignoring what it does not recognise, so that
     /// is what is asserted: a `deny_unknown_fields` on either struct would
     /// break every deploy, and nothing else here would say so.
+    /// Ansible templates the port — `bootstrap.yml` sets
+    /// `ansible_port: "{{ ssh_port }}"` — and the Inventory is rendered
+    /// through minijinja before serde reads it, so a templated port reaches
+    /// `deserialize_port` quoted. It takes both forms; only the integer one
+    /// was ever tested. #816 then moved `HostVars` off `#[serde(flatten)]`,
+    /// which decides whether serde resolves the `untagged` enum against
+    /// buffered content or the deserializer itself. Both forms, pinned.
+    #[test]
+    fn a_port_parses_whether_yaml_quotes_it_or_not() {
+        let port_of = |literal: &str| {
+            let yaml = format!(
+                "all:\n  children:\n    vps:\n      hosts:\n        h:\n          ansible_host: 203.0.113.7\n          ansible_port: {literal}\n"
+            );
+            let raw: RawInventory = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("port {literal} failed to parse: {e}"));
+            Inventory::from_raw(raw).groups["vps"].hosts["h"].ansible_port
+        };
+
+        assert_eq!(port_of("2222"), 2222);
+        assert_eq!(port_of("\"2222\""), 2222);
+    }
+
     #[test]
     fn parsing_ignores_group_vars_and_unknown_host_keys() {
         let yaml = "\
