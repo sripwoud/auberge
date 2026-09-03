@@ -56,6 +56,18 @@
       "description": "Temurin GA respins bump a 4th digit (25.0.4+7 then 25.0.4.1+1) and default semver-coerced discards everything past the patch, so the respins — the security releases — would never be offered. This regex ranks the 4th digit as build and the +suffix as revision (compared only when build exists, which GA ordering never needs). Blind by design: same-x.y.z +build-only re-releases (GA never ships those) and the initial `25+36` GA shape (a new major is a manual depName edit — the per-major repo is what makes LTS-only structural, ADR-0030). Lives here, not in the `# renovate:` annotation, because the pattern breaches yaml line-length.",
       "matchDepNames": ["adoptium/temurin25-binaries"],
       "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:\\.(?<build>\\d+))?(?:\\+(?<revision>\\d+))?$"
+    },
+    {
+      "description": "hermes, opencode, uv, paperless, blocky and yourls ship point releases days apart, and every merge here is a deploy plus a release-plz release: 30 bumps landed in the 3 weeks to 2026-09-03, hermes alone six (v2026.8.16, .16.2, .18, .19, .27, .31). A soak window collapses a burst into one PR at the newest aged-eligible version, and doubles as a hold against a bad release. Deliberately not grouping: semanticCommitScope templates off packageFile so a PR must carry exactly one, and headscale needs separateMultipleMinor to keep its migration ladder in separate PRs.",
+      "matchDepNames": [
+        "0xERR0R/blocky",
+        "NousResearch/hermes-agent",
+        "YOURLS/YOURLS",
+        "anomalyco/opencode",
+        "astral-sh/uv",
+        "paperless-ngx/paperless-ngx"
+      ],
+      "minimumReleaseAge": "5 days"
     }
   ]
 }
