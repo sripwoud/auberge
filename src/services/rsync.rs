@@ -1,16 +1,14 @@
+/// The one number a `--info=progress2` line carries that a caller can use.
+///
+/// The percentage beside it is not a completion signal: rsync divides bytes
+/// sent by the size of every file in the list, so an incremental sync finishes
+/// at whatever fraction the changed files happen to represent. Completion comes
+/// from a `--stats` total instead — see `parse_transferred_size`. It is still
+/// parsed and dropped, as the guard that tells a progress line from anything
+/// else on the stream.
 #[derive(Debug, PartialEq)]
 pub struct RsyncProgress {
     pub bytes_transferred: u64,
-    /// Not a completion signal. `--info=progress2` divides bytes sent by the
-    /// size of every file in the list, so an incremental sync finishes at
-    /// whatever fraction the changed files happen to represent. Derive
-    /// completion from a `--stats` total instead — see `parse_transferred_size`.
-    #[allow(dead_code)]
-    pub percent: u8,
-    #[allow(dead_code)]
-    pub speed: String,
-    #[allow(dead_code)]
-    pub eta: String,
 }
 
 pub fn parse_rsync_progress(line: &str) -> Option<RsyncProgress> {
@@ -19,16 +17,9 @@ pub fn parse_rsync_progress(line: &str) -> Option<RsyncProgress> {
     if fields.len() < 4 {
         return None;
     }
-    let percent_str = fields[1].strip_suffix('%')?;
-    let percent: u8 = percent_str.parse().ok()?;
-    let bytes_str = fields[0].replace(',', "");
-    let bytes_transferred: u64 = bytes_str.parse().ok()?;
-    Some(RsyncProgress {
-        bytes_transferred,
-        percent,
-        speed: fields[2].to_string(),
-        eta: fields[3].to_string(),
-    })
+    fields[1].strip_suffix('%')?.parse::<u8>().ok()?;
+    let bytes_transferred: u64 = fields[0].replace(',', "").parse().ok()?;
+    Some(RsyncProgress { bytes_transferred })
 }
 
 const TRANSFERRED_SIZE_PREFIX: &str = "Total transferred file size:";
@@ -62,10 +53,7 @@ mod tests {
         assert_eq!(
             p,
             RsyncProgress {
-                bytes_transferred: 1234567,
-                percent: 42,
-                speed: "12.34MB/s".to_string(),
-                eta: "0:01:23".to_string(),
+                bytes_transferred: 1234567
             }
         );
     }
@@ -74,7 +62,6 @@ mod tests {
     fn parse_rsync_single_digit_percent() {
         let line = "  500  5%   1.00MB/s    0:00:01";
         let p = parse_rsync_progress(line).unwrap();
-        assert_eq!(p.percent, 5);
         assert_eq!(p.bytes_transferred, 500);
     }
 
@@ -82,12 +69,19 @@ mod tests {
     fn parse_rsync_100_percent() {
         let line = "  10,000,000 100%   50.00MB/s    0:00:00";
         let p = parse_rsync_progress(line).unwrap();
-        assert_eq!(p.percent, 100);
+        assert_eq!(p.bytes_transferred, 10_000_000);
     }
 
     #[test]
     fn parse_rsync_plain_text_returns_none() {
         assert!(parse_rsync_progress("sending incremental file list").is_none());
+    }
+
+    /// The dropped percentage is the guard: without it every four-field line
+    /// whose first word parses as a number reads as progress.
+    #[test]
+    fn parse_rsync_non_numeric_percent_returns_none() {
+        assert!(parse_rsync_progress("  1,234  xx%  12.34MB/s  0:01:23").is_none());
     }
 
     #[test]
@@ -99,8 +93,7 @@ mod tests {
     fn parse_rsync_strips_trailing_carriage_return() {
         let line = "  1,234,567  42%   12.34MB/s    0:01:23\r";
         let p = parse_rsync_progress(line).unwrap();
-        assert_eq!(p.eta, "0:01:23");
-        assert_eq!(p.percent, 42);
+        assert_eq!(p.bytes_transferred, 1_234_567);
     }
 
     const STATS_BLOCK: &str = "\nNumber of files: 16 (reg: 15, dir: 1)\nTotal file size: 52,428,800 bytes\nTotal transferred file size: 10,485,760 bytes\nLiteral data: 10,485,760 bytes\n";

@@ -11,8 +11,13 @@
 //! second interface maintained against Cargo's visibility rules for no reader —
 //! the discipline that matters is which vocabulary the fences actually import.
 //! The cost is real and named in the ADR: `dead_code` no longer reaches a `pub`
-//! item, so the ~18 `#[allow(dead_code)]` sites in this crate are now inert and
-//! an unused `pub fn` is nobody's warning.
+//! item, so an unused `pub fn` is nobody's warning. The 16 `#[allow(dead_code)]`
+//! sites that used to mark that silence are gone (#816). Every one was inert,
+//! and each also read as a claim that the item under it had a reader somewhere
+//! that a lint was in the way of. What nothing read is deleted; what a test
+//! alone reads carries `#[cfg(test)]`; three of them — `KeyRegistry::get`,
+//! `KeyRegistry::iter`, `Progress::warn` — had ordinary production readers the
+//! whole time, which is the cost of a badge nobody has to keep true.
 //!
 //! `main.rs` holds the clap tree, the global output flags, the dispatch `match`,
 //! and the tests over that clap surface.

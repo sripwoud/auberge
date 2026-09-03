@@ -42,28 +42,14 @@ impl KeyRegistry {
         Ok(Self { entries: file.keys })
     }
 
-    /// Returns the entry for a key by name, if it exists.
-    #[allow(dead_code)]
+    /// The entry for a key by name, if it exists.
     pub fn get(&self, key: &str) -> Option<&KeyEntry> {
         self.entries.get(key)
     }
 
-    /// Returns an iterator over all (name, entry) pairs in the registry.
-    #[allow(dead_code)]
+    /// Every (name, entry) pair in the registry, in no particular order.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &KeyEntry)> {
         self.entries.iter()
-    }
-
-    /// Returns the number of keys in the registry.
-    #[allow(dead_code)]
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// Returns `true` if the registry contains no keys.
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
     }
 
     /// Render a TOML scaffold containing every key in the registry, sorted by name.
@@ -116,7 +102,7 @@ mod tests {
     #[test]
     fn test_key_registry_loads_without_error() {
         let registry = KeyRegistry::load(&registry_path()).unwrap();
-        assert!(!registry.is_empty());
+        assert!(registry.iter().next().is_some());
     }
 
     #[test]
@@ -316,6 +302,6 @@ mod tests {
         let registry = KeyRegistry::load(&registry_path()).unwrap();
         let scaffold = registry.scaffold();
         let parsed: toml::Table = toml::from_str(&scaffold).unwrap();
-        assert_eq!(parsed.len(), registry.len());
+        assert_eq!(parsed.len(), registry.iter().count());
     }
 }
