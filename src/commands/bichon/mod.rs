@@ -2,7 +2,7 @@ mod reconcile;
 mod rescan;
 mod verify;
 
-use crate::output::OutputFormat;
+use crate::output::OutputArg;
 use crate::services::bichon::rescan::ARCHIVE_DIR;
 use clap::Subcommand;
 use eyre::Result;
@@ -24,14 +24,8 @@ pub enum BichonCommands {
         apply: bool,
         #[arg(long, help = "Only reconcile one account email")]
         account: Option<String>,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
     #[command(
         visible_alias = "vc",
@@ -59,14 +53,8 @@ pub enum BichonCommands {
             help = "Email Archive root on the host"
         )]
         archive_path: String,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
     #[command(
         visible_alias = "rs",
@@ -84,14 +72,8 @@ pub enum BichonCommands {
             help = "Only rescan one account email (prompted on a TTY when omitted)"
         )]
         account: Option<String>,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
 }
 
@@ -103,7 +85,7 @@ pub async fn run_bichon_command(cmd: BichonCommands) -> Result<i32> {
             account,
             output,
         } => {
-            run_reconcile_folders(host, apply, account, output).await?;
+            run_reconcile_folders(host, apply, account, output.format).await?;
             Ok(0)
         }
         BichonCommands::VerifyCoverage {
@@ -113,11 +95,11 @@ pub async fn run_bichon_command(cmd: BichonCommands) -> Result<i32> {
             before,
             archive_path,
             output,
-        } => run_verify_coverage(host, account, folder, before, archive_path, output).await,
+        } => run_verify_coverage(host, account, folder, before, archive_path, output.format).await,
         BichonCommands::Rescan {
             host,
             account,
             output,
-        } => run_rescan(host, account, output).await,
+        } => run_rescan(host, account, output.format).await,
     }
 }

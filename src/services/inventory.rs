@@ -41,9 +41,6 @@ pub struct HostVars {
     pub ansible_port: u16,
     #[serde(default = "default_bootstrap_user")]
     pub bootstrap_user: String,
-    #[allow(dead_code)]
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_yaml::Value>,
 }
 
 fn default_port() -> u16 {
@@ -86,7 +83,6 @@ impl Host {
                 public_address: address.to_string(),
                 ansible_port: port,
                 bootstrap_user: "root".to_string(),
-                extra: HashMap::new(),
             },
             vec![],
         )
@@ -145,9 +141,6 @@ pub struct InventoryGroup {
     pub hosts: HashMap<String, HostVars>,
     #[serde(default)]
     pub children: HashMap<String, Option<()>>,
-    #[allow(dead_code)]
-    #[serde(default)]
-    pub vars: HashMap<String, serde_yaml::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -276,7 +269,6 @@ fn inventory_host(xdg_host: crate::hosts::Host, route: &crate::services::route::
         public_address: crate::services::route::public_address(&xdg_host),
         ansible_port: route.port,
         bootstrap_user: xdg_host.user.clone(),
-        extra: HashMap::new(),
     };
 
     Host {
@@ -460,6 +452,58 @@ pub fn get_playbooks(playbooks_path: Option<&Path>) -> Result<Vec<PathBuf>> {
 mod tests {
     use super::*;
     use std::fs;
+
+    /// `ansible/inventory.yml` declares group `vars`, and a host entry can
+    /// grow keys this crate has no field for. #816 deleted the two fields
+    /// that captured them — `InventoryGroup::vars` and a `#[serde(flatten)]`
+    /// `HostVars::extra` — neither of which anything read. What keeps the
+    /// parse working is serde ignoring what it does not recognise, so that
+    /// is what is asserted: a `deny_unknown_fields` on either struct would
+    /// break every deploy, and nothing else here would say so.
+    /// Ansible templates the port — `bootstrap.yml` sets
+    /// `ansible_port: "{{ ssh_port }}"` — and the Inventory is rendered
+    /// through minijinja before serde reads it, so a templated port reaches
+    /// `deserialize_port` quoted. It takes both forms; only the integer one
+    /// was ever tested. #816 then moved `HostVars` off `#[serde(flatten)]`,
+    /// which decides whether serde resolves the `untagged` enum against
+    /// buffered content or the deserializer itself. Both forms, pinned.
+    #[test]
+    fn a_port_parses_whether_yaml_quotes_it_or_not() {
+        let port_of = |literal: &str| {
+            let yaml = format!(
+                "all:\n  children:\n    vps:\n      hosts:\n        h:\n          ansible_host: 203.0.113.7\n          ansible_port: {literal}\n"
+            );
+            let raw: RawInventory = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("port {literal} failed to parse: {e}"));
+            Inventory::from_raw(raw).groups["vps"].hosts["h"].ansible_port
+        };
+
+        assert_eq!(port_of("2222"), 2222);
+        assert_eq!(port_of("\"2222\""), 2222);
+    }
+
+    #[test]
+    fn parsing_ignores_group_vars_and_unknown_host_keys() {
+        let yaml = "\
+all:
+  children:
+    vps:
+      vars:
+        ansible_user: ansible
+        ansible_python_interpreter: /usr/bin/python3
+      hosts:
+        auberge:
+          ansible_host: 203.0.113.7
+          ansible_port: 2222
+          a_key_this_crate_has_no_field_for: whatever
+";
+
+        let raw: RawInventory = serde_yaml::from_str(yaml).unwrap();
+        let host = &Inventory::from_raw(raw).groups["vps"].hosts["auberge"];
+
+        assert_eq!(host.public_address, "203.0.113.7");
+        assert_eq!(host.ansible_port, 2222);
+    }
 
     #[test]
     fn route_as_carries_the_address_and_port_across() {

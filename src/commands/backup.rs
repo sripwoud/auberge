@@ -111,14 +111,8 @@ pub enum BackupCommands {
         host: Option<String>,
         #[arg(short, long, help = "Filter by app")]
         app: Option<String>,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
     #[command(visible_alias = "r", about = "Restore from backup")]
     Restore {
@@ -189,14 +183,8 @@ pub enum BackupCommands {
             help = "Freshness threshold as <number><s|m|h|d>"
         )]
         max_age: String,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
     /// Data portability, not backup: freshrss's Backup Recipe already carries
     /// the app's data directories. Flattened rather than moved so the surface
@@ -205,6 +193,7 @@ pub enum BackupCommands {
     Opml(OpmlCommands),
 }
 
+use crate::output::OutputArg;
 pub use crate::output::OutputFormat;
 
 pub struct RestoreOptions {
@@ -353,10 +342,6 @@ impl Progress for ResultsSuppressed {
 
     fn line(&mut self, text: &str) {
         self.0.line(text);
-    }
-
-    fn cancel(&mut self) {
-        self.0.cancel();
     }
 }
 
@@ -1504,7 +1489,6 @@ mod tests {
         progress.success("bichon (1.00 KB)");
         progress.error("bichon backup failed: no route to host");
         progress.task_done();
-        progress.cancel();
 
         assert_eq!(
             recorder.events(),
@@ -1517,7 +1501,6 @@ mod tests {
                 ProgressEvent::Line("verbatim".to_string()),
                 ProgressEvent::Error("bichon backup failed: no route to host".to_string()),
                 ProgressEvent::TaskDone,
-                ProgressEvent::Cancel,
             ]
         );
     }
@@ -1601,7 +1584,9 @@ mod tests {
             host: None,
             app: Some("bichon".to_string()),
             max_age: "24h".to_string(),
-            output: OutputFormat::Human,
+            output: OutputArg {
+                format: OutputFormat::Human,
+            },
         };
     }
 

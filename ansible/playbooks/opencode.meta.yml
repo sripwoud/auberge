@@ -1,6 +1,6 @@
 required_keys: [admin_user_name, opencode_openrouter_api_key]
 version:
-  value: "1.18.26"
+  value: "1.18.27"
   datasource: github-releases
   depName: "anomalyco/opencode"
   extractVersion: "^v(?<version>.+)$"

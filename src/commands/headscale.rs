@@ -13,7 +13,7 @@
 use crate::config::Config;
 use crate::hosts::{HOST_FLAG, Host, HostManager, TailnetTag, select_or_arg};
 use crate::output;
-use crate::output::OutputFormat;
+use crate::output::{OutputArg, OutputFormat};
 use crate::prompt::{Choice, confirm, select_item};
 use crate::services::ssh::{LiveSshSession, SshSession};
 use clap::Subcommand;
@@ -117,27 +117,15 @@ pub enum HeadscaleCommands {
     },
     #[command(visible_alias = "lu", about = "List registered users")]
     ListUsers {
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },
     #[command(visible_alias = "ln", about = "List connected nodes")]
     ListNodes {
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
         #[arg(short = 'H', long, help = "Target host running headscale")]
         host: Option<String>,
     },

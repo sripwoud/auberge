@@ -9,7 +9,7 @@ subdomain: essaim
 domain_key: agents_domain
 tailnet_only: true
 version:
-  value: "1.15.1"
+  value: "1.15.3"
   datasource: github-releases
   depName: "agent-of-empires/agent-of-empires"
   extractVersion: "^v(?<version>.+)$"
