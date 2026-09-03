@@ -4,7 +4,6 @@ use crate::output::{OutputArg, OutputFormat};
 use crate::prompt::{Choice, confirm, select_item};
 use crate::services::ssh::{CONNECT_TIMEOUT, LiveSshSession, SshSession};
 use clap::Subcommand;
-use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
 use eyre::{Context, Result};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -235,9 +234,7 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         let name = if let Some(n) = args.name {
             n
         } else if interactive {
-            Input::<String>::with_theme(&ColorfulTheme::default())
-                .with_prompt("Host name")
-                .interact_text()?
+            crate::prompt::text("Host name")?
         } else {
             eyre::bail!("Host name is required (use --no-input in non-interactive mode)");
         };
@@ -245,9 +242,7 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         let address = if let Some(a) = args.address {
             a
         } else if interactive {
-            Input::<String>::with_theme(&ColorfulTheme::default())
-                .with_prompt("Host address (IP or hostname)")
-                .interact_text()?
+            crate::prompt::text("Host address (IP or hostname)")?
         } else {
             eyre::bail!("Host address is required");
         };
@@ -256,10 +251,7 @@ pub fn run_host_add(args: AddHostArgs) -> Result<()> {
         let user = if let Some(u) = args.user {
             u
         } else if interactive {
-            Input::<String>::with_theme(&ColorfulTheme::default())
-                .with_prompt("SSH user")
-                .default(default_user)
-                .interact_text()?
+            crate::prompt::text_with_default("SSH user", default_user)?
         } else {
             default_user
         };
@@ -486,11 +478,11 @@ fn tier_at_item(index: usize) -> Option<TailnetTag> {
 /// is unreachable through a `Select`, so it lives in [`tier_item_index`] and
 /// [`tier_at_item`], which are tested as a round trip.
 fn prompt_tailnet_tag(current: Option<TailnetTag>) -> Result<Option<TailnetTag>> {
-    let picked = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Tailnet trust tier")
-        .items(&tier_items())
-        .default(tier_item_index(current))
-        .interact()?;
+    let picked = crate::prompt::pick_index(
+        "Tailnet trust tier",
+        &tier_items(),
+        tier_item_index(current),
+    )?;
 
     Ok(tier_at_item(picked))
 }
@@ -525,42 +517,28 @@ fn prompt_prefer_tailnet(host: &Host) -> Result<bool> {
         return Ok(false);
     }
 
-    Ok(Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt("Route over the tailnet address")
-        .default(crate::services::route::declared_via(host) == Via::Tailnet)
-        .interact()?)
+    crate::prompt::confirm_default(
+        "Route over the tailnet address",
+        crate::services::route::declared_via(host) == Via::Tailnet,
+    )
 }
 
 pub fn run_host_edit(name: Option<String>) -> Result<()> {
     let host = crate::hosts::select_or_arg(name, crate::hosts::HOST_POSITIONAL)?;
 
-    let address = Input::<String>::with_theme(&ColorfulTheme::default())
-        .with_prompt("Host address")
-        .default(host.address.clone())
-        .interact_text()?;
+    let address = crate::prompt::text_with_default("Host address", host.address.clone())?;
 
-    let user = Input::<String>::with_theme(&ColorfulTheme::default())
-        .with_prompt("SSH user")
-        .default(host.user.clone())
-        .interact_text()?;
+    let user = crate::prompt::text_with_default("SSH user", host.user.clone())?;
 
-    let port = Input::<u16>::with_theme(&ColorfulTheme::default())
-        .with_prompt("SSH port")
-        .default(host.port)
-        .interact_text()?;
+    let port = crate::prompt::number_with_default("SSH port", host.port)?;
 
-    let ssh_key = Input::<String>::with_theme(&ColorfulTheme::default())
-        .with_prompt("SSH key (empty for derived default)")
-        .with_initial_text(host.ssh_key.clone().unwrap_or_default())
-        .allow_empty(true)
-        .interact_text()?;
+    let ssh_key = crate::prompt::text_prefilled(
+        "SSH key (empty for derived default)",
+        host.ssh_key.clone().unwrap_or_default(),
+    )?;
 
     let tags_str = host.tags.join(", ");
-    let new_tags_str = Input::<String>::with_theme(&ColorfulTheme::default())
-        .with_prompt("Tags (comma-separated)")
-        .default(tags_str)
-        .allow_empty(true)
-        .interact_text()?;
+    let new_tags_str = crate::prompt::text_or_empty("Tags (comma-separated)", tags_str)?;
 
     let tags_vec: Vec<String> = if new_tags_str.is_empty() {
         Vec::new()
@@ -571,11 +549,8 @@ pub fn run_host_edit(name: Option<String>) -> Result<()> {
             .collect()
     };
 
-    let description = Input::<String>::with_theme(&ColorfulTheme::default())
-        .with_prompt("Description")
-        .default(host.description.clone().unwrap_or_default())
-        .allow_empty(true)
-        .interact_text()?;
+    let description =
+        crate::prompt::text_or_empty("Description", host.description.clone().unwrap_or_default())?;
 
     let tailnet_tag = prompt_tailnet_tag(host.tailnet_tag)?;
     let prefer_tailnet = prompt_prefer_tailnet(&host)?;

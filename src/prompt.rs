@@ -1,6 +1,6 @@
 use crate::output::should_use_colors;
 use dialoguer::{
-    Confirm, FuzzySelect, Input, MultiSelect, theme::ColorfulTheme, theme::SimpleTheme,
+    Confirm, FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme, theme::SimpleTheme,
 };
 use eyre::Result;
 use std::io::IsTerminal;
@@ -172,6 +172,91 @@ pub fn select_multi(items: &[String], prompt: &str) -> Option<Vec<String>> {
     }
 
     Some(picked.iter().map(|&i| items[i].clone()).collect())
+}
+
+/// A required free-text answer.
+pub fn text(prompt: &str) -> Result<String> {
+    let theme = dialoguer_theme();
+    Ok(Input::<String>::with_theme(theme.as_ref())
+        .with_prompt(prompt)
+        .interact_text()?)
+}
+
+/// A free-text answer with `default` offered, which an empty line accepts.
+///
+/// Distinct from [`text_or_empty`] because dialoguer treats an empty line as
+/// "take the default": a field that must end up non-empty and a field that may
+/// be blanked are different prompts, not one prompt with a flag.
+pub fn text_with_default(prompt: &str, default: String) -> Result<String> {
+    let theme = dialoguer_theme();
+    Ok(Input::<String>::with_theme(theme.as_ref())
+        .with_prompt(prompt)
+        .default(default)
+        .interact_text()?)
+}
+
+/// A free-text answer with `default` offered, where empty is a valid answer.
+pub fn text_or_empty(prompt: &str, default: String) -> Result<String> {
+    let theme = dialoguer_theme();
+    Ok(Input::<String>::with_theme(theme.as_ref())
+        .with_prompt(prompt)
+        .default(default)
+        .allow_empty(true)
+        .interact_text()?)
+}
+
+/// A free-text answer pre-filled with `initial`, which the operator can clear.
+///
+/// `.default()` cannot express this: dialoguer re-reads the default when the
+/// line is empty, so a defaulted field can never be blanked. Pre-filling the
+/// edit buffer instead leaves backspace as the way to clear it, which is what
+/// an optional Host field needs.
+pub fn text_prefilled(prompt: &str, initial: String) -> Result<String> {
+    let theme = dialoguer_theme();
+    Ok(Input::<String>::with_theme(theme.as_ref())
+        .with_prompt(prompt)
+        .with_initial_text(initial)
+        .allow_empty(true)
+        .interact_text()?)
+}
+
+/// A port answer with `default` offered.
+pub fn number_with_default(prompt: &str, default: u16) -> Result<u16> {
+    let theme = dialoguer_theme();
+    Ok(Input::<u16>::with_theme(theme.as_ref())
+        .with_prompt(prompt)
+        .default(default)
+        .interact_text()?)
+}
+
+/// Picks one of a closed, short set by arrow key, `default` preselected.
+///
+/// Deliberately not [`select_item`]'s fuzzy picker: both callers offer four or
+/// five fixed entries where the answer is usually "keep what is already set",
+/// and a filter box over five rows costs a keystroke to say nothing.
+///
+/// Returns the index, because a caller that maps entries onto a domain type
+/// owns that mapping — see `host`'s `tier_item_index`/`tier_at_item` round trip.
+pub fn pick_index<T: ToString>(prompt: &str, items: &[T], default: usize) -> Result<usize> {
+    let theme = dialoguer_theme();
+    Ok(Select::with_theme(theme.as_ref())
+        .with_prompt(prompt)
+        .items(items)
+        .default(default)
+        .interact()?)
+}
+
+/// A yes/no answer with a caller-chosen default.
+///
+/// [`confirm`] hardcodes `false` and refuses without a TTY, which is right for
+/// a guard on a destructive action. This one carries the current value as the
+/// default, for an edit prompt that is offering a setting rather than gating.
+pub fn confirm_default(prompt: &str, default: bool) -> Result<bool> {
+    let theme = dialoguer_theme();
+    Ok(Confirm::with_theme(theme.as_ref())
+        .with_prompt(prompt)
+        .default(default)
+        .interact()?)
 }
 
 pub fn confirm(msg: &str, yes_flag: bool) -> bool {
