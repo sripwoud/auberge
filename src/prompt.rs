@@ -1,8 +1,9 @@
 use crate::output::should_use_colors;
-use dialoguer::{Confirm, Input, MultiSelect, Select, theme::ColorfulTheme, theme::SimpleTheme};
+use dialoguer::{
+    Confirm, FuzzySelect, Input, MultiSelect, theme::ColorfulTheme, theme::SimpleTheme,
+};
 use eyre::Result;
-use skim::prelude::*;
-use std::io::{Cursor, IsTerminal, Write};
+use std::io::IsTerminal;
 
 #[derive(Debug, PartialEq, Eq)]
 enum ThemeKind {
@@ -25,65 +26,8 @@ fn dialoguer_theme() -> Box<dyn dialoguer::theme::Theme> {
     }
 }
 
-fn has_skim_support() -> bool {
+fn is_interactive() -> bool {
     std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
-}
-
-fn select_with_skim(items: &[String], prompt: &str) -> Option<String> {
-    if items.is_empty() {
-        return None;
-    }
-
-    let prompt_str = format!("{}> ", prompt);
-
-    let options = SkimOptionsBuilder::default()
-        .prompt(Some(&prompt_str))
-        .height(Some("40%"))
-        .multi(false)
-        .reverse(true)
-        .build()
-        .ok()?;
-
-    let input = items.join("\n");
-    let item_reader = SkimItemReader::default();
-    let items = item_reader.of_bufread(Cursor::new(input));
-
-    let output = Skim::run_with(&options, Some(items))?;
-
-    // Skim leaves terminal background color set after exit.
-    // \x1b[0m resets all SGR attributes (fixes colored bands on subsequent lines).
-    // \x1b[J clears from cursor to end of screen (removes phantom blank lines).
-    if should_use_colors() {
-        let mut stderr = std::io::stderr().lock();
-        let _ = stderr.write_all(b"\x1b[0m\x1b[J");
-        let _ = stderr.flush();
-    }
-
-    if output.is_abort {
-        return None;
-    }
-
-    output
-        .selected_items
-        .first()
-        .map(|item| item.output().to_string())
-}
-
-fn select_with_dialoguer(items: &[String], prompt: &str) -> Option<String> {
-    if items.is_empty() {
-        return None;
-    }
-
-    let theme = dialoguer_theme();
-    let selection = Select::with_theme(theme.as_ref())
-        .with_prompt(prompt)
-        .items(items)
-        .default(0)
-        .interact_opt()
-        .ok()
-        .flatten()?;
-
-    Some(items[selection].clone())
 }
 
 /// Describes what is being chosen so `select_item` can render each of the
@@ -173,7 +117,7 @@ where
         return Err(choice.no_candidates());
     }
 
-    if !has_skim_support() {
+    if !is_interactive() {
         if let [only] = items {
             return Ok(only.clone());
         }
@@ -181,98 +125,53 @@ where
     }
 
     let display_items: Vec<String> = items.iter().map(&display_fn).collect();
-    let selected = select_with_skim(&display_items, &choice.prompt)
-        .or_else(|| select_with_dialoguer(&display_items, &choice.prompt))
+    let theme = dialoguer_theme();
+
+    // `.default(0)` is load-bearing: `FuzzySelect` only accepts Enter while a
+    // row is highlighted, and it starts with none highlighted, so without it
+    // the first keypress has to be an arrow before Enter does anything.
+    let picked = FuzzySelect::with_theme(theme.as_ref())
+        .with_prompt(&choice.prompt)
+        .items(&display_items)
+        .default(0)
+        .interact_opt()
+        .ok()
+        .flatten()
         .ok_or_else(|| choice.aborted())?;
 
-    display_items
-        .iter()
-        .position(|d| d == &selected)
-        .map(|i| items[i].clone())
-        .ok_or_else(|| choice.aborted())
+    Ok(items[picked].clone())
 }
 
-fn select_multi_with_skim(items: &[String], prompt: &str) -> Option<Vec<String>> {
+/// Picks any number of `items`, or `None` if the picker was dismissed with
+/// nothing checked.
+///
+/// A lone candidate is auto-selected without a TTY, mirroring [`select_item`].
+/// Toggling is space, not tab: tab moves the cursor down.
+pub fn select_multi(items: &[String], prompt: &str) -> Option<Vec<String>> {
     if items.is_empty() {
         return None;
     }
 
-    let prompt_str = format!("{}> ", prompt);
-
-    let options = SkimOptionsBuilder::default()
-        .prompt(Some(&prompt_str))
-        .height(Some("40%"))
-        .multi(true)
-        .reverse(true)
-        .build()
-        .ok()?;
-
-    let input = items.join("\n");
-    let item_reader = SkimItemReader::default();
-    let items = item_reader.of_bufread(Cursor::new(input));
-
-    let output = Skim::run_with(&options, Some(items))?;
-
-    if should_use_colors() {
-        let mut stderr = std::io::stderr().lock();
-        let _ = stderr.write_all(b"\x1b[0m\x1b[J");
-        let _ = stderr.flush();
-    }
-
-    if output.is_abort {
-        return None;
-    }
-
-    let selected: Vec<String> = output
-        .selected_items
-        .iter()
-        .map(|item| item.output().to_string())
-        .collect();
-
-    if selected.is_empty() {
-        None
-    } else {
-        Some(selected)
-    }
-}
-
-fn select_multi_with_dialoguer(items: &[String], prompt: &str) -> Option<Vec<String>> {
-    if items.is_empty() {
+    if !is_interactive() {
+        if let [only] = items {
+            return Some(vec![only.clone()]);
+        }
         return None;
     }
 
     let theme = dialoguer_theme();
-    let selections = MultiSelect::with_theme(theme.as_ref())
+    let picked = MultiSelect::with_theme(theme.as_ref())
         .with_prompt(prompt)
         .items(items)
         .interact_opt()
         .ok()
         .flatten()?;
 
-    if selections.is_empty() {
+    if picked.is_empty() {
         return None;
     }
 
-    Some(selections.iter().map(|&i| items[i].clone()).collect())
-}
-
-pub fn select_multi(items: &[String], prompt: &str) -> Option<Vec<String>> {
-    if items.is_empty() {
-        return None;
-    }
-
-    if !has_skim_support() {
-        if items.len() == 1 {
-            return Some(vec![items[0].clone()]);
-        }
-        return None;
-    }
-
-    if let Some(result) = select_multi_with_skim(items, prompt) {
-        return Some(result);
-    }
-
-    select_multi_with_dialoguer(items, prompt)
+    Some(picked.iter().map(|&i| items[i].clone()).collect())
 }
 
 pub fn confirm(msg: &str, yes_flag: bool) -> bool {
@@ -393,6 +292,27 @@ mod tests {
         .unwrap();
 
         assert_eq!(selected, "auberge");
+    }
+
+    #[test]
+    fn select_multi_auto_selects_a_lone_candidate_without_a_tty() {
+        // Same rule as select_item: one candidate is not a choice, so
+        // `backup restore` needs no -a on a single-app backup.
+        let only = vec!["paperless".to_string()];
+
+        assert_eq!(select_multi(&only, "Select apps"), Some(only.clone()));
+    }
+
+    #[test]
+    fn select_multi_declines_to_guess_between_candidates_without_a_tty() {
+        // No picker can be drawn and no candidate is privileged, so callers
+        // get None and surface their own actionable error.
+        assert_eq!(select_multi(&hosts(), "Select apps"), None);
+    }
+
+    #[test]
+    fn select_multi_reports_nothing_to_pick_for_an_empty_list() {
+        assert_eq!(select_multi(&[], "Select apps"), None);
     }
 
     #[test]

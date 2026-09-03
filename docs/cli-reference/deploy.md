@@ -73,7 +73,7 @@ A name that is _both_ an apps.yml role and a standalone playbook (calibre, immic
 `auberge deploy` with no positional args offers every target — the `apps.yml` roster in declaration order, then the standalone playbooks the roster does not already hold, marked as such:
 
 ```
-Select app(s) or playbook(s) to deploy (tab to toggle, enter to confirm)>
+Select app(s) or playbook(s) to deploy (space to toggle, enter to confirm)>
   [all apps]
   paperless
   freshrss
