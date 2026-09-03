@@ -96,16 +96,22 @@ jobs:
           set -euo pipefail
           if [[ "$RELEASES_CREATED" == "true" ]]; then
             tag=$(echo "$RELEASES_JSON" | jq -r '.[0].tag')
-            echo "releases_created=true" >> "$GITHUB_OUTPUT"
-            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-            echo "draft_release_created=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "releases_created=true"
+              echo "tag=${tag}"
+              echo "draft_release_created=true"
+            } >> "$GITHUB_OUTPUT"
           elif [[ "$RECOVERY_TAG_PRESENT" == "true" ]]; then
-            echo "releases_created=true" >> "$GITHUB_OUTPUT"
-            echo "tag=${RECOVERY_TAG}" >> "$GITHUB_OUTPUT"
-            echo "draft_release_created=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "releases_created=true"
+              echo "tag=${RECOVERY_TAG}"
+              echo "draft_release_created=false"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "releases_created=false" >> "$GITHUB_OUTPUT"
-            echo "draft_release_created=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "releases_created=false"
+              echo "draft_release_created=false"
+            } >> "$GITHUB_OUTPUT"
           fi
 
   release-plz-pr:
