@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.3](https://github.com/sripwoud/auberge/compare/v0.17.2...v0.17.3) - 2026-09-03
+
+### Other
+
+- *(cli)* fence dead_code suppression out of src ([#836](https://github.com/sripwoud/auberge/pull/836))
+- *(prompt)* confine dialoguer to prompt.rs ([#835](https://github.com/sripwoud/auberge/pull/835))
+- *(bichon)* fence the stale sidecar command string ([#834](https://github.com/sripwoud/auberge/pull/834))
+- *(deps)* replace skim with dialoguer fuzzy-select ([#833](https://github.com/sripwoud/auberge/pull/833))
+- *(ansible)* delete the remove-radicale migration ([#832](https://github.com/sripwoud/auberge/pull/832))
+- *(inventory)* pin the quoted-string port form ([#831](https://github.com/sripwoud/auberge/pull/831))
+- *(cli)* flatten the duplicated --output arg ([#828](https://github.com/sripwoud/auberge/pull/828))
+- *(bichon)* make the rescan command asserts hold literals ([#829](https://github.com/sripwoud/auberge/pull/829))
+- *(aoe)* bump to 1.15.3 ([#821](https://github.com/sripwoud/auberge/pull/821))
+- *(opencode)* bump to 1.18.27 ([#822](https://github.com/sripwoud/auberge/pull/822))
+- *(cli)* delete the unread crate surface ([#825](https://github.com/sripwoud/auberge/pull/825))
+- *(deps)* drop openssl and ansible-rs, put cloudflare on rustls ([#823](https://github.com/sripwoud/auberge/pull/823))
+- *(aoe)* show a one-command pairing wrapper ([#813](https://github.com/sripwoud/auberge/pull/813))
+
 ## [0.17.2](https://github.com/sripwoud/auberge/compare/v0.17.1...v0.17.2) - 2026-09-02
 
 ### Fixed
