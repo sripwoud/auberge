@@ -102,10 +102,6 @@ pub fn parse_stale_sidecars(stdout: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn service_active_command() -> String {
-    format!("sudo systemctl is-active {ARCHIVE_SERVICE}")
-}
-
 pub fn is_service_active(stdout: &str) -> bool {
     matches!(
         stdout.trim(),
@@ -118,14 +114,6 @@ pub fn cursor_reset_command(email: &str) -> String {
     format!(
         r#"sudo -u {ARCHIVE_USER} sh -c 'umask 077; mkdir -p {STATE_DIR} && printf "0\n" > {cursor}'"#
     )
-}
-
-pub fn start_service_command() -> String {
-    format!("sudo systemctl start {ARCHIVE_SERVICE}")
-}
-
-pub fn journal_cursor_command() -> String {
-    "sudo journalctl -n0 --show-cursor --quiet --no-pager".to_string()
 }
 
 pub fn parse_journal_cursor(stdout: &str) -> Option<String> {
@@ -144,10 +132,6 @@ fn validate_cursor_for_shell(cursor: &str) -> Result<()> {
         eyre::bail!("journal cursor '{cursor}' contains characters unsafe for a remote shell");
     }
     Ok(())
-}
-
-pub fn journal_after_cursor_command(cursor: &str) -> String {
-    format!("sudo journalctl -u {ARCHIVE_SERVICE} --after-cursor '{cursor}' -o cat --no-pager")
 }
 
 fn token_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
@@ -231,7 +215,7 @@ pub fn execute_rescan(
 
     // `is-active` exits non-zero for inactive units, so only stdout answers
     // the question; transport failures surface on the next command instead.
-    let active = ssh.run(&service_active_command())?;
+    let active = ssh.run(&format!("sudo systemctl is-active {ARCHIVE_SERVICE}"))?;
     if is_service_active(&active.stdout_str()) {
         return Ok(RescanOutcome::Busy);
     }
@@ -250,7 +234,7 @@ pub fn execute_rescan(
     // here, not by InvocationID: systemd drops that property once it
     // unloads an inactive oneshot, so it can be gone by the time the pass
     // finishes. Same pattern as the uidvalidity watch.
-    let cursor_capture = ssh.run(&journal_cursor_command())?;
+    let cursor_capture = ssh.run("sudo journalctl -n0 --show-cursor --quiet --no-pager")?;
     let Some(cursor) = parse_journal_cursor(&cursor_capture.stdout_str()) else {
         eyre::bail!(
             "could not capture a journal cursor: {}",
@@ -261,9 +245,11 @@ pub fn execute_rescan(
 
     // Type=oneshot: start blocks until the archive pass finishes, and a
     // non-zero exit is a verdict to report, not an error to bail on.
-    let start = ssh.run(&start_service_command())?;
+    let start = ssh.run(&format!("sudo systemctl start {ARCHIVE_SERVICE}"))?;
 
-    let journal = ssh.run(&journal_after_cursor_command(&cursor))?;
+    let journal = ssh.run(&format!(
+        "sudo journalctl -u {ARCHIVE_SERVICE} --after-cursor '{cursor}' -o cat --no-pager"
+    ))?;
     if !journal.success {
         eyre::bail!(
             "could not read the archive run journal: {}",
@@ -342,6 +328,10 @@ mod tests {
         let outcome = execute_rescan(&mock, &emails(&["a@x.io"]), &emails(&["a@x.io"])).unwrap();
 
         assert_eq!(outcome, RescanOutcome::Busy);
+        assert_eq!(
+            mock.calls()[1],
+            SshOp::Run("sudo systemctl is-active bichon-archive.service".to_string())
+        );
         assert_eq!(mock.calls().len(), 2);
     }
 
@@ -397,16 +387,26 @@ mod tests {
         let calls = mock.calls();
         assert_eq!(
             calls[2],
-            SshOp::Run(cursor_reset_command("dev@x.io")),
+            SshOp::Run(
+                r#"sudo -u bichon sh -c 'umask 077; mkdir -p /var/lib/bichon-archive/.state && printf "0\n" > /var/lib/bichon-archive/.state/dev@x.io.cursor'"#
+                    .to_string()
+            ),
             "only the selected account's cursor is reset"
         );
-        assert_eq!(calls[3], SshOp::Run(journal_cursor_command()));
-        assert_eq!(calls[4], SshOp::Run(start_service_command()));
+        assert_eq!(
+            calls[3],
+            SshOp::Run("sudo journalctl -n0 --show-cursor --quiet --no-pager".to_string())
+        );
+        assert_eq!(
+            calls[4],
+            SshOp::Run("sudo systemctl start bichon-archive.service".to_string())
+        );
         assert_eq!(
             calls[5],
-            SshOp::Run(journal_after_cursor_command(
-                "s=0123456789ab;i=1f2;b=00aa;m=bb;t=cc;x=dd"
-            ))
+            SshOp::Run(
+                "sudo journalctl -u bichon-archive.service --after-cursor 's=0123456789ab;i=1f2;b=00aa;m=bb;t=cc;x=dd' -o cat --no-pager"
+                    .to_string()
+            )
         );
     }
 
