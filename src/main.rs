@@ -164,8 +164,12 @@ async fn main() -> Result<()> {
             HeadscaleCommands::TagNode { name, tags, host } => {
                 run_headscale_tag_node(name, tags, host)
             }
-            HeadscaleCommands::ListUsers { output, host } => run_headscale_list_users(output, host),
-            HeadscaleCommands::ListNodes { output, host } => run_headscale_list_nodes(output, host),
+            HeadscaleCommands::ListUsers { output, host } => {
+                run_headscale_list_users(output.format, host)
+            }
+            HeadscaleCommands::ListNodes { output, host } => {
+                run_headscale_list_nodes(output.format, host)
+            }
             HeadscaleCommands::RemoveUser { name, yes, host } => {
                 run_headscale_remove_user(name, yes, host)
             }
@@ -192,7 +196,7 @@ async fn main() -> Result<()> {
                 tailnet_tag,
                 no_input,
             }),
-            HostCommands::List { tags, output } => run_host_list(tags, output),
+            HostCommands::List { tags, output } => run_host_list(tags, output.format),
             HostCommands::Remove { name, yes } => run_host_remove(name, yes),
             HostCommands::Show { name } => run_host_show(name),
             HostCommands::Edit { name } => run_host_edit(name),
@@ -257,7 +261,7 @@ async fn main() -> Result<()> {
             } => {
                 signal::with_ctrlc(|| run_backup_sync(host, apps, ssh_key, include_music, dry_run))
             }
-            BackupCommands::List { host, app, output } => run_backup_list(host, app, output),
+            BackupCommands::List { host, app, output } => run_backup_list(host, app, output.format),
             BackupCommands::Restore {
                 backup_id,
                 host,
@@ -292,7 +296,7 @@ async fn main() -> Result<()> {
                 host,
                 app,
                 max_age,
-                format: output,
+                format: output.format,
             })),
             BackupCommands::Opml(cmd) => match cmd {
                 OpmlCommands::ExportOpml {
@@ -333,8 +337,8 @@ async fn main() -> Result<()> {
             } => signal::with_ctrlc(|| run_sync_hermes(host, source, dry_run, pull)),
         },
         Commands::Dns(cmd) => match cmd {
-            DnsCommands::List { subdomain, output } => run_dns_list(subdomain, output).await,
-            DnsCommands::Status { output } => run_dns_status(output).await,
+            DnsCommands::List { subdomain, output } => run_dns_list(subdomain, output.format).await,
+            DnsCommands::Status { output } => run_dns_status(output.format).await,
             DnsCommands::Set { subdomain, ip } => run_dns_set(subdomain, ip).await,
             DnsCommands::Delete {
                 subdomain,
@@ -342,12 +346,12 @@ async fn main() -> Result<()> {
                 output,
                 production,
                 yes,
-            } => run_dns_delete(subdomain, dry_run, output, production, yes).await,
+            } => run_dns_delete(subdomain, dry_run, output.format, production, yes).await,
             DnsCommands::Migrate {
                 ip,
                 dry_run,
                 output,
-            } => run_dns_migrate(ip, dry_run, output).await,
+            } => run_dns_migrate(ip, dry_run, output.format).await,
             DnsCommands::SetAll {
                 host,
                 ip,
@@ -367,7 +371,7 @@ async fn main() -> Result<()> {
                     strict,
                     subdomains,
                     skip,
-                    output,
+                    output: output.format,
                     continue_on_error,
                 })
                 .await,
@@ -375,7 +379,9 @@ async fn main() -> Result<()> {
         },
         Commands::Github(cmd) => match cmd {
             GithubCommands::Invite => run_github_invite(),
-            GithubCommands::Verify { output } => std::process::exit(run_github_verify(output)?),
+            GithubCommands::Verify { output } => {
+                std::process::exit(run_github_verify(output.format)?)
+            }
         },
         Commands::Config(cmd) => match cmd {
             ConfigCommands::Init(args) => run_config_init(args),
@@ -415,6 +421,8 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use auberge::output::OutputArg;
+    use clap::Args as _;
 
     fn generate_bash_script() -> String {
         let mut buf = Vec::new();
@@ -578,6 +586,117 @@ mod tests {
             );
         }
     }
+
+    /// ADR-0004 restricts `--output {human,json}` to commands whose JSON has at
+    /// least one load-bearing field. #818 collapsed fifteen verbatim copies of
+    /// the declaration into one `#[command(flatten)]`ed struct, and a flatten
+    /// is exactly the edit that can widen that partition — or reshuffle
+    /// `--help` — while still compiling. The table below is written out, not
+    /// derived: a command gaining or losing the flag has to edit it.
+    ///
+    /// `position` is the arg's index among its command's own options, which is
+    /// the `display_order` clap hands it. Globals merge in by their own root
+    /// order, so a shifted position silently rewrites `--help`.
+    #[test]
+    fn the_output_flag_keeps_its_commands_and_its_place() {
+        const CARRIERS: &[(&str, usize)] = &[
+            ("auberge backup list", 2),
+            ("auberge backup verify", 3),
+            ("auberge bichon reconcile-folders", 3),
+            ("auberge bichon rescan", 2),
+            ("auberge bichon verify-coverage", 5),
+            ("auberge dns delete", 2),
+            ("auberge dns list", 1),
+            ("auberge dns migrate", 2),
+            ("auberge dns set-all", 7),
+            ("auberge dns status", 0),
+            ("auberge github verify", 0),
+            ("auberge headscale list-nodes", 0),
+            ("auberge headscale list-users", 0),
+            ("auberge host list", 1),
+            ("auberge versions", 1),
+        ];
+
+        fn options(cmd: &clap::Command) -> Vec<&clap::Arg> {
+            cmd.get_arguments()
+                .filter(|arg| !arg.is_positional() && arg.get_id() != "help")
+                .collect()
+        }
+
+        fn walk(cmd: &clap::Command, prefix: &str, found: &mut Vec<(String, usize)>) {
+            for sub in cmd.get_subcommands() {
+                let path = format!("{prefix} {}", sub.get_name());
+                let opts = options(sub);
+                // `config init -o FILE` and `backup export-opml -o FILE` also
+                // spell `--output`; theirs is a path, so it offers no values.
+                if let Some(position) = opts.iter().position(|arg| {
+                    arg.get_long() == Some("output") && !arg.get_possible_values().is_empty()
+                }) {
+                    let arg = opts[position];
+                    assert_eq!(
+                        arg.get_possible_values()
+                            .iter()
+                            .map(|value| value.get_name().to_owned())
+                            .collect::<Vec<_>>(),
+                        ["human", "json"],
+                        "{path} --output offers something other than human and json"
+                    );
+                    assert_eq!(arg.get_short(), Some('o'), "{path} lost `-o`");
+                    assert_eq!(arg.get_id().as_str(), "output", "{path} renamed the arg id");
+                    assert_eq!(
+                        arg.get_help().map(|help| help.to_string()).as_deref(),
+                        Some("Output format"),
+                        "{path} rewrote the --output help"
+                    );
+                    assert_eq!(
+                        arg.get_default_values()
+                            .iter()
+                            .map(|value| value.to_string_lossy().into_owned())
+                            .collect::<Vec<_>>(),
+                        ["human"],
+                        "{path} lost the human default"
+                    );
+                    let rendered = sub.clone().render_long_help().to_string();
+                    assert!(
+                        rendered.contains("-o, --output <OUTPUT>"),
+                        "{path} --help no longer spells the flag `-o, --output <OUTPUT>`"
+                    );
+                    found.push((path.clone(), position));
+                }
+                walk(sub, &path, found);
+            }
+        }
+
+        // A `///` on a flattened `Args` struct does not stay on the struct:
+        // clap hands its first paragraph to every host command as `about`, and
+        // any second paragraph as `long_about` — which nothing overrides, so it
+        // replaces the command's own description in `--help`. Caught at the
+        // source rather than once per carrier.
+        let probe = OutputArg::augment_args(clap::Command::new("probe"));
+        assert_eq!(
+            probe.get_about().map(|about| about.to_string()),
+            None,
+            "OutputArg carries an `about` into every command that flattens it"
+        );
+        assert_eq!(
+            probe.get_long_about().map(|about| about.to_string()),
+            None,
+            "OutputArg carries a `long_about` into every command that flattens it"
+        );
+
+        let mut found = Vec::new();
+        walk(&Cli::command(), "auberge", &mut found);
+        found.sort();
+        let found: Vec<(&str, usize)> = found
+            .iter()
+            .map(|(path, position)| (path.as_str(), *position))
+            .collect();
+        assert_eq!(
+            found, CARRIERS,
+            "the set of commands carrying --output, or where it sits in --help, changed"
+        );
+    }
+
     /// The other direction: the pair is reachable under `auberge backup` and
     /// nowhere else. A second `#[command(flatten)]`, or a promotion to top
     /// level that forgot to drop the old one, leaves every assertion above

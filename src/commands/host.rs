@@ -1,6 +1,6 @@
 use crate::hosts::{Host, HostManager, TailnetTag};
 use crate::output;
-use crate::output::OutputFormat;
+use crate::output::{OutputArg, OutputFormat};
 use crate::prompt::{Choice, confirm, select_item};
 use crate::services::ssh::{CONNECT_TIMEOUT, LiveSshSession, SshSession};
 use clap::Subcommand;
@@ -96,14 +96,8 @@ pub enum HostCommands {
     List {
         #[arg(short, long, help = "Filter by tags (comma-separated)")]
         tags: Option<String>,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
     #[command(visible_alias = "rm", about = "Remove a host")]
     Remove {

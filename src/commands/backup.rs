@@ -111,14 +111,8 @@ pub enum BackupCommands {
         host: Option<String>,
         #[arg(short, long, help = "Filter by app")]
         app: Option<String>,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
     #[command(visible_alias = "r", about = "Restore from backup")]
     Restore {
@@ -189,14 +183,8 @@ pub enum BackupCommands {
             help = "Freshness threshold as <number><s|m|h|d>"
         )]
         max_age: String,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
     /// Data portability, not backup: freshrss's Backup Recipe already carries
     /// the app's data directories. Flattened rather than moved so the surface
@@ -205,6 +193,7 @@ pub enum BackupCommands {
     Opml(OpmlCommands),
 }
 
+use crate::output::OutputArg;
 pub use crate::output::OutputFormat;
 
 pub struct RestoreOptions {
@@ -1595,7 +1584,9 @@ mod tests {
             host: None,
             app: Some("bichon".to_string()),
             max_age: "24h".to_string(),
-            output: OutputFormat::Human,
+            output: OutputArg {
+                format: OutputFormat::Human,
+            },
         };
     }
 
