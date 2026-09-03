@@ -17,7 +17,6 @@ use crate::output::{OutputArg, OutputFormat};
 use crate::prompt::{Choice, confirm, select_item};
 use crate::services::ssh::{LiveSshSession, SshSession};
 use clap::Subcommand;
-use dialoguer::{Input, Select, theme::ColorfulTheme};
 use eyre::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::io::IsTerminal;
@@ -705,11 +704,7 @@ fn resolve_expiration(expiration: Option<String>, is_tty: bool) -> Result<String
         Some(e) => Ok(e),
         None if is_tty => {
             let options = vec!["1h", "24h", "48h", "7d"];
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt("Key expiration")
-                .items(&options)
-                .default(1)
-                .interact()?;
+            let selection = crate::prompt::pick_index("Key expiration", &options, 1)?;
             Ok(options[selection].to_string())
         }
         None => Ok("24h".to_string()),
@@ -1275,9 +1270,7 @@ pub fn run_headscale_add_user(
 
     let username = match name {
         Some(n) => n,
-        None if is_tty => Input::<String>::with_theme(&ColorfulTheme::default())
-            .with_prompt("Username")
-            .interact_text()?,
+        None if is_tty => crate::prompt::text("Username")?,
         None => eyre::bail!("Username is required (pass as argument or run interactively)"),
     };
 

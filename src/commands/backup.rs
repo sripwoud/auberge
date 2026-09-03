@@ -764,11 +764,7 @@ pub fn run_backup_restore(opts: RestoreOptions) -> Result<()> {
         eprintln!("\n⚠  DANGER: Cross-host restore requires explicit confirmation");
         eprintln!("   Type the target host name '{}' to confirm:", host.name);
 
-        let confirmation: String = dialoguer::Input::new()
-            .with_prompt("Target host name")
-            .interact_text()?;
-
-        if confirmation.trim() != host.name {
+        if !crate::prompt::confirm_typed("Target host name", &host.name, false)? {
             eprintln!("✗ Confirmation failed. Restore cancelled");
             return Ok(());
         }

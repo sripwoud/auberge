@@ -7,7 +7,6 @@ use crate::services::dns::{
     SetAllOutcome, SetAllPlan, WRITE_PACE, apply_set_all, discover_all_subdomains, plan_set_all,
 };
 use clap::Subcommand;
-use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::Result;
 use serde::Serialize;
 
@@ -310,9 +309,7 @@ fn resolve_ip(ip: Option<String>) -> Result<String> {
     match ip {
         Some(i) => Ok(i),
         None => {
-            let value = Input::<String>::with_theme(&ColorfulTheme::default())
-                .with_prompt("IP address")
-                .interact_text()?;
+            let value = crate::prompt::text("IP address")?;
             let value = value.trim().to_string();
             value
                 .parse::<std::net::Ipv4Addr>()

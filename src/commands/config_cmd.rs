@@ -5,7 +5,6 @@ use crate::output;
 use crate::prompt::{Choice, select_item};
 use crate::services::required_keys::required_keys_for;
 use clap::{Args, Subcommand};
-use dialoguer::{Input, theme::ColorfulTheme};
 use eyre::{Result, WrapErr};
 use std::collections::HashSet;
 use std::fs;
@@ -183,11 +182,7 @@ pub fn run_config_set(key: Option<String>, value: Option<String>) -> Result<()> 
         Some(v) => v,
         None => {
             let current = config.get(&key).unwrap_or_default();
-            Input::<String>::with_theme(&ColorfulTheme::default())
-                .with_prompt(format!("Value for '{}'", key))
-                .default(current)
-                .allow_empty(true)
-                .interact_text()?
+            crate::prompt::text_or_empty(&format!("Value for '{}'", key), current)?
         }
     };
     config.set(&key, &value)?;

@@ -15,9 +15,17 @@ use crate_source::modules;
 ///
 /// `cloudflare` is `dns`'s record side, `hickory_resolver` its query side —
 /// the two seams (`DnsRecords`, `DnsLookup`) the rule was written from.
+///
+/// `dialoguer` joined with #827, where five command modules were each
+/// constructing their own `Input`/`Select`/`Confirm` against a hardcoded
+/// `ColorfulTheme` — so `--no-color` was honoured by `prompt` and ignored by
+/// every prompt outside it. The seam is the whole of `prompt`'s surface rather
+/// than one trait, because a prompt's product is a `String`, a `bool` or an
+/// index: there is no vendor type left to translate once the call returns.
 const CONFINED_VENDORS: &[(&str, &str)] = &[
     ("cloudflare", "src/services/cloudflare_dns.rs"),
     ("hickory_resolver", "src/services/dns_verify.rs"),
+    ("dialoguer", "src/prompt.rs"),
 ];
 
 /// `true` when `source` uses a path rooted at `vendor`.
