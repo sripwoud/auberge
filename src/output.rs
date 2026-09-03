@@ -1,4 +1,4 @@
-use clap::ValueEnum;
+use clap::{Args, ValueEnum};
 use eyre::{Context, Result};
 use std::env;
 use std::io::{BufRead, BufReader, IsTerminal, Read};
@@ -16,6 +16,33 @@ pub enum OutputFormat {
     #[default]
     Human,
     Json,
+}
+
+// Deliberately `//` and not `///`: clap hands a flattened struct's doc comment
+// to every command that flattens it, and a second paragraph lands as a
+// `long_about` that replaces that command's own `--help` description.
+//
+// The `-o, --output {human,json}` flag, declared once and reached through
+// `#[command(flatten)]`. ADR-0004 is the rule it applies — only commands whose
+// JSON has a load-bearing field carry the flag; the partition itself is the
+// `CARRIERS` table in `main.rs`. Flattening changes how the flag is spelled,
+// never which commands carry it.
+//
+// `id`, `long` and `value_name` are pinned rather than derived: the field is
+// `format`, and clap would otherwise render `--format <FORMAT>` where fifteen
+// `--help` screens say `-o, --output <OUTPUT>`.
+#[derive(Args)]
+pub struct OutputArg {
+    #[arg(
+        id = "output",
+        short = 'o',
+        long = "output",
+        value_name = "OUTPUT",
+        value_enum,
+        default_value = "human",
+        help = "Output format"
+    )]
+    pub format: OutputFormat,
 }
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);

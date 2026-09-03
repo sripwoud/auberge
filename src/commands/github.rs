@@ -16,7 +16,7 @@
 
 use crate::config::Config;
 use crate::output;
-use crate::output::OutputFormat;
+use crate::output::{OutputArg, OutputFormat};
 use clap::Subcommand;
 use eyre::{Context, Result};
 use serde::Serialize;
@@ -40,14 +40,8 @@ pub enum GithubCommands {
         about = "Verify the machine user's token authenticates and reaches every allowlist repo"
     )]
     Verify {
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
 }
 
