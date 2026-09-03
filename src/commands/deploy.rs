@@ -36,20 +36,12 @@ const PLAYBOOK_MARKER: &str = " (playbook)";
 /// playbook is reachable from `deploy` the day it lands.
 /// `tests/deployable_playbooks.rs` holds the tree to this list, so one that
 /// should not be reachable fails the build until it says why.
-pub const NOT_DEPLOYABLE: &[(&str, &str)] = &[
-    (
-        "bootstrap",
-        "runs as root over port 22 before the ansible user exists, and needs \
+pub const NOT_DEPLOYABLE: &[(&str, &str)] = &[(
+    "bootstrap",
+    "runs as root over port 22 before the ansible user exists, and needs \
          the provider-firewall confirmation and the port-22 transport that \
          only `auberge ansible run` carries",
-    ),
-    (
-        "remove-radicale",
-        "tears an App down. `deploy` converges a Host toward a declared state \
-         and prepends Substrate to do it, which is the wrong two layers to run \
-         ahead of a removal",
-    ),
-];
+)];
 
 #[derive(Args)]
 pub struct DeployCmd {

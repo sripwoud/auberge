@@ -59,12 +59,11 @@ Execution plan:
 > [!IMPORTANT]
 > Every entry on `ruche.yml` — and on `aoe.yml` and `opencode.yml` — is guarded on `when: "'agent' in group_names"`, so the Host must carry `tags = ["agent"]` in `hosts.toml` or **the run is a green no-op that installs nothing**. Check it with `auberge host list`; the TAGS column must show `agent`. This is the `hosts.toml` `tags` field (an ansible group, deciding which roles run) — _not_ `tailnet_tag`, which happens to take the same word for the ACL tier and decides what the Host may reach on the tailnet. They are unrelated fields ([ADR-0062](https://github.com/sripwoud/auberge/blob/master/meta/adr/0062-a-hosts-trust-tier-is-a-typed-roster-field.md)).
 
-Two playbooks are deliberately not deploy targets, because each is a lifecycle operation rather than a convergence:
+`bootstrap` is deliberately not a deploy target, because it is a lifecycle operation rather than a convergence:
 
-| Playbook          | Run it with                                                       | Why not `deploy`                                                      |
-| ----------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `bootstrap`       | [`auberge ansible bootstrap`](cli-reference/ansible/bootstrap.md) | connects as root on port 22 before the ansible user exists            |
-| `remove-radicale` | `auberge ansible run -t remove-radicale`                          | a teardown; prepending two convergence plays to it is the wrong order |
+| Playbook    | Run it with                                                       | Why not `deploy`                                           |
+| ----------- | ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| `bootstrap` | [`auberge ansible bootstrap`](cli-reference/ansible/bootstrap.md) | connects as root on port 22 before the ansible user exists |
 
 A name that is _both_ an apps.yml role and a standalone playbook (calibre, immich, gokapi, hermes) keeps going through the roster, which is where those apps have always deployed from.
 

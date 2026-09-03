@@ -545,7 +545,6 @@ mod tests {
             "immich",
             "memsearch",
             "opencode",
-            "remove-radicale",
             "ruche",
         ] {
             let path = find_standalone_playbook(name).unwrap().unwrap();
