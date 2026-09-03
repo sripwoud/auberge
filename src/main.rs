@@ -578,6 +578,91 @@ mod tests {
             );
         }
     }
+
+    /// ADR-0004 restricts `--output {human,json}` to commands whose JSON has at
+    /// least one load-bearing field. #818 collapsed fifteen verbatim copies of
+    /// the declaration into one `#[command(flatten)]`ed struct, and a flatten
+    /// is exactly the edit that can widen that partition — or reshuffle
+    /// `--help` — while still compiling. The table below is written out, not
+    /// derived: a command gaining or losing the flag has to edit it.
+    ///
+    /// `position` is the arg's index among its command's own options, which is
+    /// the `display_order` clap hands it. Globals merge in by their own root
+    /// order, so a shifted position silently rewrites `--help`.
+    #[test]
+    fn the_output_flag_keeps_its_commands_and_its_place() {
+        const CARRIERS: &[(&str, usize)] = &[
+            ("auberge backup list", 2),
+            ("auberge backup verify", 3),
+            ("auberge bichon reconcile-folders", 3),
+            ("auberge bichon rescan", 2),
+            ("auberge bichon verify-coverage", 5),
+            ("auberge dns delete", 2),
+            ("auberge dns list", 1),
+            ("auberge dns migrate", 2),
+            ("auberge dns set-all", 7),
+            ("auberge dns status", 0),
+            ("auberge github verify", 0),
+            ("auberge headscale list-nodes", 0),
+            ("auberge headscale list-users", 0),
+            ("auberge host list", 1),
+            ("auberge versions", 1),
+        ];
+
+        fn options(cmd: &clap::Command) -> Vec<&clap::Arg> {
+            cmd.get_arguments()
+                .filter(|arg| !arg.is_positional() && arg.get_id() != "help")
+                .collect()
+        }
+
+        fn walk(cmd: &clap::Command, prefix: &str, found: &mut Vec<(String, usize)>) {
+            for sub in cmd.get_subcommands() {
+                let path = format!("{prefix} {}", sub.get_name());
+                let opts = options(sub);
+                if let Some(position) = opts.iter().position(|arg| {
+                    arg.get_long() == Some("output")
+                        && arg
+                            .get_possible_values()
+                            .iter()
+                            .map(|value| value.get_name().to_owned())
+                            .collect::<Vec<_>>()
+                            == ["human", "json"]
+                }) {
+                    let arg = opts[position];
+                    assert_eq!(arg.get_short(), Some('o'), "{path} lost `-o`");
+                    assert_eq!(arg.get_id().as_str(), "output", "{path} renamed the arg id");
+                    assert_eq!(
+                        arg.get_help().map(|help| help.to_string()).as_deref(),
+                        Some("Output format"),
+                        "{path} rewrote the --output help"
+                    );
+                    assert_eq!(
+                        arg.get_default_values()
+                            .iter()
+                            .map(|value| value.to_string_lossy().into_owned())
+                            .collect::<Vec<_>>(),
+                        ["human"],
+                        "{path} lost the human default"
+                    );
+                    found.push((path.clone(), position));
+                }
+                walk(sub, &path, found);
+            }
+        }
+
+        let mut found = Vec::new();
+        walk(&Cli::command(), "auberge", &mut found);
+        found.sort();
+        let found: Vec<(&str, usize)> = found
+            .iter()
+            .map(|(path, position)| (path.as_str(), *position))
+            .collect();
+        assert_eq!(
+            found, CARRIERS,
+            "the set of commands carrying --output, or where it sits in --help, changed"
+        );
+    }
+
     /// The other direction: the pair is reachable under `auberge backup` and
     /// nowhere else. A second `#[command(flatten)]`, or a promotion to top
     /// level that forgot to drop the old one, leaves every assertion above
