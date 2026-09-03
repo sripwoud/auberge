@@ -164,8 +164,12 @@ async fn main() -> Result<()> {
             HeadscaleCommands::TagNode { name, tags, host } => {
                 run_headscale_tag_node(name, tags, host)
             }
-            HeadscaleCommands::ListUsers { output, host } => run_headscale_list_users(output, host),
-            HeadscaleCommands::ListNodes { output, host } => run_headscale_list_nodes(output, host),
+            HeadscaleCommands::ListUsers { output, host } => {
+                run_headscale_list_users(output.format, host)
+            }
+            HeadscaleCommands::ListNodes { output, host } => {
+                run_headscale_list_nodes(output.format, host)
+            }
             HeadscaleCommands::RemoveUser { name, yes, host } => {
                 run_headscale_remove_user(name, yes, host)
             }
@@ -192,7 +196,7 @@ async fn main() -> Result<()> {
                 tailnet_tag,
                 no_input,
             }),
-            HostCommands::List { tags, output } => run_host_list(tags, output),
+            HostCommands::List { tags, output } => run_host_list(tags, output.format),
             HostCommands::Remove { name, yes } => run_host_remove(name, yes),
             HostCommands::Show { name } => run_host_show(name),
             HostCommands::Edit { name } => run_host_edit(name),
@@ -257,7 +261,7 @@ async fn main() -> Result<()> {
             } => {
                 signal::with_ctrlc(|| run_backup_sync(host, apps, ssh_key, include_music, dry_run))
             }
-            BackupCommands::List { host, app, output } => run_backup_list(host, app, output),
+            BackupCommands::List { host, app, output } => run_backup_list(host, app, output.format),
             BackupCommands::Restore {
                 backup_id,
                 host,
@@ -292,7 +296,7 @@ async fn main() -> Result<()> {
                 host,
                 app,
                 max_age,
-                format: output,
+                format: output.format,
             })),
             BackupCommands::Opml(cmd) => match cmd {
                 OpmlCommands::ExportOpml {
@@ -333,8 +337,8 @@ async fn main() -> Result<()> {
             } => signal::with_ctrlc(|| run_sync_hermes(host, source, dry_run, pull)),
         },
         Commands::Dns(cmd) => match cmd {
-            DnsCommands::List { subdomain, output } => run_dns_list(subdomain, output).await,
-            DnsCommands::Status { output } => run_dns_status(output).await,
+            DnsCommands::List { subdomain, output } => run_dns_list(subdomain, output.format).await,
+            DnsCommands::Status { output } => run_dns_status(output.format).await,
             DnsCommands::Set { subdomain, ip } => run_dns_set(subdomain, ip).await,
             DnsCommands::Delete {
                 subdomain,
@@ -342,12 +346,12 @@ async fn main() -> Result<()> {
                 output,
                 production,
                 yes,
-            } => run_dns_delete(subdomain, dry_run, output, production, yes).await,
+            } => run_dns_delete(subdomain, dry_run, output.format, production, yes).await,
             DnsCommands::Migrate {
                 ip,
                 dry_run,
                 output,
-            } => run_dns_migrate(ip, dry_run, output).await,
+            } => run_dns_migrate(ip, dry_run, output.format).await,
             DnsCommands::SetAll {
                 host,
                 ip,
@@ -367,7 +371,7 @@ async fn main() -> Result<()> {
                     strict,
                     subdomains,
                     skip,
-                    output,
+                    output: output.format,
                     continue_on_error,
                 })
                 .await,
@@ -375,7 +379,9 @@ async fn main() -> Result<()> {
         },
         Commands::Github(cmd) => match cmd {
             GithubCommands::Invite => run_github_invite(),
-            GithubCommands::Verify { output } => std::process::exit(run_github_verify(output)?),
+            GithubCommands::Verify { output } => {
+                std::process::exit(run_github_verify(output.format)?)
+            }
         },
         Commands::Config(cmd) => match cmd {
             ConfigCommands::Init(args) => run_config_init(args),
@@ -643,6 +649,11 @@ mod tests {
                             .collect::<Vec<_>>(),
                         ["human"],
                         "{path} lost the human default"
+                    );
+                    let rendered = sub.clone().render_long_help().to_string();
+                    assert!(
+                        rendered.contains("-o, --output <OUTPUT>"),
+                        "{path} --help no longer spells the flag `-o, --output <OUTPUT>`"
                     );
                     found.push((path.clone(), position));
                 }

@@ -1,5 +1,5 @@
 use crate::output;
-use crate::output::OutputFormat;
+use crate::output::{OutputArg, OutputFormat};
 use crate::prompt::{Choice, select_item};
 use crate::services::cloudflare_dns::CloudflareDns;
 use crate::services::dns::{
@@ -17,25 +17,13 @@ pub enum DnsCommands {
     List {
         #[arg(short, long, help = "Filter by subdomain name")]
         subdomain: Option<String>,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
     #[command(visible_alias = "st", about = "Show DNS status and health")]
     Status {
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
     #[command(visible_alias = "s", about = "Set an A record for a subdomain")]
     Set {
@@ -67,14 +55,8 @@ pub enum DnsCommands {
         subdomain: Option<String>,
         #[arg(short = 'n', long, help = "Preview without deleting")]
         dry_run: bool,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
         #[arg(
             short = 'P',
             long,
@@ -90,14 +72,8 @@ pub enum DnsCommands {
         ip: String,
         #[arg(short = 'n', long, help = "Dry run (don't actually migrate)")]
         dry_run: bool,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
     },
     #[command(
         visible_alias = "sa",
@@ -159,14 +135,8 @@ pub enum DnsCommands {
             help = "Skip specific subdomains (comma-separated)"
         )]
         skip: Vec<String>,
-        #[arg(
-            short = 'o',
-            long,
-            value_enum,
-            default_value = "human",
-            help = "Output format"
-        )]
-        output: OutputFormat,
+        #[command(flatten)]
+        output: OutputArg,
         #[arg(long, help = "Continue on errors instead of failing fast")]
         continue_on_error: bool,
     },

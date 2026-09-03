@@ -1,5 +1,5 @@
 use crate::ansible_assets::AnsibleAssets;
-use crate::output::{self, OutputFormat};
+use crate::output::{self, OutputArg, OutputFormat};
 use crate::playbook_meta::{VersionPin, declared_app_versions};
 use crate::tool_versions::{ToolVersion, declared_tool_versions};
 use clap::Args;
@@ -22,14 +22,8 @@ pub struct VersionsCmd {
         help = "Query each App's datasource for its latest release and report drift"
     )]
     pub check_upstream: bool,
-    #[arg(
-        short = 'o',
-        long,
-        value_enum,
-        default_value = "human",
-        help = "Output format"
-    )]
-    pub output: OutputFormat,
+    #[command(flatten)]
+    pub output: OutputArg,
 }
 
 #[derive(Debug, Serialize)]
@@ -144,7 +138,7 @@ async fn versions_and_report(cmd: VersionsCmd) -> Result<VersionsReport> {
         }
     };
 
-    match cmd.output {
+    match cmd.output.format {
         OutputFormat::Human => print_report_tables(&report, cmd.check_upstream),
         OutputFormat::Json => println!("{}", render_json(&report, cmd.check_upstream)?),
     }

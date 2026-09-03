@@ -1,4 +1,4 @@
-use clap::ValueEnum;
+use clap::{Args, ValueEnum};
 use eyre::{Context, Result};
 use std::env;
 use std::io::{BufRead, BufReader, IsTerminal, Read};
@@ -16,6 +16,28 @@ pub enum OutputFormat {
     #[default]
     Human,
     Json,
+}
+
+/// The `-o, --output {human,json}` flag itself, declared once and reached
+/// through `#[command(flatten)]` by every command ADR-0004 admits. Flattening
+/// changes how the flag is spelled, never which commands carry it — the
+/// partition is fenced in `main.rs`.
+///
+/// `id`, `long` and `value_name` are pinned rather than derived: the field is
+/// `format`, and clap would otherwise render `--format <FORMAT>` where fifteen
+/// `--help` screens say `-o, --output <OUTPUT>`.
+#[derive(Args)]
+pub struct OutputArg {
+    #[arg(
+        id = "output",
+        short = 'o',
+        long = "output",
+        value_name = "OUTPUT",
+        value_enum,
+        default_value = "human",
+        help = "Output format"
+    )]
+    pub format: OutputFormat,
 }
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
