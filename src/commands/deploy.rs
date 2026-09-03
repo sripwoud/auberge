@@ -141,7 +141,7 @@ fn select_apps(roster: &[String], playbooks: &[String]) -> Result<Vec<String>> {
 
     let selected = select_multi(
         &menu_items(targets),
-        "Select app(s) or playbook(s) to deploy (tab to toggle, enter to confirm)",
+        "Select app(s) or playbook(s) to deploy (space to toggle, enter to confirm)",
     )
     .ok_or_else(|| eyre::eyre!("No apps selected"))?;
 
