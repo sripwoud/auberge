@@ -354,10 +354,6 @@ impl Progress for ResultsSuppressed {
     fn line(&mut self, text: &str) {
         self.0.line(text);
     }
-
-    fn cancel(&mut self) {
-        self.0.cancel();
-    }
 }
 
 fn render_create_outcome(
@@ -1504,7 +1500,6 @@ mod tests {
         progress.success("bichon (1.00 KB)");
         progress.error("bichon backup failed: no route to host");
         progress.task_done();
-        progress.cancel();
 
         assert_eq!(
             recorder.events(),
@@ -1517,7 +1512,6 @@ mod tests {
                 ProgressEvent::Line("verbatim".to_string()),
                 ProgressEvent::Error("bichon backup failed: no route to host".to_string()),
                 ProgressEvent::TaskDone,
-                ProgressEvent::Cancel,
             ]
         );
     }

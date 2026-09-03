@@ -13,7 +13,6 @@ pub trait Progress {
     fn bytes_transferred(&mut self, n: u64);
     fn set_total(&mut self, n: Option<u64>);
     fn info(&mut self, msg: &str);
-    #[allow(dead_code)]
     fn warn(&mut self, msg: &str);
     /// An item finished.
     fn success(&mut self, msg: &str);
@@ -25,8 +24,6 @@ pub trait Progress {
     /// the thing the command was run to produce. Ungated for the same reason
     /// stdout is: it is data, not chrome.
     fn line(&mut self, text: &str);
-    #[allow(dead_code)]
-    fn cancel(&mut self);
 }
 
 pub struct TerminalProgress {
@@ -121,10 +118,6 @@ impl Progress for TerminalProgress {
     fn line(&mut self, text: &str) {
         self.pb.println(text);
     }
-
-    fn cancel(&mut self) {
-        self.pb.finish_and_clear();
-    }
 }
 
 fn format_info_line(msg: &str, use_colors: bool) -> String {
@@ -213,7 +206,6 @@ pub enum ProgressEvent {
     Success(String),
     Error(String),
     Line(String),
-    Cancel,
 }
 
 #[cfg(test)]
@@ -293,10 +285,6 @@ impl Progress for MockProgress {
 
     fn line(&mut self, text: &str) {
         self.record(ProgressEvent::Line(text.to_string()));
-    }
-
-    fn cancel(&mut self) {
-        self.record(ProgressEvent::Cancel);
     }
 }
 
@@ -389,20 +377,6 @@ mod tests {
             [
                 ProgressEvent::Success("baikal".to_string()),
                 ProgressEvent::Success("bichon".to_string()),
-            ]
-        );
-    }
-
-    #[test]
-    fn mock_records_cancel() {
-        let mut p = MockProgress::new();
-        p.task_started("rsync");
-        p.cancel();
-        assert_eq!(
-            p.events(),
-            &[
-                ProgressEvent::TaskStarted("rsync".to_string()),
-                ProgressEvent::Cancel,
             ]
         );
     }

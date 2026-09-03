@@ -10,13 +10,6 @@ pub fn register_progress_bar(pb: &ProgressBar) {
     }
 }
 
-#[allow(dead_code)]
-pub fn unregister_progress_bar() {
-    if let Ok(mut guard) = ACTIVE_BAR.lock() {
-        *guard = None;
-    }
-}
-
 fn cleanup_progress_bar() {
     if let Ok(guard) = ACTIVE_BAR.lock()
         && let Some(pb) = guard.as_ref()
@@ -57,16 +50,6 @@ mod tests {
     }
 
     #[test]
-    fn test_unregister_progress_bar() {
-        let pb = ProgressBar::with_draw_target(Some(10), ProgressDrawTarget::hidden());
-        register_progress_bar(&pb);
-        unregister_progress_bar();
-
-        let guard = ACTIVE_BAR.lock().unwrap();
-        assert!(guard.is_none());
-    }
-
-    #[test]
     fn test_with_ctrlc_runs_closure() {
         let result = with_ctrlc(|| {
             let x: i32 = 2 + 2;
@@ -85,7 +68,7 @@ mod tests {
 
     #[test]
     fn test_cleanup_without_registered_bar() {
-        unregister_progress_bar();
+        *ACTIVE_BAR.lock().unwrap() = None;
         // Should not panic when no bar is registered
         cleanup_progress_bar();
     }

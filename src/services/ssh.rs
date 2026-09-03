@@ -119,22 +119,26 @@ pub struct CommandResult {
 }
 
 impl CommandResult {
-    #[allow(dead_code)]
-    pub fn ok() -> Self {
-        Self {
-            success: true,
-            exit_code: Some(0),
-            stdout: Vec::new(),
-            stderr: Vec::new(),
-        }
-    }
-
     pub fn from_output(out: std::process::Output) -> Self {
         Self {
             success: out.status.success(),
             exit_code: out.status.code(),
             stdout: out.stdout,
             stderr: out.stderr,
+        }
+    }
+
+    /// A successful result carrying nothing — what [`MockSshSession`] answers a
+    /// call it was given no result for, and the shape a staged `systemctl` or
+    /// `rsync` wants. Test-only: production builds every result from an
+    /// `Output`.
+    #[cfg(test)]
+    pub fn ok() -> Self {
+        Self {
+            success: true,
+            exit_code: Some(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
         }
     }
 
