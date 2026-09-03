@@ -162,7 +162,7 @@ fn an_all_guarded_playbook_declares_the_keys_of_the_roles_it_guards() {
             continue;
         };
         let entries = roster(filename);
-        // A playbook with no roster (remove-radicale is all tasks) has no
+        // A playbook with no roster (one that is all tasks) has no
         // guarded roles to demand keys for.
         if entries.is_empty() || entries.iter().any(|entry| !entry.guarded) {
             continue;

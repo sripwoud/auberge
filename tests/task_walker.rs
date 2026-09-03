@@ -150,9 +150,10 @@ fn test_a_task_carries_the_guards_of_every_block_enclosing_it() {
 /// `Plays::Descend` — the difference this walker exists to name.
 ///
 /// Every playbook is checked rather than one named example. ADR-0041's
-/// `remove-radicale.yml` is the file that motivated the flag, with 19 tasks
-/// inside one play, but it is a transitional removal playbook: naming it here
-/// would make deleting it panic this fence.
+/// `remove-radicale.yml` was the file that motivated the flag, with 19 tasks
+/// inside one play, but it was a transitional removal playbook: naming it here
+/// would have made deleting it panic this fence, which is exactly what its
+/// removal in #820 did without touching this test.
 #[test]
 fn test_a_plays_tasks_are_reachable_only_by_descending_into_it() {
     let playbooks: Vec<std::path::PathBuf> = common::runnable_files()

@@ -576,7 +576,6 @@ mod tests {
         "infrastructure",
         "memsearch",
         "opencode",
-        "remove-radicale",
         "ruche",
         "syncthing",
         "tgtg",

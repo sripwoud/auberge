@@ -60,21 +60,9 @@ const PURGED_PACKAGES: &[PurgedPackage] = &[
         why: "icons, error documents and default site content only",
     },
     PurgedPackage {
-        package: "apache2-utils",
-        units: &[],
-        why: "htpasswd and friends only - which is why the apt role can keep it \
-              installed while purging the server around it, and why the \
-              radicale playbook's purge of it strands nothing",
-    },
-    PurgedPackage {
         package: "libapache2-mod-php8.4",
         units: &[],
         why: "an apache module, which runs inside the server's own process",
-    },
-    PurgedPackage {
-        package: "radicale",
-        units: &["radicale.service"],
-        why: "ships exactly one unit under /usr/lib/systemd/system",
     },
 ];
 
@@ -232,9 +220,11 @@ fn scan() -> Scan {
     let mut purged = BTreeSet::new();
     for path in runnable_files() {
         let file = relative(&path);
-        // Plays::Descend, because the radicale removal this fence exists for
-        // lives in a playbook: 19 tasks inside one play, none of them reachable
-        // without descending into it.
+        // Plays::Descend, because a playbook's tasks are reachable no other
+        // way. No playbook removes a unit today — every removal site is a role
+        // tasks/ file, where the flag is a no-op (tests/task_walker.rs).
+        // Descend is kept so the next playbook-level removal enters the domain
+        // rather than dropping out of it.
         for task in tasks_in(&path, Plays::Descend) {
             for package in packages_purged(&task.body, &file) {
                 purged.insert(package.clone());
@@ -366,7 +356,6 @@ fn test_the_scan_still_sees_every_removal_site() {
         .map(|removal| format!("{}::{}", removal.file, removal.unit))
         .collect();
     let expected: BTreeSet<String> = [
-        "ansible/playbooks/remove-radicale.yml::radicale.service",
         "ansible/roles/apt/tasks/main.yml::apache-htcacheclean.service",
         "ansible/roles/apt/tasks/main.yml::apache2.service",
     ]
