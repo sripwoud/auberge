@@ -87,12 +87,6 @@ pub(crate) fn validate_email_for_shell(email: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn stale_sidecar_command() -> String {
-    format!(
-        r#"sudo sh -c '[ -d {ARCHIVE_DIR} ] || exit 0; grep -rL --include="*.meta.json" -e "\"message_id\"" {ARCHIVE_DIR} || true'"#
-    )
-}
-
 pub fn parse_stale_sidecars(stdout: &str) -> Vec<String> {
     stdout
         .lines()
@@ -199,7 +193,9 @@ pub fn execute_rescan(
         validate_email_for_shell(email)?;
     }
 
-    let stale_check = ssh.run(&stale_sidecar_command())?;
+    let stale_check = ssh.run(&format!(
+        r#"sudo sh -c '[ -d {ARCHIVE_DIR} ] || exit 0; grep -rL --include="*.meta.json" -e "\"message_id\"" {ARCHIVE_DIR} || true'"#
+    ))?;
     if !stale_check.success {
         eyre::bail!(
             "sidecar precondition check failed on the host: {}",
@@ -314,6 +310,14 @@ mod tests {
                     "/var/lib/bichon-archive/a/2024/02/2.meta.json".to_string(),
                 ]
             }
+        );
+        assert_eq!(
+            mock.calls()[0],
+            SshOp::Run(
+                r#"sudo sh -c '[ -d /var/lib/bichon-archive ] || exit 0; grep -rL --include="*.meta.json" -e "\"message_id\"" /var/lib/bichon-archive || true'"#
+                    .to_string()
+            ),
+            "the precondition walk reports sidecars missing message_id, not the ones carrying it"
         );
         // Refusal happens before any cursor is touched or the service started.
         assert_eq!(mock.calls().len(), 1);
