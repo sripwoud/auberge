@@ -19,6 +19,8 @@ The `pub` surface is deliberately uncurated. Nothing outside this repository con
 
 `dead_code` stops reaching the crate. In a bin-only crate every item was reachability-checked; a `pub` item in a `pub` module is a public API, so the lint never fires on it. Measured: deleting the `#[allow(dead_code)]` above `signal::unregister_progress_bar` now produces no warning at all. The ~18 allow sites across 7 modules are inert decoration, and an unused `pub fn` added tomorrow is nobody's warning.
 
+The allow sites are gone: #816 deleted all 16 of them — the estimate above was two high — along with every item they marked that no reader reached, `signal::unregister_progress_bar` among them. What a test alone reads now carries `#[cfg(test)]`, which says so; an `#[allow(dead_code)]` said the opposite, that a real reader existed somewhere and a lint was in the way. The silence itself is unchanged and still unmarked.
+
 That is a guard that stopped guarding, which is the failure this repo fences against everywhere else, and it is accepted rather than solved: the alternative is the curated surface rejected above, and the lint was catching unused _private_ items — a class the compiler still flags inside each module. Recorded here so the next person to notice the silence finds the decision instead of a bug.
 
 ### Not yet universal

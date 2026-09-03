@@ -13,12 +13,6 @@ pub struct ResticStatus {
 #[derive(Debug, Deserialize)]
 pub struct ResticSummary {
     pub snapshot_id: String,
-    #[allow(dead_code)]
-    pub files_new: u64,
-    #[allow(dead_code)]
-    pub files_changed: u64,
-    #[allow(dead_code)]
-    pub data_added: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -166,12 +160,7 @@ mod tests {
         let line = r#"{"message_type":"summary","snapshot_id":"abc123","files_new":10,"files_changed":2,"data_added":1048576}"#;
         let msg = parse_restic_message(line).unwrap();
         match msg {
-            ResticMessage::Summary(s) => {
-                assert_eq!(s.snapshot_id, "abc123");
-                assert_eq!(s.files_new, 10);
-                assert_eq!(s.files_changed, 2);
-                assert_eq!(s.data_added, 1048576);
-            }
+            ResticMessage::Summary(s) => assert_eq!(s.snapshot_id, "abc123"),
             _ => panic!("expected Summary"),
         }
     }
