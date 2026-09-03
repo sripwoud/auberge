@@ -23,6 +23,10 @@ The allow sites are gone: #816 deleted all 16 of them — the estimate above was
 
 That is a guard that stopped guarding, which is the failure this repo fences against everywhere else, and it is accepted rather than solved: the alternative is the curated surface rejected above, and the lint was catching unused _private_ items — a class the compiler still flags inside each module. Recorded here so the next person to notice the silence finds the decision instead of a bug.
 
+The sites stay gone: `tests/dead_code_suppression.rs` fails on any `dead_code` or `unused` suppression under `src/` (#817). It matches the lint name rather than the attribute around it, so `allow` and `expect`, inner and outer, behind a `cfg_attr`, and in a multi-lint list all fail the same way — `#[expect(dead_code)]` included, which is what rustc's own suggestion emits and what a fence on the literal string `allow(dead_code)` would wave through. The `unused` group is the same paper under another name, matched on its own token inside an attribute because `sweep_unused` and `collect_unused` in `ansible_assets.rs` are real functions.
+
+It claims nothing more than that: it does not find dead code, because nothing here can. It asserts that nobody reaches for the badge again, which is the signal #816 found the whole class by. Private items are covered too, and there the lint does still fire — the attribute silences a warning that is telling the truth rather than nothing at all, so the failure message states both cases instead of the `pub` one as though it were universal. Scoped to `src/`, because a test crate has a generated root and the lint reaches items there — `tests/crate_source/mod.rs` carries the attribute on `Module`'s two path fields for that reason, and keeps it.
+
 ### Not yet universal
 
 Two fences still hand-roll a qualifier, and a _looser_ one — `if name.contains('.')` keeps `foo.bar`, where `qualified_unit_name` yields `foo.bar.service`:
