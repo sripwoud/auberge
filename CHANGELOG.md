@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.4](https://github.com/sripwoud/auberge/compare/v0.17.3...v0.17.4) - 2026-09-03
+
+### Other
+
+- *(colporteur)* bump to 0.6.1 ([#839](https://github.com/sripwoud/auberge/pull/839))
+- group release output writes into one redirect ([#838](https://github.com/sripwoud/auberge/pull/838))
+- *(renovate)* soak churny app releases for 5 days ([#837](https://github.com/sripwoud/auberge/pull/837))
+
 ## [0.17.3](https://github.com/sripwoud/auberge/compare/v0.17.2...v0.17.3) - 2026-09-03
 
 ### Other
