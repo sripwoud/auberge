@@ -193,7 +193,8 @@ pub enum BackupCommands {
     Opml(OpmlCommands),
 }
 
-pub use crate::output::{OutputArg, OutputFormat};
+use crate::output::OutputArg;
+pub use crate::output::OutputFormat;
 
 pub struct RestoreOptions {
     pub backup_id: Option<String>,

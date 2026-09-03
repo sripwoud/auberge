@@ -18,14 +18,19 @@ pub enum OutputFormat {
     Json,
 }
 
-/// The `-o, --output {human,json}` flag itself, declared once and reached
-/// through `#[command(flatten)]` by every command ADR-0004 admits. Flattening
-/// changes how the flag is spelled, never which commands carry it — the
-/// partition is fenced in `main.rs`.
-///
-/// `id`, `long` and `value_name` are pinned rather than derived: the field is
-/// `format`, and clap would otherwise render `--format <FORMAT>` where fifteen
-/// `--help` screens say `-o, --output <OUTPUT>`.
+// Deliberately `//` and not `///`: clap hands a flattened struct's doc comment
+// to every command that flattens it, and a second paragraph lands as a
+// `long_about` that replaces that command's own `--help` description.
+//
+// The `-o, --output {human,json}` flag, declared once and reached through
+// `#[command(flatten)]`. ADR-0004 is the rule it applies — only commands whose
+// JSON has a load-bearing field carry the flag; the partition itself is the
+// `CARRIERS` table in `main.rs`. Flattening changes how the flag is spelled,
+// never which commands carry it.
+//
+// `id`, `long` and `value_name` are pinned rather than derived: the field is
+// `format`, and clap would otherwise render `--format <FORMAT>` where fifteen
+// `--help` screens say `-o, --output <OUTPUT>`.
 #[derive(Args)]
 pub struct OutputArg {
     #[arg(

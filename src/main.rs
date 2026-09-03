@@ -421,6 +421,8 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use auberge::output::OutputArg;
+    use clap::Args as _;
 
     fn generate_bash_script() -> String {
         let mut buf = Vec::new();
@@ -625,16 +627,20 @@ mod tests {
             for sub in cmd.get_subcommands() {
                 let path = format!("{prefix} {}", sub.get_name());
                 let opts = options(sub);
+                // `config init -o FILE` and `backup export-opml -o FILE` also
+                // spell `--output`; theirs is a path, so it offers no values.
                 if let Some(position) = opts.iter().position(|arg| {
-                    arg.get_long() == Some("output")
-                        && arg
-                            .get_possible_values()
-                            .iter()
-                            .map(|value| value.get_name().to_owned())
-                            .collect::<Vec<_>>()
-                            == ["human", "json"]
+                    arg.get_long() == Some("output") && !arg.get_possible_values().is_empty()
                 }) {
                     let arg = opts[position];
+                    assert_eq!(
+                        arg.get_possible_values()
+                            .iter()
+                            .map(|value| value.get_name().to_owned())
+                            .collect::<Vec<_>>(),
+                        ["human", "json"],
+                        "{path} --output offers something other than human and json"
+                    );
                     assert_eq!(arg.get_short(), Some('o'), "{path} lost `-o`");
                     assert_eq!(arg.get_id().as_str(), "output", "{path} renamed the arg id");
                     assert_eq!(
@@ -660,6 +666,23 @@ mod tests {
                 walk(sub, &path, found);
             }
         }
+
+        // A `///` on a flattened `Args` struct does not stay on the struct:
+        // clap hands its first paragraph to every host command as `about`, and
+        // any second paragraph as `long_about` — which nothing overrides, so it
+        // replaces the command's own description in `--help`. Caught at the
+        // source rather than once per carrier.
+        let probe = OutputArg::augment_args(clap::Command::new("probe"));
+        assert_eq!(
+            probe.get_about().map(|about| about.to_string()),
+            None,
+            "OutputArg carries an `about` into every command that flattens it"
+        );
+        assert_eq!(
+            probe.get_long_about().map(|about| about.to_string()),
+            None,
+            "OutputArg carries a `long_about` into every command that flattens it"
+        );
 
         let mut found = Vec::new();
         walk(&Cli::command(), "auberge", &mut found);
