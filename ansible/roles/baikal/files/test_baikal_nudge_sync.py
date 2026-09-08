@@ -17,7 +17,7 @@ from pathlib import Path
 import icalendar
 import pytest
 
-import baikal_caldav as caldav
+import baikal_sync
 
 HERE = Path(__file__).parent
 
@@ -116,6 +116,20 @@ def vcard(name, note=None):
     return "\r\n".join(lines) + "\r\n"
 
 
+def folded_vcard(name, note):
+    """A vCard as a client actually PUTs it: content lines folded at 75 octets.
+
+    RFC 6350 3.2 folding is not optional in practice -- iOS and DAVx5 both do
+    it, so a note long enough to be worth carrying arrives split across lines.
+    Reading only up to the first CRLF truncates the body mid-word and loses any
+    token past the fold, which drops the nudge with no event and no count.
+    """
+    lines = []
+    for line in ("BEGIN:VCARD", "VERSION:3.0", f"FN:{name}", f"NOTE:{note}", "END:VCARD"):
+        lines.append(baikal_sync.fold(line))
+    return "\r\n".join(lines) + "\r\n"
+
+
 def days_ago(days):
     """A `cards.lastmodified` unix timestamp, `days` before now, in UTC."""
     return int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp())
@@ -129,7 +143,11 @@ def db_path(tmp_path):
 def build_db(db_path, cards, addressbooks=(1,)):
     conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA)
-    for uri in (PRINCIPAL, PROXY):
+    # The proxy is inserted FIRST, so it holds the lower id. `ORDER BY id LIMIT 1`
+    # over a loose `LIKE 'principals/%'` would return it, which makes every
+    # assertion below a live check on the sub-principal exclusion rather than an
+    # accident of insertion order.
+    for uri in (PROXY, PRINCIPAL):
         conn.execute("INSERT INTO principals (uri) VALUES (?)", (uri,))
     for book_id in addressbooks:
         conn.execute(
@@ -171,7 +189,7 @@ def events(db_path):
 
 
 def ics(db_path, card_uri):
-    return caldav.as_text(events(db_path)[event_uri(card_uri)]["calendardata"])
+    return baikal_sync.as_text(events(db_path)[event_uri(card_uri)]["calendardata"])
 
 
 def field(db_path, card_uri, name):
@@ -314,7 +332,7 @@ def test_a_long_note_is_folded_and_unfolds_to_itself(db_path):
     run(db_path)
 
     raw = ics(db_path, "anna.vcf")
-    assert all(len(line.encode("utf-8")) <= caldav.FOLD_LIMIT for line in raw.split(caldav.CRLF))
+    assert all(len(line.encode("utf-8")) <= baikal_sync.FOLD_LIMIT for line in raw.split(baikal_sync.CRLF))
     assert field(db_path, "anna.vcf", "DESCRIPTION") == note.replace(" @d", "")
 
 
@@ -591,3 +609,65 @@ def test_an_unchanged_nudge_is_not_rewritten(db_path):
     after = conn.execute("SELECT synctoken FROM calendars").fetchone()[0]
     conn.close()
     assert after == before
+
+
+LONG_NOTE = (
+    "Met in Palma and she runs the co-op down by the harbour which is where we should "
+    "meet next time, ask about her sister and the boat"
+)
+
+
+def test_a_token_past_a_fold_still_opts_the_contact_in(db_path):
+    """The failure this guards is silent: no event, no stderr line, no count."""
+    build_db(db_path, [("anna.vcf", folded_vcard("Anna", f"{LONG_NOTE} @d"), days_ago(10))])
+
+    run(db_path)
+
+    assert set(events(db_path)) == {event_uri("anna.vcf")}
+    assert dtstart(db_path, "anna.vcf") == today() + timedelta(days=80)
+
+
+def test_a_folded_note_reaches_the_body_whole(db_path):
+    build_db(db_path, [("anna.vcf", folded_vcard("Anna", f"@d {LONG_NOTE}"), days_ago(1))])
+
+    run(db_path)
+
+    assert field(db_path, "anna.vcf", "DESCRIPTION") == LONG_NOTE
+
+
+def test_a_token_split_across_a_fold_is_read(db_path):
+    """`@` ending one line and `30d` opening the next is one token, not none."""
+    carddata = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ben\r\nNOTE:Climbing partner @\r\n 30d\r\nEND:VCARD\r\n"
+    build_db(db_path, [("ben.vcf", carddata, days_ago(0))])
+
+    run(db_path)
+
+    assert dtstart(db_path, "ben.vcf") == today() + timedelta(days=30)
+
+
+def test_a_folded_name_reaches_the_summary_whole(db_path):
+    name = "Anna Wilhelmina Löw-Vandersteen of the Palma Harbour Cooperative Society"
+    build_db(db_path, [("anna.vcf", folded_vcard(name, "@d"), days_ago(1))])
+
+    run(db_path)
+
+    assert field(db_path, "anna.vcf", "SUMMARY") == f"Reach out: {name}"
+
+
+def test_an_address_split_across_a_fold_is_still_not_a_token(db_path):
+    """Unfolding must not manufacture a token out of a wrapped address."""
+    carddata = "BEGIN:VCARD\r\nFN:Ben\r\nNOTE:Book the table through anna@\r\n dinner.example\r\nEND:VCARD\r\n"
+    build_db(db_path, [("ben.vcf", carddata, days_ago(400))])
+
+    run(db_path)
+
+    assert events(db_path) == {}
+
+
+def test_indentation_inside_a_note_survives_token_removal(db_path):
+    """Only the space the token occupied is collapsed, not the operator's layout."""
+    build_db(db_path, [("anna.vcf", vcard("Anna", r"@d Topics:\n  - the boat\n  - her sister"), days_ago(1))])
+
+    run(db_path)
+
+    assert field(db_path, "anna.vcf", "DESCRIPTION") == "Topics:\n  - the boat\n  - her sister"

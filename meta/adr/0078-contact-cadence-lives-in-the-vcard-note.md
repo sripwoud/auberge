@@ -20,6 +20,8 @@ Accepted, 2026-09-08. Closes #845. Extends the birthday sync's model — a gener
 
 **`TRANSP:TRANSPARENT` on every generated event, and `CLASS:PRIVATE`.** No `VALARM`.
 
+**A vCard is unfolded before any property is read off it.** Only vCards; never `calendardata`.
+
 **Both malformed cases skip and count.** A card with a NULL `lastmodified`, and a note carrying two tokens (first wins). Counts go to stderr, following the `Unparsable BDAY values` precedent.
 
 **No CONTEXT.md entry.** `cadence token`, `care calendar` and `contact clock` are documented in `docs/applications/apps/baikal.md`.
@@ -88,6 +90,20 @@ The birthday builder writes `PUBLIC`, which is right for a birthday. This event 
 
 vCard stores `NOTE` already escaped in the same TEXT grammar iCalendar uses, so `Ask about the co-op\, then Porto` arrives with literal backslash sequences. Escaping that raw value doubles them and shows the reader a literal `\,`. Unescape-then-escape is close to the identity on well-formed input, and it _normalizes_ a client that left a bare `;` or `,` unescaped — which would otherwise produce an `.ics` sabre/dav stores happily and the client fails to parse. The break is on the read side, so a server-side test cannot see it: the suite asserts the parsed value a client would show, via `icalendar`, not the bytes written.
 
+### Why unfolding is not optional
+
+RFC 6350 §3.2 folds content lines at 75 octets, and every CardDAV client does it — iOS and DAVx5 both. A regex bounded by `[^\r\n]+` therefore reads a note only as far as the first fold, and the failure is worse than truncation: a token past the fold makes the contact invisible, so there is **no event, no stderr line, and no count**. A token split across the fold (`@` ending one line, `30d` opening the next) reads as no token at all.
+
+That is a third malformed case, and unlike the two below it skipped _and counted nothing_ — the silent-exit-0 class this repo has already been bitten by three times (#616, #637, #484). It is fixed at the read, not at the parse: `unfold` runs once on the carddata in both sync scripts, so the birthday script's `FN` gets it too, where a long name previously lost its tail.
+
+**`calendardata` deliberately does not go through it.** `write_events` compares a rebuilt event against what was stored, and what was stored is folded. Unfolding one side of that comparison would rewrite every event on every run — a synctoken bump per event per firing, which is the silent-divergence failure mode pointed the other way. The asymmetry is the kind that looks like an oversight, so it is stated in `unfold`'s own docstring.
+
+Exactly one whitespace character belongs to the fold; the rest is content. A greedy `[ \t]+` would silently eat an operator's indentation on the continuation line, so the test suite pins that case specifically and fails on the greedy form.
+
+### Why only the token's own whitespace is collapsed
+
+Removing `@d` from `met @d in Palma` leaves a double space. Collapsing every run of whitespace fixes it and also flattens a note's own layout — the indented list someone wrote under `Topics:`. The substitution absorbs the horizontal space on each side of the token and closes the gap to one space only when there was content on both sides, so a token between two words closes cleanly and indentation elsewhere is left alone, because it is the operator's and not an artifact.
+
 ### Why both malformed cases skip rather than default
 
 `lastmodified` is nullable in the schema. Reading a missing clock as epoch makes the card permanently overdue with no edit able to satisfy it — a nudge that cannot be cleared is the one that gets the whole calendar muted.
@@ -98,7 +114,7 @@ A note with `@30d` … `@90d` takes the first match. It is counted, not silently
 
 Around 150 of the birthday script's 261 lines were generic: the connection, the calendar row, the uid hash, the principal query, and the insert / update-if-changed / sweep-stale loop. Copying them would have duplicated sabre/dav's synctoken contract, where a divergence is **silent** — clients stop syncing and nothing errors.
 
-`baikal_caldav.py` now holds one copy. Two bugs fell out of that:
+`baikal_sync.py` now holds one copy. Two bugs fell out of that:
 
 - The birthday script took `principals[0]` from a loose `LIKE 'principals/%'`, which can return a `calendar-proxy-read`/`-write` sub-principal that owns no calendars. All three scripts now share busy-sync's strict `NOT LIKE 'principals/%/%'` form.
 - `_bump_synctoken` had no coverage at all. Emptying its body left all 61 existing tests green — the exact silent divergence the extraction exists to prevent. Extracting the code did not make it safe; it made it worth fencing, and `test_baikal_caldav.py` now asserts the change row and the token bump for insert, update, delete and no-op.
@@ -114,7 +130,7 @@ Every term there describes the deploy substrate — Host, App, Playbook, Recipe.
 - **The nudge is late by however long ago the card was last edited for an unrelated reason.** The clock is the card's, not the person's. Documented rather than fixed; the fix is a field nobody maintains.
 - **An overdue contact's event moves under you.** The `care` calendar is not a stable record of anything — it is a projection recomputed weekly. Nothing should be scheduled against it.
 - **The `care` uri is a stable identifier the script keys on.** Renaming it orphans every event, and the sweep will not find them, because the sweep only sees the calendar it just resolved. Nothing enforces this; it is a comment in the script and a line here.
-- **Free-text parsing over the most personal field in the address book.** The regex is guarded against addresses and the tests pin nine negative cases, but a note is written by a human and the grammar is a convention, not a schema.
+- **Free-text parsing over the most personal field in the address book.** The regex is guarded against addresses and the tests pin ten negative cases, including one where unfolding could have manufactured a token out of a wrapped address, but a note is written by a human and the grammar is a convention, not a schema.
 - **A third weekly timer on a role that had two.** No new subdomain, unit group, or backup path — the data is Baikal's SQLite, already covered by the Recipe's `/opt/baikal/Specific`.
 - **`baikal_nudge_default_days` reaches the script as argv, not a Key.** It is deliberately absent from the Key Registry and from `required_keys`: putting it there would make it mandatory fleet-wide for a value one App reads and defaults.
 
@@ -131,11 +147,12 @@ Every term there describes the deploy substrate — Host, App, Playbook, Recipe.
 - **Excluding `care` in the busy sync's query rather than marking events transparent.** Rejected: it moves the guard away from what it guards, and stops covering the next generated calendar.
 - **Copying the birthday script instead of extracting.** Rejected: it duplicates the synctoken contract, where divergence is silent.
 - **Truncating the note in `DESCRIPTION`.** Rejected: the note is the payload. It is folded per RFC 5545 instead.
+- **Reading `NOTE` with a line-bounded regex and no unfolding.** Not a considered alternative but the shipped bug, found in review: it truncated the body mid-word and silently dropped any contact whose token sat past the fold. Recorded because the fence written for it — a test asserting the _output_ was folded — passed the whole time, since the fixture never folded its _input_.
 
 ## References
 
 - Issue #845 — the request, and the source of the event shape.
 - [ADR-0010](./0010-baikal-busy-feed-host-sanitized-external-consumer.md) — the busy feed whose calendar-wide read makes `TRANSP:TRANSPARENT` load-bearing.
-- `ansible/roles/baikal/files/baikal_caldav.py` — the shared machinery; `baikal-nudge-sync.py` — the token grammar, the clamp, the builder.
+- `ansible/roles/baikal/files/baikal_sync.py` — the shared machinery; `baikal-nudge-sync.py` — the token grammar, the clamp, the builder.
 - `ansible/roles/baikal/files/test_baikal_nudge_sync.py` — carries Baikal 0.12.1's `cards` schema verbatim, including the `lastmodified` the birthday fixture omits.
 - `docs/applications/apps/baikal.md` — the token grammar and the UTC rule, for the operator.

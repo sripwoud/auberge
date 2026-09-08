@@ -4,7 +4,7 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 
-from baikal_caldav import (
+from baikal_sync import (
     MAX_INT32,
     CalendarObject,
     CalendarSync,
@@ -12,6 +12,7 @@ from baikal_caldav import (
     extract_name,
     operator_principal,
     render,
+    unfold,
 )
 
 ANCHOR_YEAR = 1972
@@ -103,7 +104,7 @@ class BaikalBirthdaySync(CalendarSync):
 
         principal_uri = operator_principal(cursor)
         if not principal_uri:
-            print("No principals found", file=sys.stderr)
+            print("No operator principal found", file=sys.stderr)
             return False
 
         self._get_or_create_calendar(principal_uri)
@@ -119,7 +120,7 @@ class BaikalBirthdaySync(CalendarSync):
         def objects():
             nonlocal unparsable
             for contact in contacts:
-                carddata = as_text(contact["carddata"])
+                carddata = unfold(as_text(contact["carddata"]) or "")
                 bday = self._parse_bday(carddata)
                 if not bday:
                     if carddata and BDAY_LINE.search(carddata):

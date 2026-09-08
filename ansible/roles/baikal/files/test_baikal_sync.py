@@ -1,6 +1,6 @@
 """The shared CalDAV machinery, fenced where the sync suites do not reach.
 
-Extracting `baikal_caldav` made one copy of sabre/dav's synctoken contract out
+Extracting `baikal_sync` made one copy of sabre/dav's synctoken contract out
 of two, which is why it needs its own suite: a mutation that empties
 `_bump_synctoken` leaves both sync suites green, because neither reads
 `calendarchanges` or `calendars.synctoken`. That divergence is the silent one —
@@ -11,7 +11,7 @@ import sqlite3
 
 import pytest
 
-import baikal_caldav as caldav
+import baikal_sync
 
 PRINCIPAL = "principals/operator"
 PROXY = "principals/operator/calendar-proxy-write"
@@ -33,7 +33,7 @@ CREATE TABLE calendarobjects (
 """
 
 
-class Sync(caldav.CalendarSync):
+class Sync(baikal_sync.CalendarSync):
     uid_prefix = "test-"
     calendar_uri = "probe"
     calendar_name = "Probe"
@@ -41,11 +41,11 @@ class Sync(caldav.CalendarSync):
 
 
 def event(uri, summary):
-    return caldav.CalendarObject(
+    return baikal_sync.CalendarObject(
         uri=uri,
-        ical=caldav.render(["BEGIN:VCALENDAR", "BEGIN:VEVENT", f"SUMMARY:{summary}", "END:VEVENT", "END:VCALENDAR"]),
+        ical=baikal_sync.render(["BEGIN:VCALENDAR", "BEGIN:VEVENT", f"SUMMARY:{summary}", "END:VEVENT", "END:VCALENDAR"]),
         first_occurrence=0,
-        last_occurrence=caldav.MAX_INT32,
+        last_occurrence=baikal_sync.MAX_INT32,
     )
 
 
@@ -54,7 +54,11 @@ def sync(tmp_path):
     db_path = str(tmp_path / "db.sqlite")
     seed = sqlite3.connect(db_path)
     seed.executescript(SCHEMA)
-    for uri in (PRINCIPAL, PROXY):
+    # The proxy is inserted FIRST, so it holds the lower id. `ORDER BY id LIMIT 1`
+    # over a loose `LIKE 'principals/%'` would return it, which makes every
+    # assertion below a live check on the sub-principal exclusion rather than an
+    # accident of insertion order.
+    for uri in (PROXY, PRINCIPAL):
         seed.execute("INSERT INTO principals (uri) VALUES (?)", (uri,))
     seed.commit()
     seed.close()
@@ -87,7 +91,7 @@ def test_an_insert_logs_a_change_and_bumps_the_synctoken(sync):
 
     write(sync, [event("a.ics", "One")])
 
-    assert changes(sync) == [("a.ics", before + 1, caldav.OPERATION_INSERT)]
+    assert changes(sync) == [("a.ics", before + 1, baikal_sync.OPERATION_INSERT)]
     assert synctoken(sync) == before + 1
 
 
@@ -97,7 +101,7 @@ def test_a_rewrite_logs_an_update_and_bumps_the_synctoken(sync):
 
     write(sync, [event("a.ics", "Two")])
 
-    assert changes(sync)[-1] == ("a.ics", after_insert + 1, caldav.OPERATION_UPDATE)
+    assert changes(sync)[-1] == ("a.ics", after_insert + 1, baikal_sync.OPERATION_UPDATE)
     assert synctoken(sync) == after_insert + 1
 
 
@@ -107,7 +111,7 @@ def test_the_sweep_logs_a_delete_and_bumps_the_synctoken(sync):
 
     write(sync, [])
 
-    assert changes(sync)[-1] == ("a.ics", after_insert + 1, caldav.OPERATION_DELETE)
+    assert changes(sync)[-1] == ("a.ics", after_insert + 1, baikal_sync.OPERATION_DELETE)
     assert synctoken(sync) == after_insert + 1
 
 
@@ -121,7 +125,7 @@ def test_an_unchanged_event_logs_nothing(sync):
 
 
 def test_the_principal_query_skips_sub_principals(sync):
-    assert caldav.operator_principal(sync.conn) == PRINCIPAL
+    assert baikal_sync.operator_principal(sync.conn) == PRINCIPAL
 
 
 def test_a_second_run_reuses_the_calendar_row(sync):
@@ -147,7 +151,7 @@ def test_a_second_run_reuses_the_calendar_row(sync):
     ],
 )
 def test_escape_text_covers_every_rfc5545_special(plain, escaped):
-    assert caldav.escape_text(plain) == escaped
+    assert baikal_sync.escape_text(plain) == escaped
 
 
 @pytest.mark.parametrize(
@@ -162,42 +166,71 @@ def test_escape_text_covers_every_rfc5545_special(plain, escaped):
     ],
 )
 def test_unescape_text_reads_a_vcard_text_value(stored, plain):
-    assert caldav.unescape_text(stored) == plain
+    assert baikal_sync.unescape_text(stored) == plain
 
 
 def test_a_vcard_note_round_trips_through_ical_escaping():
     stored = r"Ask about Lisboa\, then Porto\nBring the book"
 
-    assert caldav.escape_text(caldav.unescape_text(stored)) == stored
+    assert baikal_sync.escape_text(baikal_sync.unescape_text(stored)) == stored
+
+
+@pytest.mark.parametrize(
+    ("folded", "plain"),
+    [
+        ("NOTE:one\r\n two", "NOTE:onetwo"),
+        ("NOTE:one\r\n\ttwo", "NOTE:onetwo"),
+        ("NOTE:one\n two", "NOTE:onetwo"),
+        ("NOTE:one\r two", "NOTE:onetwo"),
+        ("NOTE:a\r\n b\r\n c", "NOTE:abc"),
+        ("NOTE:keeps  the second space\r\n  here", "NOTE:keeps  the second space here"),
+        ("NOTE:one\r\nFN:two", "NOTE:one\r\nFN:two"),
+        ("NOTE:no folds here", "NOTE:no folds here"),
+    ],
+)
+def test_unfold_rejoins_a_folded_content_line(folded, plain):
+    assert baikal_sync.unfold(folded) == plain
+
+
+def test_unfold_is_the_inverse_of_fold():
+    line = "DESCRIPTION:" + "the very long story of the co-op " * 6
+
+    assert baikal_sync.unfold(baikal_sync.fold(line)) == line
+
+
+def test_unfold_is_the_inverse_of_fold_for_multibyte_text():
+    line = "DESCRIPTION:" + "café und kuchen mit Renée " * 6
+
+    assert baikal_sync.unfold(baikal_sync.fold(line)) == line
 
 
 def test_folding_keeps_every_line_within_75_octets():
-    folded = caldav.fold("DESCRIPTION:" + "x" * 200)
+    folded = baikal_sync.fold("DESCRIPTION:" + "x" * 200)
 
-    assert all(len(line.encode("utf-8")) <= caldav.FOLD_LIMIT for line in folded.split(caldav.CRLF))
-    assert folded.replace(caldav.CRLF + " ", "") == "DESCRIPTION:" + "x" * 200
+    assert all(len(line.encode("utf-8")) <= baikal_sync.FOLD_LIMIT for line in folded.split(baikal_sync.CRLF))
+    assert folded.replace(baikal_sync.CRLF + " ", "") == "DESCRIPTION:" + "x" * 200
 
 
 def test_folding_never_splits_a_utf8_sequence():
-    folded = caldav.fold("DESCRIPTION:" + "é" * 200)
+    folded = baikal_sync.fold("DESCRIPTION:" + "é" * 200)
 
-    for line in folded.split(caldav.CRLF):
-        assert len(line.encode("utf-8")) <= caldav.FOLD_LIMIT
-    assert folded.replace(caldav.CRLF + " ", "") == "DESCRIPTION:" + "é" * 200
+    for line in folded.split(baikal_sync.CRLF):
+        assert len(line.encode("utf-8")) <= baikal_sync.FOLD_LIMIT
+    assert folded.replace(baikal_sync.CRLF + " ", "") == "DESCRIPTION:" + "é" * 200
 
 
 def test_a_short_line_is_not_folded():
-    assert caldav.fold("SUMMARY:Reach out: Anna") == "SUMMARY:Reach out: Anna"
+    assert baikal_sync.fold("SUMMARY:Reach out: Anna") == "SUMMARY:Reach out: Anna"
 
 
 def test_stable_ical_ignores_the_per_run_stamps():
     def ics(stamp):
-        return caldav.render(["BEGIN:VEVENT", f"DTSTAMP:{stamp}", "SUMMARY:One", "END:VEVENT"])
+        return baikal_sync.render(["BEGIN:VEVENT", f"DTSTAMP:{stamp}", "SUMMARY:One", "END:VEVENT"])
 
-    assert caldav.stable_ical(ics("20260101T000000Z")) == caldav.stable_ical(ics("20270101T000000Z"))
+    assert baikal_sync.stable_ical(ics("20260101T000000Z")) == baikal_sync.stable_ical(ics("20270101T000000Z"))
 
 
 def test_as_text_decodes_a_blob_column():
-    assert caldav.as_text("Renée".encode("utf-8")) == "Renée"
-    assert caldav.as_text("Renée".encode("latin-1")) == "Renée"
-    assert caldav.as_text("Renée") == "Renée"
+    assert baikal_sync.as_text("Renée".encode("utf-8")) == "Renée"
+    assert baikal_sync.as_text("Renée".encode("latin-1")) == "Renée"
+    assert baikal_sync.as_text("Renée") == "Renée"

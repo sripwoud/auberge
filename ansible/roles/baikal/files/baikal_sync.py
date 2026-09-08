@@ -25,6 +25,7 @@ OPERATION_UPDATE = 2
 OPERATION_DELETE = 3
 
 _ESCAPED = re.compile(r"\\(.)")
+_FOLD = re.compile(r"(?:\r\n|\r|\n)[ \t]")
 _UNESCAPES = {"n": "\n", "N": "\n"}
 
 
@@ -121,6 +122,23 @@ def fold(line):
     return (CRLF + " ").join(chunks)
 
 
+def unfold(text):
+    """Rejoin content lines a client folded, per RFC 5545 / RFC 6350 3.2.
+
+    Folding is CRLF (or a bare CR or LF, which some clients emit) followed by
+    one space or tab; exactly one whitespace character belongs to the fold and
+    the rest is content. Every CardDAV client folds at 75 octets, so a vCard
+    must be unfolded before any property is read off it -- a regex bounded by
+    `[^\r\n]+` otherwise truncates the value mid-word and loses whatever
+    followed, with no error.
+
+    Only vCards go through this. `calendardata` must not: the drift comparison
+    in `write_events` reads back what was stored folded, so unfolding one side
+    of it would rewrite every event on every run.
+    """
+    return _FOLD.sub("", text)
+
+
 def render(lines):
     return CRLF.join(fold(line) for line in lines) + CRLF
 
@@ -207,15 +225,18 @@ class CalendarSync:
 
         The sweep is what makes the calendar a projection of the address book:
         an event whose source card lost its trigger disappears on the next run.
+
+        Returns the number of events the calendar now holds, which includes the
+        ones already correct -- what a caller reports as "synced", not "written".
         """
         existing = self._existing_events(cursor)
         now_ts = int(datetime.now(timezone.utc).timestamp())
-        written = 0
+        synced = 0
         seen = set()
 
         for obj in objects:
             seen.add(obj.uri)
-            written += 1
+            synced += 1
             uid = obj.uri.removesuffix(".ics")
             etag = hashlib.sha256(obj.ical.encode("utf-8")).hexdigest()
             size = len(obj.ical.encode("utf-8"))
@@ -256,4 +277,4 @@ class CalendarSync:
             )
             self._bump_synctoken(cursor, stale_uri, OPERATION_DELETE)
 
-        return written
+        return synced

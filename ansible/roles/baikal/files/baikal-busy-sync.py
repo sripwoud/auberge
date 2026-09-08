@@ -13,7 +13,7 @@ import caldav
 import icalendar
 import recurring_ical_events
 
-from baikal_caldav import operator_principal
+from baikal_sync import operator_principal
 
 CRLF = "\r\n"
 WINDOW_PAST_DAYS = 1

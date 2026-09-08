@@ -10,7 +10,7 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 
-from baikal_caldav import (
+from baikal_sync import (
     CalendarObject,
     CalendarSync,
     as_text,
@@ -19,6 +19,7 @@ from baikal_caldav import (
     operator_principal,
     render,
     unescape_text,
+    unfold,
 )
 
 DEFAULT_DB_PATH = "/opt/baikal/Specific/db/db.sqlite"
@@ -31,6 +32,12 @@ NOTE_LINE = re.compile(r"NOTE(?:;[^:]*)?:([^\r\n]+)")
 # word character, so it can never open a token -- and neither can the `@` in
 # `anna@d.example`, which a bare `@(\d*)d\b` would match.
 CADENCE_TOKEN = re.compile(r"(?<![\w.@])@(\d*)d\b")
+
+# The same token with the horizontal space either side of it, for removal. A
+# token between two words closes to one space; one at either end closes to
+# nothing. Collapsing all runs of whitespace instead would flatten a note's own
+# indentation, which is the operator's, not an artifact of the token.
+CADENCE_TOKEN_WITH_PADDING = re.compile(r"([ \t]*)(?<![\w.@])@\d*d\b([ \t]*)")
 
 
 class BaikalNudgeSync(CalendarSync):
@@ -61,9 +68,11 @@ class BaikalNudgeSync(CalendarSync):
         so the value is unescaped before being re-escaped -- escaping the raw
         value would double every sequence and show the reader a literal `\\,`.
         """
-        stripped = CADENCE_TOKEN.sub("", unescape_text(note))
-        lines = [re.sub(r"[ \t]{2,}", " ", line).strip() for line in stripped.split("\n")]
-        return escape_text("\n".join(lines).strip())
+        def close_the_gap(match):
+            return " " if match.group(1) and match.group(2) else ""
+
+        stripped = CADENCE_TOKEN_WITH_PADDING.sub(close_the_gap, unescape_text(note))
+        return escape_text(stripped.strip())
 
     def _build_vevent(self, uid, name, start, body):
         end = start + timedelta(days=1)
@@ -116,7 +125,7 @@ class BaikalNudgeSync(CalendarSync):
 
         def objects():
             for contact in contacts:
-                carddata = as_text(contact["carddata"])
+                carddata = unfold(as_text(contact["carddata"]) or "")
                 if not carddata:
                     continue
                 note_match = NOTE_LINE.search(carddata)

@@ -310,8 +310,8 @@
 
     - name: Deploy shared CalDAV sync module
       ansible.builtin.copy:
-        src: baikal_caldav.py
-        dest: "{{ baikal_install_dir }}/baikal_caldav.py"
+        src: baikal_sync.py
+        dest: "{{ baikal_install_dir }}/baikal_sync.py"
         owner: "{{ baikal_sys_user }}"
         group: "{{ baikal_sys_user }}"
         mode: "0640"
