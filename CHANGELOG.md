@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.7](https://github.com/sripwoud/auberge/compare/v0.17.6...v0.17.7) - 2026-09-08
+
+### Added
+
+- *(baikal)* nudge a reach-out event when a contact's cadence lapses ([#846](https://github.com/sripwoud/auberge/pull/846))
+
 ## [0.17.6](https://github.com/sripwoud/auberge/compare/v0.17.5...v0.17.6) - 2026-09-08
 
 ### Other
