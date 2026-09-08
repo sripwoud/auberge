@@ -308,6 +308,14 @@
         state: started
         daemon_reload: true
 
+    - name: Deploy shared CalDAV sync module
+      ansible.builtin.copy:
+        src: baikal_caldav.py
+        dest: "{{ baikal_install_dir }}/baikal_caldav.py"
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0640"
+
     - name: Deploy birthday sync script
       ansible.builtin.copy:
         src: baikal-birthday-sync.py
