@@ -254,9 +254,13 @@ const DECLARED_DIRECTORIES: &[DeclaredDirectory] = &[
         role: "baikal",
         dir: "/opt/baikal/Specific/db",
         kind: Kind::Data,
-        writers: &["baikal-birthday-sync.service", "baikal-busy-sync.service"],
-        why: "the sqlite database both sync oneshots write into; the Recipe captures it \
-              through its parent",
+        writers: &[
+            "baikal-birthday-sync.service",
+            "baikal-busy-sync.service",
+            "baikal-nudge-sync.service",
+        ],
+        why: "the sqlite database the three sync oneshots write into; the Recipe captures \
+              it through its parent",
     },
     DeclaredDirectory {
         role: "baikal",

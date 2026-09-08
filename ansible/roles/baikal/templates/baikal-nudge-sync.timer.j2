@@ -1,0 +1,10 @@
+[Unit]
+Description=Baikal reach-out nudge calendar sync timer
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1w
+AccuracySec=1h
+
+[Install]
+WantedBy=timers.target

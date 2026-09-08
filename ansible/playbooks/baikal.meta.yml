@@ -16,3 +16,5 @@ units:
   - baikal-birthday-sync.timer
   - baikal-busy-sync
   - baikal-busy-sync.timer
+  - baikal-nudge-sync
+  - baikal-nudge-sync.timer

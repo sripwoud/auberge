@@ -349,6 +349,39 @@
         state: started
         daemon_reload: true
 
+    - name: Deploy nudge sync script
+      ansible.builtin.copy:
+        src: baikal-nudge-sync.py
+        dest: "{{ baikal_install_dir }}/baikal-nudge-sync.py"
+        owner: "{{ baikal_sys_user }}"
+        group: "{{ baikal_sys_user }}"
+        mode: "0750"
+
+    - name: Deploy nudge sync systemd service
+      ansible.builtin.template:
+        src: templates/baikal-nudge-sync.service.j2
+        dest: /etc/systemd/system/baikal-nudge-sync.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart nudge sync timer
+
+    - name: Deploy nudge sync systemd timer
+      ansible.builtin.template:
+        src: templates/baikal-nudge-sync.timer.j2
+        dest: /etc/systemd/system/baikal-nudge-sync.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart nudge sync timer
+
+    - name: Enable and start nudge sync timer
+      ansible.builtin.systemd_service:
+        name: baikal-nudge-sync.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
     - name: Create busy feed output directory
       ansible.builtin.file:
         path: "{{ baikal_busy_dir }}"
