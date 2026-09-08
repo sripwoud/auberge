@@ -13,6 +13,8 @@ import caldav
 import icalendar
 import recurring_ical_events
 
+from baikal_sync import operator_principal
+
 CRLF = "\r\n"
 WINDOW_PAST_DAYS = 1
 WINDOW_FUTURE_DAYS = 60
@@ -116,14 +118,6 @@ class BaikalBusySync:
         if self.conn:
             self.conn.close()
 
-    def _operator_principal(self):
-        row = self.conn.execute(
-            "SELECT uri FROM principals "
-            "WHERE uri LIKE 'principals/%' AND uri NOT LIKE 'principals/%/%' "
-            "ORDER BY id LIMIT 1"
-        ).fetchone()
-        return row["uri"] if row else None
-
     def _calendar_data(self, principal_uri):
         rows = self.conn.execute(
             "SELECT calendardata FROM calendarobjects WHERE calendarid IN "
@@ -174,7 +168,7 @@ class BaikalBusySync:
     def generate(self):
         self.connect()
         try:
-            principal = self._operator_principal()
+            principal = operator_principal(self.conn)
             if not principal:
                 print("No operator principal found", file=sys.stderr)
                 return False

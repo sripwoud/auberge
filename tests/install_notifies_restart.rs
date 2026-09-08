@@ -482,7 +482,7 @@ const DECLARED_ROLES: &[DeclaredRole] = &[
     DeclaredRole {
         role: "baikal",
         why: "its release is served by the system's php-fpm, installed by apt; the role \
-              templates only its two oneshot sync timers, so there is no unit to follow \
+              templates only its three oneshot sync timers, so there is no unit to follow \
               the install into",
         notifies: &[(
             "Install Baikal release (replaces Core, html, vendor; keeps Specific and config)",

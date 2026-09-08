@@ -143,6 +143,7 @@ const FLEET_SERVICES: &[&str] = &[
     "aoe/aoe.service",
     "baikal/baikal-birthday-sync.service",
     "baikal/baikal-busy-sync.service",
+    "baikal/baikal-nudge-sync.service",
     "bichon/bichon-archive.service",
     "bichon/bichon-uidvalidity-watch.service",
     "bichon/bichon.service",

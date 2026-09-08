@@ -85,6 +85,7 @@ One number, one file. Every file in `meta/adr/` is listed here; a number that ap
 | 0075 | [The agent tier deploys as one guarded composition, and `deploy` reaches it](./adr/0075-the-agent-tier-deploys-as-one-guarded-composition.md)                   |
 | 0076 | [The known_hosts alias migration is bound to the roster read, not the roster write](./adr/0076-the-known-hosts-alias-migration-is-bound-to-the-roster-read.md)  |
 | 0077 | [The deploy menu offers every target, but `[all apps]` stays the roster](./adr/0077-the-deploy-menu-offers-every-target-but-all-stays-the-roster.md)            |
+| 0078 | [Contact cadence lives in the vCard `NOTE`, and the script never reads `CATEGORIES`](./adr/0078-contact-cadence-lives-in-the-vcard-note.md)                     |
 
 ## Native systemd by default
 

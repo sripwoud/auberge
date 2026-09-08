@@ -350,6 +350,8 @@ pub const FLEET_UNIT_FILES: &[&str] = &[
     "baikal/baikal-birthday-sync.timer",
     "baikal/baikal-busy-sync.service",
     "baikal/baikal-busy-sync.timer",
+    "baikal/baikal-nudge-sync.service",
+    "baikal/baikal-nudge-sync.timer",
     "bichon/bichon-archive.service",
     "bichon/bichon-archive.timer",
     "bichon/bichon-uidvalidity-watch.service",

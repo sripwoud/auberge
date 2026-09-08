@@ -1,0 +1,17 @@
+[Unit]
+Description=Baikal reach-out nudge calendar sync service
+After=php{{ baikal_php_version }}-fpm.service
+
+[Service]
+Type=oneshot
+User={{ baikal_sys_user }}
+Group={{ baikal_sys_user }}
+WorkingDirectory={{ baikal_install_dir }}
+ExecStart=/usr/bin/python3 {{ baikal_install_dir }}/baikal-nudge-sync.py {{ baikal_data_dir }}/db/db.sqlite {{ baikal_nudge_default_days }}
+StandardOutput=journal
+StandardError=journal
+ProtectSystem=strict
+ReadWritePaths={{ baikal_data_dir }}/db
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true
