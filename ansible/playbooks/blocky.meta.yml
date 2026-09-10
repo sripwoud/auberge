@@ -3,7 +3,7 @@ required_keys:
   - blocky_subdomain
 subdomain: blocky
 version:
-  value: "0.34.0"
+  value: "0.35.0"
   datasource: github-releases
   depName: "0xERR0R/blocky"
   extractVersion: "^v(?<version>.+)$"
