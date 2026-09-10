@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.8](https://github.com/sripwoud/auberge/compare/v0.17.7...v0.17.8) - 2026-09-10
+
+### Other
+
+- *(aoe)* bump to 1.16.0 ([#853](https://github.com/sripwoud/auberge/pull/853))
+- *(uv)* bump to 0.12.10 ([#852](https://github.com/sripwoud/auberge/pull/852))
+- *(opencode)* bump to 1.18.29 ([#850](https://github.com/sripwoud/auberge/pull/850))
+- *(freshrss)* bump to 1.30.0 ([#851](https://github.com/sripwoud/auberge/pull/851))
+- *(paperless)* bump to 3.1.3 ([#848](https://github.com/sripwoud/auberge/pull/848))
+
 ## [0.17.7](https://github.com/sripwoud/auberge/compare/v0.17.6...v0.17.7) - 2026-09-08
 
 ### Added
