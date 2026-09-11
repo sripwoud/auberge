@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.9](https://github.com/sripwoud/auberge/compare/v0.17.8...v0.17.9) - 2026-09-11
+
+### Other
+
+- *(immich)* bump to 3.2.0 ([#855](https://github.com/sripwoud/auberge/pull/855))
+
 ## [0.17.8](https://github.com/sripwoud/auberge/compare/v0.17.7...v0.17.8) - 2026-09-10
 
 ### Other
