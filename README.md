@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center"><a href="https://auberge.sripwoud.xyz">Auberge</a></h1>
+  <h1 align="center"><a href="https://auberge.espadat.com">Auberge</a></h1>
 </p>
 <p align="center"
   <a href="https://crates.io/crates/auberge">
@@ -55,13 +55,13 @@ After deployment, your VPS will be running:
 
 ## Documentation
 
-Full documentation available at [auberge.sripwoud.xyz](https://auberge.sripwoud.xyz):
+Full documentation available at [auberge.espadat.com](https://auberge.espadat.com):
 
-- [Installation](https://auberge.sripwoud.xyz/#/getting-started/installation) - Detailed setup guide
-- [First Deployment](https://auberge.sripwoud.xyz/#/getting-started/first-deployment) - Step-by-step walkthrough
-- [CLI Reference](https://auberge.sripwoud.xyz/#/cli-reference/auberge) - All commands documented
-- [Backup & Restore](https://auberge.sripwoud.xyz/#/backup-restore/overview) - Data protection and migration
-- [Alternatives Comparison](https://auberge.sripwoud.xyz/#/about/alternatives) - How Auberge compares to other platforms
+- [Installation](https://auberge.espadat.com/#/getting-started/installation) - Detailed setup guide
+- [First Deployment](https://auberge.espadat.com/#/getting-started/first-deployment) - Step-by-step walkthrough
+- [CLI Reference](https://auberge.espadat.com/#/cli-reference/auberge) - All commands documented
+- [Backup & Restore](https://auberge.espadat.com/#/backup-restore/overview) - Data protection and migration
+- [Alternatives Comparison](https://auberge.espadat.com/#/about/alternatives) - How Auberge compares to other platforms
 
 ## Requirements
 
@@ -81,6 +81,6 @@ Auberge is selfware - software built to manage your self-hosted infrastructure:
 
 ## Community
 
-- [Documentation](https://auberge.sripwoud.xyz)
+- [Documentation](https://auberge.espadat.com)
 - [Report Issues](https://github.com/sripwoud/auberge/issues)
-- [Contributing](https://auberge.sripwoud.xyz/#/development/contributing)
+- [Contributing](https://auberge.espadat.com/#/development/contributing)
