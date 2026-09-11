@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.10](https://github.com/espadat-studio/auberge/compare/v0.17.9...v0.17.10) - 2026-09-11
+
+### Fixed
+
+- move docs site to auberge.espadat.com ([#857](https://github.com/espadat-studio/auberge/pull/857))
+
 ## [0.17.9](https://github.com/sripwoud/auberge/compare/v0.17.8...v0.17.9) - 2026-09-11
 
 ### Other
